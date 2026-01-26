@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Firebase credentials (NEVER commit these)
+**/firebase-admin-sdk*.json
+**/serviceAccount*.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build outputs
+.next/
+.next-dev-*/
+**/.next-dev-*/
+out/
+dist/
+build/
+*.egg-info/
+
+# Firebase local artifacts
+.firebase/
+firebase-debug.log*
+
+# Generated assets
+frontend/public/pdf.worker.mjs
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+.pytest_cache/
+
+# Uploads
+uploads/

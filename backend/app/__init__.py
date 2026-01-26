@@ -1,0 +1,1 @@
+"""HireStack AI Backend Application"""
