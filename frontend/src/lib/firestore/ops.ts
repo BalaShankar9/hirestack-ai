@@ -127,9 +127,7 @@ export async function createApplication(
   title: string,
   confirmedFacts?: ConfirmedFacts
 ): Promise<string> {
-  const id = uid("app");
   const row = {
-    id,
     user_id: userId,
     title,
     status: "draft",
@@ -138,9 +136,9 @@ export async function createApplication(
     scores: null,
   };
 
-  const { error } = await supabase.from(TABLES.applications).insert(row);
+  const { data, error } = await supabase.from(TABLES.applications).insert(row).select("id").single();
   if (error) throw error;
-  return id;
+  return data.id;
 }
 
 export async function getApplication(appId: string): Promise<ApplicationDoc | null> {
@@ -462,9 +460,7 @@ export async function createEvidence(
   userId: string,
   evidence: Omit<EvidenceDoc, "id" | "createdAt" | "updatedAt">
 ): Promise<string> {
-  const id = uid("ev");
   const row = {
-    id,
     user_id: userId,
     application_id: evidence.applicationId ?? null,
     kind: evidence.kind ?? "link",
@@ -480,9 +476,9 @@ export async function createEvidence(
     tags: evidence.tags ?? [],
   };
 
-  const { error } = await supabase.from(TABLES.evidence).insert(row);
+  const { data, error } = await supabase.from(TABLES.evidence).insert(row).select("id").single();
   if (error) throw error;
-  return id;
+  return data.id;
 }
 
 export async function deleteEvidence(evidenceId: string): Promise<void> {
@@ -557,7 +553,6 @@ export async function trackEvent(
   }
 
   const { error } = await supabase.from(TABLES.events).insert({
-    id: uid("evt"),
     user_id: userId,
     application_id: appId,
     event,
@@ -838,22 +833,16 @@ export function buildBenchmark(
 ): {
   summary: string;
   keywords: string[];
-  rubric: { dimension: string; weight: number; indicators: string[] }[];
+  rubric: string[];
   createdAt: number;
 } {
   const companyStr = company ? ` at ${company}` : "";
   return {
     summary: `Benchmark for ${jobTitle}${companyStr} — ${keywords.length} key dimensions identified.`,
     keywords,
-    rubric: keywords.slice(0, 6).map((kw, i) => ({
-      dimension: kw.charAt(0).toUpperCase() + kw.slice(1),
-      weight: Math.max(10, 30 - i * 5),
-      indicators: [
-        `Demonstrated ${kw} proficiency`,
-        `Applied ${kw} in production`,
-        `Led ${kw}-related initiative`,
-      ],
-    })),
+    rubric: keywords.slice(0, 6).map((kw) =>
+      `${kw.charAt(0).toUpperCase() + kw.slice(1)} — proficiency, production application & leadership`
+    ),
     createdAt: Date.now(),
   };
 }
@@ -910,25 +899,39 @@ export function buildGaps(
 
 export function buildLearningPlan(missingKeywords: string[]): {
   focus: string[];
-  plan: { week: number; goals: string[] }[];
-  resources: { skill: string; title: string; url?: string }[];
+  plan: { week: number; theme: string; outcomes: string[]; tasks: string[]; goals: string[] }[];
+  resources: { skill: string; title: string; provider: string; timebox: string; url?: string }[];
 } {
   return {
     focus: [...missingKeywords],
-    plan: [1, 2, 3, 4].map((week) => ({
-      week,
-      goals:
-        missingKeywords.length > 0
-          ? [
-              `Week ${week}: Deep-dive into ${
-                missingKeywords[(week - 1) % missingKeywords.length] ?? "core skills"
-              }`,
-            ]
-          : [`Week ${week}: Reinforce existing strengths and explore adjacent areas`],
-    })),
+    plan: [1, 2, 3, 4].map((week) => {
+      const skill = missingKeywords[(week - 1) % missingKeywords.length] ?? "core skills";
+      return {
+        week,
+        theme: missingKeywords.length > 0 ? `${skill} Sprint` : `Week ${week}: Strengthen foundations`,
+        outcomes:
+          missingKeywords.length > 0
+            ? [`Demonstrate ${skill} proficiency through a mini-project or proof artifact`]
+            : [`Reinforce existing strengths and explore adjacent areas`],
+        tasks:
+          missingKeywords.length > 0
+            ? [
+                `Deep-dive into ${skill}`,
+                `Complete a hands-on exercise for ${skill}`,
+                `Document evidence of ${skill} competency`,
+              ]
+            : [`Review and polish existing skill evidence`, `Explore adjacent skill areas`],
+        goals:
+          missingKeywords.length > 0
+            ? [`Week ${week}: Deep-dive into ${skill}`]
+            : [`Week ${week}: Reinforce existing strengths and explore adjacent areas`],
+      };
+    }),
     resources: missingKeywords.map((skill) => ({
       skill,
       title: `${skill.charAt(0).toUpperCase() + skill.slice(1)} — Recommended Learning`,
+      provider: "Self-paced",
+      timebox: "1–2 hours",
       url: `https://www.google.com/search?q=${encodeURIComponent(skill + " tutorial")}`,
     })),
   };

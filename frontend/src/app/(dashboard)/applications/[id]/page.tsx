@@ -376,7 +376,7 @@ export default function ApplicationWorkspacePage() {
                     <div>
                       <div className="text-xs font-semibold">Rubric</div>
                       <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                        {app.benchmark.rubric.map((r) => (
+                        {(app.benchmark.rubric ?? []).map((r: string) => (
                           <li key={r}>• {r}</li>
                         ))}
                       </ul>
@@ -421,7 +421,7 @@ export default function ApplicationWorkspacePage() {
                     <div>
                       <div className="text-xs font-semibold">Missing keywords</div>
                       <div className="mt-2 flex flex-wrap gap-1.5">
-                        {app.gaps.missingKeywords.slice(0, 16).map((k) => (
+                        {(app.gaps.missingKeywords ?? []).slice(0, 16).map((k: string) => (
                           <Badge key={k} variant="secondary" className="border bg-amber-500/10 text-amber-700 border-amber-200 text-[11px]">
                             {k}
                           </Badge>
@@ -432,7 +432,7 @@ export default function ApplicationWorkspacePage() {
                     <div>
                       <div className="text-xs font-semibold">Strengths</div>
                       <div className="mt-2 flex flex-wrap gap-1.5">
-                        {app.gaps.strengths.slice(0, 12).map((k) => (
+                        {(app.gaps.strengths ?? []).slice(0, 12).map((k: string) => (
                           <Badge key={k} variant="secondary" className="border text-[11px]">
                             {k}
                           </Badge>
@@ -443,7 +443,7 @@ export default function ApplicationWorkspacePage() {
                     <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
                       <div className="text-xs font-semibold text-primary">Recommendations</div>
                       <ul className="mt-2 space-y-1 text-sm text-foreground/80">
-                        {app.gaps.recommendations.map((r) => (
+                        {(app.gaps.recommendations ?? []).map((r: string) => (
                           <li key={r}>• {r}</li>
                         ))}
                       </ul>
@@ -483,7 +483,7 @@ export default function ApplicationWorkspacePage() {
                     <div>
                       <div className="text-xs font-semibold">Focus</div>
                       <div className="mt-2 flex flex-wrap gap-1.5">
-                        {app.learningPlan.focus.map((k) => (
+                        {(app.learningPlan.focus ?? []).map((k: string) => (
                           <Badge key={k} variant="secondary" className="border bg-purple-50 text-purple-900 border-purple-200 text-[11px]">
                             {k}
                           </Badge>
@@ -492,18 +492,18 @@ export default function ApplicationWorkspacePage() {
                     </div>
 
                     <div className="grid gap-3 md:grid-cols-2">
-                      {app.learningPlan.plan.map((w) => (
+                      {(app.learningPlan.plan ?? []).map((w: any) => (
                         <div key={w.week} className="rounded-2xl border bg-card p-4">
-                          <div className="text-sm font-semibold">{w.theme}</div>
+                          <div className="text-sm font-semibold">{w.theme ?? `Week ${w.week}`}</div>
                           <div className="mt-2 text-xs text-muted-foreground font-medium">Outcomes</div>
                           <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
-                            {w.outcomes.map((o) => (
+                            {(w.outcomes ?? w.goals ?? []).map((o: string) => (
                               <li key={o}>• {o}</li>
                             ))}
                           </ul>
                           <div className="mt-3 text-xs text-muted-foreground font-medium">Tasks</div>
                           <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
-                            {w.tasks.map((t) => (
+                            {(w.tasks ?? []).map((t: string) => (
                               <li key={t}>• {t}</li>
                             ))}
                           </ul>
@@ -517,11 +517,11 @@ export default function ApplicationWorkspacePage() {
                         <div className="text-sm font-semibold">Resources</div>
                       </div>
                       <div className="mt-3 space-y-2">
-                        {app.learningPlan.resources.map((r) => (
+                        {(app.learningPlan.resources ?? []).map((r: any) => (
                           <div key={r.title} className="rounded-xl border p-3">
                             <div className="text-sm font-medium">{r.title}</div>
                             <div className="mt-1 text-xs text-muted-foreground">
-                              {r.provider || "Resource"} · {r.timebox || "Timebox"} {r.skill ? `· ${r.skill}` : ""}
+                              {r.provider || "Resource"} · {r.timebox || "Self-paced"} {r.skill ? `· ${r.skill}` : ""}
                             </div>
                           </div>
                         ))}
