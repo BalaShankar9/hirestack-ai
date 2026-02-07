@@ -44,6 +44,8 @@ const DEFAULT_MODULES: Record<ModuleKey, ModuleStatus> = {
   learningPlan: { state: "idle" },
   cv: { state: "idle" },
   coverLetter: { state: "idle" },
+  personalStatement: { state: "idle" },
+  portfolio: { state: "idle" },
   scorecard: { state: "idle" },
 };
 
@@ -73,10 +75,15 @@ export function mapApplicationRow(row: any): ApplicationDoc {
     learningPlan: row.learning_plan ?? undefined,
     cvHtml: row.cv_html ?? undefined,
     coverLetterHtml: row.cover_letter_html ?? undefined,
+    personalStatementHtml: row.personal_statement_html ?? undefined,
+    portfolioHtml: row.portfolio_html ?? undefined,
     scorecard: row.scorecard ?? undefined,
+    validation: row.validation ?? undefined,
     scores,
     cvVersions: Array.isArray(row.cv_versions) ? row.cv_versions : [],
     clVersions: Array.isArray(row.cl_versions) ? row.cl_versions : [],
+    psVersions: Array.isArray(row.ps_versions) ? row.ps_versions : [],
+    portfolioVersions: Array.isArray(row.portfolio_versions) ? row.portfolio_versions : [],
   };
 }
 
@@ -175,9 +182,13 @@ export async function patchApplication(
     factsLocked: "facts_locked",
     cvHtml: "cv_html",
     coverLetterHtml: "cover_letter_html",
+    personalStatementHtml: "personal_statement_html",
+    portfolioHtml: "portfolio_html",
     learningPlan: "learning_plan",
     cvVersions: "cv_versions",
     clVersions: "cl_versions",
+    psVersions: "ps_versions",
+    portfolioVersions: "portfolio_versions",
     userId: "user_id",
     applicationId: "application_id",
   };
@@ -247,7 +258,7 @@ export async function generateApplicationModules(
   appId: string,
   userId: string,
   confirmedFacts: ConfirmedFacts,
-  modules: ModuleKey[] = ["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "scorecard"]
+  modules: ModuleKey[] = ["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "personalStatement", "portfolio", "scorecard"]
 ): Promise<void> {
   const jdText = confirmedFacts.jdText ?? "";
   const resumeText = confirmedFacts.resume?.text ?? "";
@@ -296,6 +307,15 @@ export async function generateApplicationModules(
     }
     if (result.coverLetterHtml) {
       patch.coverLetterHtml = result.coverLetterHtml;
+    }
+    if (result.personalStatementHtml) {
+      patch.personalStatementHtml = result.personalStatementHtml;
+    }
+    if (result.portfolioHtml) {
+      patch.portfolioHtml = result.portfolioHtml;
+    }
+    if (result.validation) {
+      patch.validation = result.validation;
     }
     if (result.scorecard) {
       patch.scorecard = { ...result.scorecard, updatedAt: Date.now() };
@@ -475,13 +495,25 @@ export async function regenerateModule(
 
 export async function snapshotDocVersion(
   appId: string,
-  docType: "cv" | "coverLetter",
+  docType: "cv" | "coverLetter" | "personalStatement" | "portfolio",
   labelOrHtml?: string,
   label?: string
 ): Promise<void> {
   const versionId = uid("ver");
-  const colKey = docType === "cv" ? "cv_versions" : "cl_versions";
-  const htmlColKey = docType === "cv" ? "cv_html" : "cover_letter_html";
+  const colKeyMap: Record<string, string> = {
+    cv: "cv_versions",
+    coverLetter: "cl_versions",
+    personalStatement: "ps_versions",
+    portfolio: "portfolio_versions",
+  };
+  const htmlColKeyMap: Record<string, string> = {
+    cv: "cv_html",
+    coverLetter: "cover_letter_html",
+    personalStatement: "personal_statement_html",
+    portfolio: "portfolio_html",
+  };
+  const colKey = colKeyMap[docType] || "cv_versions";
+  const htmlColKey = htmlColKeyMap[docType] || "cv_html";
 
   // Get current app data for versions and html
   const { data } = await supabase
@@ -523,11 +555,23 @@ export async function snapshotDocVersion(
 
 export async function restoreDocVersion(
   appId: string,
-  docType: "cv" | "coverLetter",
+  docType: "cv" | "coverLetter" | "personalStatement" | "portfolio",
   versionId: string
 ): Promise<void> {
-  const colKey = docType === "cv" ? "cv_versions" : "cl_versions";
-  const htmlKey = docType === "cv" ? "cv_html" : "cover_letter_html";
+  const colKeyMap: Record<string, string> = {
+    cv: "cv_versions",
+    coverLetter: "cl_versions",
+    personalStatement: "ps_versions",
+    portfolio: "portfolio_versions",
+  };
+  const htmlKeyMap: Record<string, string> = {
+    cv: "cv_html",
+    coverLetter: "cover_letter_html",
+    personalStatement: "personal_statement_html",
+    portfolio: "portfolio_html",
+  };
+  const colKey = colKeyMap[docType] || "cv_versions";
+  const htmlKey = htmlKeyMap[docType] || "cv_html";
 
   const { data } = await supabase
     .from(TABLES.applications)

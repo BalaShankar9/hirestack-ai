@@ -29,6 +29,10 @@ import {
   UploadCloud,
   Download,
   ClipboardCopy,
+  FileArchive,
+  PenTool,
+  FolderOpen,
+  Loader2,
 } from "lucide-react";
 import { diffWordsWithSpace } from "diff";
 
@@ -44,6 +48,13 @@ import {
 } from "@/lib/firestore";
 import { useApplication, useEvidence, useTasks } from "@/lib/firestore";
 import type { ModuleKey } from "@/lib/firestore";
+import {
+  downloadPdf,
+  downloadAllAsZip,
+  buildBenchmarkHtml,
+  buildGapAnalysisHtml,
+  buildLearningPlanHtml,
+} from "@/lib/export";
 
 import { ScoreboardHeader } from "@/components/workspace/scoreboard-header";
 import { CoachPanel } from "@/components/workspace/coach-panel";
@@ -100,21 +111,31 @@ export default function ApplicationWorkspacePage() {
   const [tab, setTab] = useState(() => searchParams.get("tab") || "overview");
   const [cvMode, setCvMode] = useState<"edit" | "diff">("edit");
   const [clMode, setClMode] = useState<"edit" | "diff">("edit");
+  const [psMode, setPsMode] = useState<"edit" | "diff">("edit");
+  const [portfolioMode, setPortfolioMode] = useState<"edit" | "diff">("edit");
 
   const cvEditorRef = useRef<any>(null);
   const clEditorRef = useRef<any>(null);
+  const psEditorRef = useRef<any>(null);
+  const portfolioEditorRef = useRef<any>(null);
   const [cvEditor, setCvEditor] = useState<any>(null);
   const [clEditor, setClEditor] = useState<any>(null);
+  const [psEditor, setPsEditor] = useState<any>(null);
+  const [portfolioEditor, setPortfolioEditor] = useState<any>(null);
   const [autoInsertedEvidence, setAutoInsertedEvidence] = useState<string | null>(null);
 
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerTarget, setPickerTarget] = useState<"cv" | "coverLetter">("cv");
+  const [pickerTarget, setPickerTarget] = useState<"cv" | "coverLetter" | "personalStatement" | "portfolio">("cv");
 
   const [versionsOpen, setVersionsOpen] = useState(false);
-  const [versionsTarget, setVersionsTarget] = useState<"cv" | "coverLetter">("cv");
+  const [versionsTarget, setVersionsTarget] = useState<"cv" | "coverLetter" | "personalStatement" | "portfolio">("cv");
 
   const [cvLocal, setCvLocal] = useState<string>("");
   const [clLocal, setClLocal] = useState<string>("");
+  const [psLocal, setPsLocal] = useState<string>("");
+  const [portfolioLocal, setPortfolioLocal] = useState<string>("");
+
+  const [exporting, setExporting] = useState(false);
 
   // Track workspace views
   useEffect(() => {
@@ -134,7 +155,9 @@ export default function ApplicationWorkspacePage() {
     if (!app) return;
     setCvLocal(app.cvHtml || "");
     setClLocal(app.coverLetterHtml || "");
-  }, [app?.cvHtml, app?.coverLetterHtml]);
+    setPsLocal(app.personalStatementHtml || "");
+    setPortfolioLocal(app.portfolioHtml || "");
+  }, [app?.cvHtml, app?.coverLetterHtml, app?.personalStatementHtml, app?.portfolioHtml]);
 
   // Debounced persistence for editors
   useEffect(() => {
@@ -156,6 +179,26 @@ export default function ApplicationWorkspacePage() {
     }, 900);
     return () => clearTimeout(t);
   }, [app, appId, clLocal]);
+
+  useEffect(() => {
+    if (!app) return;
+    const t = setTimeout(() => {
+      if (psLocal !== (app.personalStatementHtml || "")) {
+        patchApplication(appId, { personalStatementHtml: psLocal });
+      }
+    }, 900);
+    return () => clearTimeout(t);
+  }, [app, appId, psLocal]);
+
+  useEffect(() => {
+    if (!app) return;
+    const t = setTimeout(() => {
+      if (portfolioLocal !== (app.portfolioHtml || "")) {
+        patchApplication(appId, { portfolioHtml: portfolioLocal });
+      }
+    }, 900);
+    return () => clearTimeout(t);
+  }, [app, appId, portfolioLocal]);
 
   const keywords = useMemo(() => app?.benchmark?.keywords ?? [], [app?.benchmark?.keywords]);
   const missing = useMemo(() => app?.gaps?.missingKeywords ?? [], [app?.gaps?.missingKeywords]);
@@ -190,6 +233,8 @@ export default function ApplicationWorkspacePage() {
 
   const isCoveredCv = (kw: string) => stripHtml(cvLocal).toLowerCase().includes(kw.toLowerCase());
   const isCoveredCl = (kw: string) => stripHtml(clLocal).toLowerCase().includes(kw.toLowerCase());
+  const isCoveredPs = (kw: string) => stripHtml(psLocal).toLowerCase().includes(kw.toLowerCase());
+  const isCoveredPortfolio = (kw: string) => stripHtml(portfolioLocal).toLowerCase().includes(kw.toLowerCase());
 
   const onToggleTask = async (t: any) => {
     if (!user) return;
@@ -204,7 +249,7 @@ export default function ApplicationWorkspacePage() {
     }
   };
 
-  const openPicker = (target: "cv" | "coverLetter") => {
+  const openPicker = (target: "cv" | "coverLetter" | "personalStatement" | "portfolio") => {
     setPickerTarget(target);
     setPickerOpen(true);
   };
@@ -217,7 +262,11 @@ export default function ApplicationWorkspacePage() {
 
   const onPickEvidence = (e: any) => {
     const html = buildEvidenceHtml(e);
-    const editor = pickerTarget === "cv" ? cvEditorRef.current : clEditorRef.current;
+    let editor: any = null;
+    if (pickerTarget === "cv") editor = cvEditorRef.current;
+    else if (pickerTarget === "coverLetter") editor = clEditorRef.current;
+    else if (pickerTarget === "personalStatement") editor = psEditorRef.current;
+    else if (pickerTarget === "portfolio") editor = portfolioEditorRef.current;
     editor?.chain?.().focus().insertContent(html).run();
   };
 
@@ -322,6 +371,8 @@ export default function ApplicationWorkspacePage() {
               <TabsTrigger value="learning">Learning plan</TabsTrigger>
               <TabsTrigger value="cv">Tailored CV</TabsTrigger>
               <TabsTrigger value="cover">Cover letter</TabsTrigger>
+              <TabsTrigger value="statement">Personal statement</TabsTrigger>
+              <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
               <TabsTrigger value="export">Export</TabsTrigger>
             </TabsList>
 
@@ -358,6 +409,30 @@ export default function ApplicationWorkspacePage() {
                   icon={<FileText className="h-5 w-5" />}
                   onOpen={() => setTab("cv")}
                   onRegenerate={() => regenerate("cv")}
+                />
+                <ModuleCard
+                  title="Cover Letter"
+                  description="Evidence-first narrative"
+                  status={app.modules.coverLetter}
+                  icon={<FileText className="h-5 w-5" />}
+                  onOpen={() => setTab("cover")}
+                  onRegenerate={() => regenerate("coverLetter")}
+                />
+                <ModuleCard
+                  title="Personal Statement"
+                  description="Compelling motivation narrative"
+                  status={app.modules.personalStatement}
+                  icon={<PenTool className="h-5 w-5" />}
+                  onOpen={() => setTab("statement")}
+                  onRegenerate={() => regenerate("personalStatement")}
+                />
+                <ModuleCard
+                  title="Portfolio & Evidence"
+                  description="Proof of knowledge + projects"
+                  status={app.modules.portfolio}
+                  icon={<FolderOpen className="h-5 w-5" />}
+                  onOpen={() => setTab("portfolio")}
+                  onRegenerate={() => regenerate("portfolio")}
                 />
               </div>
 
@@ -670,89 +745,177 @@ export default function ApplicationWorkspacePage() {
               />
             </TabsContent>
 
+            <TabsContent value="statement" className="mt-4">
+              <DocEditorModule
+                title="Personal statement"
+                subtitle="Your compelling motivation narrative — authentic, specific, memorable."
+                mode={psMode}
+                onModeChange={setPsMode}
+                keywords={keywords}
+                missingKeywords={missing}
+                isCovered={isCoveredPs}
+                value={psLocal}
+                onChange={setPsLocal}
+                editorRef={psEditorRef}
+                onEditorReady={setPsEditor}
+                onPickEvidence={() => openPicker("personalStatement")}
+                onRegenerate={() => regenerate("personalStatement")}
+                onOpenVersions={() => {
+                  setVersionsTarget("personalStatement");
+                  setVersionsOpen(true);
+                }}
+                baseHtml={app.confirmedFacts?.resume?.text || ""}
+              />
+            </TabsContent>
+
+            <TabsContent value="portfolio" className="mt-4">
+              <DocEditorModule
+                title="Portfolio & evidence"
+                subtitle="Showcase projects and proof of knowledge — irrefutable evidence of capability."
+                mode={portfolioMode}
+                onModeChange={setPortfolioMode}
+                keywords={keywords}
+                missingKeywords={missing}
+                isCovered={isCoveredPortfolio}
+                value={portfolioLocal}
+                onChange={setPortfolioLocal}
+                editorRef={portfolioEditorRef}
+                onEditorReady={setPortfolioEditor}
+                onPickEvidence={() => openPicker("portfolio")}
+                onRegenerate={() => regenerate("portfolio")}
+                onOpenVersions={() => {
+                  setVersionsTarget("portfolio");
+                  setVersionsOpen(true);
+                }}
+                baseHtml=""
+              />
+            </TabsContent>
+
             <TabsContent value="export" className="mt-4">
               <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <div className="text-sm font-semibold">Export</div>
+                    <div className="text-sm font-semibold">Export & Download</div>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      MVP export: download HTML and keep iterating. PDF/DOC pipelines can be added later.
+                      Download professionally designed PDFs of every document. One click, ready to submit.
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => regenerate("scorecard")}>
-                    <RefreshCw className="h-4 w-4" />
-                    Refresh readiness
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="gap-2 rounded-xl"
+                    disabled={exporting}
+                    onClick={async () => {
+                      if (!user) return;
+                      setExporting(true);
+                      try {
+                        await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "zip_all" } });
+                        await downloadAllAsZip({
+                          jobTitle: app.confirmedFacts?.jobTitle || "Role",
+                          company: app.confirmedFacts?.company || "Company",
+                          cvHtml: cvLocal || undefined,
+                          coverLetterHtml: clLocal || undefined,
+                          personalStatementHtml: psLocal || undefined,
+                          portfolioHtml: portfolioLocal || undefined,
+                          learningPlanHtml: app.learningPlan ? buildLearningPlanHtml(app.learningPlan) : undefined,
+                          benchmarkHtml: app.benchmark ? buildBenchmarkHtml(app.benchmark, app.confirmedFacts?.jobTitle || "") : undefined,
+                          gapAnalysisHtml: app.gaps ? buildGapAnalysisHtml(app.gaps) : undefined,
+                        });
+                      } catch (err) {
+                        console.error("ZIP export failed:", err);
+                      } finally {
+                        setExporting(false);
+                      }
+                    }}
+                  >
+                    {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileArchive className="h-4 w-4" />}
+                    Download All (ZIP)
                   </Button>
                 </div>
 
                 <Separator className="my-4" />
 
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="rounded-2xl border bg-card p-4">
-                    <div className="text-sm font-semibold">CV</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      Download your current tailored CV as HTML.
-                    </div>
-                    <div className="mt-4 flex items-center gap-2">
-                      <Button
-                        className="gap-2"
-                        onClick={async () => {
-                          if (!user) return;
-                          await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "cv_html" } });
-                          downloadTextFile("hirestack_cv.html", cvLocal, "text/html");
-                        }}
-                      >
-                        <Download className="h-4 w-4" />
-                        Download
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="gap-2"
-                        onClick={async () => {
-                          await navigator.clipboard.writeText(stripHtml(cvLocal));
-                        }}
-                      >
-                        <ClipboardCopy className="h-4 w-4" />
-                        Copy text
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border bg-card p-4">
-                    <div className="text-sm font-semibold">Cover letter</div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      Download your current cover letter as HTML.
-                    </div>
-                    <div className="mt-4 flex items-center gap-2">
-                      <Button
-                        className="gap-2"
-                        onClick={async () => {
-                          if (!user) return;
-                          await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "cover_html" } });
-                          downloadTextFile("hirestack_cover_letter.html", clLocal, "text/html");
-                        }}
-                      >
-                        <Download className="h-4 w-4" />
-                        Download
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="gap-2"
-                        onClick={async () => {
-                          await navigator.clipboard.writeText(stripHtml(clLocal));
-                        }}
-                      >
-                        <ClipboardCopy className="h-4 w-4" />
-                        Copy text
-                      </Button>
-                    </div>
-                  </div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <ExportCard
+                    title="Tailored CV"
+                    description="ATS-optimized, keyword-rich, strategically enhanced."
+                    hasContent={!!cvLocal}
+                    onDownloadPdf={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "cv_pdf" } });
+                      await downloadPdf(cvLocal, { filename: "HireStack_CV", documentType: "cv" });
+                    }}
+                    onCopyText={() => navigator.clipboard.writeText(stripHtml(cvLocal))}
+                  />
+                  <ExportCard
+                    title="Cover Letter"
+                    description="Compelling, evidence-backed narrative."
+                    hasContent={!!clLocal}
+                    onDownloadPdf={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "cl_pdf" } });
+                      await downloadPdf(clLocal, { filename: "HireStack_Cover_Letter", documentType: "coverLetter" });
+                    }}
+                    onCopyText={() => navigator.clipboard.writeText(stripHtml(clLocal))}
+                  />
+                  <ExportCard
+                    title="Personal Statement"
+                    description="Authentic motivation narrative."
+                    hasContent={!!psLocal}
+                    onDownloadPdf={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "ps_pdf" } });
+                      await downloadPdf(psLocal, { filename: "HireStack_Personal_Statement", documentType: "personalStatement" });
+                    }}
+                    onCopyText={() => navigator.clipboard.writeText(stripHtml(psLocal))}
+                  />
+                  <ExportCard
+                    title="Portfolio & Evidence"
+                    description="Project showcase with impact metrics."
+                    hasContent={!!portfolioLocal}
+                    onDownloadPdf={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "portfolio_pdf" } });
+                      await downloadPdf(portfolioLocal, { filename: "HireStack_Portfolio", documentType: "portfolio" });
+                    }}
+                    onCopyText={() => navigator.clipboard.writeText(stripHtml(portfolioLocal))}
+                  />
+                  <ExportCard
+                    title="Learning Plan"
+                    description="Sprint-based skill development roadmap."
+                    hasContent={!!app.learningPlan}
+                    onDownloadPdf={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "learning_pdf" } });
+                      const html = buildLearningPlanHtml(app.learningPlan);
+                      await downloadPdf(html, { filename: "HireStack_Learning_Plan", documentType: "learningPlan" });
+                    }}
+                    onCopyText={() => {
+                      const html = buildLearningPlanHtml(app.learningPlan);
+                      navigator.clipboard.writeText(stripHtml(html));
+                    }}
+                  />
+                  <ExportCard
+                    title="Gap Analysis"
+                    description="Skills gap assessment with recommendations."
+                    hasContent={!!app.gaps}
+                    onDownloadPdf={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "gaps_pdf" } });
+                      const html = buildGapAnalysisHtml(app.gaps);
+                      await downloadPdf(html, { filename: "HireStack_Gap_Analysis", documentType: "gapAnalysis" });
+                    }}
+                    onCopyText={() => {
+                      const html = buildGapAnalysisHtml(app.gaps);
+                      navigator.clipboard.writeText(stripHtml(html));
+                    }}
+                  />
                 </div>
 
                 <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
-                  <div className="text-xs font-semibold text-primary">Coach reminder</div>
+                  <div className="text-xs font-semibold text-primary">Pro tip</div>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    Export is the finish line, but iterations are how you win. Snapshot before exporting.
+                    Use "Download All (ZIP)" to get every document as a branded PDF bundle — ready to attach to any application. Snapshot your versions before exporting to keep a history.
                   </div>
                 </div>
               </div>
@@ -774,7 +937,13 @@ export default function ApplicationWorkspacePage() {
         open={versionsOpen}
         onOpenChange={setVersionsOpen}
         versions={
-          versionsTarget === "cv" ? (app.cvVersions ?? []) : (app.clVersions ?? [])
+          versionsTarget === "cv"
+            ? (app.cvVersions ?? [])
+            : versionsTarget === "coverLetter"
+              ? (app.clVersions ?? [])
+              : versionsTarget === "personalStatement"
+                ? (app.psVersions ?? [])
+                : (app.portfolioVersions ?? [])
         }
         onSnapshot={async (label) => {
           await snapshotDocVersion(appId, versionsTarget, label);
@@ -946,6 +1115,64 @@ function DocEditorModule({
           </aside>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ExportCard({
+  title,
+  description,
+  hasContent,
+  onDownloadPdf,
+  onCopyText,
+}: {
+  title: string;
+  description: string;
+  hasContent: boolean;
+  onDownloadPdf: () => Promise<void>;
+  onCopyText: () => void;
+}) {
+  const [downloading, setDownloading] = useState(false);
+
+  return (
+    <div className="rounded-2xl border bg-card p-4">
+      <div className="text-sm font-semibold">{title}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{description}</div>
+      <div className="mt-4 flex items-center gap-2">
+        <Button
+          size="sm"
+          className="gap-2"
+          disabled={!hasContent || downloading}
+          onClick={async () => {
+            setDownloading(true);
+            try {
+              await onDownloadPdf();
+            } catch (err) {
+              console.error("PDF export failed:", err);
+            } finally {
+              setDownloading(false);
+            }
+          }}
+        >
+          {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+          PDF
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2"
+          disabled={!hasContent}
+          onClick={onCopyText}
+        >
+          <ClipboardCopy className="h-3.5 w-3.5" />
+          Copy
+        </Button>
+      </div>
+      {!hasContent && (
+        <div className="mt-2 text-[10px] text-muted-foreground">
+          Generate this document first to enable export.
+        </div>
+      )}
     </div>
   );
 }

@@ -2,7 +2,13 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ModuleCard } from "@/components/workspace/module-card";
-import type { ModuleStatus } from "@/lib/firestore";
+
+type ModuleStatus = {
+  state: "idle" | "queued" | "generating" | "ready" | "error";
+  progress: number;
+  updatedAt: number;
+  error?: string;
+};
 
 const mockIcon = <span data-testid="mock-icon">📄</span>;
 

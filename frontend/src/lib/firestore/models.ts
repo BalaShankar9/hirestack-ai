@@ -15,6 +15,8 @@ export type ModuleKey =
   | "learningPlan"
   | "cv"
   | "coverLetter"
+  | "personalStatement"
+  | "portfolio"
   | "scorecard";
 
 export type ModuleStatusState = "idle" | "queued" | "generating" | "ready" | "error";
@@ -188,11 +190,18 @@ export interface ApplicationDoc {
   learningPlan?: LearningPlanModule;
   cvHtml?: string;
   coverLetterHtml?: string;
+  personalStatementHtml?: string;
+  portfolioHtml?: string;
   scorecard?: Scorecard;
 
   /** Document version histories */
   cvVersions?: DocVersion[];
   clVersions?: DocVersion[];
+  psVersions?: DocVersion[];
+  portfolioVersions?: DocVersion[];
+
+  /** AI validation results */
+  validation?: Record<string, any>;
 
   /** Scores snapshot for list views */
   scores?: {

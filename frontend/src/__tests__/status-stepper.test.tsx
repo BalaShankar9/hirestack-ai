@@ -24,6 +24,8 @@ describe("StatusStepper", () => {
     learningPlan: createModuleStatus("idle", 0),
     cv: createModuleStatus("idle", 0),
     coverLetter: createModuleStatus("idle", 0),
+    personalStatement: createModuleStatus("idle", 0),
+    portfolio: createModuleStatus("idle", 0),
     scorecard: createModuleStatus("idle", 0),
   };
 
@@ -52,6 +54,8 @@ describe("StatusStepper", () => {
       learningPlan: createModuleStatus("queued", 0),
       cv: createModuleStatus("idle", 0),
       coverLetter: createModuleStatus("idle", 0),
+      personalStatement: createModuleStatus("idle", 0),
+      portfolio: createModuleStatus("idle", 0),
       scorecard: createModuleStatus("idle", 0),
     };
 
@@ -65,7 +69,7 @@ describe("StatusStepper", () => {
     const modules: Record<ModuleKey, ModuleStatus> = {
       ...defaultModules,
       benchmark: createModuleStatus("ready", 100),
-    };
+    } as Record<ModuleKey, ModuleStatus>;
 
     const { container } = render(<StatusStepper modules={modules} />);
 
@@ -76,7 +80,7 @@ describe("StatusStepper", () => {
     const modules: Record<ModuleKey, ModuleStatus> = {
       ...defaultModules,
       gaps: createModuleStatus("error", 35, "Failed to generate. Retry."),
-    };
+    } as Record<ModuleKey, ModuleStatus>;
 
     render(<StatusStepper modules={modules} />);
 
@@ -101,7 +105,7 @@ describe("StatusStepper", () => {
     const modules: Record<ModuleKey, ModuleStatus> = {
       ...defaultModules,
       benchmark: createModuleStatus("generating", 60),
-    };
+    } as Record<ModuleKey, ModuleStatus>;
 
     const { container } = render(<StatusStepper modules={modules} />);
 
@@ -114,7 +118,7 @@ describe("StatusStepper", () => {
     const modules: Record<ModuleKey, ModuleStatus> = {
       ...defaultModules,
       benchmark: createModuleStatus("queued", 0),
-    };
+    } as Record<ModuleKey, ModuleStatus>;
 
     const { container } = render(<StatusStepper modules={modules} />);
 
@@ -127,7 +131,7 @@ describe("StatusStepper", () => {
     const modules: Record<ModuleKey, ModuleStatus> = {
       ...defaultModules,
       benchmark: createModuleStatus("idle", 0),
-    };
+    } as Record<ModuleKey, ModuleStatus>;
 
     const { container } = render(<StatusStepper modules={modules} />);
 

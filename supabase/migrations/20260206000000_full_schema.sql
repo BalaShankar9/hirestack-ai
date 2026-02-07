@@ -340,6 +340,8 @@ CREATE TABLE IF NOT EXISTS public.applications (
         "learningPlan": {"state": "idle"},
         "cv": {"state": "idle"},
         "coverLetter": {"state": "idle"},
+        "personalStatement": {"state": "idle"},
+        "portfolio": {"state": "idle"},
         "scorecard": {"state": "idle"}
     }'::jsonb,
 

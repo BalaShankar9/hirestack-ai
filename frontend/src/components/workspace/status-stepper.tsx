@@ -11,6 +11,8 @@ const LABELS: Record<ModuleKey, string> = {
   learningPlan: "Learning plan",
   cv: "Tailored CV",
   coverLetter: "Cover letter",
+  personalStatement: "Personal statement",
+  portfolio: "Portfolio & evidence",
   scorecard: "Scorecard",
 };
 
@@ -24,7 +26,7 @@ function Icon({ status }: { status: ModuleStatus }) {
 
 export function StatusStepper({
   modules,
-  order = ["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "scorecard"],
+  order = ["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "personalStatement", "portfolio", "scorecard"],
 }: {
   modules: Record<ModuleKey, ModuleStatus>;
   order?: ModuleKey[];

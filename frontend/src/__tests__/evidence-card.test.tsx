@@ -1,8 +1,10 @@
 import { render, screen, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ComponentProps } from "react";
 
 import { EvidenceCard } from "@/components/workspace/evidence-card";
-import type { EvidenceDoc } from "@/lib/firestore";
+
+type EvidenceDoc = ComponentProps<typeof EvidenceCard>["evidence"];
 
 afterEach(() => {
   cleanup();

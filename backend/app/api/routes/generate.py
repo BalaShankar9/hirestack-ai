@@ -44,6 +44,7 @@ async def generate_pipeline(req: PipelineRequest):
         from ai_engine.chains.gap_analyzer import GapAnalyzerChain
         from ai_engine.chains.document_generator import DocumentGeneratorChain
         from ai_engine.chains.career_consultant import CareerConsultantChain
+        from ai_engine.chains.validator import ValidatorChain
 
         ai = AIClient()
         company = req.company or "the company"
@@ -149,6 +150,66 @@ async def generate_pipeline(req: PipelineRequest):
             logger.error("pipeline.roadmap_failed", error=str(roadmap))
             roadmap = {}
 
+        # ── Phase 4: Personal statement + Portfolio (parallel) ────────
+        ps_html = ""
+        portfolio_html = ""
+        try:
+            ps_result, portfolio_result = await asyncio.gather(
+                doc_chain.generate_tailored_personal_statement(
+                    user_profile=user_profile,
+                    job_title=req.job_title,
+                    company=company,
+                    jd_text=req.jd_text,
+                    gap_analysis=gap_analysis,
+                    resume_text=req.resume_text,
+                ),
+                doc_chain.generate_tailored_portfolio(
+                    user_profile=user_profile,
+                    job_title=req.job_title,
+                    company=company,
+                    jd_text=req.jd_text,
+                    gap_analysis=gap_analysis,
+                    resume_text=req.resume_text,
+                ),
+                return_exceptions=True,
+            )
+
+            if isinstance(ps_result, Exception):
+                logger.error("pipeline.ps_failed", error=str(ps_result))
+            else:
+                ps_html = ps_result if isinstance(ps_result, str) else ""
+
+            if isinstance(portfolio_result, Exception):
+                logger.error("pipeline.portfolio_failed", error=str(portfolio_result))
+            else:
+                portfolio_html = portfolio_result if isinstance(portfolio_result, str) else ""
+        except Exception as phase4_err:
+            logger.error("pipeline.phase4_error", error=str(phase4_err))
+
+        logger.info(
+            "pipeline.phase4_done",
+            ps_length=len(ps_html),
+            portfolio_length=len(portfolio_html),
+        )
+
+        # ── Phase 5: Validate key documents (non-blocking) ───────────
+        validation = {}
+        try:
+            validator = ValidatorChain(ai)
+            cv_valid, cv_validation = await validator.validate_document(
+                document_type="Tailored CV",
+                content=cv_html[:3000] if cv_html else "",
+                profile_data=user_profile,
+            )
+            validation["cv"] = {
+                "valid": cv_valid,
+                "qualityScore": cv_validation.get("quality_score", 0),
+                "issues": len(cv_validation.get("issues", [])),
+            }
+            logger.info("pipeline.validation_done", cv_valid=cv_valid)
+        except Exception as val_err:
+            logger.warning("pipeline.validation_skipped", error=str(val_err))
+
         # ── Format response for frontend ──────────────────────────────
         response = _format_response(
             benchmark_data=benchmark_data,
@@ -156,6 +217,9 @@ async def generate_pipeline(req: PipelineRequest):
             roadmap=roadmap if isinstance(roadmap, dict) else {},
             cv_html=cv_html if isinstance(cv_html, str) else "",
             cl_html=cl_html if isinstance(cl_html, str) else "",
+            ps_html=ps_html,
+            portfolio_html=portfolio_html,
+            validation=validation,
             keywords=keywords,
             job_title=req.job_title,
         )
@@ -183,6 +247,9 @@ def _format_response(
     roadmap: Dict[str, Any],
     cv_html: str,
     cl_html: str,
+    ps_html: str,
+    portfolio_html: str,
+    validation: Dict[str, Any],
     keywords: List[str],
     job_title: str,
 ) -> Dict[str, Any]:
@@ -342,6 +409,9 @@ def _format_response(
         "learningPlan": learning_plan,
         "cvHtml": cv_html,
         "coverLetterHtml": cl_html,
+        "personalStatementHtml": ps_html,
+        "portfolioHtml": portfolio_html,
+        "validation": validation,
         "scorecard": scorecard,
         "scores": scores,
     }

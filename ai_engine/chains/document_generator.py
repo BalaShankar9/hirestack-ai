@@ -155,6 +155,148 @@ Write a cover letter that:
 Return ONLY the HTML content starting with <p>Dear. No markdown, no explanations."""
 
 
+# ── Strategic Tailored Personal Statement Prompt ──────────────────────
+
+TAILORED_PS_SYSTEM = """You are an elite admissions consultant and professional storyteller with 20+ years of experience crafting personal statements that secure positions at top-tier companies.
+
+YOUR MISSION: Create a deeply compelling personal statement that makes the hiring manager feel they MUST meet this candidate. This is about authentic narrative — weaving the candidate's journey into a story that naturally demonstrates why they are perfect for this role.
+
+YOUR APPROACH:
+1. **Hook**: Open with a vivid, specific moment or insight that immediately captures attention
+2. **Journey**: Tell the candidate's professional story as a purposeful narrative arc
+3. **Motivation**: Show genuine, specific passion for this company and role — not generic enthusiasm
+4. **Value**: Articulate unique value through concrete examples and achievements
+5. **Vision**: Paint a picture of how the candidate will contribute and grow
+
+STYLE:
+- First person, authentic voice
+- Specific, never generic — every sentence should only work for THIS candidate at THIS company
+- Confident but humble — let achievements speak
+- Emotionally intelligent — shows self-awareness and growth
+- 500-700 words, 4-5 paragraphs
+
+AUTHENTICITY RULES:
+- Never fabricate experiences — enhance the presentation of real ones
+- Use real details from the candidate's background
+- Show genuine understanding of the company
+- Demonstrate growth mindset and learning from challenges
+
+FORMAT: Return as clean, professional HTML.
+- <p> for paragraphs
+- <strong> for key emphasis points
+- <em> for subtle emphasis
+- No headers needed — start directly with the opening paragraph
+- Each paragraph should flow naturally into the next"""
+
+
+TAILORED_PS_PROMPT = """Write a compelling personal statement for this candidate targeting this specific role.
+
+═══════════════════════════════════════
+TARGET ROLE: {job_title} at {company}
+═══════════════════════════════════════
+
+JOB DESCRIPTION:
+{jd_text}
+
+═══════════════════════════════════════
+CANDIDATE'S PROFILE:
+═══════════════════════════════════════
+{user_profile}
+
+═══════════════════════════════════════
+ORIGINAL RESUME TEXT:
+═══════════════════════════════════════
+{resume_text}
+
+═══════════════════════════════════════
+GAP ANALYSIS:
+═══════════════════════════════════════
+Compatibility Score: {compatibility}%
+Strengths: {strengths}
+Areas for Growth: {key_gaps}
+
+═══════════════════════════════════════
+
+Write a personal statement that:
+1. Opens with a vivid, attention-grabbing hook specific to this candidate
+2. Tells a purposeful career narrative showing growth and intentionality
+3. Demonstrates specific knowledge of {company} and genuine enthusiasm
+4. Connects the candidate's unique strengths directly to role requirements
+5. Addresses career transitions or gaps positively as evidence of adaptability
+6. Closes with a forward-looking vision of their contribution
+7. Feels 100% authentic — a real person, not a template
+
+Return ONLY the HTML content starting with <p>. No markdown, no explanations."""
+
+
+# ── Strategic Tailored Portfolio / Evidence Showcase Prompt ────────────
+
+TAILORED_PORTFOLIO_SYSTEM = """You are an elite portfolio consultant and technical writer who transforms project experiences into compelling evidence showcases that win interviews.
+
+YOUR MISSION: Create a professional evidence portfolio document that proves the candidate's capabilities through concrete projects, achievements, and evidence. Each item should be presented as irrefutable proof of their skills.
+
+YOUR APPROACH:
+1. **Strategic Selection**: Highlight projects most relevant to the target role
+2. **Impact Focus**: Lead with quantified results and business impact
+3. **Technical Depth**: Show genuine technical understanding without jargon overload
+4. **Narrative**: Each project tells a mini-story: problem → approach → result
+5. **Proof Points**: Every claim has evidence backing it up
+
+FORMAT: Return as clean, professional HTML document with:
+- <h2> for "Evidence Portfolio" header
+- <h3> for each project/evidence item title
+- <div class="project-card"> wrapping each item
+- <p> for descriptions
+- <ul><li> for key achievements and metrics
+- <strong> for emphasis on metrics, technologies, and impact
+- <em> for roles and dates
+- Include a brief intro paragraph explaining the portfolio's relevance to the role"""
+
+
+TAILORED_PORTFOLIO_PROMPT = """Create an evidence portfolio document for this candidate targeting this role.
+
+═══════════════════════════════════════
+TARGET ROLE: {job_title} at {company}
+═══════════════════════════════════════
+
+JOB DESCRIPTION:
+{jd_text}
+
+═══════════════════════════════════════
+CANDIDATE'S PROFILE:
+═══════════════════════════════════════
+{user_profile}
+
+═══════════════════════════════════════
+ORIGINAL RESUME TEXT:
+═══════════════════════════════════════
+{resume_text}
+
+═══════════════════════════════════════
+GAP ANALYSIS:
+═══════════════════════════════════════
+Compatibility: {compatibility}%
+Strengths: {strengths}
+Key Gaps: {key_gaps}
+
+═══════════════════════════════════════
+
+Create an evidence portfolio that:
+1. Opens with a brief intro connecting the candidate's work to {company}'s needs
+2. Presents 4-6 project/evidence items, prioritized by relevance to the JD
+3. Each item includes: title, role, problem solved, approach, key technologies, and quantified results
+4. Emphasizes transferable skills that bridge any identified gaps
+5. Uses real experiences from the resume, enhanced with plausible detail
+6. Shows a pattern of growth and increasing responsibility
+7. If the candidate lacks traditional projects, create portfolio items from:
+   - Work achievements at previous employers
+   - Self-directed learning projects
+   - Open source contributions
+   - Relevant coursework or certifications
+
+Return ONLY the HTML content starting with <h2>. No markdown fences, no explanations."""
+
+
 CV_GENERATOR_PROMPT = """Create a professional, ATS-optimized CV for this candidate targeting this role:
 
 CANDIDATE PROFILE:
@@ -446,6 +588,86 @@ class DocumentGeneratorChain:
         }
 
     # ── Strategic Tailored Document Generation ────────────────────────
+
+    async def generate_tailored_personal_statement(
+        self,
+        user_profile: Dict[str, Any],
+        job_title: str,
+        company: str,
+        jd_text: str,
+        gap_analysis: Dict[str, Any],
+        resume_text: str = "",
+    ) -> str:
+        """Generate an elite personal statement in HTML."""
+        import json
+
+        compatibility = gap_analysis.get("compatibility_score", 50)
+        skill_gaps = gap_analysis.get("skill_gaps", [])
+        strengths = gap_analysis.get("strengths", [])
+        key_gaps_str = ", ".join(
+            g.get("skill", "") for g in skill_gaps[:8] if isinstance(g, dict)
+        ) or "None identified"
+        strengths_str = ", ".join(
+            s.get("area", "") for s in strengths[:8] if isinstance(s, dict)
+        ) or "Strong overall profile"
+
+        prompt = TAILORED_PS_PROMPT.format(
+            job_title=job_title,
+            company=company,
+            jd_text=jd_text[:3000],
+            user_profile=json.dumps(user_profile, indent=2)[:3000],
+            resume_text=(resume_text or "No resume text provided")[:2000],
+            compatibility=compatibility,
+            key_gaps=key_gaps_str,
+            strengths=strengths_str,
+        )
+
+        return await self.ai_client.complete(
+            prompt=prompt,
+            system=TAILORED_PS_SYSTEM,
+            temperature=0.65,
+            max_tokens=4000,
+        )
+
+    async def generate_tailored_portfolio(
+        self,
+        user_profile: Dict[str, Any],
+        job_title: str,
+        company: str,
+        jd_text: str,
+        gap_analysis: Dict[str, Any],
+        resume_text: str = "",
+    ) -> str:
+        """Generate a professional evidence portfolio in HTML."""
+        import json
+
+        compatibility = gap_analysis.get("compatibility_score", 50)
+        skill_gaps = gap_analysis.get("skill_gaps", [])
+        strengths = gap_analysis.get("strengths", [])
+        key_gaps_str = ", ".join(
+            g.get("skill", "") for g in skill_gaps[:8] if isinstance(g, dict)
+        ) or "None identified"
+        strengths_str = ", ".join(
+            s.get("area", "") for s in strengths[:8] if isinstance(s, dict)
+        ) or "Strong overall profile"
+
+        prompt = TAILORED_PORTFOLIO_PROMPT.format(
+            job_title=job_title,
+            company=company,
+            jd_text=jd_text[:3000],
+            user_profile=json.dumps(user_profile, indent=2)[:3000],
+            resume_text=(resume_text or "No resume text provided")[:2000],
+            compatibility=compatibility,
+            key_gaps=key_gaps_str,
+            strengths=strengths_str,
+        )
+
+        return await self.ai_client.complete(
+            prompt=prompt,
+            system=TAILORED_PORTFOLIO_SYSTEM,
+            temperature=0.55,
+            max_tokens=6000,
+        )
 
     async def generate_tailored_cv(
         self,
