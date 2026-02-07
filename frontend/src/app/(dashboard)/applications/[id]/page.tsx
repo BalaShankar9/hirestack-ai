@@ -1,6 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+
+/** Safely coerce any DB value to a renderable string — handles both
+ *  plain strings and legacy object shapes (e.g. {dimension, indicators}). */
+function toLabel(v: unknown, fallback = ""): string {
+  if (typeof v === "string") return v;
+  if (v && typeof v === "object") {
+    // pick the first string-valued key we find
+    const obj = v as Record<string, unknown>;
+    for (const k of ["dimension", "title", "name", "area", "description", "gap", "suggestion", "label"]) {
+      if (typeof obj[k] === "string") return obj[k] as string;
+    }
+    return JSON.stringify(v);
+  }
+  return String(v ?? fallback);
+}
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
@@ -376,16 +391,17 @@ export default function ApplicationWorkspacePage() {
                     <div>
                       <div className="text-xs font-semibold">Rubric</div>
                       <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                        {(app.benchmark.rubric ?? []).map((r: string) => (
-                          <li key={r}>• {r}</li>
-                        ))}
+                        {(app.benchmark.rubric ?? []).map((r: any, idx: number) => {
+                          const label = typeof r === "string" ? r : r?.dimension ?? `Dimension ${idx + 1}`;
+                          return <li key={label}>• {label}</li>;
+                        })}
                       </ul>
                     </div>
 
                     <div>
                       <div className="text-xs font-semibold">Keyword set</div>
                       <div className="mt-2">
-                        <KeywordChips keywords={app.benchmark.keywords} isCovered={() => true} />
+                        <KeywordChips keywords={app.benchmark.keywords ?? []} isCovered={() => true} />
                       </div>
                     </div>
                   </div>
@@ -421,31 +437,38 @@ export default function ApplicationWorkspacePage() {
                     <div>
                       <div className="text-xs font-semibold">Missing keywords</div>
                       <div className="mt-2 flex flex-wrap gap-1.5">
-                        {(app.gaps.missingKeywords ?? []).slice(0, 16).map((k: string) => (
-                          <Badge key={k} variant="secondary" className="border bg-amber-500/10 text-amber-700 border-amber-200 text-[11px]">
-                            {k}
+                        {(app.gaps.missingKeywords ?? []).slice(0, 16).map((k: any, i: number) => {
+                          const label = toLabel(k);
+                          return (
+                          <Badge key={label || i} variant="secondary" className="border bg-amber-500/10 text-amber-700 border-amber-200 text-[11px]">
+                            {label}
                           </Badge>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 
                     <div>
                       <div className="text-xs font-semibold">Strengths</div>
                       <div className="mt-2 flex flex-wrap gap-1.5">
-                        {(app.gaps.strengths ?? []).slice(0, 12).map((k: string) => (
-                          <Badge key={k} variant="secondary" className="border text-[11px]">
-                            {k}
+                        {(app.gaps.strengths ?? []).slice(0, 12).map((k: any, i: number) => {
+                          const label = toLabel(k);
+                          return (
+                          <Badge key={label || i} variant="secondary" className="border text-[11px]">
+                            {label}
                           </Badge>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 
                     <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
                       <div className="text-xs font-semibold text-primary">Recommendations</div>
                       <ul className="mt-2 space-y-1 text-sm text-foreground/80">
-                        {(app.gaps.recommendations ?? []).map((r: string) => (
-                          <li key={r}>• {r}</li>
-                        ))}
+                        {(app.gaps.recommendations ?? []).map((r: any, i: number) => {
+                          const label = toLabel(r);
+                          return <li key={label || i}>• {label}</li>;
+                        })}
                       </ul>
                     </div>
 
@@ -483,11 +506,14 @@ export default function ApplicationWorkspacePage() {
                     <div>
                       <div className="text-xs font-semibold">Focus</div>
                       <div className="mt-2 flex flex-wrap gap-1.5">
-                        {(app.learningPlan.focus ?? []).map((k: string) => (
-                          <Badge key={k} variant="secondary" className="border bg-purple-50 text-purple-900 border-purple-200 text-[11px]">
-                            {k}
+                        {(app.learningPlan.focus ?? []).map((k: any, i: number) => {
+                          const label = toLabel(k);
+                          return (
+                          <Badge key={label || i} variant="secondary" className="border bg-purple-50 text-purple-900 border-purple-200 text-[11px]">
+                            {label}
                           </Badge>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -497,15 +523,17 @@ export default function ApplicationWorkspacePage() {
                           <div className="text-sm font-semibold">{w.theme ?? `Week ${w.week}`}</div>
                           <div className="mt-2 text-xs text-muted-foreground font-medium">Outcomes</div>
                           <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
-                            {(w.outcomes ?? w.goals ?? []).map((o: string) => (
-                              <li key={o}>• {o}</li>
-                            ))}
+                            {(w.outcomes ?? w.goals ?? []).map((o: any, i: number) => {
+                              const label = toLabel(o);
+                              return <li key={label || i}>• {label}</li>;
+                            })}
                           </ul>
                           <div className="mt-3 text-xs text-muted-foreground font-medium">Tasks</div>
                           <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
-                            {(w.tasks ?? []).map((t: string) => (
-                              <li key={t}>• {t}</li>
-                            ))}
+                            {(w.tasks ?? []).map((t: any, i: number) => {
+                              const label = toLabel(t);
+                              return <li key={label || i}>• {label}</li>;
+                            })}
                           </ul>
                         </div>
                       ))}
