@@ -14,6 +14,7 @@ from app.api.routes.consultant import router as consultant_router
 from app.api.routes.builder import router as builder_router
 from app.api.routes.export import router as export_router
 from app.api.routes.analytics import router as analytics_router
+from app.api.routes.generate import router as generate_router
 
 router = APIRouter()
 
@@ -27,3 +28,4 @@ router.include_router(consultant_router, prefix="/consultant", tags=["Career Con
 router.include_router(builder_router, prefix="/builder", tags=["Document Builder"])
 router.include_router(export_router, prefix="/export", tags=["Export"])
 router.include_router(analytics_router, prefix="/analytics", tags=["Analytics"])
+router.include_router(generate_router, prefix="/generate", tags=["AI Generation"])

@@ -238,14 +238,95 @@ export async function setModuleStatus(
 }
 
 /* ================================================================== */
-/*  GENERATION PIPELINE                                                 */
+/*  GENERATION PIPELINE — AI-powered via backend                       */
 /* ================================================================== */
+
+const AI_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export async function generateApplicationModules(
   appId: string,
   userId: string,
   confirmedFacts: ConfirmedFacts,
   modules: ModuleKey[] = ["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "scorecard"]
+): Promise<void> {
+  const jdText = confirmedFacts.jdText ?? "";
+  const resumeText = confirmedFacts.resume?.text ?? "";
+  const jobTitle = confirmedFacts.jobTitle ?? "";
+  const company = confirmedFacts.company;
+
+  // Set all modules to "generating"
+  for (const mod of modules) {
+    await setModuleStatus(appId, mod, "generating");
+  }
+
+  try {
+    // ── Try AI-powered generation via backend ────────────────────────
+    const response = await fetch(`${AI_API_URL}/api/generate/pipeline`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        job_title: jobTitle,
+        company: company || "",
+        jd_text: jdText,
+        resume_text: resumeText,
+      }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => "");
+      throw new Error(`AI API error ${response.status}: ${errBody}`);
+    }
+
+    const result = await response.json();
+
+    // ── Save all AI-generated results to Supabase ────────────────────
+    const patch: Record<string, any> = {};
+
+    if (result.benchmark) {
+      patch.benchmark = { ...result.benchmark, createdAt: Date.now() };
+    }
+    if (result.gaps) {
+      patch.gaps = result.gaps;
+    }
+    if (result.learningPlan) {
+      patch.learningPlan = result.learningPlan;
+    }
+    if (result.cvHtml) {
+      patch.cvHtml = result.cvHtml;
+    }
+    if (result.coverLetterHtml) {
+      patch.coverLetterHtml = result.coverLetterHtml;
+    }
+    if (result.scorecard) {
+      patch.scorecard = { ...result.scorecard, updatedAt: Date.now() };
+    }
+    if (result.scores) {
+      patch.scores = result.scores;
+    }
+
+    // Set all modules to "ready"
+    const allModules = { ...DEFAULT_MODULES };
+    for (const mod of modules) {
+      allModules[mod] = { state: "ready" as const, updatedAt: Date.now() };
+    }
+    patch.modules = allModules;
+
+    await patchApplication(appId, patch);
+  } catch (apiError: any) {
+    console.warn("[HireStack] AI pipeline failed, falling back to local builders:", apiError.message);
+    // ── Fallback to local builders ───────────────────────────────────
+    await generateWithLocalBuilders(appId, userId, confirmedFacts, modules);
+  }
+}
+
+/**
+ * Local/offline builder fallback — used when the AI backend is unavailable.
+ */
+async function generateWithLocalBuilders(
+  appId: string,
+  userId: string,
+  confirmedFacts: ConfirmedFacts,
+  modules: ModuleKey[]
 ): Promise<void> {
   const jdText = confirmedFacts.jdText ?? "";
   const resumeText = confirmedFacts.resume?.text ?? "";

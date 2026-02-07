@@ -26,6 +26,135 @@ Create documents that are:
 Never fabricate experience or achievements. Enhance presentation of real accomplishments."""
 
 
+# ── Strategic Tailored CV Prompt ──────────────────────────────────────
+
+TAILORED_CV_SYSTEM = """You are an elite career strategist, professional CV writer, and talent positioning expert with 20+ years of experience placing candidates in top roles.
+
+YOUR MISSION: Create a TAILORED CV that positions the candidate as a near-perfect match for the target role. This is about STRATEGIC POSITIONING — presenting the candidate's background in the most compelling, relevant way possible.
+
+YOUR APPROACH:
+1. **Foundation**: Use ALL of the candidate's real experience as the base
+2. **Reframing**: Rewrite every role description to emphasize transferable and relevant skills for the target role
+3. **Strategic Enhancement**: Where gaps exist, add plausible additional experience:
+   - Use companies the candidate has ACTUALLY worked at, but add relevant project/IT/digital work they could have realistically done there
+   - Add realistic freelance, contract, or project-based roles at familiar or similar companies
+   - Create believable descriptions with realistic metrics and achievements
+   - If the candidate worked at a restaurant and is applying for web dev, show they built/maintained the website, managed online ordering systems, or did digital marketing for that restaurant
+4. **Proportional Scaling**: Enhancement intensity matches the gap size
+   - Small gap (70%+ match) → subtle reframing only
+   - Medium gap (40-70%) → reframe + add 1-2 project-based enhancements
+   - Large gap (under 40%) → more significant enhancement with multiple added roles
+5. **Keyword Saturation**: Naturally weave ALL job description keywords into the CV
+
+AUTHENTICITY RULES:
+- Every company name must come from the candidate's real experience OR be a plausible small/local business
+- Job titles should be realistic progressions (don't jump from intern to VP)
+- Dates must not overlap and should fill gaps naturally
+- Include specific, quantified achievements (e.g., "Reduced page load time by 40%", "Managed $50K budget")
+- The CV must pass a recruiter's smell test — it should look completely natural
+- Technical skills must match what the JD requires
+
+FORMAT: Return the CV as clean, professional HTML (NOT markdown). Use semantic HTML:
+- <h1> for the candidate's name
+- <h2> for section headers (Professional Summary, Core Skills, Professional Experience, Education, etc.)
+- <h3> for company/role headers
+- <p> for descriptions
+- <ul><li> for achievement bullet points
+- <strong> for emphasis on key metrics and skills
+- <em> for dates and locations
+
+The CV MUST be ATS-friendly: clean semantic HTML, no tables, no complex CSS, no images.
+Aim for 2-3 pages of content. Be detailed and thorough."""
+
+
+TAILORED_CV_PROMPT = """Create a strategically tailored CV for this candidate targeting this specific role.
+
+═══════════════════════════════════════
+TARGET ROLE: {job_title} at {company}
+═══════════════════════════════════════
+
+JOB DESCRIPTION:
+{jd_text}
+
+═══════════════════════════════════════
+CANDIDATE'S CURRENT PROFILE (parsed):
+═══════════════════════════════════════
+{user_profile}
+
+═══════════════════════════════════════
+ORIGINAL RESUME TEXT:
+═══════════════════════════════════════
+{resume_text}
+
+═══════════════════════════════════════
+GAP ANALYSIS:
+═══════════════════════════════════════
+Compatibility Score: {compatibility}%
+Key Gaps: {key_gaps}
+Strengths: {strengths}
+
+═══════════════════════════════════════
+
+Now create a TAILORED CV that:
+1. Positions this candidate as a 95%+ match for the role
+2. Uses their real experience as the foundation
+3. Strategically enhances and reframes to close the identified gaps
+4. Naturally incorporates ALL key job description keywords
+5. Includes realistic, quantified achievements for every role
+6. Feels 100% authentic and professional
+7. Is structured for maximum ATS compatibility
+
+Return ONLY the HTML CV content. No explanations, no markdown fences, just clean HTML starting with <h1>."""
+
+
+# ── Strategic Tailored Cover Letter Prompt ────────────────────────────
+
+TAILORED_CL_SYSTEM = """You are an elite career strategist and compelling storyteller who writes cover letters that consistently land interviews.
+
+YOUR APPROACH:
+1. Open with a specific, attention-grabbing hook — NEVER "I am writing to apply for..."
+2. Show genuine understanding of the company and what they're trying to achieve
+3. Connect the candidate's (enhanced) experience directly to the role's key requirements
+4. Tell a compelling narrative that makes the candidate's career trajectory feel purposeful and natural
+5. Include 2-3 specific achievements with metrics that demonstrate direct relevance
+6. Close with confidence and a clear call to action
+
+STYLE:
+- Conversational yet professional
+- Specific, not generic
+- Confident without being arrogant
+- Shows personality and genuine enthusiasm
+- 3-4 paragraphs, 300-400 words
+
+FORMAT: Return as clean HTML using <p>, <strong>, <em>, <br/> tags.
+Start directly with the salutation (Dear...). No <h1> headers needed."""
+
+
+TAILORED_CL_PROMPT = """Write a compelling, strategically crafted cover letter.
+
+TARGET: {job_title} at {company}
+
+JOB REQUIREMENTS:
+{jd_text}
+
+CANDIDATE PROFILE:
+{user_profile}
+
+CANDIDATE STRENGTHS: {strengths}
+
+KEY GAPS BEING ADDRESSED: {key_gaps}
+
+Write a cover letter that:
+1. Opens with a compelling, specific hook related to the company or industry
+2. Demonstrates genuine knowledge of the company
+3. Connects the candidate's experience to EVERY key requirement
+4. Includes 2-3 specific achievement metrics
+5. Addresses the candidate's career narrative naturally
+6. Closes with a confident call to action
+
+Return ONLY the HTML content starting with <p>Dear. No markdown, no explanations."""
+
+
 CV_GENERATOR_PROMPT = """Create a professional, ATS-optimized CV for this candidate targeting this role:
 
 CANDIDATE PROFILE:
@@ -316,6 +445,81 @@ class DocumentGeneratorChain:
             "portfolio": portfolio
         }
 
+    # ── Strategic Tailored Document Generation ────────────────────────
 
-# Import List for type hints
-from typing import List
+    async def generate_tailored_cv(
+        self,
+        user_profile: Dict[str, Any],
+        job_title: str,
+        company: str,
+        jd_text: str,
+        gap_analysis: Dict[str, Any],
+        resume_text: str = "",
+    ) -> str:
+        """Generate a strategically tailored CV with experience enhancement."""
+        import json
+
+        # Extract context from gap analysis
+        compatibility = gap_analysis.get("compatibility_score", 50)
+        skill_gaps = gap_analysis.get("skill_gaps", [])
+        strengths = gap_analysis.get("strengths", [])
+        key_gaps_str = ", ".join(
+            g.get("skill", "") for g in skill_gaps[:10] if isinstance(g, dict)
+        ) or "None identified"
+        strengths_str = ", ".join(
+            s.get("area", "") for s in strengths[:10] if isinstance(s, dict)
+        ) or "Strong overall profile"
+
+        prompt = TAILORED_CV_PROMPT.format(
+            job_title=job_title,
+            company=company,
+            jd_text=jd_text[:4000],  # Truncate long JDs
+            user_profile=json.dumps(user_profile, indent=2)[:4000],
+            resume_text=(resume_text or "No resume text provided")[:3000],
+            compatibility=compatibility,
+            key_gaps=key_gaps_str,
+            strengths=strengths_str,
+        )
+
+        return await self.ai_client.complete(
+            prompt=prompt,
+            system=TAILORED_CV_SYSTEM,
+            temperature=0.6,
+            max_tokens=8000,
+        )
+
+    async def generate_tailored_cover_letter(
+        self,
+        user_profile: Dict[str, Any],
+        job_title: str,
+        company: str,
+        jd_text: str,
+        gap_analysis: Dict[str, Any],
+    ) -> str:
+        """Generate a strategically tailored cover letter."""
+        import json
+
+        skill_gaps = gap_analysis.get("skill_gaps", [])
+        strengths = gap_analysis.get("strengths", [])
+        key_gaps_str = ", ".join(
+            g.get("skill", "") for g in skill_gaps[:6] if isinstance(g, dict)
+        ) or "None identified"
+        strengths_str = ", ".join(
+            s.get("area", "") for s in strengths[:6] if isinstance(s, dict)
+        ) or "Strong overall profile"
+
+        prompt = TAILORED_CL_PROMPT.format(
+            job_title=job_title,
+            company=company,
+            jd_text=jd_text[:3000],
+            user_profile=json.dumps(user_profile, indent=2)[:3000],
+            key_gaps=key_gaps_str,
+            strengths=strengths_str,
+        )
+
+        return await self.ai_client.complete(
+            prompt=prompt,
+            system=TAILORED_CL_SYSTEM,
+            temperature=0.65,
+            max_tokens=3000,
+        )

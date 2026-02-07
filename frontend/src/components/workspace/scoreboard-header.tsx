@@ -60,18 +60,35 @@ export function ScoreboardHeader({
   scorecard?: Scores;
 }) {
   const sc = scorecard ?? {};
+  const overall = Math.round(
+    ((sc.match ?? 0) + (sc.atsReadiness ?? 0) + (sc.recruiterScan ?? 0) + (sc.evidenceStrength ?? 0)) / 4
+  );
   return (
-    <div className="sticky top-16 z-20">
-      <div className="rounded-2xl border bg-card/80 backdrop-blur-xl shadow-soft-md">
-        <div className="px-5 pt-5 pb-4">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-base font-bold text-foreground">{title}</h2>
-            {subtitle ? (
-              <div className="text-xs text-muted-foreground">{subtitle}</div>
-            ) : null}
+    <div className="relative">
+      <div className="rounded-2xl border bg-gradient-to-br from-card via-card to-primary/[0.03] shadow-soft-md overflow-hidden">
+        {/* Decorative accent */}
+        <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-bl from-primary/5 to-transparent rounded-bl-full pointer-events-none" />
+        <div className="relative px-5 pt-5 pb-4">
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-lg font-bold text-foreground">{title}</h2>
+              {subtitle ? (
+                <div className="text-xs text-muted-foreground">{subtitle}</div>
+              ) : null}
+            </div>
+            {overall > 0 && (
+              <div className="flex items-center gap-2.5">
+                <div className={cn("text-2xl font-bold tabular-nums", metricColor(overall))}>
+                  {overall}%
+                </div>
+                <div className="text-[10px] font-medium text-muted-foreground leading-tight">
+                  Overall<br />Match
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-5">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <Metric
               icon={<Target className="h-4 w-4" />}
               label="Match"

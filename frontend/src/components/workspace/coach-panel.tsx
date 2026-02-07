@@ -20,7 +20,7 @@ export function CoachPanel({
   statusLine?: string;
 }) {
   return (
-    <aside className="sticky top-28 h-[calc(100vh-7rem)]">
+    <aside className="lg:sticky lg:top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
       <div className="rounded-2xl border bg-card p-4 shadow-soft-sm">
         <div className="flex items-center gap-2">
           <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-violet-600 text-white flex items-center justify-center">

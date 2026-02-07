@@ -98,6 +98,20 @@ export default function NewApplicationPage() {
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [genError, setGenError] = useState<string | null>(null);
+  const [genStep, setGenStep] = useState("");
+
+  // AI generation progress messages
+  const GEN_STEPS = [
+    "Analyzing job description…",
+    "Parsing your resume with AI…",
+    "Building ideal candidate benchmark…",
+    "Identifying gaps and opportunities…",
+    "Crafting your tailored CV…",
+    "Writing compelling cover letter…",
+    "Building your learning roadmap…",
+    "Computing match scores…",
+    "Finalizing your application…",
+  ];
 
   // Derived
   const keywords = useMemo(() => extractKeywords(jdText), [jdText]);
@@ -156,6 +170,7 @@ export default function NewApplicationPage() {
     setGenerating(true);
     setGenError(null);
     setProgress(0);
+    setGenStep(GEN_STEPS[0]);
 
     try {
       // Create the application
@@ -168,22 +183,26 @@ export default function NewApplicationPage() {
         hasResume: !!resumeText,
       });
 
-      // Simulate progress while generating
+      // Cycle through progress messages while AI generates
+      let stepIdx = 0;
       const interval = setInterval(() => {
-        setProgress((p) => Math.min(p + 8, 90));
-      }, 500);
+        stepIdx = Math.min(stepIdx + 1, GEN_STEPS.length - 1);
+        setGenStep(GEN_STEPS[stepIdx]);
+        setProgress((p) => Math.min(p + 9, 92));
+      }, 3500);
 
       await generateApplicationModules(appId, user.uid, confirmedFacts);
 
       clearInterval(interval);
       setProgress(100);
+      setGenStep("Done! Redirecting to your workspace…");
 
       await trackEvent(user.uid, "app_generated", appId);
 
       // Redirect to workspace
       setTimeout(() => {
         router.push(`/applications/${appId}`);
-      }, 600);
+      }, 800);
     } catch (err: any) {
       setGenError(err?.message ?? "Generation failed");
       setGenerating(false);
@@ -446,17 +465,32 @@ export default function NewApplicationPage() {
               </>
             ) : (
               <>
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 animate-glow-pulse">
-                  <Sparkles className="h-7 w-7 text-primary" />
+                <div className="relative flex h-20 w-20 items-center justify-center">
+                  {/* Animated ring */}
+                  <svg className="absolute inset-0 h-20 w-20 -rotate-90" viewBox="0 0 80 80">
+                    <circle cx="40" cy="40" r="36" fill="none" stroke="hsl(var(--muted))" strokeWidth="3" />
+                    <circle cx="40" cy="40" r="36" fill="none" stroke="hsl(var(--primary))" strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeDasharray={`${2 * Math.PI * 36}`}
+                      strokeDashoffset={`${2 * Math.PI * 36 * (1 - progress / 100)}`}
+                      className="transition-all duration-500"
+                    />
+                  </svg>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
+                    <Sparkles className="h-7 w-7 text-primary animate-pulse" />
+                  </div>
                 </div>
-                <p className="text-sm font-semibold">
-                  {progress < 100
-                    ? "Generating your application modules…"
-                    : "Done! Redirecting to workspace…"}
-                </p>
-                <Progress value={progress} className="w-64" />
-                <p className="text-xs text-muted-foreground">
-                  Building benchmark, gaps, learning plan, CV, cover letter & scorecard
+                <div className="text-center space-y-1">
+                  <p className="text-lg font-bold tabular-nums">
+                    {progress < 100 ? `${progress}%` : "✓"}
+                  </p>
+                  <p className="text-sm font-medium text-foreground">
+                    {genStep}
+                  </p>
+                </div>
+                <Progress value={progress} className="w-72" />
+                <p className="text-xs text-muted-foreground max-w-sm text-center">
+                  Our AI is analyzing your profile and crafting a personalized application package. This typically takes 30–60 seconds.
                 </p>
               </>
             )}

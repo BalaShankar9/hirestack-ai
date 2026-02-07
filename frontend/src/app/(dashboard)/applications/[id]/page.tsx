@@ -367,15 +367,15 @@ export default function ApplicationWorkspacePage() {
             </TabsContent>
 
             <TabsContent value="benchmark" className="mt-4">
-              <div className="rounded-2xl border bg-white p-5">
+              <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <div className="text-sm font-semibold">Benchmark</div>
+                    <div className="text-sm font-semibold">Benchmark — Ideal Candidate</div>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      What “good” looks like for this role. Use it as a target, not a fantasy.
+                      AI-generated profile of the perfect candidate. Your north star.
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => regenerate("benchmark")}>
+                  <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => regenerate("benchmark")}>
                     <RefreshCw className="h-4 w-4" />
                     Regenerate
                   </Button>
@@ -384,26 +384,61 @@ export default function ApplicationWorkspacePage() {
                 <Separator className="my-4" />
 
                 {app.benchmark ? (
-                  <div className="space-y-4">
-                    <div className="rounded-xl bg-blue-50 p-4">
-                      <div className="text-xs font-semibold text-blue-900">Summary</div>
-                      <div className="mt-1 text-sm text-blue-900/80 leading-relaxed">
+                  <div className="space-y-5">
+                    <div className="rounded-xl bg-gradient-to-br from-primary/5 via-violet-500/5 to-blue-500/5 border border-primary/10 p-4">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        AI Analysis
+                      </div>
+                      <div className="mt-2 text-sm text-foreground/80 leading-relaxed">
                         {toLabel(app.benchmark.summary)}
                       </div>
                     </div>
 
+                    {(app.benchmark as any).idealProfile && (
+                      <div className="rounded-xl border p-4">
+                        <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Ideal Candidate</div>
+                        <div className="mt-2 text-base font-bold">{toLabel((app.benchmark as any).idealProfile?.title || (app.benchmark as any).idealProfile?.name)}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {(app.benchmark as any).idealProfile?.years_experience} yrs experience
+                        </div>
+                      </div>
+                    )}
+
+                    {(app.benchmark as any).idealSkills?.length > 0 && (
+                      <div>
+                        <div className="text-xs font-semibold mb-3">Key Skills Required</div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {((app.benchmark as any).idealSkills ?? []).slice(0, 8).map((s: any, i: number) => (
+                            <div key={toLabel(s?.name) || i} className="flex items-center justify-between rounded-lg border p-2.5">
+                              <div className="flex items-center gap-2">
+                                <div className={`h-2 w-2 rounded-full ${s?.importance === "critical" ? "bg-rose-500" : s?.importance === "important" ? "bg-amber-500" : "bg-blue-500"}`} />
+                                <span className="text-sm font-medium">{toLabel(s?.name)}</span>
+                              </div>
+                              <Badge variant="secondary" className="text-[10px]">{toLabel(s?.level || s?.importance)}</Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div>
-                      <div className="text-xs font-semibold">Rubric</div>
-                      <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                      <div className="text-xs font-semibold">Scoring Rubric</div>
+                      <ul className="mt-2 space-y-1.5">
                         {(app.benchmark.rubric ?? []).map((r: any, idx: number) => {
                           const label = typeof r === "string" ? r : r?.dimension ?? `Dimension ${idx + 1}`;
-                          return <li key={label}>• {label}</li>;
+                          return (
+                            <li key={label} className="flex items-start gap-2 text-sm text-muted-foreground">
+                              <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/40" />
+                              {label}
+                            </li>
+                          );
                         })}
                       </ul>
                     </div>
 
                     <div>
-                      <div className="text-xs font-semibold">Keyword set</div>
+                      <div className="text-xs font-semibold">Target Keywords ({(app.benchmark.keywords ?? []).length})</div>
                       <div className="mt-2">
                         <KeywordChips keywords={app.benchmark.keywords ?? []} isCovered={() => true} />
                       </div>
@@ -438,6 +473,25 @@ export default function ApplicationWorkspacePage() {
 
                 {app.gaps ? (
                   <div className="space-y-4">
+                    {(app.gaps as any).compatibility != null && (
+                      <div className="rounded-xl bg-gradient-to-br from-primary/5 to-violet-500/5 border border-primary/10 p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-xs font-semibold text-primary">Compatibility Score</div>
+                            <div className="mt-1 text-2xl font-bold">{(app.gaps as any).compatibility}%</div>
+                          </div>
+                          <div className="text-right text-xs text-muted-foreground">
+                            {(app.gaps as any).compatibility >= 70 ? "Strong match" : (app.gaps as any).compatibility >= 45 ? "Competitive" : "Needs work"}
+                          </div>
+                        </div>
+                        <div className="mt-2 h-2 rounded-full bg-muted overflow-hidden">
+                          <div className={`h-full rounded-full transition-all ${(app.gaps as any).compatibility >= 70 ? "bg-emerald-500" : (app.gaps as any).compatibility >= 45 ? "bg-amber-500" : "bg-rose-500"}`} style={{ width: `${(app.gaps as any).compatibility}%` }} />
+                        </div>
+                        {toLabel((app.gaps as any).summary) && (
+                          <div className="mt-3 text-sm text-foreground/80 leading-relaxed">{toLabel((app.gaps as any).summary)}</div>
+                        )}
+                      </div>
+                    )}
                     <div>
                       <div className="text-xs font-semibold">Missing keywords</div>
                       <div className="mt-2 flex flex-wrap gap-1.5">
