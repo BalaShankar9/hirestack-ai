@@ -4,11 +4,11 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 
 export function KeywordChips({
-  keywords,
+  keywords = [],
   isCovered,
   limit = 18,
 }: {
-  keywords: string[];
+  keywords?: string[];
   isCovered: (keyword: string) => boolean;
   limit?: number;
 }) {

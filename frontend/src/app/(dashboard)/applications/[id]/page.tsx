@@ -94,8 +94,8 @@ export default function ApplicationWorkspacePage() {
 
   const { user } = useAuth();
   const { data: app, loading } = useApplication(appId);
-  const { data: evidence } = useEvidence(user?.uid || null, 200);
-  const { data: tasks, stats: taskStats } = useTasks(user?.uid || null, appId, 200);
+  const { data: evidence = [] } = useEvidence(user?.uid || null, 200);
+  const { data: tasks = [], stats: taskStats } = useTasks(user?.uid || null, appId, 200);
 
   const [tab, setTab] = useState(() => searchParams.get("tab") || "overview");
   const [cvMode, setCvMode] = useState<"edit" | "diff">("edit");
@@ -193,10 +193,14 @@ export default function ApplicationWorkspacePage() {
 
   const onToggleTask = async (t: any) => {
     if (!user) return;
-    const next = t.status === "done" ? "todo" : "done";
-    await setTaskStatus(user.uid, t.id, next);
-    if (next === "done") {
-      await trackEvent(user.uid, { name: "task_completed", appId: t.appId ?? undefined, properties: { taskId: t.id } });
+    try {
+      const next = t.status === "done" ? "todo" : "done";
+      await setTaskStatus(user.uid, t.id, next);
+      if (next === "done") {
+        await trackEvent(user.uid, { name: "task_completed", appId: t.appId ?? undefined, properties: { taskId: t.id } });
+      }
+    } catch (err) {
+      console.error("Task toggle failed:", err);
     }
   };
 
@@ -384,7 +388,7 @@ export default function ApplicationWorkspacePage() {
                     <div className="rounded-xl bg-blue-50 p-4">
                       <div className="text-xs font-semibold text-blue-900">Summary</div>
                       <div className="mt-1 text-sm text-blue-900/80 leading-relaxed">
-                        {app.benchmark.summary}
+                        {toLabel(app.benchmark.summary)}
                       </div>
                     </div>
 
@@ -545,11 +549,11 @@ export default function ApplicationWorkspacePage() {
                         <div className="text-sm font-semibold">Resources</div>
                       </div>
                       <div className="mt-3 space-y-2">
-                        {(app.learningPlan.resources ?? []).map((r: any) => (
-                          <div key={r.title} className="rounded-xl border p-3">
-                            <div className="text-sm font-medium">{r.title}</div>
+                        {(app.learningPlan.resources ?? []).map((r: any, rIdx: number) => (
+                          <div key={toLabel(r.title) || rIdx} className="rounded-xl border p-3">
+                            <div className="text-sm font-medium">{toLabel(r.title)}</div>
                             <div className="mt-1 text-xs text-muted-foreground">
-                              {r.provider || "Resource"} · {r.timebox || "Self-paced"} {r.skill ? `· ${r.skill}` : ""}
+                              {toLabel(r.provider) || "Resource"} · {toLabel(r.timebox) || "Self-paced"} {r.skill ? `· ${toLabel(r.skill)}` : ""}
                             </div>
                           </div>
                         ))}

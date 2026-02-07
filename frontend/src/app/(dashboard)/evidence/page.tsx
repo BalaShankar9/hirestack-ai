@@ -55,7 +55,7 @@ export default function EvidenceVaultPage() {
   const router = useRouter();
   const { user } = useAuth();
 
-  const { data: evidence, loading } = useEvidence(user?.uid ?? null);
+  const { data: evidence = [], loading } = useEvidence(user?.uid ?? null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
 
@@ -341,12 +341,12 @@ export default function EvidenceVaultPage() {
                     <Badge variant="outline" className="text-[10px]">
                       {ev.type}
                     </Badge>
-                    {ev.skills.slice(0, 3).map((s: string) => (
+                    {(Array.isArray(ev.skills) ? ev.skills : []).slice(0, 3).map((s: string) => (
                       <Badge key={s} variant="secondary" className="text-[10px]">
                         {s}
                       </Badge>
                     ))}
-                    {ev.tools.slice(0, 3).map((t: string) => (
+                    {(Array.isArray(ev.tools) ? ev.tools : []).slice(0, 3).map((t: string) => (
                       <Badge key={t} variant="secondary" className="text-[10px]">
                         {t}
                       </Badge>

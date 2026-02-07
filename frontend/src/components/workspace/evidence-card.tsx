@@ -44,38 +44,38 @@ export function EvidenceCard({
         </div>
       </div>
 
-      {(evidence.skills.length > 0 || evidence.tools.length > 0 || evidence.tags.length > 0) && (
+      {((evidence.skills?.length ?? 0) > 0 || (evidence.tools?.length ?? 0) > 0 || (evidence.tags?.length ?? 0) > 0) && (
         <div className="mt-3 space-y-2">
-          {evidence.skills.length > 0 ? (
+          {(evidence.skills?.length ?? 0) > 0 ? (
             <div className="flex flex-wrap gap-1">
               <div className="mr-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                 <Tag className="h-3 w-3" /> Skills
               </div>
-              {evidence.skills.slice(0, 6).map((s) => (
+              {(evidence.skills ?? []).slice(0, 6).map((s) => (
                 <Badge key={s} variant="secondary" className="text-[11px]">
                   {s}
                 </Badge>
               ))}
             </div>
           ) : null}
-          {evidence.tools.length > 0 ? (
+          {(evidence.tools?.length ?? 0) > 0 ? (
             <div className="flex flex-wrap gap-1">
               <div className="mr-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                 <Wrench className="h-3 w-3" /> Tools
               </div>
-              {evidence.tools.slice(0, 6).map((s) => (
+              {(evidence.tools ?? []).slice(0, 6).map((s) => (
                 <Badge key={s} variant="secondary" className="text-[11px]">
                   {s}
                 </Badge>
               ))}
             </div>
           ) : null}
-          {evidence.tags.length > 0 ? (
+          {(evidence.tags?.length ?? 0) > 0 ? (
             <div className="flex flex-wrap gap-1">
               <div className="mr-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                 <Sparkles className="h-3 w-3" /> Tags
               </div>
-              {evidence.tags.slice(0, 6).map((s) => (
+              {(evidence.tags ?? []).slice(0, 6).map((s) => (
                 <Badge key={s} variant="secondary" className="text-[11px]">
                   {s}
                 </Badge>

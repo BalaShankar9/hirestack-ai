@@ -52,9 +52,9 @@ export default function DashboardPage() {
   const router = useRouter();
   const { user } = useAuth();
 
-  const { data: apps, loading: appsLoading } = useApplications(user?.uid || null, 50);
-  const { data: tasks, loading: tasksLoading } = useTasks(user?.uid || null, null, 200);
-  const { data: evidence, loading: evidenceLoading } = useEvidence(user?.uid || null, 200);
+  const { data: apps = [], loading: appsLoading } = useApplications(user?.uid || null, 50);
+  const { data: tasks = [], loading: tasksLoading } = useTasks(user?.uid || null, null, 200);
+  const { data: evidence = [], loading: evidenceLoading } = useEvidence(user?.uid || null, 200);
 
   const topApps = useMemo(() => apps.slice(0, 8), [apps]);
   const openTasks = useMemo(() => tasks.filter((t) => t.status === "todo"), [tasks]);
@@ -132,7 +132,7 @@ export default function DashboardPage() {
                 Each workspace contains benchmark, gaps, learning plan, docs, and a coach queue.
               </p>
             </div>
-            <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => router.push("/dashboard/new")}>
+            <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => router.push("/new")}>
               <Plus className="h-3.5 w-3.5" />
               New
             </Button>
@@ -157,7 +157,7 @@ export default function DashboardPage() {
               <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto">
                 Start a workspace, lock facts, paste the JD, and generate modules with a progress stepper.
               </p>
-              <Button className="mt-5 gap-2 rounded-xl" onClick={() => router.push("/dashboard/new")}>
+              <Button className="mt-5 gap-2 rounded-xl" onClick={() => router.push("/new")}>
                 Start the wizard <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
@@ -199,7 +199,7 @@ export default function DashboardPage() {
                   <div className="mt-4 rounded-xl bg-primary/5 border border-primary/10 p-3">
                     <div className="text-[11px] font-semibold text-primary">Top fix</div>
                     <div className="mt-1 text-xs text-muted-foreground leading-snug">
-                      {a.scores?.topFix ?? "Generate modules to get your first coach fix."}
+                      {typeof a.scores?.topFix === "string" ? a.scores.topFix : "Generate modules to get your first coach fix."}
                     </div>
                   </div>
                 </Link>
@@ -214,10 +214,14 @@ export default function DashboardPage() {
             tasks={openTasks.slice(0, 12)}
             onOpenWorkspace={(appId) => router.push(`/applications/${appId}`)}
             onToggle={async (task) => {
-              const next = task.status === "done" ? "todo" : "done";
-              await setTaskStatus(user.uid, task.id, next);
-              if (next === "done") {
-                await trackEvent(user.uid, { name: "task_completed", appId: task.appId ?? undefined, properties: { taskId: task.id } });
+              try {
+                const next = task.status === "done" ? "todo" : "done";
+                await setTaskStatus(user.uid, task.id, next);
+                if (next === "done") {
+                  await trackEvent(user.uid, { name: "task_completed", appId: task.appId ?? undefined, properties: { taskId: task.id } });
+                }
+              } catch (err) {
+                console.error("Task toggle failed:", err);
               }
             }}
             compact

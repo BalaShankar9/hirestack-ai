@@ -12,12 +12,12 @@ import { Button } from "@/components/ui/button";
 export function EvidencePicker({
   open,
   onOpenChange,
-  evidence,
+  evidence = [],
   onPick,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  evidence: EvidenceDoc[];
+  evidence?: EvidenceDoc[];
   onPick: (evidence: EvidenceDoc) => void;
 }) {
   const [q, setQ] = useState("");
@@ -26,7 +26,7 @@ export function EvidencePicker({
     const needle = q.trim().toLowerCase();
     if (!needle) return evidence;
     return evidence.filter((e) => {
-      const hay = `${e.title} ${e.description || ""} ${e.skills.join(" ")} ${e.tools.join(" ")} ${e.tags.join(" ")}`.toLowerCase();
+      const hay = `${e.title} ${e.description || ""} ${(e.skills ?? []).join(" ")} ${(e.tools ?? []).join(" ")} ${(e.tags ?? []).join(" ")}`.toLowerCase();
       return hay.includes(needle);
     });
   }, [evidence, q]);
@@ -79,17 +79,17 @@ export function EvidencePicker({
                         </div>
                       ) : null}
                       <div className="mt-2 flex flex-wrap gap-1">
-                        {e.skills.slice(0, 4).map((s) => (
+                        {(e.skills ?? []).slice(0, 4).map((s) => (
                           <Badge key={s} variant="secondary" className="text-[11px]">
                             {s}
                           </Badge>
                         ))}
-                        {e.tools.slice(0, 3).map((s) => (
+                        {(e.tools ?? []).slice(0, 3).map((s) => (
                           <Badge key={s} variant="secondary" className="text-[11px]">
                             {s}
                           </Badge>
                         ))}
-                        {e.tags.slice(0, 3).map((s) => (
+                        {(e.tags ?? []).slice(0, 3).map((s) => (
                           <Badge key={s} variant="secondary" className="text-[11px]">
                             {s}
                           </Badge>

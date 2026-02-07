@@ -74,9 +74,9 @@ export function ModuleCard({
 
       {(status.state === "generating" || status.state === "queued") && (
         <div className="mt-3">
-          <Progress value={status.progress} />
+          <Progress value={status.progress ?? 0} />
           <div className="mt-1 text-[11px] text-muted-foreground">
-            Building module… {status.progress}%
+            Building module… {status.progress ?? 0}%
           </div>
         </div>
       )}

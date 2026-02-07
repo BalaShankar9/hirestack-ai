@@ -13,10 +13,10 @@ export type CoachAction = {
 };
 
 export function CoachPanel({
-  actions,
+  actions = [],
   statusLine,
 }: {
-  actions: CoachAction[];
+  actions?: CoachAction[];
   statusLine?: string;
 }) {
   return (

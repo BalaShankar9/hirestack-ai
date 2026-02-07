@@ -48,6 +48,16 @@ const DEFAULT_MODULES: Record<ModuleKey, ModuleStatus> = {
 };
 
 export function mapApplicationRow(row: any): ApplicationDoc {
+  // Coerce scores.topFix to a string if it's an object (defensive against bad JSONB)
+  let scores = row.scores ?? undefined;
+  if (scores && typeof scores.topFix !== "undefined" && typeof scores.topFix !== "string") {
+    const tf = scores.topFix;
+    scores = {
+      ...scores,
+      topFix: String(tf?.dimension ?? tf?.title ?? tf?.message ?? JSON.stringify(tf)),
+    };
+  }
+
   return {
     id: row.id,
     userId: row.user_id,
@@ -64,9 +74,9 @@ export function mapApplicationRow(row: any): ApplicationDoc {
     cvHtml: row.cv_html ?? undefined,
     coverLetterHtml: row.cover_letter_html ?? undefined,
     scorecard: row.scorecard ?? undefined,
-    scores: row.scores ?? undefined,
-    cvVersions: row.cv_versions ?? [],
-    clVersions: row.cl_versions ?? [],
+    scores,
+    cvVersions: Array.isArray(row.cv_versions) ? row.cv_versions : [],
+    clVersions: Array.isArray(row.cl_versions) ? row.cl_versions : [],
   };
 }
 
@@ -83,9 +93,9 @@ export function mapEvidenceRow(row: any): EvidenceDoc {
     storageUrl: row.storage_url ?? row.file_url ?? undefined,
     fileUrl: row.file_url ?? undefined,
     fileName: row.file_name ?? undefined,
-    skills: row.skills ?? [],
-    tools: row.tools ?? [],
-    tags: row.tags ?? [],
+    skills: Array.isArray(row.skills) ? row.skills : [],
+    tools: Array.isArray(row.tools) ? row.tools : [],
+    tags: Array.isArray(row.tags) ? row.tags : [],
     createdAt: ts(row.created_at),
     updatedAt: ts(row.updated_at),
   };
@@ -100,6 +110,8 @@ export function mapTaskRow(row: any): TaskDoc {
     source: row.source ?? "manual",
     title: row.title ?? "",
     description: row.description ?? undefined,
+    detail: row.detail ?? undefined,
+    why: row.why ?? undefined,
     status: row.status ?? "todo",
     priority: row.priority ?? "medium",
     dueDate: row.due_date ? ts(row.due_date) : undefined,

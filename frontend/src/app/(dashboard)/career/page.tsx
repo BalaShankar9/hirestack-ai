@@ -18,8 +18,8 @@ export default function CareerLabPage() {
   const router = useRouter();
   const { user } = useAuth();
 
-  const { data: apps, loading: appsLoading } = useApplications(user?.uid || null, 50);
-  const { data: tasks, loading: tasksLoading } = useTasks(user?.uid || null, null, 300);
+  const { data: apps = [], loading: appsLoading } = useApplications(user?.uid || null, 50);
+  const { data: tasks = [], loading: tasksLoading } = useTasks(user?.uid || null, null, 300);
 
   const learningTasks = useMemo(
     () => tasks.filter((t) => t.source === "learningPlan"),
@@ -56,7 +56,7 @@ export default function CareerLabPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={() => router.push("/dashboard/new")} className="gap-2 rounded-xl">
+            <Button onClick={() => router.push("/new")} className="gap-2 rounded-xl">
               New application <ArrowRight className="h-4 w-4" />
             </Button>
             <Button variant="outline" onClick={() => router.push("/evidence")} className="gap-2 rounded-xl">
@@ -80,10 +80,14 @@ export default function CareerLabPage() {
             tasks={todoLearning.slice(0, 16)}
             onOpenWorkspace={(appId) => router.push(`/applications/${appId}`)}
             onToggle={async (task) => {
-              const next = task.status === "done" ? "todo" : "done";
-              await setTaskStatus(user.uid, task.id, next);
-              if (next === "done") {
-                await trackEvent(user.uid, { name: "task_completed", appId: task.appId ?? undefined, properties: { taskId: task.id } });
+              try {
+                const next = task.status === "done" ? "todo" : "done";
+                await setTaskStatus(user.uid, task.id, next);
+                if (next === "done") {
+                  await trackEvent(user.uid, { name: "task_completed", appId: task.appId ?? undefined, properties: { taskId: task.id } });
+                }
+              } catch (err) {
+                console.error("Task toggle failed:", err);
               }
             }}
           />
@@ -114,11 +118,11 @@ export default function CareerLabPage() {
               </div>
             ) : (
               <div className="space-y-2">
-                {latestPlan.resources.map((r) => (
-                  <div key={r.title} className="rounded-xl border p-3">
-                    <div className="text-sm font-semibold">{r.title}</div>
+                {(latestPlan.resources ?? []).map((r) => (
+                  <div key={String(r.title ?? "")} className="rounded-xl border p-3">
+                    <div className="text-sm font-semibold">{String(r.title ?? "")}</div>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      {r.provider || "Resource"} · {r.timebox || "Timebox"} {r.skill ? `· ${r.skill}` : ""}
+                      {String(r.provider || "Resource")} · {String(r.timebox || "Timebox")} {r.skill ? `· ${String(r.skill)}` : ""}
                     </div>
                     {r.url ? (
                       <a

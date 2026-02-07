@@ -102,7 +102,7 @@ export function ScoreboardHeader({
                 Top fix (do this next)
               </div>
               <div className="mt-2 text-sm font-semibold text-foreground leading-snug">
-                {sc.topFix ?? "Generate modules to get your first actionable fix."}
+                {typeof sc.topFix === "string" ? sc.topFix : "Generate modules to get your first actionable fix."}
               </div>
               <div className="mt-2 text-[11px] text-muted-foreground">
                 Small moves compound. Ship one fix, snapshot, repeat.

@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: Home, description: "Overview & stats" },
-  { href: "/dashboard/new", label: "New Application", icon: Plus, description: "Start a workspace" },
+  { href: "/new", label: "New Application", icon: Plus, description: "Start a workspace" },
   { href: "/career", label: "Career Lab", icon: GraduationCap, description: "Skill sprints" },
   { href: "/evidence", label: "Evidence Vault", icon: ShieldCheck, description: "Proof library" },
 ] as const;
@@ -226,7 +226,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Button
             size="sm"
             className="hidden sm:flex gap-2 rounded-xl bg-primary shadow-glow-sm hover:shadow-glow-md transition-shadow"
-            onClick={() => router.push("/dashboard/new")}
+            onClick={() => router.push("/new")}
           >
             <Plus className="h-4 w-4" />
             New Application

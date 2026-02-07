@@ -24,13 +24,13 @@ function formatTime(ms: number) {
 export function VersionHistoryDrawer({
   open,
   onOpenChange,
-  versions,
+  versions = [],
   onSnapshot,
   onRestore,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  versions: DocVersion[];
+  versions?: DocVersion[];
   onSnapshot: (label: string) => void;
   onRestore: (versionId: string) => void;
 }) {

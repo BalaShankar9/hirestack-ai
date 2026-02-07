@@ -9,12 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 
 export function TaskQueue({
-  tasks,
+  tasks = [],
   onToggle,
   onOpenWorkspace,
   compact = false,
 }: {
-  tasks: TaskDoc[];
+  tasks?: TaskDoc[];
   onToggle: (task: TaskDoc) => void;
   onOpenWorkspace?: (appId: string) => void;
   compact?: boolean;
