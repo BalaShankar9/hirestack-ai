@@ -1,43 +1,23 @@
-import { collection, doc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+/**
+ * Table name constants — maps to Supabase PostgreSQL tables.
+ *
+ * Replaces the old Firestore collection/doc reference helpers.
+ * Import path stays `@/lib/firestore/paths` for backward compat.
+ */
 
-export const COLLECTIONS = {
+export const TABLES = {
   applications: "applications",
-  users: "users",
   evidence: "evidence",
   tasks: "tasks",
   events: "events",
+  users: "users",
+  profiles: "profiles",
+  jobs: "job_descriptions",
+  benchmarks: "benchmarks",
+  gapReports: "gap_reports",
+  learningPlans: "learning_plans",
+  documents: "documents",
+  docVersions: "doc_versions",
 } as const;
 
-export function applicationsCollectionRef() {
-  return collection(db, COLLECTIONS.applications);
-}
-
-export function applicationDocRef(appId: string) {
-  return doc(db, COLLECTIONS.applications, appId);
-}
-
-export function userEvidenceCollectionRef(userId: string) {
-  return collection(db, COLLECTIONS.users, userId, COLLECTIONS.evidence);
-}
-
-export function userEvidenceDocRef(userId: string, evidenceId: string) {
-  return doc(db, COLLECTIONS.users, userId, COLLECTIONS.evidence, evidenceId);
-}
-
-export function userTasksCollectionRef(userId: string) {
-  return collection(db, COLLECTIONS.users, userId, COLLECTIONS.tasks);
-}
-
-export function userTaskDocRef(userId: string, taskId: string) {
-  return doc(db, COLLECTIONS.users, userId, COLLECTIONS.tasks, taskId);
-}
-
-export function userEventsCollectionRef(userId: string) {
-  return collection(db, COLLECTIONS.users, userId, COLLECTIONS.events);
-}
-
-export function userEventDocRef(userId: string, eventId: string) {
-  return doc(db, COLLECTIONS.users, userId, COLLECTIONS.events, eventId);
-}
-
+export type TableName = (typeof TABLES)[keyof typeof TABLES];

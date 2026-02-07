@@ -79,18 +79,18 @@ export function UploadZone({
       <div
         {...getRootProps()}
         className={cn(
-          "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors",
+          "border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all",
           isDragActive
-            ? "border-primary bg-primary/5"
-            : "border-muted-foreground/25 hover:border-primary/50",
-          file && "border-green-500 bg-green-500/5"
+            ? "border-primary bg-primary/5 shadow-glow-sm"
+            : "border-muted-foreground/25 hover:border-primary/50 hover:bg-primary/[0.02]",
+          file && "border-emerald-500 bg-emerald-500/5"
         )}
       >
         <input {...getInputProps()} />
         <div className="flex flex-col items-center gap-2">
           {file ? (
             <>
-              <File className="h-10 w-10 text-green-500" />
+              <File className="h-10 w-10 text-emerald-500" />
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">{file.name}</span>
                 <button
@@ -99,7 +99,7 @@ export function UploadZone({
                     e.stopPropagation()
                     removeFile()
                   }}
-                  className="p-1 hover:bg-muted rounded"
+                  className="p-1 hover:bg-muted rounded-lg"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -132,7 +132,7 @@ export function UploadZone({
         <Button
           onClick={handleUpload}
           disabled={uploading}
-          className="w-full"
+          className="w-full rounded-xl"
         >
           {uploading ? (
             <>

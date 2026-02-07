@@ -18,7 +18,7 @@ export function EvidenceCard({
   const link = evidence.kind === "link" ? evidence.url : evidence.storageUrl;
 
   return (
-    <div className="rounded-2xl border bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border bg-card p-4 shadow-soft-sm hover:shadow-soft-md transition-shadow">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="text-sm font-semibold truncate">{evidence.title}</div>
@@ -32,8 +32,8 @@ export function EvidenceCard({
           className={cn(
             "h-10 w-10 rounded-xl flex items-center justify-center",
             evidence.kind === "link"
-              ? "bg-blue-50 text-blue-700"
-              : "bg-purple-50 text-purple-700"
+              ? "bg-blue-500/10 text-blue-600"
+              : "bg-violet-500/10 text-violet-600"
           )}
         >
           {evidence.kind === "link" ? (
@@ -86,7 +86,7 @@ export function EvidenceCard({
       )}
 
       <div className="mt-4 flex items-center gap-2">
-        <Button variant="default" size="sm" className="flex-1" onClick={() => onUse?.(evidence)} disabled={!onUse}>
+        <Button variant="default" size="sm" className="flex-1 rounded-xl" onClick={() => onUse?.(evidence)} disabled={!onUse}>
           Use in CV
         </Button>
         <Button

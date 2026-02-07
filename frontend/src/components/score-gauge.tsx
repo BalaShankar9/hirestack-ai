@@ -18,17 +18,17 @@ export function ScoreGauge({
   className,
 }: ScoreGaugeProps) {
   const getScoreColor = (score: number) => {
-    if (score >= 80) return "text-green-500"
+    if (score >= 80) return "text-emerald-500"
     if (score >= 60) return "text-blue-500"
-    if (score >= 40) return "text-yellow-500"
-    return "text-red-500"
+    if (score >= 40) return "text-amber-500"
+    return "text-rose-500"
   }
 
   const getStrokeColor = (score: number) => {
-    if (score >= 80) return "stroke-green-500"
+    if (score >= 80) return "stroke-emerald-500"
     if (score >= 60) return "stroke-blue-500"
-    if (score >= 40) return "stroke-yellow-500"
-    return "stroke-red-500"
+    if (score >= 40) return "stroke-amber-500"
+    return "stroke-rose-500"
   }
 
   const getScoreLabel = (score: number) => {

@@ -1,276 +1,163 @@
 """
 Document Service
-Handles document generation and management
+Handles document generation and management with Firestore
 """
 from typing import List, Optional, Dict, Any
-from uuid import UUID
+import structlog
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-
-from app.models.profile import Profile
-from app.models.job import JobDescription
-from app.models.benchmark import Benchmark
-from app.models.gap import GapReport
-from app.models.document import Document
-from app.schemas.document import DocumentResponse, DocumentUpdate
+from app.core.database import get_firestore_db, COLLECTIONS, FirestoreDB
 from ai_engine.client import AIClient
 from ai_engine.chains.document_generator import DocumentGeneratorChain
 
+logger = structlog.get_logger()
+
 
 class DocumentService:
-    """Service for document operations."""
+    """Service for document operations using Firestore."""
 
-    def __init__(self, db: AsyncSession):
-        self.db = db
+    def __init__(self, db: Optional[FirestoreDB] = None):
+        self.db = db or get_firestore_db()
         self.ai_client = AIClient()
 
     async def generate_document(
         self,
-        user_id: UUID,
+        user_id: str,
         document_type: str,
-        profile_id: UUID,
-        job_id: Optional[UUID] = None,
-        benchmark_id: Optional[UUID] = None,
-        options: Optional[Dict[str, Any]] = None
-    ) -> DocumentResponse:
+        profile_id: str,
+        job_id: Optional[str] = None,
+        benchmark_id: Optional[str] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Generate a document using AI."""
-        # Get profile
-        profile_result = await self.db.execute(
-            select(Profile)
-            .where(Profile.id == profile_id, Profile.user_id == user_id)
-        )
-        profile = profile_result.scalar_one_or_none()
-        if not profile:
+        # Fetch profile
+        profile = await self.db.get(COLLECTIONS["profiles"], profile_id)
+        if not profile or profile.get("user_id") != user_id:
             raise ValueError("Profile not found")
 
-        # Get job if provided
+        # Fetch optional job
         job = None
         if job_id:
-            job_result = await self.db.execute(
-                select(JobDescription)
-                .where(JobDescription.id == job_id, JobDescription.user_id == user_id)
-            )
-            job = job_result.scalar_one_or_none()
+            job = await self.db.get(COLLECTIONS["jobs"], job_id)
+            if job and job.get("user_id") != user_id:
+                job = None
 
-        # Get gap analysis if available
-        gap_analysis = None
+        # Fetch gap analysis if we have a benchmark
+        gap_analysis: Optional[Dict[str, Any]] = None
         if benchmark_id:
-            gap_result = await self.db.execute(
-                select(GapReport)
-                .where(
-                    GapReport.user_id == user_id,
-                    GapReport.profile_id == profile_id,
-                    GapReport.benchmark_id == benchmark_id
-                )
-                .order_by(GapReport.created_at.desc())
+            gaps = await self.db.query(
+                COLLECTIONS["gap_reports"],
+                filters=[
+                    ("user_id", "==", user_id),
+                    ("profile_id", "==", profile_id),
+                    ("benchmark_id", "==", benchmark_id),
+                ],
+                order_by="created_at",
+                order_direction="DESCENDING",
+                limit=1,
             )
-            gap = gap_result.scalar_one_or_none()
-            if gap:
-                gap_analysis = {
-                    "strengths": gap.strengths,
-                    "skill_gaps": gap.skill_gaps
-                }
+            if gaps:
+                gap_analysis = {"strengths": gaps[0].get("strengths", []), "skill_gaps": gaps[0].get("skill_gaps", [])}
 
-        # Build profile data
+        # Build data dicts
         profile_data = {
-            "name": profile.name,
-            "title": profile.title,
-            "summary": profile.summary,
-            "contact_info": profile.contact_info,
-            "skills": profile.skills or [],
-            "experience": profile.experience or [],
-            "education": profile.education or [],
-            "certifications": profile.certifications or [],
-            "projects": profile.projects or []
+            "name": profile.get("name"),
+            "title": profile.get("title"),
+            "summary": profile.get("summary"),
+            "contact_info": profile.get("contact_info"),
+            "skills": profile.get("skills", []),
+            "experience": profile.get("experience", []),
+            "education": profile.get("education", []),
+            "certifications": profile.get("certifications", []),
+            "projects": profile.get("projects", []),
         }
 
-        job_requirements = {}
-        company_info = {}
+        job_requirements: Dict[str, Any] = {}
+        company_info: Dict[str, Any] = {}
         if job:
             job_requirements = {
-                "required_skills": job.required_skills,
-                "requirements": job.requirements,
-                "responsibilities": job.responsibilities
+                "required_skills": job.get("required_skills"),
+                "requirements": job.get("requirements"),
+                "responsibilities": job.get("responsibilities"),
             }
-            company_info = job.company_info or {}
+            company_info = job.get("company_info", {})
 
-        # Generate document with AI
+        # Generate with AI
         generator = DocumentGeneratorChain(self.ai_client)
+        job_title = job.get("title", "Target Role") if job else "Target Role"
+        company = job.get("company", "Target Company") if job else "Target Company"
 
         if document_type == "cv":
-            content = await generator.generate_cv(
-                profile_data,
-                job.title if job else "Target Role",
-                job.company if job else "Target Company",
-                job_requirements,
-                gap_analysis
-            )
+            content = await generator.generate_cv(profile_data, job_title, company, job_requirements, gap_analysis)
         elif document_type == "cover_letter":
             content = await generator.generate_cover_letter(
-                profile_data,
-                job.title if job else "Target Role",
-                job.company if job else "Target Company",
-                company_info,
-                job_requirements,
-                gap_analysis.get("strengths", []) if gap_analysis else []
+                profile_data, job_title, company, company_info, job_requirements,
+                gap_analysis.get("strengths", []) if gap_analysis else [],
             )
         elif document_type == "motivation":
-            result = await generator.generate_motivation_statement(
-                profile_data,
-                job.company if job else "Target Company",
-                company_info,
-                job.title if job else "Target Role"
-            )
+            result = await generator.generate_motivation_statement(profile_data, company, company_info, job_title)
             content = str(result)
         else:
             raise ValueError(f"Unsupported document type: {document_type}")
 
-        # Create document record
-        title = f"{document_type.replace('_', ' ').title()} - {job.title if job else 'General'}"
-        document = Document(
-            user_id=user_id,
-            document_type=document_type,
-            title=title,
-            content=content,
-            target_job_id=job_id,
-            target_company=job.company if job else None,
-            metadata={"generated": True, "options": options},
-            status="draft"
-        )
+        title = f"{document_type.replace('_', ' ').title()} - {job_title}"
+        record = {
+            "user_id": user_id,
+            "document_type": document_type,
+            "title": title,
+            "content": content,
+            "target_job_id": job_id,
+            "target_company": company,
+            "doc_metadata": {"generated": True, "options": options},
+            "status": "draft",
+        }
 
-        self.db.add(document)
-        await self.db.commit()
-        await self.db.refresh(document)
-
-        return DocumentResponse.model_validate(document)
+        doc_id = await self.db.create(COLLECTIONS["documents"], record)
+        logger.info("document_generated", doc_id=doc_id, type=document_type)
+        return await self.db.get(COLLECTIONS["documents"], doc_id)
 
     async def generate_all_documents(
-        self,
-        user_id: UUID,
-        profile_id: UUID,
-        job_id: UUID
-    ) -> List[DocumentResponse]:
-        """Generate all document types for a job application."""
-        documents = []
-
+        self, user_id: str, profile_id: str, job_id: str
+    ) -> List[Dict[str, Any]]:
+        """Generate complete application package."""
+        documents: List[Dict[str, Any]] = []
         for doc_type in ["cv", "cover_letter", "motivation"]:
             try:
-                doc = await self.generate_document(
-                    user_id=user_id,
-                    document_type=doc_type,
-                    profile_id=profile_id,
-                    job_id=job_id
-                )
+                doc = await self.generate_document(user_id=user_id, document_type=doc_type, profile_id=profile_id, job_id=job_id)
                 documents.append(doc)
-            except Exception:
-                continue  # Skip failed documents
-
+            except Exception as e:
+                logger.warning("document_gen_failed", type=doc_type, error=str(e))
         return documents
 
-    async def get_user_documents(
-        self,
-        user_id: UUID,
-        document_type: Optional[str] = None
-    ) -> List[DocumentResponse]:
-        """Get all documents for a user."""
-        query = select(Document).where(Document.user_id == user_id)
+    async def get_user_documents(self, user_id: str, document_type: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+        filters = [("user_id", "==", user_id)]
         if document_type:
-            query = query.where(Document.document_type == document_type)
-        query = query.order_by(Document.created_at.desc())
-
-        result = await self.db.execute(query)
-        documents = result.scalars().all()
-        return [DocumentResponse.model_validate(d) for d in documents]
-
-    async def get_document(
-        self,
-        document_id: UUID,
-        user_id: UUID
-    ) -> Optional[DocumentResponse]:
-        """Get a specific document."""
-        result = await self.db.execute(
-            select(Document)
-            .where(Document.id == document_id, Document.user_id == user_id)
+            filters.append(("document_type", "==", document_type))
+        return await self.db.query(
+            COLLECTIONS["documents"], filters=filters, order_by="created_at", order_direction="DESCENDING", limit=limit,
         )
-        document = result.scalar_one_or_none()
-        if document:
-            return DocumentResponse.model_validate(document)
+
+    async def get_document(self, document_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        doc = await self.db.get(COLLECTIONS["documents"], document_id)
+        if doc and doc.get("user_id") == user_id:
+            return doc
         return None
 
-    async def update_document(
-        self,
-        document_id: UUID,
-        user_id: UUID,
-        update_data: DocumentUpdate
-    ) -> Optional[DocumentResponse]:
-        """Update a document."""
-        result = await self.db.execute(
-            select(Document)
-            .where(Document.id == document_id, Document.user_id == user_id)
-        )
-        document = result.scalar_one_or_none()
-
-        if not document:
+    async def update_document(self, document_id: str, user_id: str, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        ALLOWED = {"title", "content", "status"}
+        doc = await self.get_document(document_id, user_id)
+        if not doc:
             return None
+        safe = {k: v for k, v in update_data.items() if k in ALLOWED}
+        if safe:
+            # Bump version on content change
+            if "content" in safe:
+                safe["version"] = (doc.get("version") or 0) + 1
+            await self.db.update(COLLECTIONS["documents"], document_id, safe)
+        return await self.db.get(COLLECTIONS["documents"], document_id)
 
-        update_dict = update_data.model_dump(exclude_unset=True)
-        for field, value in update_dict.items():
-            if hasattr(document, field):
-                setattr(document, field, value)
-
-        await self.db.commit()
-        await self.db.refresh(document)
-
-        return DocumentResponse.model_validate(document)
-
-    async def create_version(
-        self,
-        document_id: UUID,
-        user_id: UUID
-    ) -> Optional[DocumentResponse]:
-        """Create a new version of a document."""
-        result = await self.db.execute(
-            select(Document)
-            .where(Document.id == document_id, Document.user_id == user_id)
-        )
-        original = result.scalar_one_or_none()
-
-        if not original:
-            return None
-
-        # Create new version
-        new_doc = Document(
-            user_id=user_id,
-            document_type=original.document_type,
-            title=f"{original.title} (v{original.version + 1})",
-            content=original.content,
-            structured_content=original.structured_content,
-            metadata=original.metadata,
-            target_job_id=original.target_job_id,
-            target_company=original.target_company,
-            version=original.version + 1,
-            parent_id=original.id,
-            status="draft"
-        )
-
-        self.db.add(new_doc)
-        await self.db.commit()
-        await self.db.refresh(new_doc)
-
-        return DocumentResponse.model_validate(new_doc)
-
-    async def delete_document(self, document_id: UUID, user_id: UUID) -> bool:
-        """Delete a document."""
-        result = await self.db.execute(
-            select(Document)
-            .where(Document.id == document_id, Document.user_id == user_id)
-        )
-        document = result.scalar_one_or_none()
-
-        if not document:
+    async def delete_document(self, document_id: str, user_id: str) -> bool:
+        doc = await self.get_document(document_id, user_id)
+        if not doc:
             return False
-
-        await self.db.delete(document)
-        await self.db.commit()
+        await self.db.delete(COLLECTIONS["documents"], document_id)
         return True

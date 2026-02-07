@@ -33,7 +33,7 @@ export function EvidencePicker({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl rounded-2xl">
         <DialogHeader>
           <DialogTitle>Select evidence</DialogTitle>
         </DialogHeader>
@@ -42,6 +42,7 @@ export function EvidencePicker({
           <Search className="h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search by skill, tool, tag, title…"
+            className="rounded-xl"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -52,7 +53,7 @@ export function EvidencePicker({
             {filtered.length === 0 ? (
               <div className="rounded-xl bg-muted/40 p-4">
                 <div className="flex items-center gap-2 text-sm font-medium">
-                  <Sparkles className="h-4 w-4 text-blue-600" />
+                  <Sparkles className="h-4 w-4 text-primary" />
                   No matches.
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
@@ -63,7 +64,7 @@ export function EvidencePicker({
               filtered.map((e) => (
                 <button
                   key={e.id}
-                  className="w-full rounded-xl border bg-white p-3 text-left hover:bg-muted/40 transition-colors"
+                  className="w-full rounded-xl border bg-card p-3 text-left hover:bg-muted/40 transition-colors"
                   onClick={() => {
                     onPick(e);
                     onOpenChange(false);
@@ -95,7 +96,7 @@ export function EvidencePicker({
                         ))}
                       </div>
                     </div>
-                    <Button size="sm" variant="outline" className="shrink-0">
+                    <Button size="sm" variant="outline" className="shrink-0 rounded-xl">
                       Use
                     </Button>
                   </div>

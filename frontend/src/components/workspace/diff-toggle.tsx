@@ -12,7 +12,7 @@ export function DiffToggle({
   onChange: (mode: "edit" | "diff") => void;
 }) {
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg border bg-white p-1">
+    <div className="inline-flex items-center gap-1 rounded-xl border bg-card p-1">
       <Toggle
         pressed={mode === "edit"}
         onPressedChange={() => onChange("edit")}

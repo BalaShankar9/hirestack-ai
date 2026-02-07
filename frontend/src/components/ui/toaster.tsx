@@ -84,8 +84,29 @@ const ToastDescription = React.forwardRef<
 ToastDescription.displayName = ToastPrimitives.Description.displayName;
 
 export function Toaster() {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { toasts, dismiss } = require("@/hooks/use-toast").useToast();
+
+  const variantStyles: Record<string, string> = {
+    default: "bg-white border-gray-200",
+    success: "bg-green-50 border-green-300",
+    error: "bg-red-50 border-red-300",
+    warning: "bg-amber-50 border-amber-300",
+  };
+
   return (
     <ToastProvider>
+      {(toasts as Array<{ id: string; title: string; description?: string; variant?: string }>).map(
+        (t) => (
+          <Toast key={t.id} className={variantStyles[t.variant ?? "default"]} onOpenChange={(open: boolean) => { if (!open) dismiss(t.id); }}>
+            <div className="grid gap-1">
+              {t.title && <ToastTitle>{t.title}</ToastTitle>}
+              {t.description && <ToastDescription>{t.description}</ToastDescription>}
+            </div>
+            <ToastClose />
+          </Toast>
+        )
+      )}
       <ToastViewport />
     </ToastProvider>
   );

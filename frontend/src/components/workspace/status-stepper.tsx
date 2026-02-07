@@ -11,26 +11,26 @@ const LABELS: Record<ModuleKey, string> = {
   learningPlan: "Learning plan",
   cv: "Tailored CV",
   coverLetter: "Cover letter",
-  export: "Export pack",
+  scorecard: "Scorecard",
 };
 
 function Icon({ status }: { status: ModuleStatus }) {
-  if (status.state === "ready") return <CheckCircle2 className="h-4 w-4 text-green-600" />;
-  if (status.state === "error") return <AlertTriangle className="h-4 w-4 text-red-600" />;
+  if (status.state === "ready") return <CheckCircle2 className="h-4 w-4 text-emerald-600" />;
+  if (status.state === "error") return <AlertTriangle className="h-4 w-4 text-rose-600" />;
   if (status.state === "generating" || status.state === "queued")
-    return <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />;
+    return <Loader2 className="h-4 w-4 text-primary animate-spin" />;
   return <Circle className="h-4 w-4 text-muted-foreground" />;
 }
 
 export function StatusStepper({
   modules,
-  order = ["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "export"],
+  order = ["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "scorecard"],
 }: {
   modules: Record<ModuleKey, ModuleStatus>;
   order?: ModuleKey[];
 }) {
   return (
-    <div className="rounded-2xl border bg-white p-4">
+    <div className="rounded-2xl border bg-card p-4 shadow-soft-sm">
       <div className="text-sm font-semibold">Generation progress</div>
       <div className="mt-1 text-xs text-muted-foreground">
         Each module completes independently. You can start using what’s ready.
@@ -38,7 +38,7 @@ export function StatusStepper({
 
       <div className="mt-4 space-y-3">
         {order.map((key, idx) => {
-          const s = modules[key];
+          const s = modules[key] ?? { state: "idle" };
           return (
             <div key={key} className="flex items-start gap-3">
               <div className="mt-0.5">{<Icon status={s} />}</div>
@@ -46,11 +46,11 @@ export function StatusStepper({
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-sm font-medium">{LABELS[key]}</div>
                   <div className="text-[11px] text-muted-foreground tabular-nums">
-                    {s.progress}%
+                    {s.progress ?? 0}%
                   </div>
                 </div>
                 <div className="mt-2">
-                  <Progress value={s.progress} />
+                  <Progress value={s.progress ?? 0} />
                 </div>
                 {s.state === "error" && s.error ? (
                   <div className="mt-2 text-xs text-red-600">{s.error}</div>

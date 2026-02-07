@@ -45,7 +45,7 @@ export function VersionHistoryDrawer({
           <div className="mt-4 flex items-center gap-2">
             <Button
               size="sm"
-              className="gap-2"
+              className="gap-2 rounded-xl"
               onClick={() => onSnapshot(`Snapshot ${new Date().toLocaleTimeString()}`)}
             >
               <Save className="h-4 w-4" />
@@ -67,7 +67,7 @@ export function VersionHistoryDrawer({
           ) : (
             <div className="space-y-2">
               {versions.map((v) => (
-                <div key={v.id} className="rounded-xl border bg-white p-3">
+                <div key={v.id} className="rounded-xl border bg-card p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-sm font-semibold truncate">{v.label}</div>

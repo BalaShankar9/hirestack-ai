@@ -1,74 +1,153 @@
 "use client";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState, createContext, useContext, useEffect } from "react";
-import { auth } from "@/lib/firebase";
-import { onIdTokenChanged, User } from "firebase/auth";
-import api from "@/lib/api";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
+import type { User, Session } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 
-type AuthContext = {
-  user: User | null;
-  loading: boolean;
-};
+/* ------------------------------------------------------------------ */
+/*  Auth context types                                                */
+/* ------------------------------------------------------------------ */
 
-const AuthContext = createContext<AuthContext | undefined>(undefined);
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
+export interface AuthUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
 }
 
-function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+interface AuthContextValue {
+  user: AuthUser | null;
+  session: Session | null;
+  loading: boolean;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, name?: string) => Promise<void>;
+  signOut: () => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  signInWithGitHub: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextValue>({
+  user: null,
+  session: null,
+  loading: true,
+  signIn: async () => {},
+  signUp: async () => {},
+  signOut: async () => {},
+  signInWithGoogle: async () => {},
+  signInWithGitHub: async () => {},
+});
+
+/* ------------------------------------------------------------------ */
+/*  Map Supabase User → AuthUser                                      */
+/* ------------------------------------------------------------------ */
+
+function mapUser(u: User | null): AuthUser | null {
+  if (!u) return null;
+  return {
+    uid: u.id,
+    email: u.email ?? null,
+    displayName: u.user_metadata?.full_name ?? u.user_metadata?.name ?? null,
+    photoURL: u.user_metadata?.avatar_url ?? null,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Provider                                                           */
+/* ------------------------------------------------------------------ */
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s);
+      setUser(mapUser(s?.user ?? null));
       setLoading(false);
-
-      if (!firebaseUser) {
-        api.setToken(null);
-        return;
-      }
-
-      try {
-        const token = await firebaseUser.getIdToken();
-        api.setToken(token);
-      } catch {
-        api.setToken(null);
-      }
     });
 
-    return () => unsubscribe();
+    // Listen for auth state changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+      setUser(mapUser(s?.user ?? null));
+      setLoading(false);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const signIn = useCallback(async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+  }, []);
+
+  const signUp = useCallback(
+    async (email: string, password: string, name?: string) => {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: name ?? "" } },
+      });
+      if (error) throw error;
+    },
+    []
+  );
+
+  const signOut = useCallback(async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+  }, []);
+
+  const signInWithGoogle = useCallback(async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (error) throw error;
+  }, []);
+
+  const signInWithGitHub = useCallback(async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "github",
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (error) throw error;
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        session,
+        loading,
+        signIn,
+        signUp,
+        signOut,
+        signInWithGoogle,
+        signInWithGitHub,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
 
-export function Providers({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: 60 * 1000,
-            refetchOnWindowFocus: false,
-          },
-        },
-      })
-  );
-
-  return (
-    <AuthProvider>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </AuthProvider>
-  );
+export function useAuth(): AuthContextValue {
+  return useContext(AuthContext);
 }
+
+/** Alias so layout.tsx can import { Providers } */
+export const Providers = AuthProvider;

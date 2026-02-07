@@ -1,17 +1,14 @@
 """
 Job Service
-Handles job description management and parsing
+Handles job description management and parsing with Firestore
 """
-from typing import List, Optional
-from uuid import UUID
+from typing import List, Optional, Dict, Any
+import structlog
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-
-from app.models.job import JobDescription
-from app.schemas.job import JobDescriptionCreate, JobDescriptionUpdate, JobDescriptionResponse
+from app.core.database import get_firestore_db, COLLECTIONS, FirestoreDB
 from ai_engine.client import AIClient
 
+logger = structlog.get_logger()
 
 JOB_PARSER_PROMPT = """Parse this job description and extract structured requirements:
 
@@ -42,143 +39,93 @@ Return ONLY valid JSON:
 
 
 class JobService:
-    """Service for job description operations."""
+    """Service for job description operations using Firestore."""
 
-    def __init__(self, db: AsyncSession):
-        self.db = db
+    ALLOWED_FIELDS = {
+        "title", "company", "location", "job_type", "experience_level",
+        "salary_range", "description", "source_url",
+    }
+
+    def __init__(self, db: Optional[FirestoreDB] = None):
+        self.db = db or get_firestore_db()
         self.ai_client = AIClient()
 
-    async def create_job(
-        self,
-        user_id: UUID,
-        job_data: JobDescriptionCreate
-    ) -> JobDescriptionResponse:
-        """Create a new job description and parse it."""
-        job = JobDescription(
-            user_id=user_id,
-            title=job_data.title,
-            company=job_data.company,
-            location=job_data.location,
-            job_type=job_data.job_type,
-            experience_level=job_data.experience_level,
-            salary_range=job_data.salary_range,
-            description=job_data.description,
-            raw_text=job_data.description,
-            source_url=job_data.source_url
+    async def create_job(self, user_id: str, job_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new job description and optionally parse it."""
+        safe = {k: v for k, v in job_data.items() if k in self.ALLOWED_FIELDS}
+        safe["user_id"] = user_id
+        safe["raw_text"] = safe.get("description", "")
+
+        doc_id = await self.db.create(COLLECTIONS["jobs"], safe)
+        created = await self.db.get(COLLECTIONS["jobs"], doc_id)
+
+        # Best-effort AI parsing
+        try:
+            return await self._parse_and_update(created)
+        except Exception as e:
+            logger.warning("job_parse_failed", job_id=doc_id, error=str(e))
+            return created
+
+    async def get_user_jobs(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        return await self.db.query(
+            COLLECTIONS["jobs"],
+            filters=[("user_id", "==", user_id)],
+            order_by="created_at",
+            order_direction="DESCENDING",
+            limit=limit,
         )
 
-        self.db.add(job)
-        await self.db.commit()
-        await self.db.refresh(job)
-
-        # Parse the job description
-        return await self.parse_job(job.id, user_id)
-
-    async def get_user_jobs(self, user_id: UUID) -> List[JobDescriptionResponse]:
-        """Get all jobs for a user."""
-        result = await self.db.execute(
-            select(JobDescription)
-            .where(JobDescription.user_id == user_id)
-            .order_by(JobDescription.created_at.desc())
-        )
-        jobs = result.scalars().all()
-        return [JobDescriptionResponse.model_validate(j) for j in jobs]
-
-    async def get_job(
-        self,
-        job_id: UUID,
-        user_id: UUID
-    ) -> Optional[JobDescriptionResponse]:
-        """Get a specific job."""
-        result = await self.db.execute(
-            select(JobDescription)
-            .where(JobDescription.id == job_id, JobDescription.user_id == user_id)
-        )
-        job = result.scalar_one_or_none()
-        if job:
-            return JobDescriptionResponse.model_validate(job)
+    async def get_job(self, job_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        job = await self.db.get(COLLECTIONS["jobs"], job_id)
+        if job and job.get("user_id") == user_id:
+            return job
         return None
 
-    async def update_job(
-        self,
-        job_id: UUID,
-        user_id: UUID,
-        job_data: JobDescriptionUpdate
-    ) -> Optional[JobDescriptionResponse]:
-        """Update a job description."""
-        result = await self.db.execute(
-            select(JobDescription)
-            .where(JobDescription.id == job_id, JobDescription.user_id == user_id)
-        )
-        job = result.scalar_one_or_none()
-
+    async def update_job(self, job_id: str, user_id: str, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        job = await self.get_job(job_id, user_id)
         if not job:
             return None
+        safe = {k: v for k, v in update_data.items() if k in self.ALLOWED_FIELDS}
+        if not safe:
+            return job
+        await self.db.update(COLLECTIONS["jobs"], job_id, safe)
+        return await self.db.get(COLLECTIONS["jobs"], job_id)
 
-        update_dict = job_data.model_dump(exclude_unset=True)
-        for field, value in update_dict.items():
-            if hasattr(job, field):
-                setattr(job, field, value)
-
-        await self.db.commit()
-        await self.db.refresh(job)
-
-        return JobDescriptionResponse.model_validate(job)
-
-    async def delete_job(self, job_id: UUID, user_id: UUID) -> bool:
-        """Delete a job description."""
-        result = await self.db.execute(
-            select(JobDescription)
-            .where(JobDescription.id == job_id, JobDescription.user_id == user_id)
-        )
-        job = result.scalar_one_or_none()
-
+    async def delete_job(self, job_id: str, user_id: str) -> bool:
+        job = await self.get_job(job_id, user_id)
         if not job:
             return False
-
-        await self.db.delete(job)
-        await self.db.commit()
+        await self.db.delete(COLLECTIONS["jobs"], job_id)
         return True
 
-    async def parse_job(
-        self,
-        job_id: UUID,
-        user_id: UUID
-    ) -> Optional[JobDescriptionResponse]:
-        """Parse a job description with AI."""
-        result = await self.db.execute(
-            select(JobDescription)
-            .where(JobDescription.id == job_id, JobDescription.user_id == user_id)
-        )
-        job = result.scalar_one_or_none()
-
+    async def parse_job(self, job_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        job = await self.get_job(job_id, user_id)
         if not job:
             return None
+        return await self._parse_and_update(job)
 
-        # Parse with AI
-        prompt = JOB_PARSER_PROMPT.format(description=job.description)
-        parsed = await self.ai_client.complete_json(
-            prompt=prompt,
-            temperature=0.2,
-            max_tokens=2000
-        )
+    async def _parse_and_update(self, job: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse job description with AI and update the Firestore document."""
+        description = job.get("description", "")
+        if not description:
+            return job
 
-        # Update job with parsed data
-        job.parsed_data = parsed
-        job.required_skills = parsed.get("required_skills", [])
-        job.preferred_skills = parsed.get("preferred_skills", [])
-        job.requirements = parsed.get("requirements", [])
-        job.responsibilities = parsed.get("responsibilities", [])
-        job.benefits = parsed.get("benefits", [])
-        job.company_info = parsed.get("company_info", {})
+        prompt = JOB_PARSER_PROMPT.format(description=description)
+        parsed = await self.ai_client.complete_json(prompt=prompt, temperature=0.2, max_tokens=2000)
 
-        # Update title/company if not set
-        if not job.title and parsed.get("title"):
-            job.title = parsed["title"]
-        if not job.company and parsed.get("company"):
-            job.company = parsed["company"]
+        update: Dict[str, Any] = {
+            "parsed_data": parsed,
+            "required_skills": parsed.get("required_skills", []),
+            "preferred_skills": parsed.get("preferred_skills", []),
+            "requirements": parsed.get("requirements", []),
+            "responsibilities": parsed.get("responsibilities", []),
+            "benefits": parsed.get("benefits", []),
+            "company_info": parsed.get("company_info", {}),
+        }
+        if not job.get("title") and parsed.get("title"):
+            update["title"] = parsed["title"]
+        if not job.get("company") and parsed.get("company"):
+            update["company"] = parsed["company"]
 
-        await self.db.commit()
-        await self.db.refresh(job)
-
-        return JobDescriptionResponse.model_validate(job)
+        await self.db.update(COLLECTIONS["jobs"], job["id"], update)
+        return await self.db.get(COLLECTIONS["jobs"], job["id"])

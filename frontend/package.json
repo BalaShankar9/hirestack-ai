@@ -12,10 +12,13 @@
     "lint": "next lint",
     "format": "prettier --write .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug"
   },
   "dependencies": {
-    "@hookform/resolvers": "^3.3.3",
     "@radix-ui/react-alert-dialog": "^1.0.5",
     "@radix-ui/react-avatar": "^1.0.4",
     "@radix-ui/react-dialog": "^1.0.5",
@@ -43,9 +46,9 @@
     "@tiptap/starter-kit": "^2.1.16",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
-    "date-fns": "^3.2.0",
     "diff": "^8.0.3",
-    "firebase": "^12.8.0",
+    "@supabase/supabase-js": "^2.49.0",
+    "html2pdf.js": "^0.14.0",
     "lucide-react": "^0.309.0",
     "mammoth": "^1.11.0",
     "next": "14.1.0",
@@ -53,13 +56,11 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-dropzone": "^14.2.3",
-    "react-hook-form": "^7.49.2",
-    "recharts": "^2.10.4",
     "tailwind-merge": "^2.2.0",
-    "tailwindcss-animate": "^1.0.7",
-    "zod": "^3.22.4"
+    "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^14.3.1",
     "@testing-library/user-event": "^14.6.1",

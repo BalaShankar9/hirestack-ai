@@ -29,7 +29,7 @@ export function TaskQueue({
   const remaining = tasks.filter((t) => t.status === "todo").length;
 
   return (
-    <div className={cn("rounded-2xl border bg-white", compact ? "p-4" : "p-5")}>
+    <div className={cn("rounded-2xl border bg-card shadow-soft-sm", compact ? "p-4" : "p-5")}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="text-sm font-semibold">Action queue</div>
@@ -38,10 +38,10 @@ export function TaskQueue({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="tabular-nums">
+          <Badge variant="secondary" className="tabular-nums rounded-lg">
             {remaining} open
           </Badge>
-          <Button variant="outline" size="sm" className="gap-2" onClick={() => {
+          <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => {
             setFilter((f) => (f === "todo" ? "all" : "todo"));
           }}>
             <Filter className="h-4 w-4" />
@@ -55,7 +55,7 @@ export function TaskQueue({
       {visible.length === 0 ? (
         <div className="rounded-xl bg-muted/40 p-4">
           <div className="flex items-center gap-2 text-sm font-medium">
-            <Sparkles className="h-4 w-4 text-blue-600" />
+            <Sparkles className="h-4 w-4 text-primary" />
             No tasks in this view.
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
@@ -76,7 +76,7 @@ export function TaskQueue({
               <div className="flex items-start gap-3">
                 <div className="mt-0.5">
                   {t.status === "done" ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-600" />
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600" />
                   ) : (
                     <Circle className="h-5 w-5 text-muted-foreground" />
                   )}
@@ -88,8 +88,8 @@ export function TaskQueue({
                       variant="secondary"
                       className={cn(
                         "text-[11px]",
-                        t.priority === "high" && "bg-amber-100 text-amber-900",
-                        t.priority === "medium" && "bg-blue-100 text-blue-900"
+                        t.priority === "high" && "bg-amber-500/10 text-amber-700",
+                        t.priority === "medium" && "bg-blue-500/10 text-blue-700"
                       )}
                     >
                       {t.priority}

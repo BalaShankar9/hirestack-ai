@@ -24,8 +24,8 @@ export function KeywordChips({
             className={cn(
               "text-[11px] border",
               covered
-                ? "bg-green-50 text-green-800 border-green-200"
-                : "bg-amber-50 text-amber-900 border-amber-200"
+                ? "bg-emerald-500/10 text-emerald-700 border-emerald-200"
+                : "bg-amber-500/10 text-amber-700 border-amber-200"
             )}
           >
             {k}

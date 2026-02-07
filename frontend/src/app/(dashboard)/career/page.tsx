@@ -39,12 +39,12 @@ export default function CareerLabPage() {
   if (!user) return null;
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-3xl border bg-white p-6">
+    <div className="space-y-6 animate-fade-in">
+      <div className="rounded-2xl border bg-card p-6 shadow-soft-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div className="max-w-2xl">
             <div className="flex items-center gap-2">
-              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-purple-600 to-blue-600 text-white flex items-center justify-center">
+              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-violet-600 text-white flex items-center justify-center">
                 <GraduationCap className="h-4 w-4" />
               </div>
               <div>
@@ -56,10 +56,10 @@ export default function CareerLabPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={() => router.push("/new")} className="gap-2">
+            <Button onClick={() => router.push("/dashboard/new")} className="gap-2 rounded-xl">
               New application <ArrowRight className="h-4 w-4" />
             </Button>
-            <Button variant="outline" onClick={() => router.push("/evidence")} className="gap-2">
+            <Button variant="outline" onClick={() => router.push("/evidence")} className="gap-2 rounded-xl">
               Evidence vault <Sparkles className="h-4 w-4" />
             </Button>
           </div>
@@ -83,16 +83,16 @@ export default function CareerLabPage() {
               const next = task.status === "done" ? "todo" : "done";
               await setTaskStatus(user.uid, task.id, next);
               if (next === "done") {
-                await trackEvent(user.uid, { name: "task_completed", appId: task.appId, properties: { taskId: task.id } });
+                await trackEvent(user.uid, { name: "task_completed", appId: task.appId ?? undefined, properties: { taskId: task.id } });
               }
             }}
           />
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-2xl border bg-white p-5">
+          <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
             <div className="flex items-center gap-2">
-              <BookOpen className="h-4 w-4 text-blue-600" />
+              <BookOpen className="h-4 w-4 text-primary" />
               <div className="text-sm font-semibold">Resources</div>
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
@@ -136,9 +136,9 @@ export default function CareerLabPage() {
             )}
           </div>
 
-          <div className="rounded-2xl border bg-blue-50 p-5">
-            <div className="text-sm font-semibold text-blue-900">Coach principle</div>
-            <div className="mt-1 text-xs text-blue-900/80 leading-snug">
+          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
+            <div className="text-sm font-semibold text-primary">Coach principle</div>
+            <div className="mt-1 text-xs text-muted-foreground leading-snug">
               Your goal is not “learning”. Your goal is shipping proof. Every sprint should end with an artifact you can attach to your Evidence Vault.
             </div>
           </div>
@@ -150,7 +150,7 @@ export default function CareerLabPage() {
 
 function Stat({ label, value, loading }: { label: string; value: number; loading: boolean }) {
   return (
-    <div className="rounded-2xl border bg-white p-4">
+    <div className="rounded-2xl border bg-card p-4">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 text-2xl font-semibold tabular-nums">
         {loading ? <Skeleton className="h-7 w-16" /> : value}

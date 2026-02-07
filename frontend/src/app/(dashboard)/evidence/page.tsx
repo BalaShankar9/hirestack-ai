@@ -1,462 +1,363 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  FileUp,
-  Link2,
   Plus,
-  Search,
-  Sparkles,
-  ArrowRight,
+  Upload,
+  Link2,
+  FileText,
+  Trash2,
+  ExternalLink,
 } from "lucide-react";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
 import { useAuth } from "@/components/providers";
-import { storage } from "@/lib/firebase";
-import { useApplications, useEvidence } from "@/lib/firestore";
-import { createEvidence } from "@/lib/firestore";
-import type { EvidenceDoc, EvidenceKind } from "@/lib/firestore";
+import { useEvidence } from "@/lib/firestore";
+import {
+  createEvidence,
+  deleteEvidence,
+  uploadEvidenceFile,
+} from "@/lib/firestore/ops";
+import type { EvidenceDoc } from "@/lib/firestore/models";
 
-import { EvidenceCard } from "@/components/workspace/evidence-card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 
-function parseTags(value: string) {
-  return value
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .slice(0, 24);
-}
+const EVIDENCE_TYPES = [
+  { value: "cert", label: "Certification" },
+  { value: "project", label: "Project" },
+  { value: "course", label: "Course" },
+  { value: "award", label: "Award" },
+  { value: "publication", label: "Publication" },
+  { value: "other", label: "Other" },
+] as const;
 
 export default function EvidenceVaultPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { data: evidence, loading: evidenceLoading } = useEvidence(user?.uid || null, 300);
-  const { data: apps } = useApplications(user?.uid || null, 50);
 
-  const [q, setQ] = useState("");
-  const [open, setOpen] = useState(false);
-  const [kind, setKind] = useState<EvidenceKind>("link");
+  const { data: evidence, loading } = useEvidence(user?.uid ?? null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
+  // Form state
+  const [kind, setKind] = useState<"link" | "file">("link");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [type, setType] = useState("other");
   const [url, setUrl] = useState("");
   const [skills, setSkills] = useState("");
   const [tools, setTools] = useState("");
   const [tags, setTags] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const [pickOpen, setPickOpen] = useState(false);
-  const [pendingUse, setPendingUse] = useState<EvidenceDoc | null>(null);
-
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return evidence;
-    return evidence.filter((e) => {
-      const hay = `${e.title} ${e.description || ""} ${e.skills.join(" ")} ${e.tools.join(" ")} ${e.tags.join(" ")}`.toLowerCase();
-      return hay.includes(needle);
-    });
-  }, [evidence, q]);
-
-  const suggested = useMemo(() => {
-    const missing = new Map<string, number>();
-    for (const a of apps) {
-      if (a.status !== "active") continue;
-      for (const kw of a.gaps?.missingKeywords || []) {
-        missing.set(kw, (missing.get(kw) || 0) + 1);
-      }
-    }
-    const already = new Set(
-      evidence.flatMap((e) => [...e.skills, ...e.tools, ...e.tags].map((x) => x.toLowerCase()))
-    );
-    return Array.from(missing.entries())
-      .filter(([kw]) => !already.has(kw.toLowerCase()))
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([kw, count]) => ({ kw, count }));
-  }, [apps, evidence]);
-
-  const workspaceTargets = useMemo(() => {
-    const active = apps.filter((a) => a.status === "active");
-    const rest = apps.filter((a) => a.status !== "active" && a.status !== "archived");
-    return [...active, ...rest].slice(0, 12);
-  }, [apps]);
-
-  const startUse = (e: EvidenceDoc) => {
-    setPendingUse(e);
-    setPickOpen(true);
-  };
-
-  const useInWorkspace = (appId: string) => {
-    if (!pendingUse) return;
-    const qs = new URLSearchParams();
-    qs.set("tab", "cv");
-    qs.set("insertEvidence", pendingUse.id);
-    qs.set("insertTarget", "cv");
-    setPickOpen(false);
-    setPendingUse(null);
-    router.push(`/applications/${appId}?${qs.toString()}`);
-  };
-
-  const resetForm = () => {
+  function resetForm() {
+    setKind("link");
     setTitle("");
     setDescription("");
+    setType("other");
     setUrl("");
     setSkills("");
     setTools("");
     setTags("");
-    setFile(null);
-  };
+  }
 
-  const onCreate = async () => {
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
     if (!user) return;
-    if (!title.trim()) return;
-    if (kind === "link" && !url.trim()) return;
-    if (kind === "file" && !file) return;
+    setUploading(true);
 
-    setBusy(true);
     try {
-      let storagePath: string | undefined;
-      let storageUrl: string | undefined;
-      let mimeType: string | undefined;
+      let fileUrl: string | undefined;
+      let fileName: string | undefined;
 
-      if (kind === "file" && file) {
-        const id = `${Date.now()}_${file.name}`.replace(/\s+/g, "_");
-        storagePath = `users/${user.uid}/evidence/${id}`;
-        mimeType = file.type || "application/octet-stream";
-        const sref = ref(storage, storagePath);
-        await uploadBytes(sref, file);
-        storageUrl = await getDownloadURL(sref);
+      if (kind === "file" && fileRef.current?.files?.[0]) {
+        const file = fileRef.current.files[0];
+        fileName = file.name;
+        fileUrl = await uploadEvidenceFile(user.uid, file);
       }
 
       await createEvidence(user.uid, {
+        userId: user.uid,
+        applicationId: null,
         kind,
-        title: title.trim(),
-        description: description.trim() || undefined,
-        url: kind === "link" ? url.trim() : undefined,
-        storagePath,
-        storageUrl,
-        mimeType,
-        skills: parseTags(skills),
-        tools: parseTags(tools),
-        tags: parseTags(tags),
+        type: type as EvidenceDoc["type"],
+        title,
+        description: description || undefined,
+        url: kind === "link" ? url : undefined,
+        storageUrl: fileUrl,
+        fileUrl,
+        fileName,
+        skills: skills
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        tools: tools
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        tags: tags
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
       });
 
-      setOpen(false);
       resetForm();
+      setDialogOpen(false);
+    } catch (err) {
+      console.error("Failed to create evidence:", err);
     } finally {
-      setBusy(false);
+      setUploading(false);
     }
-  };
+  }
 
-  if (!user) return null;
+  async function handleDelete(id: string) {
+    if (!confirm("Delete this evidence item?")) return;
+    try {
+      await deleteEvidence(id);
+    } catch (err) {
+      console.error("Failed to delete evidence:", err);
+    }
+  }
 
-  return (
-    <div className="space-y-6">
-      <div className="rounded-3xl border bg-white p-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div className="max-w-2xl">
-            <div className="text-sm font-semibold">Evidence Vault</div>
-            <div className="mt-1 text-xs text-muted-foreground leading-relaxed">
-              Proof beats claims. Store links/files, tag them by skills/tools, and insert them into your CV with one click.
-            </div>
-          </div>
-          <Button className="gap-2" onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Add evidence
-          </Button>
-        </div>
-
-        <Separator className="my-4" />
-
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-2">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search by title, skill, tool, tag…"
-              className="w-full md:w-[420px]"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="border tabular-nums">
-              {evidence.length} items
-            </Badge>
-            <Button variant="outline" size="sm" onClick={() => router.push("/new")}>
-              Start new application <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <Tabs defaultValue="all">
-        <TabsList>
-          <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="links">Links</TabsTrigger>
-          <TabsTrigger value="files">Files</TabsTrigger>
-          <TabsTrigger value="suggested">Suggested</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="all" className="mt-4">
-          <EvidenceGrid
-            loading={evidenceLoading}
-            items={filtered}
-            onUse={startUse}
-          />
-        </TabsContent>
-
-        <TabsContent value="links" className="mt-4">
-          <EvidenceGrid
-            loading={evidenceLoading}
-            items={filtered.filter((e) => e.kind === "link")}
-            onUse={startUse}
-          />
-        </TabsContent>
-
-        <TabsContent value="files" className="mt-4">
-          <EvidenceGrid
-            loading={evidenceLoading}
-            items={filtered.filter((e) => e.kind === "file")}
-            onUse={startUse}
-          />
-        </TabsContent>
-
-        <TabsContent value="suggested" className="mt-4">
-          <div className="rounded-2xl border bg-white p-5">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-blue-600" />
-              <div className="text-sm font-semibold">Suggested evidence to collect</div>
-            </div>
-            <div className="mt-1 text-xs text-muted-foreground">
-              Based on missing keywords across your active applications. Collect proof items to unlock stronger bullets.
-            </div>
-            <Separator className="my-4" />
-            {suggested.length === 0 ? (
-              <div className="rounded-xl bg-muted/40 p-4">
-                <div className="text-sm font-medium">Nothing suggested right now.</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Generate gaps inside a workspace to get suggestions here.
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {suggested.map((s) => (
-                  <Badge key={s.kw} variant="secondary" className="border bg-amber-50 text-amber-900 border-amber-200">
-                    {s.kw} <span className="ml-1 opacity-70">({s.count})</span>
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </div>
-        </TabsContent>
-      </Tabs>
-
-      <Dialog
-        open={pickOpen}
-        onOpenChange={(v) => {
-          setPickOpen(v);
-          if (!v) setPendingUse(null);
-        }}
-      >
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Use evidence in a workspace</DialogTitle>
-          </DialogHeader>
-          <div className="text-xs text-muted-foreground">
-            We’ll insert a proof bullet into your Tailored CV where your cursor is.
-          </div>
-
-          <Separator className="my-2" />
-
-          {workspaceTargets.length === 0 ? (
-            <div className="rounded-xl bg-muted/40 p-4">
-              <div className="text-sm font-medium">No workspaces yet.</div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                Create an application workspace first, then insert evidence into the CV editor.
-              </div>
-              <div className="mt-4">
-                <Button onClick={() => router.push("/new")}>Start the wizard</Button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {workspaceTargets.map((a) => (
-                <button
-                  key={a.id}
-                  className="w-full rounded-xl border bg-white p-3 text-left hover:bg-muted/40 transition-colors"
-                  onClick={() => useInWorkspace(a.id)}
-                >
-                  <div className="text-sm font-semibold truncate">
-                    {a.job.title || "Untitled application"}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground truncate">
-                    {a.job.company || "Workspace"} · {a.status === "active" ? "Active" : "Draft"}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Add evidence</DialogTitle>
-          </DialogHeader>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="rounded-xl border p-3 flex items-start gap-3 cursor-pointer hover:bg-muted/40">
-              <input
-                type="radio"
-                name="kind"
-                checked={kind === "link"}
-                onChange={() => setKind("link")}
-                className="mt-1"
-              />
-              <div className="min-w-0">
-                <div className="text-sm font-semibold flex items-center gap-2">
-                  <Link2 className="h-4 w-4 text-blue-600" /> Link
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  PRs, repos, demos, case studies, docs.
-                </div>
-              </div>
-            </label>
-            <label className="rounded-xl border p-3 flex items-start gap-3 cursor-pointer hover:bg-muted/40">
-              <input
-                type="radio"
-                name="kind"
-                checked={kind === "file"}
-                onChange={() => setKind("file")}
-                className="mt-1"
-              />
-              <div className="min-w-0">
-                <div className="text-sm font-semibold flex items-center gap-2">
-                  <FileUp className="h-4 w-4 text-purple-600" /> File
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  PDFs, screenshots, docs — anything you can attach.
-                </div>
-              </div>
-            </label>
-          </div>
-
-          <Separator />
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-3">
-              <Field label="Title *">
-                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., CI pipeline speedup PR" />
-              </Field>
-              <Field label="Description">
-                <Textarea value={description} onChange={(e) => setDescription(e.target.value)} className="h-24" placeholder="What does this prove? Add metric + context." />
-              </Field>
-              {kind === "link" ? (
-                <Field label="URL *">
-                  <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" />
-                </Field>
-              ) : (
-                <Field label="File *">
-                  <Input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-                </Field>
-              )}
-            </div>
-
-            <div className="space-y-3">
-              <Field label="Skills (comma)">
-                <Input value={skills} onChange={(e) => setSkills(e.target.value)} placeholder="React, SQL, Docker…" />
-              </Field>
-              <Field label="Tools (comma)">
-                <Input value={tools} onChange={(e) => setTools(e.target.value)} placeholder="Firebase, GCP, Kubernetes…" />
-              </Field>
-              <Field label="Tags (comma)">
-                <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="impact, performance, reliability…" />
-              </Field>
-              <div className="rounded-xl bg-blue-50 p-3 text-xs text-blue-900/80">
-                Coach tip: use tags like <span className="font-semibold">metric</span>,{" "}
-                <span className="font-semibold">scope</span>,{" "}
-                <span className="font-semibold">constraint</span>. Evidence is only strong when the story is clear.
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button onClick={onCreate} disabled={busy}>
-              Add evidence
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-function EvidenceGrid({
-  loading,
-  items,
-  onUse,
-}: {
-  loading: boolean;
-  items: EvidenceDoc[];
-  onUse: (e: EvidenceDoc) => void;
-}) {
   if (loading) {
     return (
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="rounded-2xl border bg-white p-4">
-            <Skeleton className="h-5 w-2/3" />
-            <Skeleton className="mt-2 h-4 w-1/2" />
-            <Skeleton className="mt-4 h-10 w-full" />
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (items.length === 0) {
-    return (
-      <div className="rounded-2xl border bg-white p-6">
-        <div className="text-sm font-semibold">No evidence yet.</div>
-        <div className="mt-1 text-xs text-muted-foreground">
-          Add links/files and tag them. Then insert proof bullets into your CV from a workspace.
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-48" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-40 rounded-2xl" />
+          ))}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-      {items.map((e) => (
-        <EvidenceCard
-          key={e.id}
-          evidence={e}
-          onUse={() => onUse(e)}
-        />
-      ))}
-    </div>
-  );
-}
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Evidence Vault</h1>
+          <p className="text-muted-foreground text-sm">
+            Collect and organize proof of your skills — certifications, projects, links, and more.
+          </p>
+        </div>
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="text-xs font-medium text-muted-foreground mb-1">{label}</div>
-      {children}
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="rounded-xl">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Evidence
+            </Button>
+          </DialogTrigger>
+
+          <DialogContent className="max-w-lg rounded-2xl">
+            <DialogHeader>
+              <DialogTitle>Add Evidence</DialogTitle>
+            </DialogHeader>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Kind toggle */}
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={kind === "link" ? "default" : "outline"}
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => setKind("link")}
+                >
+                  <Link2 className="mr-1.5 h-4 w-4" />
+                  Link
+                </Button>
+                <Button
+                  type="button"
+                  variant={kind === "file" ? "default" : "outline"}
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => setKind("file")}
+                >
+                  <Upload className="mr-1.5 h-4 w-4" />
+                  File
+                </Button>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Title</Label>
+                <Input
+                  required
+                  className="rounded-xl h-11"
+                  placeholder="e.g. AWS Solutions Architect cert"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Type</Label>
+                <Select value={type} onValueChange={setType}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EVIDENCE_TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Description</Label>
+                <Textarea
+                  rows={2}
+                  placeholder="What does this prove?"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </div>
+
+              {kind === "link" ? (
+                <div className="space-y-1.5">
+                  <Label>URL</Label>
+                  <Input
+                    type="url"
+                    placeholder="https://..."
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label>File</Label>
+                  <Input type="file" ref={fileRef} />
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label>Skills (comma-separated)</Label>
+                <Input
+                  placeholder="React, TypeScript, Node.js"
+                  value={skills}
+                  onChange={(e) => setSkills(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Tools (comma-separated)</Label>
+                <Input
+                  placeholder="Docker, AWS, Figma"
+                  value={tools}
+                  onChange={(e) => setTools(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Tags (comma-separated)</Label>
+                <Input
+                  placeholder="frontend, performance, leadership"
+                  value={tags}
+                  onChange={(e) => setTags(e.target.value)}
+                />
+              </div>
+
+              <Button type="submit" className="w-full rounded-xl" disabled={uploading}>
+                {uploading ? "Uploading…" : "Add Evidence"}
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {evidence.length === 0 ? (
+        <div className="rounded-2xl border border-dashed bg-card/50">
+          <div className="flex flex-col items-center justify-center py-12">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
+              <FileText className="h-6 w-6 text-primary" />
+            </div>
+            <p className="mt-4 text-sm text-muted-foreground">
+              No evidence yet. Click “Add Evidence” to get started.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {evidence.map((ev: EvidenceDoc) => {
+            const link = ev.kind === "link" ? ev.url : ev.storageUrl;
+            return (
+              <div key={ev.id} className="relative group rounded-2xl border bg-card shadow-soft-sm hover:shadow-soft-md transition-shadow overflow-hidden">
+                <div className="p-4 pb-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="text-sm font-semibold truncate">{ev.title}</div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {link && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => window.open(link, "_blank", "noopener")}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive"
+                        onClick={() => handleDelete(ev.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                <div className="px-4 pb-4 space-y-2">
+                  {ev.description && (
+                    <p className="text-xs text-muted-foreground line-clamp-2">
+                      {ev.description}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-1">
+                    <Badge variant="outline" className="text-[10px]">
+                      {ev.type}
+                    </Badge>
+                    {ev.skills.slice(0, 3).map((s: string) => (
+                      <Badge key={s} variant="secondary" className="text-[10px]">
+                        {s}
+                      </Badge>
+                    ))}
+                    {ev.tools.slice(0, 3).map((t: string) => (
+                      <Badge key={t} variant="secondary" className="text-[10px]">
+                        {t}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

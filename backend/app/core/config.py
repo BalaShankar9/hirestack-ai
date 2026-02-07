@@ -29,22 +29,22 @@ class Settings(BaseSettings):
     port: int = 8000
 
     # CORS
-    cors_origins: List[str] = ["http://localhost:3000", "https://hirestack.ai"]
-    allowed_origins: str = "http://localhost:3000"
+    cors_origins: List[str] = ["http://localhost:3000", "http://localhost:3002"]
+    allowed_origins: str = "http://localhost:3002"
 
-    # Firebase
-    firebase_project_id: str = "hirestack-ai"
-    firebase_credentials_path: Optional[str] = None  # Path to service account JSON
-    firebase_database_id: str = "default"  # Firestore multi-db ID (new projects often use `default`)
-    firebase_storage_bucket: Optional[str] = None  # e.g. "<project-id>.appspot.com" or "<project-id>.firebasestorage.app"
+    # Supabase
+    supabase_url: str = ""
+    supabase_anon_key: str = ""
+    supabase_service_role_key: str = ""
+    supabase_jwt_secret: str = ""
 
     # Redis (optional - for caching)
     redis_url: str = "redis://localhost:6379"
 
-    # Anthropic (Claude)
-    anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-20250514"
-    anthropic_max_tokens: int = 4096
+    # OpenAI
+    openai_api_key: str = ""
+    openai_model: str = "gpt-5.2"
+    openai_max_tokens: int = 4096
 
     # File Upload
     max_upload_size_mb: int = 10

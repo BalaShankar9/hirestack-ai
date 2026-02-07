@@ -10,7 +10,6 @@ from datetime import datetime
 class UserDict(TypedDict, total=False):
     """User document schema."""
     id: str
-    firebase_uid: str
     email: str
     full_name: Optional[str]
     avatar_url: Optional[str]

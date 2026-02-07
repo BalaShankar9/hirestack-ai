@@ -1,367 +1,265 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  LayoutGrid,
-  Sparkles,
+  Home,
   Briefcase,
-  FolderKanban,
+  GraduationCap,
+  ShieldCheck,
   LogOut,
-  Command as CommandIcon,
-  PanelLeftClose,
-  PanelLeftOpen,
+  Menu,
+  X,
+  Plus,
+  Sparkles,
+  ChevronLeft,
 } from "lucide-react";
-import { signOut } from "firebase/auth";
-
-import { cn } from "@/lib/utils";
-import { auth } from "@/lib/firebase";
 import { useAuth } from "@/components/providers";
-import { useApplications } from "@/lib/firestore";
-
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
-type NavItem = {
-  name: string;
-  href: string;
-  icon: React.ComponentType<{ className?: string }>;
-  description: string;
-};
+const NAV = [
+  { href: "/dashboard", label: "Dashboard", icon: Home, description: "Overview & stats" },
+  { href: "/dashboard/new", label: "New Application", icon: Plus, description: "Start a workspace" },
+  { href: "/career", label: "Career Lab", icon: GraduationCap, description: "Skill sprints" },
+  { href: "/evidence", label: "Evidence Vault", icon: ShieldCheck, description: "Proof library" },
+] as const;
 
-const NAV: NavItem[] = [
-  {
-    name: "Dashboard",
-    href: "/dashboard",
-    icon: LayoutGrid,
-    description: "Your application workspaces and queue",
-  },
-  {
-    name: "New Application",
-    href: "/new",
-    icon: Sparkles,
-    description: "Diagnose → plan → build → ship",
-  },
-  {
-    name: "Evidence Vault",
-    href: "/evidence",
-    icon: FolderKanban,
-    description: "Proof library you can reuse",
-  },
-  {
-    name: "Career Lab",
-    href: "/career",
-    icon: Briefcase,
-    description: "Skill sprints + learning plan",
-  },
-];
-
-function initials(email?: string | null) {
-  if (!email) return "U";
-  return email.slice(0, 2).toUpperCase();
-}
-
-type CommandItem = {
-  group: string;
-  title: string;
-  subtitle?: string;
-  onSelect: () => void;
-};
-
-export function AppShell({
-  children,
-  pageTitle,
-  pageHint,
-  actions,
-}: {
-  children: React.ReactNode;
-  pageTitle?: string;
-  pageHint?: string;
-  actions?: React.ReactNode;
-}) {
-  const router = useRouter();
+export function AppShell({ children }: { children: ReactNode }) {
+  const { user, signOut } = useAuth();
   const pathname = usePathname();
-  const { user } = useAuth();
-  const { data: apps } = useApplications(user?.uid || null, 6);
-
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [cmdOpen, setCmdOpen] = useState(false);
-  const [cmdQuery, setCmdQuery] = useState("");
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setCmdOpen(true);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  const commandItems: CommandItem[] = useMemo(() => {
-    const navItems: CommandItem[] = NAV.map((n) => ({
-      group: "Navigate",
-      title: n.name,
-      subtitle: n.description,
-      onSelect: () => router.push(n.href),
-    }));
-
-    const recentApps: CommandItem[] = apps.slice(0, 5).map((a) => ({
-      group: "Recent Workspaces",
-      title: a.job.title || "Untitled application",
-      subtitle: a.job.company ? `@ ${a.job.company}` : "Workspace",
-      onSelect: () => router.push(`/applications/${a.id}`),
-    }));
-
-    return [...navItems, ...recentApps];
-  }, [apps, router]);
-
-  const filtered = useMemo(() => {
-    const q = cmdQuery.trim().toLowerCase();
-    if (!q) return commandItems;
-    return commandItems.filter((i) => {
-      const hay = `${i.title} ${i.subtitle || ""}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [cmdQuery, commandItems]);
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, CommandItem[]>();
-    for (const item of filtered) {
-      map.set(item.group, [...(map.get(item.group) || []), item]);
-    }
-    return Array.from(map.entries());
-  }, [filtered]);
+  const router = useRouter();
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const [collapsed, setCollapsed] = React.useState(false);
 
   const handleSignOut = async () => {
-    await signOut(auth);
-    router.push("/login");
+    await signOut();
+    router.replace("/login");
   };
 
+  const initials = user?.displayName
+    ? user.displayName
+        .split(" ")
+        .map((w) => w[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
+    : user?.email?.slice(0, 2).toUpperCase() ?? "?";
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Command palette */}
-      <Dialog open={cmdOpen} onOpenChange={setCmdOpen}>
-        <DialogContent className="max-w-xl p-0 overflow-hidden">
-          <DialogHeader className="px-4 pt-4 pb-2">
-            <DialogTitle className="text-sm font-semibold text-muted-foreground">
-              Command palette
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              Jump to a workspace or page.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="px-4 pb-4">
-            <Input
-              autoFocus
-              placeholder="Jump to… (Dashboard, New Application, Evidence, a workspace)"
-              value={cmdQuery}
-              onChange={(e) => setCmdQuery(e.target.value)}
-            />
+    <div className="flex min-h-screen bg-background">
+      {/* ── Sidebar (Desktop) ─────────────────────── */}
+      <aside
+        className={cn(
+          "hidden lg:flex flex-col border-r bg-card/50 backdrop-blur-sm transition-all duration-300 ease-in-out",
+          collapsed ? "w-[68px]" : "w-[260px]"
+        )}
+      >
+        {/* Logo */}
+        <div className="flex h-16 items-center gap-3 border-b px-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 shadow-glow-sm">
+            <Sparkles className="h-4 w-4 text-white" />
           </div>
-          <Separator />
-          <ScrollArea className="max-h-[340px]">
-            <div className="p-2">
-              {grouped.length === 0 ? (
-                <div className="px-3 py-6 text-sm text-muted-foreground">
-                  No matches. Try a different query.
-                </div>
-              ) : (
-                grouped.map(([group, items]) => (
-                  <div key={group} className="mb-2">
-                    <div className="px-3 py-2 text-xs font-medium text-muted-foreground">
-                      {group}
-                    </div>
-                    <div className="space-y-1">
-                      {items.map((item) => (
-                        <button
-                          key={`${group}:${item.title}`}
-                          className="w-full rounded-md px-3 py-2 text-left hover:bg-muted transition-colors"
-                          onClick={() => {
-                            setCmdOpen(false);
-                            setCmdQuery("");
-                            item.onSelect();
-                          }}
-                        >
-                          <div className="text-sm font-medium">{item.title}</div>
-                          {item.subtitle ? (
-                            <div className="text-xs text-muted-foreground">
-                              {item.subtitle}
-                            </div>
-                          ) : null}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
-
-      <div className="flex">
-        {/* Sidebar */}
-        <aside
-          className={cn(
-            "sticky top-0 h-screen border-r bg-white/60 backdrop-blur supports-[backdrop-filter]:bg-white/40",
-            sidebarCollapsed ? "w-20" : "w-72"
+          {!collapsed && (
+            <span className="text-base font-bold tracking-tight animate-fade-in">
+              HireStack <span className="text-primary">AI</span>
+            </span>
           )}
-        >
-          <div className="flex items-center justify-between px-4 py-4">
-            <Link href="/dashboard" className="flex items-center gap-2">
-              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-semibold">
-                H
-              </div>
-              {!sidebarCollapsed && (
-                <div className="leading-tight">
-                  <div className="text-sm font-semibold">HireStack</div>
-                  <div className="text-xs text-muted-foreground">
-                    Application Intelligence
-                  </div>
-                </div>
-              )}
-            </Link>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSidebarCollapsed((v) => !v)}
-              className="text-muted-foreground"
-              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            >
-              {sidebarCollapsed ? (
-                <PanelLeftOpen className="h-4 w-4" />
-              ) : (
-                <PanelLeftClose className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
+        </div>
 
-          <nav className="px-3 pb-4">
-            <div className="space-y-1">
-              {NAV.map((item) => {
-                const active = pathname === item.href || pathname.startsWith(item.href + "/");
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                      active
-                        ? "bg-blue-50 text-blue-700"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                    title={sidebarCollapsed ? item.name : undefined}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {!sidebarCollapsed && (
-                      <div className="min-w-0">
-                        <div className="truncate">{item.name}</div>
-                        <div className="truncate text-[11px] font-normal text-muted-foreground">
-                          {item.description}
+        {/* Nav links */}
+        <nav className="flex-1 space-y-1 px-3 py-4">
+          {NAV.map(({ href, label, icon: Icon, description }) => {
+            const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
+            const isExact = pathname === href;
+            const isDashboard = href === "/dashboard";
+            const show = isDashboard ? isExact : active;
+
+            return (
+              <Link key={href} href={href} onClick={() => setSidebarOpen(false)}>
+                <div
+                  className={cn(
+                    "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                    show
+                      ? "bg-primary/10 text-primary shadow-sm"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  )}
+                >
+                  {show && (
+                    <div className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary" />
+                  )}
+                  <Icon className={cn("h-[18px] w-[18px] shrink-0", show && "text-primary")} />
+                  {!collapsed && (
+                    <div className="min-w-0">
+                      <div className="truncate">{label}</div>
+                      {!active && (
+                        <div className="truncate text-[11px] text-muted-foreground/70 group-hover:text-muted-foreground">
+                          {description}
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
+                  )}
+                </div>
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Collapse toggle */}
+        <div className="border-t px-3 py-2">
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="flex w-full items-center justify-center rounded-lg p-2 text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
+          >
+            <ChevronLeft className={cn("h-4 w-4 transition-transform duration-300", collapsed && "rotate-180")} />
+          </button>
+        </div>
+
+        {/* User section */}
+        <div className="border-t p-3">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className={cn(
+                "flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-muted/60 transition-colors",
+                collapsed && "justify-center"
+              )}>
+                <Avatar className="h-8 w-8 ring-2 ring-primary/10 ring-offset-2 ring-offset-background">
+                  <AvatarImage src={user?.photoURL ?? undefined} />
+                  <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
+                </Avatar>
+                {!collapsed && (
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{user?.displayName ?? "User"}</p>
+                    <p className="truncate text-[11px] text-muted-foreground">{user?.email}</p>
+                  </div>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="top" className="w-56">
+              <div className="px-3 py-2">
+                <p className="text-sm font-medium">{user?.displayName ?? "User"}</p>
+                <p className="text-xs text-muted-foreground">{user?.email}</p>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </aside>
+
+      {/* ── Mobile Overlay ────────────────────────── */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden" onClick={() => setSidebarOpen(false)}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <aside
+            className="absolute left-0 top-0 h-full w-[280px] border-r bg-card shadow-soft-xl animate-slide-in-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex h-16 items-center justify-between border-b px-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600">
+                  <Sparkles className="h-4 w-4 text-white" />
+                </div>
+                <span className="text-base font-bold tracking-tight">
+                  HireStack <span className="text-primary">AI</span>
+                </span>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)} className="rounded-lg">
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <nav className="space-y-1 p-3">
+              {NAV.map(({ href, label, icon: Icon }) => {
+                const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
+                const isDashboard = href === "/dashboard";
+                const show = isDashboard ? pathname === href : active;
+                return (
+                  <Link key={href} href={href} onClick={() => setSidebarOpen(false)}>
+                    <div
+                      className={cn(
+                        "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                        show
+                          ? "bg-primary/10 text-primary"
+                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      )}
+                    >
+                      <Icon className="h-[18px] w-[18px]" />
+                      {label}
+                    </div>
                   </Link>
                 );
               })}
-            </div>
-          </nav>
-
-          {!sidebarCollapsed && (
-            <div className="px-4">
-              <div className="text-xs font-medium text-muted-foreground mb-2">
-                Recent workspaces
-              </div>
-              <div className="space-y-1">
-                {apps.length === 0 ? (
-                  <div className="rounded-lg border bg-white p-3 text-xs text-muted-foreground">
-                    No applications yet. Start with <span className="font-medium">New Application</span>.
-                  </div>
-                ) : (
-                  apps.slice(0, 4).map((a) => (
-                    <Link
-                      key={a.id}
-                      href={`/applications/${a.id}`}
-                      className="block rounded-lg border bg-white px-3 py-2 hover:bg-muted transition-colors"
-                    >
-                      <div className="text-sm font-medium truncate">
-                        {a.job.title || "Untitled application"}
-                      </div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {a.job.company || "Workspace"}
-                      </div>
-                    </Link>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="absolute bottom-0 left-0 right-0 border-t bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/50">
-            <div className={cn("px-4 py-3 flex items-center gap-3", sidebarCollapsed && "justify-center")}>
-              <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">
-                {initials(user?.email)}
-              </div>
-              {!sidebarCollapsed && (
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium truncate">
-                    {user?.displayName || user?.email || "User"}
-                  </div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    Signed in
-                  </div>
-                </div>
-              )}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleSignOut}
-                aria-label="Sign out"
-                className="text-muted-foreground"
-              >
-                <LogOut className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </aside>
-
-        {/* Main */}
-        <div className="min-w-0 flex-1">
-          <header className="sticky top-0 z-30 border-b bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/50">
-            <div className="flex items-center gap-3 px-6 py-4">
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold truncate">
-                  {pageTitle || "Workspace"}
-                </div>
-                {pageHint ? (
-                  <div className="text-xs text-muted-foreground truncate">
-                    {pageHint}
-                  </div>
-                ) : null}
-              </div>
-              {actions ? <div className="hidden sm:flex items-center gap-2">{actions}</div> : null}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCmdOpen(true)}
-                className="gap-2"
-              >
-                <CommandIcon className="h-4 w-4" />
-                <span className="hidden sm:inline">Search</span>
-                <span className="hidden sm:inline text-xs text-muted-foreground">⌘K</span>
-              </Button>
-            </div>
-          </header>
-
-          <main className="px-6 py-6">{children}</main>
+            </nav>
+          </aside>
         </div>
+      )}
+
+      {/* ── Main Content ──────────────────────────── */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Top bar */}
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background/80 backdrop-blur-xl px-4 lg:px-6">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden rounded-lg"
+            onClick={() => setSidebarOpen(true)}
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+
+          {/* Breadcrumb / title area */}
+          <div className="flex-1" />
+
+          {/* Quick action */}
+          <Button
+            size="sm"
+            className="hidden sm:flex gap-2 rounded-xl bg-primary shadow-glow-sm hover:shadow-glow-md transition-shadow"
+            onClick={() => router.push("/dashboard/new")}
+          >
+            <Plus className="h-4 w-4" />
+            New Application
+          </Button>
+
+          {/* Mobile user menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="rounded-full lg:hidden">
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={user?.photoURL ?? undefined} />
+                  <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
+                </Avatar>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <div className="px-3 py-2">
+                <p className="text-sm font-medium">{user?.displayName ?? "User"}</p>
+                <p className="text-xs text-muted-foreground">{user?.email}</p>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </header>
+
+        {/* Page content */}
+        <main className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-7xl px-4 py-6 lg:px-8">{children}</div>
+        </main>
       </div>
     </div>
   );

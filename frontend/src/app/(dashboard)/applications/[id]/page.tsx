@@ -117,18 +117,16 @@ export default function ApplicationWorkspacePage() {
   // Sync local editor state when doc loads/changes.
   useEffect(() => {
     if (!app) return;
-    setCvLocal(app.docs.cv.contentHtml || "");
-    setClLocal(app.docs.coverLetter.contentHtml || "");
-  }, [app?.docs.cv.contentHtml, app?.docs.coverLetter.contentHtml]);
+    setCvLocal(app.cvHtml || "");
+    setClLocal(app.coverLetterHtml || "");
+  }, [app?.cvHtml, app?.coverLetterHtml]);
 
   // Debounced persistence for editors
   useEffect(() => {
     if (!app) return;
     const t = setTimeout(() => {
-      if (cvLocal !== app.docs.cv.contentHtml) {
-        patchApplication(appId, {
-          docs: { ...app.docs, cv: { ...app.docs.cv, contentHtml: cvLocal, updatedAt: Date.now() } },
-        } as any);
+      if (cvLocal !== (app.cvHtml || "")) {
+        patchApplication(appId, { cvHtml: cvLocal });
       }
     }, 900);
     return () => clearTimeout(t);
@@ -137,26 +135,21 @@ export default function ApplicationWorkspacePage() {
   useEffect(() => {
     if (!app) return;
     const t = setTimeout(() => {
-      if (clLocal !== app.docs.coverLetter.contentHtml) {
-        patchApplication(appId, {
-          docs: {
-            ...app.docs,
-            coverLetter: { ...app.docs.coverLetter, contentHtml: clLocal, updatedAt: Date.now() },
-          },
-        } as any);
+      if (clLocal !== (app.coverLetterHtml || "")) {
+        patchApplication(appId, { coverLetterHtml: clLocal });
       }
     }, 900);
     return () => clearTimeout(t);
   }, [app, appId, clLocal]);
 
-  const keywords = useMemo(() => app?.benchmark?.keywords || [], [app?.benchmark?.keywords]);
-  const missing = useMemo(() => app?.gaps?.missingKeywords || [], [app?.gaps?.missingKeywords]);
+  const keywords = useMemo(() => app?.benchmark?.keywords ?? [], [app?.benchmark?.keywords]);
+  const missing = useMemo(() => app?.gaps?.missingKeywords ?? [], [app?.gaps?.missingKeywords]);
 
   const coachActions = useMemo(() => {
     if (!app || !user) return [];
     const actions = buildCoachActions({
       missingKeywords: missing,
-      factsLocked: app.factsLocked,
+      factsLocked: app.factsLocked ?? false,
       evidenceCount: evidence.length,
     });
 
@@ -177,8 +170,8 @@ export default function ApplicationWorkspacePage() {
     });
   }, [app, appId, evidence.length, missing, router, user]);
 
-  const title = app?.job.title || "Application workspace";
-  const subtitle = app?.job.company ? `@ ${app.job.company}` : undefined;
+  const title = app?.title || app?.confirmedFacts?.jobTitle || "Application workspace";
+  const subtitle = app?.confirmedFacts?.company ? `@ ${app.confirmedFacts.company}` : undefined;
 
   const isCoveredCv = (kw: string) => stripHtml(cvLocal).toLowerCase().includes(kw.toLowerCase());
   const isCoveredCl = (kw: string) => stripHtml(clLocal).toLowerCase().includes(kw.toLowerCase());
@@ -188,7 +181,7 @@ export default function ApplicationWorkspacePage() {
     const next = t.status === "done" ? "todo" : "done";
     await setTaskStatus(user.uid, t.id, next);
     if (next === "done") {
-      await trackEvent(user.uid, { name: "task_completed", appId: t.appId, properties: { taskId: t.id } });
+      await trackEvent(user.uid, { name: "task_completed", appId: t.appId ?? undefined, properties: { taskId: t.id } });
     }
   };
 
@@ -407,7 +400,7 @@ export default function ApplicationWorkspacePage() {
             </TabsContent>
 
             <TabsContent value="gaps" className="mt-4">
-              <div className="rounded-2xl border bg-white p-5">
+              <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="text-sm font-semibold">Gap analysis</div>
@@ -415,7 +408,7 @@ export default function ApplicationWorkspacePage() {
                       Gaps create the action queue. Fix one gap at a time, with evidence.
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => regenerate("gaps")}>
+                  <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => regenerate("gaps")}>
                     <RefreshCw className="h-4 w-4" />
                     Regenerate
                   </Button>
@@ -429,7 +422,7 @@ export default function ApplicationWorkspacePage() {
                       <div className="text-xs font-semibold">Missing keywords</div>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {app.gaps.missingKeywords.slice(0, 16).map((k) => (
-                          <Badge key={k} variant="secondary" className="border bg-amber-50 text-amber-900 border-amber-200 text-[11px]">
+                          <Badge key={k} variant="secondary" className="border bg-amber-500/10 text-amber-700 border-amber-200 text-[11px]">
                             {k}
                           </Badge>
                         ))}
@@ -447,9 +440,9 @@ export default function ApplicationWorkspacePage() {
                       </div>
                     </div>
 
-                    <div className="rounded-xl bg-blue-50 p-4">
-                      <div className="text-xs font-semibold text-blue-900">Recommendations</div>
-                      <ul className="mt-2 space-y-1 text-sm text-blue-900/80">
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                      <div className="text-xs font-semibold text-primary">Recommendations</div>
+                      <ul className="mt-2 space-y-1 text-sm text-foreground/80">
                         {app.gaps.recommendations.map((r) => (
                           <li key={r}>• {r}</li>
                         ))}
@@ -469,7 +462,7 @@ export default function ApplicationWorkspacePage() {
             </TabsContent>
 
             <TabsContent value="learning" className="mt-4">
-              <div className="rounded-2xl border bg-white p-5">
+              <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="text-sm font-semibold">Learning plan</div>
@@ -477,7 +470,7 @@ export default function ApplicationWorkspacePage() {
                       A sprint-based plan built from your gaps. Each week produces proof.
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => regenerate("learningPlan")}>
+                  <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => regenerate("learningPlan")}>
                     <RefreshCw className="h-4 w-4" />
                     Regenerate
                   </Button>
@@ -500,7 +493,7 @@ export default function ApplicationWorkspacePage() {
 
                     <div className="grid gap-3 md:grid-cols-2">
                       {app.learningPlan.plan.map((w) => (
-                        <div key={w.week} className="rounded-2xl border bg-white p-4">
+                        <div key={w.week} className="rounded-2xl border bg-card p-4">
                           <div className="text-sm font-semibold">{w.theme}</div>
                           <div className="mt-2 text-xs text-muted-foreground font-medium">Outcomes</div>
                           <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
@@ -518,7 +511,7 @@ export default function ApplicationWorkspacePage() {
                       ))}
                     </div>
 
-                    <div className="rounded-2xl border bg-white p-4">
+                    <div className="rounded-2xl border bg-card p-4">
                       <div className="flex items-center gap-2">
                         <BookOpen className="h-4 w-4 text-muted-foreground" />
                         <div className="text-sm font-semibold">Resources</div>
@@ -564,7 +557,7 @@ export default function ApplicationWorkspacePage() {
                   setVersionsTarget("cv");
                   setVersionsOpen(true);
                 }}
-                baseHtml={app.docs.baseResumeHtml || ""}
+                baseHtml={app.confirmedFacts?.resume?.text || ""}
               />
             </TabsContent>
 
@@ -587,12 +580,12 @@ export default function ApplicationWorkspacePage() {
                   setVersionsTarget("coverLetter");
                   setVersionsOpen(true);
                 }}
-                baseHtml={app.docs.baseResumeHtml || ""}
+                baseHtml={app.confirmedFacts?.resume?.text || ""}
               />
             </TabsContent>
 
             <TabsContent value="export" className="mt-4">
-              <div className="rounded-2xl border bg-white p-5">
+              <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="text-sm font-semibold">Export</div>
@@ -600,7 +593,7 @@ export default function ApplicationWorkspacePage() {
                       MVP export: download HTML and keep iterating. PDF/DOC pipelines can be added later.
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" className="gap-2" onClick={() => regenerate("export")}>
+                  <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => regenerate("scorecard")}>
                     <RefreshCw className="h-4 w-4" />
                     Refresh readiness
                   </Button>
@@ -609,7 +602,7 @@ export default function ApplicationWorkspacePage() {
                 <Separator className="my-4" />
 
                 <div className="grid gap-3 md:grid-cols-2">
-                  <div className="rounded-2xl border bg-white p-4">
+                  <div className="rounded-2xl border bg-card p-4">
                     <div className="text-sm font-semibold">CV</div>
                     <div className="mt-1 text-xs text-muted-foreground">
                       Download your current tailored CV as HTML.
@@ -639,7 +632,7 @@ export default function ApplicationWorkspacePage() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border bg-white p-4">
+                  <div className="rounded-2xl border bg-card p-4">
                     <div className="text-sm font-semibold">Cover letter</div>
                     <div className="mt-1 text-xs text-muted-foreground">
                       Download your current cover letter as HTML.
@@ -670,9 +663,9 @@ export default function ApplicationWorkspacePage() {
                   </div>
                 </div>
 
-                <div className="mt-4 rounded-xl bg-blue-50 p-4">
-                  <div className="text-xs font-semibold text-blue-900">Coach reminder</div>
-                  <div className="mt-1 text-xs text-blue-900/80">
+                <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+                  <div className="text-xs font-semibold text-primary">Coach reminder</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
                     Export is the finish line, but iterations are how you win. Snapshot before exporting.
                   </div>
                 </div>
@@ -695,7 +688,7 @@ export default function ApplicationWorkspacePage() {
         open={versionsOpen}
         onOpenChange={setVersionsOpen}
         versions={
-          versionsTarget === "cv" ? app.docs.cv.versions : app.docs.coverLetter.versions
+          versionsTarget === "cv" ? (app.cvVersions ?? []) : (app.clVersions ?? [])
         }
         onSnapshot={async (label) => {
           await snapshotDocVersion(appId, versionsTarget, label);
@@ -718,7 +711,7 @@ function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border bg-white p-6">
+    <div className="rounded-2xl border border-dashed bg-card/50 p-6 text-center">
       <div className="text-sm font-semibold">{title}</div>
       <div className="mt-1 text-xs text-muted-foreground">{body}</div>
       {action ? <div className="mt-4">{action}</div> : null}
@@ -731,7 +724,7 @@ function DiffView({ baseHtml, nextHtml }: { baseHtml: string; nextHtml: string }
   const next = stripHtml(nextHtml);
   const diffs = diffWordsWithSpace(base, next);
   return (
-    <div className="rounded-2xl border bg-white">
+    <div className="rounded-2xl border bg-card">
       <div className="px-4 py-3 text-sm font-semibold">Diff (base → tailored)</div>
       <Separator />
       <ScrollArea className="h-[520px]">
@@ -741,9 +734,9 @@ function DiffView({ baseHtml, nextHtml }: { baseHtml: string; nextHtml: string }
               key={idx}
               className={
                 part.added
-                  ? "bg-green-100 text-green-900"
+                  ? "bg-emerald-500/10 text-emerald-800"
                   : part.removed
-                    ? "bg-red-100 text-red-900 line-through"
+                    ? "bg-rose-500/10 text-rose-800 line-through"
                     : ""
               }
             >
@@ -791,7 +784,7 @@ function DocEditorModule({
 }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border bg-white p-5">
+      <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-sm font-semibold">{title}</div>
@@ -799,15 +792,15 @@ function DocEditorModule({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <DiffToggle mode={mode} onChange={onModeChange} />
-            <Button variant="outline" size="sm" className="gap-2" onClick={onOpenVersions}>
+            <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={onOpenVersions}>
               <Layers className="h-4 w-4" />
               Versions
             </Button>
-            <Button variant="outline" size="sm" className="gap-2" onClick={onPickEvidence}>
+            <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={onPickEvidence}>
               <UploadCloud className="h-4 w-4" />
               Use evidence
             </Button>
-            <Button variant="outline" size="sm" className="gap-2" onClick={onRegenerate}>
+            <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={onRegenerate}>
               <RefreshCw className="h-4 w-4" />
               Regenerate
             </Button>
@@ -832,7 +825,7 @@ function DocEditorModule({
           </div>
 
           <aside className="lg:sticky lg:top-28 h-fit space-y-3">
-            <div className="rounded-2xl border bg-white p-4">
+            <div className="rounded-2xl border bg-card p-4">
               <div className="text-sm font-semibold">Keyword coverage</div>
               <div className="mt-1 text-xs text-muted-foreground">
                 Green = covered in doc text. Amber = missing.
@@ -842,7 +835,7 @@ function DocEditorModule({
               </div>
             </div>
 
-            <div className="rounded-2xl border bg-white p-4">
+            <div className="rounded-2xl border bg-card p-4">
               <div className="text-sm font-semibold">Suggestions</div>
               <div className="mt-1 text-xs text-muted-foreground">
                 Confirmed vs recommended — keep it honest.
@@ -854,7 +847,7 @@ function DocEditorModule({
                 <div className="text-xs font-semibold">Recommended fixes</div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {missingKeywords.slice(0, 10).map((k) => (
-                    <Badge key={k} variant="secondary" className="border bg-amber-50 text-amber-900 border-amber-200 text-[11px]">
+                    <Badge key={k} variant="secondary" className="border bg-amber-500/10 text-amber-700 border-amber-200 text-[11px]">
                       {k}
                     </Badge>
                   ))}

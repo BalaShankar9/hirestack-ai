@@ -1,17 +1,17 @@
 """
 API Dependencies
-Common dependencies for route handlers
+Common dependencies for route handlers — Supabase JWT auth
 """
 from typing import Optional, Dict, Any
 
 from fastapi import Depends, HTTPException, status, Header
 
-from app.core.database import verify_firebase_token, get_firestore_db, FirestoreDB, COLLECTIONS
+from app.core.database import verify_token, get_db, SupabaseDB, TABLES
 from app.core.config import settings
 
 
 async def get_token_from_header(
-    authorization: str = Header(None)
+    authorization: str = Header(None),
 ) -> Optional[str]:
     """Extract token from Authorization header."""
     if authorization is None:
@@ -23,9 +23,9 @@ async def get_token_from_header(
 
 async def get_current_user(
     token: Optional[str] = Depends(get_token_from_header),
-    db: FirestoreDB = Depends(get_firestore_db)
+    db: SupabaseDB = Depends(get_db),
 ) -> Dict[str, Any]:
-    """Get current authenticated user from Firebase token."""
+    """Get current authenticated user from Supabase JWT."""
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -34,8 +34,7 @@ async def get_current_user(
         )
 
     try:
-        # Verify token with Firebase
-        decoded_token = verify_firebase_token(token)
+        decoded_token = verify_token(token)
 
         if not decoded_token:
             raise HTTPException(
@@ -44,23 +43,23 @@ async def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        firebase_uid = decoded_token.get('uid')
-        email = decoded_token.get('email')
-        name = decoded_token.get('name') or decoded_token.get('display_name')
-        picture = decoded_token.get('picture')
+        uid = decoded_token.get("sub")
+        email = decoded_token.get("email")
+        meta = decoded_token.get("user_metadata", {})
+        name = meta.get("full_name")
+        picture = meta.get("avatar_url")
 
-        # Get or create user in Firestore
         user = await db.get_or_create_user(
-            firebase_uid=firebase_uid,
+            uid=uid,
             email=email,
             full_name=name,
-            avatar_url=picture
+            avatar_url=picture,
         )
 
-        if not user.get('is_active', True):
+        if not user.get("is_active", True):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="User account is disabled"
+                detail="User account is disabled",
             )
 
         return user
@@ -77,7 +76,7 @@ async def get_current_user(
 
 async def get_current_user_optional(
     token: Optional[str] = Depends(get_token_from_header),
-    db: FirestoreDB = Depends(get_firestore_db)
+    db: SupabaseDB = Depends(get_db),
 ) -> Optional[Dict[str, Any]]:
     """Get current user if authenticated, None otherwise."""
     if not token:
@@ -89,12 +88,12 @@ async def get_current_user_optional(
 
 
 async def require_premium_user(
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Require premium subscription."""
-    if not current_user.get('is_premium', False):
+    if not current_user.get("is_premium", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Premium subscription required"
+            detail="Premium subscription required",
         )
     return current_user

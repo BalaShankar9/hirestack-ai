@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress";
 function StatusBadge({ status }: { status: ModuleStatus }) {
   if (status.state === "ready") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-1 text-[11px] font-medium text-green-700">
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-700">
         <CheckCircle2 className="h-3.5 w-3.5" />
         Ready
       </span>
@@ -17,7 +17,7 @@ function StatusBadge({ status }: { status: ModuleStatus }) {
   }
   if (status.state === "error") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700">
+      <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-1 text-[11px] font-medium text-rose-700">
         <AlertTriangle className="h-3.5 w-3.5" />
         Needs attention
       </span>
@@ -25,7 +25,7 @@ function StatusBadge({ status }: { status: ModuleStatus }) {
   }
   if (status.state === "generating" || status.state === "queued") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-700">
+      <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         {status.state === "queued" ? "Queued" : "Generating"}
       </span>
@@ -54,10 +54,10 @@ export function ModuleCard({
   onRegenerate?: () => void;
 }) {
   return (
-    <div className="rounded-2xl border bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border bg-card p-4 shadow-soft-sm hover:shadow-soft-md transition-shadow">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-start gap-3 min-w-0">
-          <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center text-muted-foreground">
+          <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
             {icon}
           </div>
           <div className="min-w-0">
@@ -82,7 +82,7 @@ export function ModuleCard({
       )}
 
       {status.state === "error" && status.error ? (
-        <div className="mt-3 rounded-xl bg-red-50 p-3 text-xs text-red-700">
+        <div className="mt-3 rounded-xl bg-rose-500/10 p-3 text-xs text-rose-700">
           {status.error}
         </div>
       ) : null}
@@ -91,7 +91,7 @@ export function ModuleCard({
         <Button
           variant="default"
           size="sm"
-          className="flex-1"
+          className="flex-1 rounded-xl"
           onClick={onOpen}
           disabled={!onOpen}
         >
@@ -100,6 +100,7 @@ export function ModuleCard({
         <Button
           variant="outline"
           size="sm"
+          className="rounded-xl"
           onClick={onRegenerate}
           disabled={!onRegenerate}
         >

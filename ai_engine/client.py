@@ -1,24 +1,24 @@
 """
-Claude AI Client
-Handles all interactions with the Anthropic Claude API
+OpenAI AI Client
+Handles all interactions with the OpenAI API (GPT-4o / GPT-4.1)
 """
 import json
 from typing import Optional, Dict, Any, List
 import asyncio
 
-from anthropic import Anthropic, AsyncAnthropic
+from openai import AsyncOpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
 
 
 class AIClient:
-    """Client for Claude API interactions."""
+    """Client for OpenAI API interactions."""
 
     def __init__(self):
-        self.client = AsyncAnthropic(api_key=settings.anthropic_api_key)
-        self.model = settings.anthropic_model
-        self.max_tokens = settings.anthropic_max_tokens
+        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.model = settings.openai_model
+        self.max_tokens = settings.openai_max_tokens
 
     @retry(
         stop=stop_after_attempt(3),
@@ -32,21 +32,27 @@ class AIClient:
         temperature: float = 0.7,
         response_format: str = "text"
     ) -> str:
-        """Send a completion request to Claude."""
-        messages = [{"role": "user", "content": prompt}]
+        """Send a completion request to OpenAI."""
+        messages = [
+            {"role": "system", "content": system or "You are a helpful AI assistant."},
+            {"role": "user", "content": prompt},
+        ]
 
-        response = await self.client.messages.create(
+        kwargs: Dict[str, Any] = dict(
             model=self.model,
             max_tokens=max_tokens or self.max_tokens,
             temperature=temperature,
-            system=system or "You are a helpful AI assistant.",
-            messages=messages
+            messages=messages,
         )
 
-        content = response.content[0].text
+        if response_format == "json":
+            kwargs["response_format"] = {"type": "json_object"}
+
+        response = await self.client.chat.completions.create(**kwargs)
+
+        content = response.choices[0].message.content or ""
 
         if response_format == "json":
-            # Try to extract JSON from the response
             content = self._extract_json(content)
 
         return content
@@ -66,17 +72,20 @@ class AIClient:
         system_prompt = system or "You are a helpful AI assistant."
         system_prompt += "\n\nIMPORTANT: Respond ONLY with valid JSON. No markdown, no explanations, just pure JSON."
 
-        messages = [{"role": "user", "content": prompt}]
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ]
 
-        response = await self.client.messages.create(
+        response = await self.client.chat.completions.create(
             model=self.model,
             max_tokens=max_tokens or self.max_tokens,
             temperature=temperature,
-            system=system_prompt,
-            messages=messages
+            messages=messages,
+            response_format={"type": "json_object"},
         )
 
-        content = response.content[0].text
+        content = response.choices[0].message.content or ""
         return self._parse_json(content)
 
     async def chat(
@@ -87,15 +96,19 @@ class AIClient:
         temperature: float = 0.7
     ) -> str:
         """Send a chat completion request with message history."""
-        response = await self.client.messages.create(
+        chat_messages: List[Dict[str, str]] = [
+            {"role": "system", "content": system or "You are a helpful AI assistant."},
+            *messages,
+        ]
+
+        response = await self.client.chat.completions.create(
             model=self.model,
             max_tokens=max_tokens or self.max_tokens,
             temperature=temperature,
-            system=system or "You are a helpful AI assistant.",
-            messages=messages
+            messages=chat_messages,
         )
 
-        return response.content[0].text
+        return response.choices[0].message.content or ""
 
     def _extract_json(self, content: str) -> str:
         """Extract JSON from response that may contain markdown."""

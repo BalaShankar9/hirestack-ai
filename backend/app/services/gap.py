@@ -1,211 +1,143 @@
 """
 Gap Service
-Handles gap analysis operations
+Handles gap analysis operations with Firestore
 """
-from typing import List, Optional
-from uuid import UUID
+from typing import List, Optional, Dict, Any
+import structlog
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-
-from app.models.profile import Profile
-from app.models.benchmark import Benchmark
-from app.models.job import JobDescription
-from app.models.gap import GapReport
-from app.schemas.gap import GapReportResponse, GapSummary
+from app.core.database import get_firestore_db, COLLECTIONS, FirestoreDB
 from ai_engine.client import AIClient
 from ai_engine.chains.gap_analyzer import GapAnalyzerChain
 
+logger = structlog.get_logger()
+
 
 class GapService:
-    """Service for gap analysis operations."""
+    """Service for gap analysis operations using Firestore."""
 
-    def __init__(self, db: AsyncSession):
-        self.db = db
+    def __init__(self, db: Optional[FirestoreDB] = None):
+        self.db = db or get_firestore_db()
         self.ai_client = AIClient()
 
     async def analyze_gaps(
         self,
-        user_id: UUID,
-        profile_id: UUID,
-        benchmark_id: UUID
-    ) -> GapReportResponse:
+        user_id: str,
+        profile_id: str,
+        benchmark_id: str,
+    ) -> Dict[str, Any]:
         """Perform comprehensive gap analysis."""
-        # Get profile
-        profile_result = await self.db.execute(
-            select(Profile)
-            .where(Profile.id == profile_id, Profile.user_id == user_id)
-        )
-        profile = profile_result.scalar_one_or_none()
-        if not profile:
+        # Fetch profile
+        profile = await self.db.get(COLLECTIONS["profiles"], profile_id)
+        if not profile or profile.get("user_id") != user_id:
             raise ValueError("Profile not found")
 
-        # Get benchmark with job info
-        benchmark_result = await self.db.execute(
-            select(Benchmark)
-            .join(JobDescription)
-            .where(Benchmark.id == benchmark_id)
-        )
-        benchmark = benchmark_result.scalar_one_or_none()
+        # Fetch benchmark
+        benchmark = await self.db.get(COLLECTIONS["benchmarks"], benchmark_id)
         if not benchmark:
             raise ValueError("Benchmark not found")
 
-        # Get job details
-        job_result = await self.db.execute(
-            select(JobDescription)
-            .where(JobDescription.id == benchmark.job_description_id)
-        )
-        job = job_result.scalar_one_or_none()
+        # Fetch linked job for title/company
+        job_id = benchmark.get("job_description_id")
+        job = await self.db.get(COLLECTIONS["jobs"], job_id) if job_id else None
 
-        # Build profile data for analysis
+        # Build data dicts for AI
         profile_data = {
-            "name": profile.name,
-            "title": profile.title,
-            "summary": profile.summary,
-            "skills": profile.skills or [],
-            "experience": profile.experience or [],
-            "education": profile.education or [],
-            "certifications": profile.certifications or [],
-            "projects": profile.projects or []
+            "name": profile.get("name"),
+            "title": profile.get("title"),
+            "summary": profile.get("summary"),
+            "skills": profile.get("skills", []),
+            "experience": profile.get("experience", []),
+            "education": profile.get("education", []),
+            "certifications": profile.get("certifications", []),
+            "projects": profile.get("projects", []),
         }
-
-        # Build benchmark data
         benchmark_data = {
-            "ideal_profile": benchmark.ideal_profile,
-            "ideal_skills": benchmark.ideal_skills or [],
-            "ideal_experience": benchmark.ideal_experience or [],
-            "ideal_education": benchmark.ideal_education or [],
-            "ideal_certifications": benchmark.ideal_certifications or [],
-            "scoring_weights": benchmark.scoring_weights
+            "ideal_profile": benchmark.get("ideal_profile"),
+            "ideal_skills": benchmark.get("ideal_skills", []),
+            "ideal_experience": benchmark.get("ideal_experience", []),
+            "ideal_education": benchmark.get("ideal_education", []),
+            "ideal_certifications": benchmark.get("ideal_certifications", []),
+            "scoring_weights": benchmark.get("scoring_weights"),
         }
 
-        # Perform analysis with AI
+        # AI analysis
         analyzer = GapAnalyzerChain(self.ai_client)
         analysis = await analyzer.analyze_gaps(
             user_profile=profile_data,
             benchmark=benchmark_data,
-            job_title=job.title if job else "Target Role",
-            company=job.company if job else "Target Company"
+            job_title=job.get("title", "Target Role") if job else "Target Role",
+            company=job.get("company", "Target Company") if job else "Target Company",
         )
 
-        # Create gap report
-        report = GapReport(
-            user_id=user_id,
-            profile_id=profile_id,
-            benchmark_id=benchmark_id,
-            compatibility_score=analysis.get("compatibility_score", 0),
-            skill_score=analysis.get("category_scores", {}).get("technical_skills", {}).get("score", 0),
-            experience_score=analysis.get("category_scores", {}).get("experience", {}).get("score", 0),
-            education_score=analysis.get("category_scores", {}).get("education", {}).get("score", 0),
-            certification_score=analysis.get("category_scores", {}).get("certifications", {}).get("score", 0),
-            project_score=analysis.get("category_scores", {}).get("projects_portfolio", {}).get("score", 0),
-            skill_gaps=analysis.get("skill_gaps", []),
-            experience_gaps=analysis.get("experience_gaps", []),
-            education_gaps=analysis.get("education_gaps", []),
-            certification_gaps=analysis.get("certification_gaps", []),
-            project_gaps=analysis.get("project_gaps", []),
-            strengths=analysis.get("strengths", []),
-            recommendations=analysis.get("recommendations", []),
-            priority_actions=analysis.get("quick_wins", []),
-            summary=analysis
+        cats = analysis.get("category_scores", {})
+        record = {
+            "user_id": user_id,
+            "profile_id": profile_id,
+            "benchmark_id": benchmark_id,
+            "compatibility_score": analysis.get("compatibility_score", 0),
+            "skill_score": cats.get("technical_skills", {}).get("score", 0),
+            "experience_score": cats.get("experience", {}).get("score", 0),
+            "education_score": cats.get("education", {}).get("score", 0),
+            "certification_score": cats.get("certifications", {}).get("score", 0),
+            "project_score": cats.get("projects_portfolio", {}).get("score", 0),
+            "skill_gaps": analysis.get("skill_gaps", []),
+            "experience_gaps": analysis.get("experience_gaps", []),
+            "education_gaps": analysis.get("education_gaps", []),
+            "certification_gaps": analysis.get("certification_gaps", []),
+            "project_gaps": analysis.get("project_gaps", []),
+            "strengths": analysis.get("strengths", []),
+            "recommendations": analysis.get("recommendations", []),
+            "priority_actions": analysis.get("quick_wins", []),
+            "summary": analysis,
+            "status": "completed",
+        }
+
+        doc_id = await self.db.create(COLLECTIONS["gap_reports"], record)
+        logger.info("gap_analysis_completed", report_id=doc_id, score=record["compatibility_score"])
+        return await self.db.get(COLLECTIONS["gap_reports"], doc_id)
+
+    async def get_user_reports(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        return await self.db.query(
+            COLLECTIONS["gap_reports"],
+            filters=[("user_id", "==", user_id)],
+            order_by="created_at",
+            order_direction="DESCENDING",
+            limit=limit,
         )
 
-        self.db.add(report)
-        await self.db.commit()
-        await self.db.refresh(report)
-
-        return GapReportResponse.model_validate(report)
-
-    async def get_user_reports(self, user_id: UUID) -> List[GapReportResponse]:
-        """Get all gap reports for a user."""
-        result = await self.db.execute(
-            select(GapReport)
-            .where(GapReport.user_id == user_id)
-            .order_by(GapReport.created_at.desc())
-        )
-        reports = result.scalars().all()
-        return [GapReportResponse.model_validate(r) for r in reports]
-
-    async def get_report(
-        self,
-        report_id: UUID,
-        user_id: UUID
-    ) -> Optional[GapReportResponse]:
-        """Get a specific gap report."""
-        result = await self.db.execute(
-            select(GapReport)
-            .where(GapReport.id == report_id, GapReport.user_id == user_id)
-        )
-        report = result.scalar_one_or_none()
-        if report:
-            return GapReportResponse.model_validate(report)
+    async def get_report(self, report_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        report = await self.db.get(COLLECTIONS["gap_reports"], report_id)
+        if report and report.get("user_id") == user_id:
+            return report
         return None
 
-    async def get_summary(
-        self,
-        report_id: UUID,
-        user_id: UUID
-    ) -> Optional[GapSummary]:
-        """Get a summary of a gap report."""
-        result = await self.db.execute(
-            select(GapReport)
-            .where(GapReport.id == report_id, GapReport.user_id == user_id)
-        )
-        report = result.scalar_one_or_none()
-
+    async def get_summary(self, report_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        report = await self.get_report(report_id, user_id)
         if not report:
             return None
+        summary_data = report.get("summary", {})
+        return {
+            "compatibility_score": report.get("compatibility_score", 0),
+            "skill_score": report.get("skill_score", 0),
+            "experience_score": report.get("experience_score", 0),
+            "education_score": report.get("education_score", 0),
+            "certification_score": report.get("certification_score", 0),
+            "project_score": report.get("project_score", 0),
+            "top_gaps": [g.get("skill", g.get("area", "")) for g in (report.get("skill_gaps") or [])[:3]],
+            "top_strengths": [s.get("area", "") for s in (report.get("strengths") or [])[:3]],
+            "readiness_level": summary_data.get("readiness_level", "needs-work"),
+        }
 
-        summary = report.summary or {}
-
-        return GapSummary(
-            compatibility_score=report.compatibility_score,
-            skill_score=report.skill_score,
-            experience_score=report.experience_score,
-            education_score=report.education_score,
-            certification_score=report.certification_score,
-            project_score=report.project_score,
-            top_gaps=[g.get("skill", g.get("area", "")) for g in (report.skill_gaps or [])[:3]],
-            top_strengths=[s.get("area", "") for s in (report.strengths or [])[:3]],
-            readiness_level=summary.get("readiness_level", "needs-work")
-        )
-
-    async def refresh_analysis(
-        self,
-        report_id: UUID,
-        user_id: UUID
-    ) -> Optional[GapReportResponse]:
-        """Refresh a gap analysis."""
-        result = await self.db.execute(
-            select(GapReport)
-            .where(GapReport.id == report_id, GapReport.user_id == user_id)
-        )
-        old_report = result.scalar_one_or_none()
-
-        if not old_report:
+    async def refresh_analysis(self, report_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        old = await self.get_report(report_id, user_id)
+        if not old:
             return None
+        await self.db.delete(COLLECTIONS["gap_reports"], report_id)
+        return await self.analyze_gaps(user_id, old["profile_id"], old["benchmark_id"])
 
-        profile_id = old_report.profile_id
-        benchmark_id = old_report.benchmark_id
-
-        # Delete old report
-        await self.db.delete(old_report)
-        await self.db.commit()
-
-        # Generate new analysis
-        return await self.analyze_gaps(user_id, profile_id, benchmark_id)
-
-    async def delete_report(self, report_id: UUID, user_id: UUID) -> bool:
-        """Delete a gap report."""
-        result = await self.db.execute(
-            select(GapReport)
-            .where(GapReport.id == report_id, GapReport.user_id == user_id)
-        )
-        report = result.scalar_one_or_none()
-
+    async def delete_report(self, report_id: str, user_id: str) -> bool:
+        report = await self.get_report(report_id, user_id)
         if not report:
             return False
-
-        await self.db.delete(report)
-        await self.db.commit()
+        await self.db.delete(COLLECTIONS["gap_reports"], report_id)
         return True

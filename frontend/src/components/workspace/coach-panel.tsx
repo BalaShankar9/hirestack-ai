@@ -21,9 +21,9 @@ export function CoachPanel({
 }) {
   return (
     <aside className="sticky top-28 h-[calc(100vh-7rem)]">
-      <div className="rounded-2xl border bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border bg-card p-4 shadow-soft-sm">
         <div className="flex items-center gap-2">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-600 text-white flex items-center justify-center">
+          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-violet-600 text-white flex items-center justify-center">
             <Lightbulb className="h-4 w-4" />
           </div>
           <div className="min-w-0">
@@ -49,10 +49,10 @@ export function CoachPanel({
                   <div
                     className={cn(
                       "mt-0.5 h-6 w-6 rounded-md flex items-center justify-center",
-                      a.kind === "fix" && "bg-amber-100 text-amber-800",
-                      a.kind === "collect" && "bg-purple-100 text-purple-800",
-                      a.kind === "write" && "bg-blue-100 text-blue-800",
-                      a.kind === "review" && "bg-slate-100 text-slate-800"
+                      a.kind === "fix" && "bg-amber-500/10 text-amber-700",
+                      a.kind === "collect" && "bg-violet-500/10 text-violet-700",
+                      a.kind === "write" && "bg-blue-500/10 text-blue-700",
+                      a.kind === "review" && "bg-slate-500/10 text-slate-700"
                     )}
                   >
                     <CheckCircle2 className="h-4 w-4" />
@@ -65,7 +65,7 @@ export function CoachPanel({
                     <div className="mt-3">
                       <Button
                         size="sm"
-                        className="w-full gap-2"
+                        className="w-full gap-2 rounded-xl"
                         onClick={a.onClick}
                         disabled={!a.onClick}
                       >
@@ -80,9 +80,9 @@ export function CoachPanel({
           )}
         </div>
 
-        <div className="mt-4 rounded-xl bg-blue-50 p-3">
-          <div className="text-xs font-semibold text-blue-900">Coach principle</div>
-          <div className="mt-1 text-xs text-blue-900/80 leading-snug">
+        <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-3">
+          <div className="text-xs font-semibold text-primary">Coach principle</div>
+          <div className="mt-1 text-xs text-muted-foreground leading-snug">
             Don’t “spray keywords”. Each keyword must be backed by evidence and tied to an outcome.
           </div>
         </div>

@@ -1,177 +1,119 @@
 """
 Roadmap Service
-Handles career roadmap generation and management
+Handles career roadmap generation and management with Firestore
 """
-from typing import List, Optional
-from uuid import UUID
+from typing import List, Optional, Dict, Any
+import structlog
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-
-from app.models.profile import Profile
-from app.models.gap import GapReport
-from app.models.roadmap import Roadmap
-from app.models.benchmark import Benchmark
-from app.models.job import JobDescription
-from app.schemas.roadmap import RoadmapResponse
+from app.core.database import get_firestore_db, COLLECTIONS, FirestoreDB
 from ai_engine.client import AIClient
 from ai_engine.chains.career_consultant import CareerConsultantChain
 
+logger = structlog.get_logger()
+
 
 class RoadmapService:
-    """Service for roadmap operations."""
+    """Service for roadmap operations using Firestore."""
 
-    def __init__(self, db: AsyncSession):
-        self.db = db
+    def __init__(self, db: Optional[FirestoreDB] = None):
+        self.db = db or get_firestore_db()
         self.ai_client = AIClient()
 
     async def generate_roadmap(
         self,
-        user_id: UUID,
-        gap_report_id: UUID,
-        title: Optional[str] = None
-    ) -> RoadmapResponse:
+        user_id: str,
+        gap_report_id: str,
+        title: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Generate a career improvement roadmap."""
-        # Get gap report with related data
-        result = await self.db.execute(
-            select(GapReport)
-            .where(GapReport.id == gap_report_id, GapReport.user_id == user_id)
-        )
-        gap_report = result.scalar_one_or_none()
-        if not gap_report:
+        gap_report = await self.db.get(COLLECTIONS["gap_reports"], gap_report_id)
+        if not gap_report or gap_report.get("user_id") != user_id:
             raise ValueError("Gap report not found")
 
-        # Get profile
-        profile_result = await self.db.execute(
-            select(Profile).where(Profile.id == gap_report.profile_id)
-        )
-        profile = profile_result.scalar_one_or_none()
+        # Fetch related profile
+        profile_id = gap_report.get("profile_id")
+        profile = await self.db.get(COLLECTIONS["profiles"], profile_id) if profile_id else None
 
-        # Get benchmark and job
-        benchmark_result = await self.db.execute(
-            select(Benchmark).where(Benchmark.id == gap_report.benchmark_id)
-        )
-        benchmark = benchmark_result.scalar_one_or_none()
-
+        # Fetch benchmark + job
+        benchmark_id = gap_report.get("benchmark_id")
+        benchmark = await self.db.get(COLLECTIONS["benchmarks"], benchmark_id) if benchmark_id else None
         job = None
-        if benchmark:
-            job_result = await self.db.execute(
-                select(JobDescription)
-                .where(JobDescription.id == benchmark.job_description_id)
-            )
-            job = job_result.scalar_one_or_none()
+        if benchmark and benchmark.get("job_description_id"):
+            job = await self.db.get(COLLECTIONS["jobs"], benchmark["job_description_id"])
 
         # Build data for AI
         profile_data = {
-            "name": profile.name if profile else "User",
-            "title": profile.title if profile else "",
-            "skills": profile.skills if profile else [],
-            "experience": profile.experience if profile else [],
+            "name": profile.get("name", "User") if profile else "User",
+            "title": profile.get("title", "") if profile else "",
+            "skills": profile.get("skills", []) if profile else [],
+            "experience": profile.get("experience", []) if profile else [],
         }
-
         gap_data = {
-            "compatibility_score": gap_report.compatibility_score,
-            "skill_gaps": gap_report.skill_gaps,
-            "experience_gaps": gap_report.experience_gaps,
-            "recommendations": gap_report.recommendations,
-            "strengths": gap_report.strengths
+            "compatibility_score": gap_report.get("compatibility_score"),
+            "skill_gaps": gap_report.get("skill_gaps", []),
+            "experience_gaps": gap_report.get("experience_gaps", []),
+            "recommendations": gap_report.get("recommendations", []),
+            "strengths": gap_report.get("strengths", []),
         }
 
-        # Generate roadmap with AI
         consultant = CareerConsultantChain(self.ai_client)
         roadmap_data = await consultant.generate_roadmap(
             gap_analysis=gap_data,
             user_profile=profile_data,
-            job_title=job.title if job else "Target Role",
-            company=job.company if job else "Target Company"
+            job_title=job.get("title", "Target Role") if job else "Target Role",
+            company=job.get("company", "Target Company") if job else "Target Company",
         )
 
         roadmap_content = roadmap_data.get("roadmap", {})
+        record = {
+            "user_id": user_id,
+            "gap_report_id": gap_report_id,
+            "title": title or roadmap_content.get("title", "Career Roadmap"),
+            "description": roadmap_content.get("overview"),
+            "learning_path": roadmap_data.get("learning_resources", []),
+            "milestones": roadmap_content.get("milestones", []),
+            "timeline": roadmap_content.get("weekly_plans", []),
+            "resources": roadmap_data.get("learning_resources", []),
+            "skill_development": roadmap_content.get("skill_development", []),
+            "certification_path": roadmap_content.get("certification_path", []),
+            "experience_recommendations": roadmap_content.get("networking_plan"),
+            "progress": {},
+            "status": "active",
+        }
 
-        # Create roadmap record
-        roadmap = Roadmap(
-            user_id=user_id,
-            gap_report_id=gap_report_id,
-            title=title or roadmap_content.get("title", "Career Roadmap"),
-            description=roadmap_content.get("overview"),
-            learning_path=roadmap_data.get("learning_resources", []),
-            milestones=roadmap_content.get("milestones", []),
-            timeline=roadmap_content.get("weekly_plans", []),
-            resources=roadmap_data.get("learning_resources", []),
-            skill_development=roadmap_content.get("skill_development", []),
-            certification_path=roadmap_content.get("certification_path", []),
-            experience_recommendations=roadmap_content.get("networking_plan"),
-            action_items=roadmap_content.get("milestones", []),
-            progress={},
-            status="active"
+        doc_id = await self.db.create(COLLECTIONS["roadmaps"], record)
+        logger.info("roadmap_generated", roadmap_id=doc_id)
+        return await self.db.get(COLLECTIONS["roadmaps"], doc_id)
+
+    async def get_user_roadmaps(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        return await self.db.query(
+            COLLECTIONS["roadmaps"],
+            filters=[("user_id", "==", user_id)],
+            order_by="created_at",
+            order_direction="DESCENDING",
+            limit=limit,
         )
 
-        self.db.add(roadmap)
-        await self.db.commit()
-        await self.db.refresh(roadmap)
-
-        return RoadmapResponse.model_validate(roadmap)
-
-    async def get_user_roadmaps(self, user_id: UUID) -> List[RoadmapResponse]:
-        """Get all roadmaps for a user."""
-        result = await self.db.execute(
-            select(Roadmap)
-            .where(Roadmap.user_id == user_id)
-            .order_by(Roadmap.created_at.desc())
-        )
-        roadmaps = result.scalars().all()
-        return [RoadmapResponse.model_validate(r) for r in roadmaps]
-
-    async def get_roadmap(
-        self,
-        roadmap_id: UUID,
-        user_id: UUID
-    ) -> Optional[RoadmapResponse]:
-        """Get a specific roadmap."""
-        result = await self.db.execute(
-            select(Roadmap)
-            .where(Roadmap.id == roadmap_id, Roadmap.user_id == user_id)
-        )
-        roadmap = result.scalar_one_or_none()
-        if roadmap:
-            return RoadmapResponse.model_validate(roadmap)
+    async def get_roadmap(self, roadmap_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        roadmap = await self.db.get(COLLECTIONS["roadmaps"], roadmap_id)
+        if roadmap and roadmap.get("user_id") == user_id:
+            return roadmap
         return None
 
     async def update_milestone_progress(
-        self,
-        roadmap_id: UUID,
-        user_id: UUID,
-        milestone_id: str,
-        status: str
+        self, roadmap_id: str, user_id: str, milestone_id: str, status: str
     ) -> bool:
-        """Update milestone progress."""
-        result = await self.db.execute(
-            select(Roadmap)
-            .where(Roadmap.id == roadmap_id, Roadmap.user_id == user_id)
-        )
-        roadmap = result.scalar_one_or_none()
-
+        roadmap = await self.get_roadmap(roadmap_id, user_id)
         if not roadmap:
             return False
-
-        progress = roadmap.progress or {}
+        progress = roadmap.get("progress", {})
         progress[milestone_id] = status
-        roadmap.progress = progress
-
-        await self.db.commit()
+        await self.db.update(COLLECTIONS["roadmaps"], roadmap_id, {"progress": progress})
         return True
 
-    async def delete_roadmap(self, roadmap_id: UUID, user_id: UUID) -> bool:
-        """Delete a roadmap."""
-        result = await self.db.execute(
-            select(Roadmap)
-            .where(Roadmap.id == roadmap_id, Roadmap.user_id == user_id)
-        )
-        roadmap = result.scalar_one_or_none()
-
+    async def delete_roadmap(self, roadmap_id: str, user_id: str) -> bool:
+        roadmap = await self.get_roadmap(roadmap_id, user_id)
         if not roadmap:
             return False
-
-        await self.db.delete(roadmap)
-        await self.db.commit()
+        await self.db.delete(COLLECTIONS["roadmaps"], roadmap_id)
         return True

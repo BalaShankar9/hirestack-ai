@@ -1,261 +1,257 @@
 """
 HireStack AI - Database Module
-Firebase Firestore integration for data storage
+Supabase integration for data storage (PostgreSQL via PostgREST)
 """
 from typing import Optional, Dict, Any, List
-from datetime import datetime
-import os
+import asyncio
 
-import firebase_admin
-from firebase_admin import credentials, auth as firebase_auth
-from google.cloud import firestore as gcfirestore
-from google.cloud.firestore_v1 import FieldFilter
-from google.api_core.exceptions import NotFound
-from google.oauth2 import service_account
+from supabase import create_client, Client
 
 from app.core.config import settings
 
 
-# Firebase Admin SDK initialization
-_firebase_app = None
-_firestore_client = None
+# ── Supabase client singleton ────────────────────────────────────────────────
+
+_supabase_client: Optional[Client] = None
 
 
-def init_firebase():
-    """Initialize Firebase Admin SDK."""
-    global _firebase_app, _firestore_client
-
-    if _firebase_app is not None and _firestore_client is not None:
-        return _firestore_client
-
-    cred_path = settings.firebase_credentials_path
-    resolved_cred_path = None
-    if cred_path:
-        resolved_cred_path = cred_path
-        if not os.path.isabs(resolved_cred_path):
-            resolved_cred_path = os.path.join(os.getcwd(), resolved_cred_path)
-
-    try:
-        # Check if already initialized
-        _firebase_app = firebase_admin.get_app()
-    except ValueError:
-        # Not initialized yet, initialize now
-        if resolved_cred_path and os.path.exists(resolved_cred_path):
-            cred = credentials.Certificate(resolved_cred_path)
-            _firebase_app = firebase_admin.initialize_app(cred)
-        else:
-            # Try default credentials (for cloud environments)
-            _firebase_app = firebase_admin.initialize_app(options={
-                'projectId': settings.firebase_project_id
-            })
-
-    gcp_creds = None
-    if resolved_cred_path and os.path.exists(resolved_cred_path):
-        gcp_creds = service_account.Credentials.from_service_account_file(resolved_cred_path)
-
-    # Firestore database ID handling:
-    # - New Firestore multi-database defaults often use `default` (no parentheses)
-    # - Older projects use `(default)`
-    # We try the configured value first, then fall back.
-    candidates: List[str] = []
-    if getattr(settings, "firebase_database_id", None):
-        candidates.append(settings.firebase_database_id)
-    candidates.extend(["default", "(default)"])
-
-    last_err: Optional[Exception] = None
-    chosen: Optional[gcfirestore.Client] = None
-    for db_id in [c for c in candidates if c]:
-        try:
-            chosen = gcfirestore.Client(
-                project=settings.firebase_project_id,
-                credentials=gcp_creds,
-                database=db_id,
-            )
-            # Lightweight probe; if the database doesn't exist we'll get a NotFound.
-            chosen.collection("_health").document("ping").get(timeout=2)
-            _firestore_client = chosen
-            return _firestore_client
-        except NotFound as e:
-            last_err = e
-            chosen = None
-            continue
-        except Exception as e:
-            # Don't fail startup for transient/network issues; keep the client and let endpoints surface errors.
-            last_err = e
-            _firestore_client = chosen
-            return _firestore_client
-
-    # If we couldn't find a working DB id, still create a client so the app can boot and health can report errors.
-    _firestore_client = gcfirestore.Client(
-        project=settings.firebase_project_id,
-        credentials=gcp_creds,
-        database=candidates[0] if candidates else "default",
-    )
-    return _firestore_client
+def init_supabase() -> Client:
+    """Initialise the Supabase client (service-role, bypasses RLS)."""
+    global _supabase_client
+    if _supabase_client is not None:
+        return _supabase_client
+    _supabase_client = create_client(settings.supabase_url, settings.supabase_service_role_key)
+    return _supabase_client
 
 
-def get_db():
-    """Get Firestore client instance."""
-    global _firestore_client
-    if _firestore_client is None:
-        init_firebase()
-    return _firestore_client
+def get_supabase() -> Client:
+    """Return the Supabase client, initialising if needed."""
+    if _supabase_client is None:
+        init_supabase()
+    return _supabase_client
 
 
-def verify_firebase_token(id_token: str) -> Optional[Dict[str, Any]]:
+# ── JWT token verification ───────────────────────────────────────────────────
+
+def verify_token(id_token: str) -> Optional[Dict[str, Any]]:
     """
-    Verify a Firebase ID token and return the decoded token.
-    Returns None if verification fails.
+    Verify a Supabase access token by calling the Auth admin API.
+
+    Works with both HS256 (cloud) and ES256 (local CLI) tokens because
+    verification is done server-side by GoTrue, not by decoding the JWT
+    locally.
     """
-    init_firebase()
     try:
-        decoded_token = firebase_auth.verify_id_token(id_token)
-        return decoded_token
+        client = get_supabase()
+        response = client.auth.get_user(id_token)
+        if response and response.user:
+            user = response.user
+            meta = user.user_metadata or {}
+            return {
+                "sub": str(user.id),
+                "email": user.email,
+                "user_metadata": meta,
+                "aud": "authenticated",
+                "role": "authenticated",
+            }
+        return None
     except Exception as e:
         print(f"Token verification failed: {e}")
         return None
 
 
-def get_firebase_user(uid: str) -> Optional[Dict[str, Any]]:
-    """Get Firebase user by UID."""
-    init_firebase()
-    try:
-        user = firebase_auth.get_user(uid)
-        return {
-            'uid': user.uid,
-            'email': user.email,
-            'display_name': user.display_name,
-            'photo_url': user.photo_url,
-            'email_verified': user.email_verified,
-        }
-    except Exception:
-        return None
+def get_user_from_token(decoded_token: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract user info from a decoded Supabase JWT."""
+    meta = decoded_token.get("user_metadata", {})
+    return {
+        "uid": decoded_token.get("sub"),
+        "email": decoded_token.get("email"),
+        "display_name": meta.get("full_name"),
+        "photo_url": meta.get("avatar_url"),
+    }
 
 
-# Firestore Collection Names
-COLLECTIONS = {
-    'users': 'users',
-    'profiles': 'profiles',
-    'jobs': 'job_descriptions',
-    'benchmarks': 'benchmarks',
-    'gap_reports': 'gap_reports',
-    'roadmaps': 'roadmaps',
-    'projects': 'projects',
-    'documents': 'documents',
-    'exports': 'exports',
-    'analytics': 'analytics',
+# ── Table names ──────────────────────────────────────────────────────────────
+
+TABLES = {
+    "users": "users",
+    "profiles": "profiles",
+    "jobs": "job_descriptions",
+    "benchmarks": "benchmarks",
+    "gap_reports": "gap_reports",
+    "roadmaps": "roadmaps",
+    "projects": "projects",
+    "documents": "documents",
+    "exports": "exports",
+    "analytics": "analytics",
+    "applications": "applications",
+    "evidence": "evidence",
+    "tasks": "tasks",
+    "events": "events",
+    "learning_plans": "learning_plans",
+    "doc_versions": "doc_versions",
 }
 
 
-class FirestoreDB:
-    """Helper class for Firestore operations."""
+# ── SupabaseDB helper class ─────────────────────────────────────────────────
+
+class SupabaseDB:
+    """
+    Async-friendly helper for Supabase/PostgREST operations.
+
+    Wraps the synchronous supabase-py client in ``run_in_executor``
+    to avoid blocking the asyncio event loop.  The interface matches
+    the previous FirestoreDB class so that existing services work
+    without modification.
+    """
 
     def __init__(self):
-        self.db = get_db()
+        self.client: Client = get_supabase()
 
-    # Generic CRUD operations
-    async def create(self, collection: str, data: Dict[str, Any], doc_id: Optional[str] = None) -> str:
-        """Create a document in a collection."""
-        data['created_at'] = datetime.utcnow()
-        data['updated_at'] = datetime.utcnow()
+    @staticmethod
+    async def _run(func, *args):
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, func, *args)
 
+    # ── Generic CRUD ─────────────────────────────────────────────────────
+
+    async def create(self, table: str, data: Dict[str, Any], doc_id: Optional[str] = None) -> str:
+        """Insert a row. Returns the generated (or supplied) id."""
+        safe = {k: v for k, v in data.items() if k not in ("created_at", "updated_at")}
         if doc_id:
-            self.db.collection(collection).document(doc_id).set(data)
-            return doc_id
-        else:
-            doc_ref = self.db.collection(collection).add(data)
-            return doc_ref[1].id
+            safe["id"] = doc_id
 
-    async def get(self, collection: str, doc_id: str) -> Optional[Dict[str, Any]]:
-        """Get a document by ID."""
-        doc = self.db.collection(collection).document(doc_id).get()
-        if doc.exists:
-            data = doc.to_dict()
-            data['id'] = doc.id
-            return data
-        return None
+        def _ins():
+            result = self.client.table(table).insert(safe).execute()
+            return str(result.data[0]["id"]) if result.data else None
 
-    async def update(self, collection: str, doc_id: str, data: Dict[str, Any]) -> bool:
-        """Update a document."""
-        data['updated_at'] = datetime.utcnow()
-        self.db.collection(collection).document(doc_id).update(data)
+        return await self._run(_ins)
+
+    async def get(self, table: str, doc_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single row by id."""
+        def _get():
+            result = self.client.table(table).select("*").eq("id", str(doc_id)).maybe_single().execute()
+            return result.data
+
+        return await self._run(_get)
+
+    async def update(self, table: str, doc_id: str, data: Dict[str, Any]) -> bool:
+        """Update a row by id. updated_at is handled by DB trigger."""
+        safe = {k: v for k, v in data.items() if k not in ("created_at", "updated_at")}
+
+        def _upd():
+            self.client.table(table).update(safe).eq("id", str(doc_id)).execute()
+
+        await self._run(_upd)
         return True
 
-    async def delete(self, collection: str, doc_id: str) -> bool:
-        """Delete a document."""
-        self.db.collection(collection).document(doc_id).delete()
+    async def delete(self, table: str, doc_id: str) -> bool:
+        """Delete a row by id."""
+        def _del():
+            self.client.table(table).delete().eq("id", str(doc_id)).execute()
+
+        await self._run(_del)
         return True
 
     async def query(
         self,
-        collection: str,
+        table: str,
         filters: Optional[List[tuple]] = None,
         order_by: Optional[str] = None,
-        order_direction: str = 'DESCENDING',
-        limit: Optional[int] = None
+        order_direction: str = "DESCENDING",
+        limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        """Query documents with optional filters."""
-        query = self.db.collection(collection)
+        """Query rows with optional filters, ordering, and limit."""
+        def _q():
+            q = self.client.table(table).select("*")
+            if filters:
+                for field, op, value in filters:
+                    if op == "==":
+                        q = q.eq(field, value)
+                    elif op == "!=":
+                        q = q.neq(field, value)
+                    elif op == ">":
+                        q = q.gt(field, value)
+                    elif op == ">=":
+                        q = q.gte(field, value)
+                    elif op == "<":
+                        q = q.lt(field, value)
+                    elif op == "<=":
+                        q = q.lte(field, value)
+                    elif op == "in":
+                        q = q.in_(field, value)
+                    else:
+                        q = q.eq(field, value)
+            if order_by:
+                desc = order_direction == "DESCENDING"
+                q = q.order(order_by, desc=desc)
+            if limit:
+                q = q.limit(limit)
+            result = q.execute()
+            return result.data or []
 
-        if filters:
-            for field, op, value in filters:
-                query = query.where(filter=FieldFilter(field, op, value))
+        return await self._run(_q)
 
-        if order_by:
-            direction = gcfirestore.Query.DESCENDING if order_direction == 'DESCENDING' else gcfirestore.Query.ASCENDING
-            query = query.order_by(order_by, direction=direction)
+    # ── User helpers ─────────────────────────────────────────────────────
 
-        if limit:
-            query = query.limit(limit)
-
-        docs = query.stream()
-        results = []
-        for doc in docs:
-            data = doc.to_dict()
-            data['id'] = doc.id
-            results.append(data)
-
-        return results
-
-    # User operations
-    async def get_user_by_firebase_uid(self, firebase_uid: str) -> Optional[Dict[str, Any]]:
-        """Get user by Firebase UID."""
-        users = await self.query(
-            COLLECTIONS['users'],
-            filters=[('firebase_uid', '==', firebase_uid)],
-            limit=1
-        )
-        return users[0] if users else None
+    async def get_user_by_auth_uid(self, uid: str) -> Optional[Dict[str, Any]]:
+        """Get user by Supabase Auth UID (same as users.id)."""
+        return await self.get(TABLES["users"], uid)
 
     async def get_or_create_user(
         self,
-        firebase_uid: str,
+        uid: str,
         email: str,
         full_name: Optional[str] = None,
-        avatar_url: Optional[str] = None
+        avatar_url: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Get existing user or create new one."""
-        user = await self.get_user_by_firebase_uid(firebase_uid)
-
+        """Get existing user or create one (usually auto-created by DB trigger)."""
+        user = await self.get_user_by_auth_uid(uid)
         if not user:
             user_data = {
-                'firebase_uid': firebase_uid,
-                'email': email,
-                'full_name': full_name,
-                'avatar_url': avatar_url,
-                'is_active': True,
-                'is_premium': False,
+                "id": uid,
+                "email": email,
+                "full_name": full_name,
+                "avatar_url": avatar_url,
+                "is_active": True,
+                "is_premium": False,
             }
-            doc_id = await self.create(COLLECTIONS['users'], user_data)
-            user = await self.get(COLLECTIONS['users'], doc_id)
-
+            await self.create(TABLES["users"], user_data, doc_id=uid)
+            user = await self.get(TABLES["users"], uid)
         return user
 
 
-# Global instance
-firestore_db = FirestoreDB()
+# ── Backward-compatible aliases ──────────────────────────────────────────────
+# Existing services import FirestoreDB / get_firestore_db / COLLECTIONS /
+# verify_firebase_token.  These aliases let them work without modification.
+
+COLLECTIONS = TABLES
+FirestoreDB = SupabaseDB
+verify_firebase_token = verify_token
 
 
-def get_firestore_db() -> FirestoreDB:
-    """Get FirestoreDB instance."""
-    return firestore_db
+_db_instance: Optional[SupabaseDB] = None
+
+
+def get_db() -> SupabaseDB:
+    """Get SupabaseDB singleton."""
+    global _db_instance
+    if _db_instance is None:
+        _db_instance = SupabaseDB()
+    return _db_instance
+
+
+def get_firestore_db() -> SupabaseDB:
+    """Backward-compat alias for get_db()."""
+    return get_db()
+
+
+def get_firebase_user(uid: str) -> Optional[Dict[str, Any]]:
+    """Backward-compat stub — not used with Supabase."""
+    return None
+
+
+# Keep init_firebase as alias so main.py lifespan doesn't break during migration
+def init_firebase():
+    """Alias — initialises Supabase instead."""
+    init_supabase()
