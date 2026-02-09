@@ -201,7 +201,7 @@ export async function exportToPdf(
     const pdfBlob = await html2pdf()
       .set(pdfOptions)
       .from(container)
-      .outputPdf("blob");
+      .output("blob");
 
     return pdfBlob as Blob;
   } finally {
