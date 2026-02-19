@@ -4,6 +4,7 @@ import * as React from "react";
 import * as ToastPrimitives from "@radix-ui/react-toast";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
 const ToastProvider = ToastPrimitives.Provider;
 
@@ -84,8 +85,7 @@ const ToastDescription = React.forwardRef<
 ToastDescription.displayName = ToastPrimitives.Description.displayName;
 
 export function Toaster() {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { toasts, dismiss } = require("@/hooks/use-toast").useToast();
+  const { toasts, dismiss } = useToast();
 
   const variantStyles: Record<string, string> = {
     default: "bg-white border-gray-200",

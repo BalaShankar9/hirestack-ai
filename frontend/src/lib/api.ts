@@ -1,3 +1,10 @@
+/**
+ * DEPRECATION NOTICE: This API client file is kept for backward compatibility.
+ * The frontend primarily uses Supabase directly via the Firestore operations in @/lib/firestore/ops.
+ * New features should use the Firestore/Supabase client instead of this REST API client.
+ * This file may be removed in a future version.
+ */
+
 import type {
   DocumentGenerateRequest,
   GapAnalyzeRequest,
@@ -6,7 +13,7 @@ import type {
   RoadmapGenerateRequest,
 } from "@/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE";

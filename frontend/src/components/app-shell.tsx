@@ -14,6 +14,9 @@ import {
   Plus,
   Sparkles,
   ChevronLeft,
+  Loader2,
+  Moon,
+  Sun,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import { Button } from "@/components/ui/button";
@@ -40,10 +43,44 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState(false);
+  const [signingOut, setSigningOut] = React.useState(false);
+  const [theme, setTheme] = React.useState<"light" | "dark">("light");
+
+  React.useEffect(() => {
+    const stored =
+      typeof window !== "undefined" &&
+      window.localStorage &&
+      typeof window.localStorage.getItem === "function"
+        ? window.localStorage.getItem("hirestack_theme")
+        : null;
+    const systemPrefersDark =
+      typeof window !== "undefined"
+        ? window.matchMedia?.("(prefers-color-scheme: dark)")?.matches
+        : false;
+    const next = stored === "dark" || (!stored && systemPrefersDark) ? "dark" : "light";
+    setTheme(next);
+    document.documentElement.classList.toggle("dark", next === "dark");
+  }, []);
+
+  const toggleTheme = () => {
+    setTheme((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      document.documentElement.classList.toggle("dark", next === "dark");
+      if (window.localStorage && typeof window.localStorage.setItem === "function") {
+        window.localStorage.setItem("hirestack_theme", next);
+      }
+      return next;
+    });
+  };
 
   const handleSignOut = async () => {
-    await signOut();
-    router.replace("/login");
+    setSigningOut(true);
+    try {
+      await signOut();
+      router.replace("/login");
+    } catch {
+      setSigningOut(false);
+    }
   };
 
   const initials = user?.displayName
@@ -56,17 +93,23 @@ export function AppShell({ children }: { children: ReactNode }) {
     : user?.email?.slice(0, 2).toUpperCase() ?? "?";
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="app-frame flex min-h-screen bg-transparent">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] rounded-lg bg-card px-3 py-2 text-sm font-medium shadow-soft-md ring-2 ring-ring ring-offset-2 ring-offset-background"
+      >
+        Skip to content
+      </a>
       {/* ── Sidebar (Desktop) ─────────────────────── */}
       <aside
         className={cn(
-          "hidden lg:flex flex-col border-r bg-card/50 backdrop-blur-sm transition-all duration-300 ease-in-out",
-          collapsed ? "w-[68px]" : "w-[260px]"
+          "surface-premium z-10 hidden lg:flex flex-col border-r transition-all duration-300 ease-in-out",
+          collapsed ? "w-[72px]" : "w-[272px]"
         )}
       >
         {/* Logo */}
-        <div className="flex h-16 items-center gap-3 border-b px-4">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 shadow-glow-sm">
+        <div className="flex h-16 items-center gap-3 border-b border-border/70 px-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 shadow-glow-sm ring-1 ring-white/50 dark:ring-white/10">
             <Sparkles className="h-4 w-4 text-white" />
           </div>
           {!collapsed && (
@@ -77,7 +120,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         {/* Nav links */}
-        <nav className="flex-1 space-y-1 px-3 py-4">
+        <nav className="flex-1 space-y-1.5 px-3 py-4">
           {NAV.map(({ href, label, icon: Icon, description }) => {
             const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
             const isExact = pathname === href;
@@ -90,18 +133,18 @@ export function AppShell({ children }: { children: ReactNode }) {
                   className={cn(
                     "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
                     show
-                      ? "bg-primary/10 text-primary shadow-sm"
-                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      ? "bg-gradient-to-r from-primary/14 to-primary/8 text-primary shadow-soft-sm"
+                      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                   )}
                 >
                   {show && (
-                    <div className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary" />
+                    <div className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary shadow-glow-sm" />
                   )}
                   <Icon className={cn("h-[18px] w-[18px] shrink-0", show && "text-primary")} />
                   {!collapsed && (
                     <div className="min-w-0">
                       <div className="truncate">{label}</div>
-                      {!active && (
+                      {!show && (
                         <div className="truncate text-[11px] text-muted-foreground/70 group-hover:text-muted-foreground">
                           {description}
                         </div>
@@ -115,7 +158,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         {/* Collapse toggle */}
-        <div className="border-t px-3 py-2">
+        <div className="border-t border-border/70 px-3 py-2">
           <button
             onClick={() => setCollapsed(!collapsed)}
             className="flex w-full items-center justify-center rounded-lg p-2 text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
@@ -125,7 +168,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         {/* User section */}
-        <div className="border-t p-3">
+        <div className="border-t border-border/70 p-3">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className={cn(
@@ -150,9 +193,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <p className="text-xs text-muted-foreground">{user?.email}</p>
               </div>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
-                <LogOut className="mr-2 h-4 w-4" />
-                Sign Out
+              <DropdownMenuItem onClick={handleSignOut} disabled={signingOut} className="text-destructive focus:text-destructive">
+                {signingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
+                {signingOut ? "Signing out…" : "Sign Out"}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -164,7 +207,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="fixed inset-0 z-50 lg:hidden" onClick={() => setSidebarOpen(false)}>
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
           <aside
-            className="absolute left-0 top-0 h-full w-[280px] border-r bg-card shadow-soft-xl animate-slide-in-left"
+            className="surface-premium absolute left-0 top-0 h-full w-[286px] border-r shadow-soft-xl animate-slide-in-left"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex h-16 items-center justify-between border-b px-4">
@@ -207,9 +250,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       )}
 
       {/* ── Main Content ──────────────────────────── */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative z-10 flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background/80 backdrop-blur-xl px-4 lg:px-6">
+        <header className="surface-premium sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border/70 bg-background/70 px-4 lg:px-6">
           <Button
             variant="ghost"
             size="icon"
@@ -221,6 +264,16 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           {/* Breadcrumb / title area */}
           <div className="flex-1" />
+
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-lg"
+            onClick={toggleTheme}
+            aria-label="Toggle theme"
+          >
+            {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          </Button>
 
           {/* Quick action */}
           <Button
@@ -248,17 +301,17 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <p className="text-xs text-muted-foreground">{user?.email}</p>
               </div>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
-                <LogOut className="mr-2 h-4 w-4" />
-                Sign Out
+              <DropdownMenuItem onClick={handleSignOut} disabled={signingOut} className="text-destructive focus:text-destructive">
+                {signingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
+                {signingOut ? "Signing out…" : "Sign Out"}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-7xl px-4 py-6 lg:px-8">{children}</div>
+        <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-[1360px] px-4 py-6 lg:px-8">{children}</div>
         </main>
       </div>
     </div>

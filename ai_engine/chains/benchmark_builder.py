@@ -21,92 +21,47 @@ The benchmark serves as a reference point for candidates to understand what exce
 Be specific, realistic, and thorough. Use real company names, realistic achievements, and authentic career progressions."""
 
 
-IDEAL_PROFILE_PROMPT = """Create a comprehensive IDEAL CANDIDATE PROFILE for this job:
+IDEAL_PROFILE_PROMPT = """Create an IDEAL CANDIDATE PROFILE benchmark for this job.
 
 JOB TITLE: {job_title}
 COMPANY: {company}
 JOB DESCRIPTION:
 {job_description}
 
-Create a detailed, realistic profile of the perfect candidate. Return ONLY valid JSON:
+Return ONLY valid JSON (no markdown, no code fences). Keep it compact and strictly parseable.
 
-```json
+Hard limits (do not exceed):
+- ideal_skills: max 10 items
+- ideal_experience: max 3 items (max 2 achievements each)
+- ideal_education: max 2 items
+- ideal_certifications: max 5 items
+- soft_skills: max 6 items
+- industry_knowledge: max 4 items
+
+Rules:
+- All string values must be single-line (no newline characters).
+- Keep each string under ~180 characters.
+- Use realistic company names, but do not invent personal contact details.
+- Use numbers for weights; weights should sum to 1.0.
+
+JSON schema:
 {{
   "ideal_profile": {{
     "name": "Alex Johnson",
-    "title": "Senior [Role Title]",
+    "title": "Senior {job_title}",
     "years_experience": 7,
-    "summary": "Compelling 3-4 sentence professional summary",
-    "key_differentiators": ["What makes this candidate exceptional"],
-    "career_trajectory": "Brief description of ideal career path"
+    "summary": "3-4 sentence summary (single line).",
+    "key_differentiators": ["..."],
+    "career_trajectory": "Single line."
   }},
-  "ideal_skills": [
-    {{
-      "name": "Skill Name",
-      "level": "expert|advanced",
-      "years": 5,
-      "category": "technical|soft|domain",
-      "importance": "critical|important|preferred",
-      "proficiency_details": "Specific examples of expertise"
-    }}
-  ],
-  "ideal_experience": [
-    {{
-      "company": "Real Company Name (e.g., Google, Stripe, McKinsey)",
-      "title": "Job Title",
-      "duration": "3 years",
-      "location": "City, Country",
-      "description": "Role overview",
-      "key_achievements": [
-        "Quantified achievement with metrics",
-        "Leadership or impact example"
-      ],
-      "technologies": ["Relevant tech/tools"],
-      "relevance_to_role": "Why this experience matters"
-    }}
-  ],
-  "ideal_education": [
-    {{
-      "institution": "Top university name",
-      "degree": "Degree type",
-      "field": "Field of study",
-      "relevance": "Why this education matters"
-    }}
-  ],
-  "ideal_certifications": [
-    {{
-      "name": "Certification name",
-      "issuer": "Issuing body",
-      "importance": "required|highly_recommended|nice_to_have",
-      "relevance": "Why this cert matters"
-    }}
-  ],
-  "soft_skills": [
-    {{
-      "skill": "Leadership",
-      "evidence": "How this would be demonstrated",
-      "importance": "critical|important"
-    }}
-  ],
-  "industry_knowledge": [
-    {{
-      "area": "Domain knowledge area",
-      "depth": "expert|proficient",
-      "application": "How it applies to the role"
-    }}
-  ],
-  "scoring_weights": {{
-    "technical_skills": 0.30,
-    "experience": 0.25,
-    "education": 0.10,
-    "certifications": 0.10,
-    "soft_skills": 0.15,
-    "industry_knowledge": 0.10
-  }}
-}}
-```
-
-Create a realistic, achievable benchmark that represents top 10% of candidates for this role."""
+  "ideal_skills": [{{"name":"...","level":"expert|advanced","years":5,"category":"technical|soft|domain","importance":"critical|important|preferred","proficiency_details":"Single line."}}],
+  "ideal_experience": [{{"company":"...","title":"...","duration":"...","location":"...","description":"Single line.","key_achievements":["...","..."],"technologies":["..."],"relevance_to_role":"Single line."}}],
+  "ideal_education": [{{"institution":"...","degree":"...","field":"...","relevance":"Single line."}}],
+  "ideal_certifications": [{{"name":"...","issuer":"...","importance":"required|highly_recommended|nice_to_have","relevance":"Single line."}}],
+  "soft_skills": [{{"skill":"...","evidence":"Single line.","importance":"critical|important"}}],
+  "industry_knowledge": [{{"area":"...","depth":"expert|proficient","application":"Single line."}}],
+  "scoring_weights": {{"technical_skills":0.30,"experience":0.25,"education":0.10,"certifications":0.10,"soft_skills":0.15,"industry_knowledge":0.10}}
+}}"""
 
 
 IDEAL_CV_PROMPT = """Create a professional CV for this ideal candidate profile:
@@ -311,6 +266,71 @@ Return ONLY valid JSON:
 ```"""
 
 
+BENCHMARK_CV_HTML_SYSTEM = """You are an elite career strategist and professional CV writer with 20+ years of experience.
+
+YOUR MISSION: Create a COMPLETE, realistic CV for the ideal benchmark candidate — a "north star" reference document that shows what a perfect applicant's CV would look like for this role.
+
+CRITICAL RULES:
+1. **Use the REAL person's identity** — name, email, phone, address, LinkedIn — exactly as provided
+2. **Create FICTIONAL but highly realistic experience** — use real, well-known companies in the industry with plausible job titles, aligned dates, and quantified achievements
+3. **Dates must be realistic** — work backward from today, no overlapping dates, natural career progression (3-5 years per role, not jumping from intern to VP)
+4. **Certifications must be real** — use actual certification names from recognized bodies (e.g., AWS Solutions Architect, PMP, CFA, Google Cloud Professional)
+5. **Skills must match market demand** — include the exact technologies and methodologies from the job description
+6. **Projects must be plausible** — real-sounding project names with concrete outcomes
+7. **Education should be aspirational but realistic** — top universities in the relevant region
+
+FORMAT: Return as clean, professional, ATS-friendly HTML. Use semantic HTML:
+- <h1> for the candidate's name
+- <p> directly under <h1> for contact: email | phone | location | LinkedIn
+- <h2> for section headers: Professional Summary, Core Competencies, Professional Experience, Education, Certifications, Key Projects
+- <h3> for company/role headers with dates
+- <ul><li> for achievement bullets — EVERY bullet must have a metric (%, $, time saved, team size, etc.)
+- <strong> for emphasis on key skills and metrics
+- <em> for dates and locations
+
+NO markdown. NO code fences. NO explanation. ONLY the HTML CV starting with <h1>."""
+
+
+BENCHMARK_CV_HTML_PROMPT = """Create a COMPLETE ideal benchmark CV for this role, using the real candidate's identity.
+
+═══════════════════════════════════════
+TARGET ROLE: {job_title} at {company}
+═══════════════════════════════════════
+
+JOB DESCRIPTION:
+{jd_text}
+
+═══════════════════════════════════════
+REAL CANDIDATE IDENTITY (use these details):
+═══════════════════════════════════════
+Name: {candidate_name}
+Email: {candidate_email}
+Phone: {candidate_phone}
+Location: {candidate_location}
+LinkedIn: {candidate_linkedin}
+
+═══════════════════════════════════════
+IDEAL BENCHMARK DATA (use this as the blueprint):
+═══════════════════════════════════════
+{benchmark_json}
+
+═══════════════════════════════════════
+
+Generate a FULL ideal CV that:
+1. Uses the real candidate's name and contact info exactly as shown above
+2. Has a powerful Professional Summary (3-4 sentences) perfectly aligned to the job
+3. Lists Core Competencies as a comma-separated list matching JD keywords
+4. Has 3-4 Professional Experience entries at REAL companies (e.g. Google, Microsoft, Stripe, McKinsey, Deloitte — pick companies relevant to this industry) with:
+   - Realistic job titles showing clear career progression
+   - Dates that work backward from the current year with no gaps or overlaps
+   - 4-5 achievement bullets per role, EVERY bullet with a concrete metric
+5. Education from a reputable university relevant to this field
+6. 3-5 real certifications from recognized bodies
+7. 2-3 Key Projects with technologies and measurable outcomes
+
+Return ONLY the HTML content starting with <h1>. No explanation."""
+
+
 class BenchmarkBuilderChain:
     """Chain for building ideal candidate benchmarks."""
 
@@ -495,3 +515,50 @@ class BenchmarkBuilderChain:
             temperature=0.5,
             max_tokens=4000
         )
+
+    async def create_benchmark_cv_html(
+        self,
+        user_profile: Dict[str, Any],
+        benchmark_data: Dict[str, Any],
+        job_title: str,
+        company: str,
+        jd_text: str = "",
+    ) -> str:
+        """Generate a full ideal-candidate CV in HTML using the user's real identity
+        but with benchmark-level experience, certifications, and skills."""
+        import json
+
+        contact = user_profile.get("contact_info", {}) or {}
+        candidate_name = user_profile.get("name", "Ideal Candidate")
+        candidate_email = contact.get("email", "candidate@email.com")
+        candidate_phone = contact.get("phone", "")
+        candidate_location = contact.get("location", "")
+        candidate_linkedin = contact.get("linkedin", "")
+
+        prompt = BENCHMARK_CV_HTML_PROMPT.format(
+            job_title=job_title,
+            company=company,
+            jd_text=jd_text[:3000],
+            candidate_name=candidate_name,
+            candidate_email=candidate_email,
+            candidate_phone=candidate_phone,
+            candidate_location=candidate_location,
+            candidate_linkedin=candidate_linkedin,
+            benchmark_json=json.dumps(benchmark_data, indent=2)[:4000],
+        )
+
+        html = await self.ai_client.complete(
+            prompt=prompt,
+            system=BENCHMARK_CV_HTML_SYSTEM,
+            temperature=0.5,
+            max_tokens=4000,
+        )
+
+        # Strip any markdown code fences the model might add
+        html = html.strip()
+        if html.startswith("```"):
+            lines = html.split("\n")
+            lines = [l for l in lines if not l.strip().startswith("```")]
+            html = "\n".join(lines).strip()
+
+        return html

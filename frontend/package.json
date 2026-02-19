@@ -49,6 +49,7 @@
     "clsx": "^2.1.0",
     "diff": "^8.0.3",
     "file-saver": "^2.0.5",
+    "html2canvas": "^1.4.1",
     "html2pdf.js": "^0.14.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.309.0",

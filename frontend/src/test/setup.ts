@@ -6,7 +6,6 @@ if (!globalThis.ResizeObserver) {
     unobserve() {}
     disconnect() {}
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).ResizeObserver = ResizeObserver;
 }
 
@@ -21,4 +20,3 @@ if (!window.matchMedia) {
       dispatchEvent: () => false,
     }) as unknown as MediaQueryList);
 }
-

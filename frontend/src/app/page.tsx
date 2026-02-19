@@ -224,7 +224,7 @@ export default function HomePage() {
             </span>
           </div>
           <p className="text-xs text-muted-foreground">
-            © {new Date().getFullYear()} HireStack AI · Powered by Claude · Built for career success.
+            © {new Date().getFullYear()} HireStack AI · Powered by AI · Built for career success.
           </p>
         </div>
       </footer>

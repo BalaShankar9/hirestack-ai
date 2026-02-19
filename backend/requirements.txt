@@ -11,6 +11,7 @@ PyJWT>=2.8,<3.0
 
 # AI
 openai>=1.30,<2.0
+google-genai>=1.0,<2.0
 
 # Validation
 pydantic>=2.10,<3.0
@@ -35,3 +36,4 @@ tenacity>=8.2,<10.0
 structlog>=24.1,<26.0
 aiofiles>=23.2,<25.0
 markdown>=3.5,<4.0
+slowapi>=0.1.9,<1.0

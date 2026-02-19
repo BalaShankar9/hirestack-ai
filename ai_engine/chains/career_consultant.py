@@ -21,7 +21,7 @@ Create detailed, actionable, and realistic roadmaps that help candidates close t
 Be specific with timelines, resources, and expected outcomes. Focus on practical steps they can take immediately."""
 
 
-ROADMAP_PROMPT = """Create a comprehensive career improvement roadmap based on this gap analysis:
+ROADMAP_PROMPT = """Create a career improvement roadmap based on this gap analysis:
 
 GAP ANALYSIS:
 {gap_analysis}
@@ -31,160 +31,151 @@ USER PROFILE:
 
 TARGET ROLE: {job_title} at {company}
 
-Create a detailed 12-week improvement plan. Return ONLY valid JSON:
+Create a detailed 12-week improvement plan.
 
-```json
+Return ONLY valid JSON (no markdown, no code fences). Requirements:
+- Return MINIFIED JSON on a single line (no pretty-printing, no extra whitespace/newlines).
+- Keep all strings SINGLE-LINE (no unescaped newline characters).
+- Do NOT include trailing commas.
+- Keep the overall response concise (aim for < 12k characters).
+- Hard limits on list sizes:
+  - roadmap.milestones: max 6
+  - roadmap.skill_development: max 5
+  - roadmap.project_recommendations: max 3
+  - learning_resources: max 6
+  - quick_wins: max 8
+  - motivation_tips: max 8
+
+JSON shape (keys required; omit any extra commentary):
+
 {{
   "roadmap": {{
     "title": "Your Path to {job_title}",
-    "overview": "High-level summary of the roadmap",
+    "overview": "High-level summary",
     "total_duration": "12 weeks",
     "expected_outcome": "What the candidate will achieve",
-    "commitment_required": "10-15 hours/week",
-
     "milestones": [
       {{
-        "id": "M1",
         "week": 1,
         "title": "Milestone title",
         "description": "What will be achieved",
         "tasks": ["Task 1", "Task 2"],
-        "deliverables": ["Deliverable 1"],
-        "success_criteria": ["How to know it's done"],
         "skills_gained": ["Skills developed"]
       }}
     ],
-
-    "weekly_plans": [
-      {{
-        "week": 1,
-        "theme": "Foundation Building",
-        "goals": ["Goal 1", "Goal 2"],
-        "hours_required": 12,
-        "activities": [
-          {{
-            "activity": "What to do",
-            "duration": "2 hours",
-            "purpose": "Why it matters",
-            "resources": ["Resource links/names"]
-          }}
-        ],
-        "checkpoint": "How to verify progress"
-      }}
-    ],
-
     "skill_development": [
       {{
         "skill": "Skill to develop",
         "current_level": "intermediate",
         "target_level": "advanced",
         "timeline": "4 weeks",
-        "learning_path": [
-          {{
-            "step": 1,
-            "activity": "What to do",
-            "resource": "Course/book name",
-            "duration": "1 week"
-          }}
-        ],
-        "practice_projects": ["Project ideas to apply the skill"],
-        "assessment": "How to verify skill level"
+        "resources": ["Course/book name"],
+        "practice_projects": ["Project ideas"]
       }}
     ],
-
-    "certification_path": [
-      {{
-        "certification": "Certification name",
-        "priority": "high|medium|low",
-        "timeline": "6 weeks",
-        "study_plan": [
-          {{
-            "week": "1-2",
-            "focus": "Topic focus",
-            "resources": ["Study materials"]
-          }}
-        ],
-        "exam_tips": ["Preparation tips"],
-        "cost": "Approximate cost"
-      }}
-    ],
-
     "project_recommendations": [
       {{
         "title": "Project name",
-        "type": "personal|contribution|portfolio",
         "description": "What to build",
         "skills_demonstrated": ["Skills this shows"],
-        "timeline": "2 weeks",
-        "implementation_steps": [
-          "Step 1: Setup",
-          "Step 2: Core features",
-          "Step 3: Polish"
-        ],
-        "presentation_tips": ["How to showcase this"]
+        "timeline": "2 weeks"
       }}
-    ],
-
-    "networking_plan": {{
-      "weekly_activities": ["Networking tasks"],
-      "communities_to_join": ["Relevant communities"],
-      "people_to_connect_with": ["Types of professionals"],
-      "events_to_attend": ["Event types"]
-    }},
-
-    "interview_prep": {{
-      "start_week": 8,
-      "focus_areas": ["Technical", "Behavioral"],
-      "mock_interview_schedule": "How often to practice",
-      "resources": ["Prep resources"],
-      "common_questions": ["Questions to prepare for"]
-    }},
-
-    "progress_tracking": {{
-      "weekly_review": "What to review each week",
-      "metrics_to_track": ["Measurable progress indicators"],
-      "adjustment_triggers": ["When to modify the plan"]
-    }}
+    ]
   }},
-
   "learning_resources": [
     {{
       "title": "Resource name",
-      "type": "course|book|tutorial|documentation|video",
-      "url": "URL if available",
+      "type": "course|book|tutorial",
       "provider": "Platform/Author",
       "skill_covered": "What it teaches",
-      "duration": "How long it takes",
-      "cost": "free|$amount",
-      "priority": "required|recommended|optional",
-      "notes": "Why this resource"
+      "priority": "required|recommended|optional"
     }}
   ],
-
-  "tools_recommended": [
-    {{
-      "tool": "Tool name",
-      "purpose": "What it's for",
-      "skill_level": "beginner-friendly|intermediate|advanced",
-      "free_tier": true/false,
-      "alternatives": ["Alternative tools"]
-    }}
-  ],
-
-  "motivation_tips": [
-    "Tips to stay motivated during the journey"
-  ],
-
-  "common_pitfalls": [
-    {{
-      "pitfall": "Common mistake",
-      "how_to_avoid": "Prevention strategy"
-    }}
-  ]
+  "quick_wins": ["Things candidate can do immediately"],
+  "motivation_tips": ["Tips to stay motivated"]
 }}
-```
 
-Create a realistic, achievable plan that maximizes improvement in the given timeframe."""
+Include 4-6 milestones, 3-5 skills, 2-3 projects, and 4-6 learning resources. Be specific and realistic."""
+
+ROADMAP_SCHEMA: Dict[str, Any] = {
+    "type": "OBJECT",
+    "properties": {
+        "roadmap": {
+            "type": "OBJECT",
+            "properties": {
+                "title": {"type": "STRING"},
+                "overview": {"type": "STRING"},
+                "total_duration": {"type": "STRING"},
+                "expected_outcome": {"type": "STRING"},
+                "milestones": {
+                    "type": "ARRAY",
+                    "items": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "week": {"type": "INTEGER"},
+                            "title": {"type": "STRING"},
+                            "description": {"type": "STRING"},
+                            "tasks": {"type": "ARRAY", "items": {"type": "STRING"}},
+                            "skills_gained": {"type": "ARRAY", "items": {"type": "STRING"}},
+                        },
+                    },
+                },
+                "skill_development": {
+                    "type": "ARRAY",
+                    "items": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "skill": {"type": "STRING"},
+                            "current_level": {
+                                "type": "STRING",
+                                "enum": ["beginner", "intermediate", "advanced", "expert"],
+                            },
+                            "target_level": {
+                                "type": "STRING",
+                                "enum": ["beginner", "intermediate", "advanced", "expert"],
+                            },
+                            "timeline": {"type": "STRING"},
+                            "resources": {"type": "ARRAY", "items": {"type": "STRING"}},
+                            "practice_projects": {"type": "ARRAY", "items": {"type": "STRING"}},
+                        },
+                    },
+                },
+                "project_recommendations": {
+                    "type": "ARRAY",
+                    "items": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "title": {"type": "STRING"},
+                            "description": {"type": "STRING"},
+                            "skills_demonstrated": {"type": "ARRAY", "items": {"type": "STRING"}},
+                            "timeline": {"type": "STRING"},
+                        },
+                    },
+                },
+            },
+        },
+        "learning_resources": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "title": {"type": "STRING"},
+                    "type": {"type": "STRING", "enum": ["course", "book", "tutorial", "article", "video"]},
+                    "provider": {"type": "STRING"},
+                    "skill_covered": {"type": "STRING"},
+                    "priority": {"type": "STRING", "enum": ["required", "recommended", "optional"]},
+                    "url": {"type": "STRING"},
+                    "duration": {"type": "STRING"},
+                },
+            },
+        },
+        "quick_wins": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "motivation_tips": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "tools_recommended": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "common_pitfalls": {"type": "ARRAY", "items": {"type": "STRING"}},
+    },
+    "required": ["roadmap"],
+}
 
 
 class CareerConsultantChain:
@@ -205,9 +196,13 @@ class CareerConsultantChain:
         """Generate a comprehensive career improvement roadmap."""
         import json
 
+        # Truncate large inputs to keep prompt size reasonable
+        gap_str = json.dumps(gap_analysis, indent=2)[:3000]
+        profile_str = json.dumps(user_profile, indent=2)[:2000]
+
         prompt = ROADMAP_PROMPT.format(
-            gap_analysis=json.dumps(gap_analysis, indent=2),
-            user_profile=json.dumps(user_profile, indent=2),
+            gap_analysis=gap_str,
+            user_profile=profile_str,
             job_title=job_title,
             company=company
         )
@@ -215,8 +210,9 @@ class CareerConsultantChain:
         result = await self.ai_client.complete_json(
             prompt=prompt,
             system=CAREER_CONSULTANT_SYSTEM,
-            temperature=0.5,
-            max_tokens=8000
+            temperature=0.2,
+            max_tokens=6000,
+            schema=ROADMAP_SCHEMA,
         )
 
         return self._validate_result(result)

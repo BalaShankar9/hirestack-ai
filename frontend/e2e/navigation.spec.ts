@@ -14,8 +14,10 @@ test.describe("Landing Page", () => {
   test("home page redirects appropriately", async ({ page }) => {
     await page.goto("/");
 
-    // Should redirect to either login (if not authenticated) or dashboard
-    await expect(page).toHaveURL(/login|dashboard/);
+    // Should render the marketing landing page for unauthenticated users
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole("link", { name: /start free analysis/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /sign in/i })).toBeVisible();
   });
 
   test("has correct meta tags", async ({ page }) => {
@@ -32,7 +34,7 @@ test.describe("Navigation Structure", () => {
     await page.goto("/login");
 
     // Check for branding
-    await expect(page.getByText(/hirestack/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: /hirestack ai/i })).toBeVisible();
   });
 });
 
@@ -40,9 +42,9 @@ test.describe("Accessibility", () => {
   test("login page has accessible form elements", async ({ page }) => {
     await page.goto("/login");
 
-    // Check that form inputs have proper labels/placeholders
-    const emailInput = page.getByPlaceholder(/email/i);
-    const passwordInput = page.getByPlaceholder(/password/i);
+    // Check that form inputs have proper labels
+    const emailInput = page.getByLabel("Email");
+    const passwordInput = page.getByLabel("Password");
 
     await expect(emailInput).toBeVisible();
     await expect(passwordInput).toBeVisible();
@@ -76,8 +78,8 @@ test.describe("Responsive Design", () => {
     await page.goto("/login");
 
     // Form should still be visible
-    await expect(page.getByPlaceholder(/email/i)).toBeVisible();
-    await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
+    await expect(page.getByLabel("Email")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Sign In$/ })).toBeVisible();
   });
 
   test("login page works on tablet viewport", async ({ page }) => {
@@ -85,8 +87,8 @@ test.describe("Responsive Design", () => {
     await page.goto("/login");
 
     // Form should still be visible
-    await expect(page.getByPlaceholder(/email/i)).toBeVisible();
-    await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
+    await expect(page.getByLabel("Email")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Sign In$/ })).toBeVisible();
   });
 
   test("login page works on desktop viewport", async ({ page }) => {
@@ -94,8 +96,8 @@ test.describe("Responsive Design", () => {
     await page.goto("/login");
 
     // Form should still be visible
-    await expect(page.getByPlaceholder(/email/i)).toBeVisible();
-    await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
+    await expect(page.getByLabel("Email")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Sign In$/ })).toBeVisible();
   });
 });
 
@@ -104,19 +106,14 @@ test.describe("Error States", () => {
     await page.goto("/login");
 
     // Fill in invalid credentials
-    await page.getByPlaceholder(/email/i).fill("invalid@test.com");
-    await page.getByPlaceholder(/password/i).fill("wrongpassword");
+    await page.getByLabel("Email").fill("invalid@test.com");
+    await page.getByLabel("Password").fill("wrongpassword");
 
     // Submit form
-    await page.getByRole("button", { name: /sign in/i }).click();
+    await page.getByRole("button", { name: /^Sign In$/ }).click();
 
-    // Should show an error message (Firebase will reject)
-    // Wait for error to appear with a reasonable timeout
-    await page.waitForSelector('[class*="error"], [class*="alert"], [role="alert"]', {
-      timeout: 10000,
-    }).catch(() => {
-      // May not have error state visible if connection issues
-    });
+    // Should show an error message (Supabase will reject)
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 10000 });
   });
 });
 

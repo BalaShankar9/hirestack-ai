@@ -70,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session: s } }) => {
+      supabase.realtime.setAuth(s?.access_token ?? "");
       setSession(s);
       setUser(mapUser(s?.user ?? null));
       setLoading(false);
@@ -79,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, s) => {
+      supabase.realtime.setAuth(s?.access_token ?? "");
       setSession(s);
       setUser(mapUser(s?.user ?? null));
       setLoading(false);

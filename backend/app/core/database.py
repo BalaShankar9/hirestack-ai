@@ -4,10 +4,18 @@ Supabase integration for data storage (PostgreSQL via PostgREST)
 """
 from typing import Optional, Dict, Any, List
 import asyncio
+import base64
+import logging
+import os
+import random
 
 from supabase import create_client, Client
+import httpx
+import jwt
 
 from app.core.config import settings
+
+logger = logging.getLogger("hirestack.supabase")
 
 
 # ── Supabase client singleton ────────────────────────────────────────────────
@@ -33,14 +41,69 @@ def get_supabase() -> Client:
 
 # ── JWT token verification ───────────────────────────────────────────────────
 
+def _decode_jwt_with_secret(id_token: str, secret) -> Optional[Dict[str, Any]]:
+    """Attempt to decode a JWT with the given secret (str or bytes). Returns claims or None."""
+    try:
+        decoded = jwt.decode(
+            id_token,
+            secret,
+            algorithms=["HS256"],
+            options={"verify_aud": False},
+        )
+        meta = decoded.get("user_metadata") or {}
+        return {
+            "sub": str(decoded.get("sub") or ""),
+            "email": decoded.get("email"),
+            "user_metadata": meta if isinstance(meta, dict) else {},
+            "aud": decoded.get("aud"),
+            "role": decoded.get("role"),
+        }
+    except jwt.ExpiredSignatureError:
+        raise  # Re-raise so caller can handle expiration specifically
+    except jwt.InvalidTokenError:
+        return None  # Signature mismatch — try next secret format
+
+
 def verify_token(id_token: str) -> Optional[Dict[str, Any]]:
     """
-    Verify a Supabase access token by calling the Auth admin API.
+    Verify a Supabase access token.
 
-    Works with both HS256 (cloud) and ES256 (local CLI) tokens because
-    verification is done server-side by GoTrue, not by decoding the JWT
-    locally.
+    Prefer local HS256 verification when SUPABASE_JWT_SECRET is configured.
+    Tries the raw secret string first, then the base64-decoded bytes (hosted
+    Supabase instances may use either format).
+    Falls back to the Auth admin API for non-HS256 tokens (e.g. local CLI ES256)
+    or when the secret is missing.
     """
+    jwt_secret = (settings.supabase_jwt_secret or "").strip()
+    if jwt_secret:
+        try:
+            header = jwt.get_unverified_header(id_token)
+            alg = str(header.get("alg") or "").upper()
+        except Exception:
+            alg = ""
+
+        if alg == "HS256":
+            # Try 1: raw secret string (how most Supabase instances work)
+            try:
+                result = _decode_jwt_with_secret(id_token, jwt_secret)
+                if result is not None:
+                    return result
+            except jwt.ExpiredSignatureError:
+                return None
+
+            # Try 2: base64-decoded bytes (some hosted Supabase instances)
+            try:
+                secret_bytes = base64.b64decode(jwt_secret)
+                result = _decode_jwt_with_secret(id_token, secret_bytes)
+                if result is not None:
+                    return result
+            except jwt.ExpiredSignatureError:
+                return None
+            except Exception as e:
+                logger.warning("token_verification_b64_failed", extra={"error": str(e)})
+
+            logger.warning("token_verification_failed_local_all", extra={"note": "both raw and b64 secrets failed, falling back to remote"})
+
     try:
         client = get_supabase()
         response = client.auth.get_user(id_token)
@@ -56,7 +119,9 @@ def verify_token(id_token: str) -> Optional[Dict[str, Any]]:
             }
         return None
     except Exception as e:
-        print(f"Token verification failed: {e}")
+        # Do not treat transient network issues as "invalid token" — callers should
+        # use verify_token_async() to get retries + proper 503s.
+        logger.warning("token_verification_failed", extra={"error": str(e)})
         return None
 
 
@@ -90,6 +155,7 @@ TABLES = {
     "events": "events",
     "learning_plans": "learning_plans",
     "doc_versions": "doc_versions",
+    "generation_jobs": "generation_jobs",
 }
 
 
@@ -107,11 +173,66 @@ class SupabaseDB:
 
     def __init__(self):
         self.client: Client = get_supabase()
+        self._lock: Optional[asyncio.Lock] = None
 
     @staticmethod
-    async def _run(func, *args):
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, func, *args)
+    def _is_transient_error(exc: BaseException) -> bool:
+        if isinstance(exc, (httpx.TimeoutException, httpx.RequestError)):
+            return True
+        msg = str(exc).lower()
+        return any(token in msg for token in (
+            "timed out",
+            "timeout",
+            "connection reset",
+            "server disconnected",
+            "temporarily unavailable",
+            "bad gateway",
+            "service unavailable",
+            "gateway timeout",
+            "502",
+            "503",
+            "504",
+        ))
+
+    async def _run(self, func, *args):
+        loop = asyncio.get_running_loop()
+        if self._lock is None:
+            # Create lock inside the running loop (py3.9 asyncio primitives can be loop-bound).
+            self._lock = asyncio.Lock()
+        attempts_raw = os.getenv("SUPABASE_HTTP_RETRIES", "3")
+        base_delay_raw = os.getenv("SUPABASE_HTTP_RETRY_BASE_S", "0.25")
+        max_delay_raw = os.getenv("SUPABASE_HTTP_RETRY_MAX_S", "2.0")
+        try:
+            attempts = max(1, int(attempts_raw))
+        except Exception:
+            attempts = 3
+        try:
+            base_delay_s = max(0.05, float(base_delay_raw))
+        except Exception:
+            base_delay_s = 0.25
+        try:
+            max_delay_s = max(base_delay_s, float(max_delay_raw))
+        except Exception:
+            max_delay_s = 2.0
+
+        last_exc: Optional[BaseException] = None
+        for attempt in range(1, attempts + 1):
+            try:
+                async with self._lock:
+                    return await loop.run_in_executor(None, func, *args)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= attempts or not SupabaseDB._is_transient_error(exc):
+                    raise
+                # Exponential backoff + small jitter.
+                delay_s = min(max_delay_s, base_delay_s * (2 ** (attempt - 1))) + random.uniform(0.0, 0.2)
+                await asyncio.sleep(delay_s)
+
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("Supabase operation failed unexpectedly.")
 
     # ── Generic CRUD ─────────────────────────────────────────────────────
 
@@ -130,8 +251,15 @@ class SupabaseDB:
     async def get(self, table: str, doc_id: str) -> Optional[Dict[str, Any]]:
         """Fetch a single row by id."""
         def _get():
-            result = self.client.table(table).select("*").eq("id", str(doc_id)).maybe_single().execute()
-            return result.data
+            # Avoid `maybe_single()` here — supabase/postgrest-py can raise
+            # APIError "Missing response" (code '204') for some schemas/tables,
+            # which breaks SSE streaming endpoints that poll single rows.
+            result = self.client.table(table).select("*").eq("id", str(doc_id)).limit(1).execute()
+            data = result.data or []
+            if isinstance(data, list):
+                return data[0] if data else None
+            # Be defensive in case the client returns an object already.
+            return data
 
         return await self._run(_get)
 
@@ -219,6 +347,75 @@ class SupabaseDB:
             await self.create(TABLES["users"], user_data, doc_id=uid)
             user = await self.get(TABLES["users"], uid)
         return user
+
+
+class AuthServiceUnavailable(RuntimeError):
+    """Raised when Supabase Auth verification is temporarily unavailable."""
+
+
+async def verify_token_async(id_token: str, db: Optional[SupabaseDB] = None) -> Optional[Dict[str, Any]]:
+    """
+    Verify a Supabase access token.
+    1. Fast-path: local HS256 decode (no I/O — uses SUPABASE_JWT_SECRET).
+    2. Async remote fallback: calls Supabase /auth/v1/user in a thread executor
+       (never blocks the event loop).
+    """
+    # ── 1. Local JWT decode (no network I/O) ──────────────────────────
+    jwt_secret = (settings.supabase_jwt_secret or "").strip()
+    if jwt_secret:
+        try:
+            header = jwt.get_unverified_header(id_token)
+            alg = str(header.get("alg") or "").upper()
+        except Exception:
+            alg = ""
+
+        if alg == "HS256":
+            # Try 1: raw secret string
+            try:
+                result = _decode_jwt_with_secret(id_token, jwt_secret)
+                if result is not None:
+                    return result
+            except jwt.ExpiredSignatureError:
+                return None
+
+            # Try 2: base64-decoded bytes
+            try:
+                secret_bytes = base64.b64decode(jwt_secret)
+                result = _decode_jwt_with_secret(id_token, secret_bytes)
+                if result is not None:
+                    return result
+            except jwt.ExpiredSignatureError:
+                return None
+            except Exception as e:
+                logger.warning("token_verification_b64_failed", extra={"error": str(e)})
+
+    # ── 2. Async remote verification (runs in thread, never blocks loop) ──
+    _db = db or get_db()
+
+    def _get_user():
+        return _db.client.auth.get_user(id_token)
+
+    try:
+        response = await _db._run(_get_user)
+    except Exception as exc:
+        # Treat transient network/timeouts as service-unavailable so the API can
+        # return a retryable 503 instead of a confusing 401.
+        if SupabaseDB._is_transient_error(exc):
+            raise AuthServiceUnavailable("Supabase auth verification timed out") from exc
+        logger.warning("token_verification_failed_async", extra={"error": str(exc)})
+        return None
+
+    if response and getattr(response, "user", None):
+        user = response.user
+        meta = user.user_metadata or {}
+        return {
+            "sub": str(user.id),
+            "email": user.email,
+            "user_metadata": meta,
+            "aud": "authenticated",
+            "role": "authenticated",
+        }
+    return None
 
 
 # ── Backward-compatible aliases ──────────────────────────────────────────────

@@ -15,7 +15,6 @@ describe("ScoreboardHeader", () => {
           recruiterScan: 58,
           evidenceStrength: 40,
           topFix: "Add quantified proof for React performance work.",
-          updatedAt: Date.now(),
         }}
       />
     );

@@ -64,7 +64,7 @@ export function EvidencePicker({
               filtered.map((e) => (
                 <button
                   key={e.id}
-                  className="w-full rounded-xl border bg-card p-3 text-left hover:bg-muted/40 transition-colors"
+                  className="w-full rounded-xl border bg-card p-3 text-left transition-all duration-200 hover:bg-muted/40 hover:shadow-sm hover:border-primary/20 active:scale-[0.99]"
                   onClick={() => {
                     onPick(e);
                     onOpenChange(false);
@@ -96,9 +96,9 @@ export function EvidencePicker({
                         ))}
                       </div>
                     </div>
-                    <Button size="sm" variant="outline" className="shrink-0 rounded-xl">
+                    <span className="shrink-0 inline-flex items-center justify-center rounded-xl border border-input bg-background px-3 py-1 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground">
                       Use
-                    </Button>
+                    </span>
                   </div>
                 </button>
               ))

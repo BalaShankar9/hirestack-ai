@@ -2,6 +2,7 @@
 
 import { ExternalLink, FileText, Tag, Wrench, Sparkles } from "lucide-react";
 import type { EvidenceDoc } from "@/lib/firestore";
+import { resolveFileUrl } from "@/lib/storage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -15,8 +16,6 @@ export function EvidenceCard({
   onUse?: (evidence: EvidenceDoc) => void;
   onOpen?: (evidence: EvidenceDoc) => void;
 }) {
-  const link = evidence.kind === "link" ? evidence.url : evidence.storageUrl;
-
   return (
     <div className="rounded-2xl border bg-card p-4 shadow-soft-sm hover:shadow-soft-md transition-shadow">
       <div className="flex items-start justify-between gap-2">
@@ -92,9 +91,17 @@ export function EvidenceCard({
         <Button
           variant="outline"
           size="sm"
-          onClick={() => {
+          onClick={async () => {
             if (onOpen) return onOpen(evidence);
-            if (link) window.open(link, "_blank", "noopener,noreferrer");
+            try {
+              const url =
+                evidence.kind === "link"
+                  ? evidence.url
+                  : await resolveFileUrl(evidence.storageUrl ?? evidence.fileUrl);
+              if (url) window.open(url, "_blank", "noopener,noreferrer");
+            } catch (err) {
+              console.error("Failed to open evidence:", err);
+            }
           }}
         >
           Open
@@ -103,4 +110,3 @@ export function EvidenceCard({
     </div>
   );
 }
-

@@ -27,7 +27,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Toggle } from "@/components/ui/toggle"
 import { Separator } from "@/components/ui/separator"
-import { useCallback, useEffect, type MutableRefObject } from "react"
+import { memo, useCallback, useEffect, useRef, type MutableRefObject } from "react"
 
 interface TipTapEditorProps {
   content?: string
@@ -39,7 +39,7 @@ interface TipTapEditorProps {
   onReady?: (editor: Editor | null) => void
 }
 
-export function TipTapEditor({
+function TipTapEditor({
   content = "",
   onChange,
   placeholder = "Start writing...",
@@ -48,6 +48,10 @@ export function TipTapEditor({
   editorRef,
   onReady,
 }: TipTapEditorProps) {
+  // Ref-based flag: when the editor fires onUpdate we set this to true,
+  // so we can skip the content-sync effect for our own edits.
+  const isLocalUpdate = useRef(false)
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -72,6 +76,7 @@ export function TipTapEditor({
     content,
     editable,
     onUpdate: ({ editor }) => {
+      isLocalUpdate.current = true
       onChange?.(editor.getHTML())
     },
   })
@@ -86,10 +91,16 @@ export function TipTapEditor({
     }
   }, [editor, editorRef, onReady])
 
+  // Sync external content changes (e.g. from DB) into the editor.
+  // Skip if the change originated from a local onUpdate call.
   useEffect(() => {
-    if (editor && content !== editor.getHTML()) {
-      editor.commands.setContent(content)
+    if (!editor) return
+    if (isLocalUpdate.current) {
+      isLocalUpdate.current = false
+      return
     }
+    // Only call the expensive setContent when the prop actually changed externally
+    editor.commands.setContent(content)
   }, [content, editor])
 
   const setLink = useCallback(() => {
@@ -265,3 +276,7 @@ export function TipTapEditor({
     </div>
   )
 }
+
+/** Memoized export — only re-renders when props actually change. */
+const MemoizedTipTapEditor = memo(TipTapEditor)
+export { MemoizedTipTapEditor as TipTapEditor }

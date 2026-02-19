@@ -1,6 +1,6 @@
 """
 Export Service
-Handles document export to PDF/DOCX formats with Firestore
+Handles document export to PDF/DOCX formats with Supabase
 """
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
@@ -10,36 +10,62 @@ import structlog
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Paragraph as RLParagraph, Spacer
+from reportlab.lib.units import inch
 from docx import Document as DocxDocument
 
-from app.core.database import get_firestore_db, COLLECTIONS, FirestoreDB
+from app.core.database import get_db, TABLES, SupabaseDB
 
 logger = structlog.get_logger()
 
 
 class ExportService:
-    """Service for export operations using Firestore."""
+    """Service for export operations using Supabase."""
 
-    def __init__(self, db: Optional[FirestoreDB] = None):
-        self.db = db or get_firestore_db()
+    def __init__(self, db: Optional[SupabaseDB] = None):
+        self.db = db or get_db()
 
     async def create_export(
         self,
         user_id: str,
-        document_ids: List[str],
-        fmt: str,
+        document_ids: List[str] = None,
+        fmt: str = "pdf",
         filename: Optional[str] = None,
         options: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Create an export bundle."""
-        # Fetch documents, verify ownership
+        """Create an export bundle from application documents or standalone documents."""
         documents: List[Dict[str, Any]] = []
-        for did in document_ids:
-            doc = await self.db.get(COLLECTIONS["documents"], did)
-            if not doc or doc.get("user_id") != user_id:
-                raise ValueError(f"Document {did} not found or not accessible")
-            documents.append(doc)
+
+        # If options contains application_id, export from the applications table
+        app_id = (options or {}).get("application_id")
+        if app_id:
+            app = await self.db.get(TABLES["applications"], app_id)
+            if not app or app.get("user_id") != user_id:
+                raise ValueError("Application not found or not accessible")
+
+            doc_types = (options or {}).get("document_types", ["cv", "cover_letter"])
+            type_map = {
+                "cv": ("Tailored CV", "cv_html"),
+                "cover_letter": ("Cover Letter", "cover_letter_html"),
+                "personal_statement": ("Personal Statement", "personal_statement_html"),
+                "portfolio": ("Portfolio", "portfolio_html"),
+            }
+            for dt in doc_types:
+                if dt in type_map:
+                    title, field = type_map[dt]
+                    content = app.get(field, "")
+                    if content:
+                        documents.append({"title": title, "content": content, "format": "html"})
+        elif document_ids:
+            # Fallback: fetch from documents table
+            for did in document_ids:
+                doc = await self.db.get(TABLES["documents"], did)
+                if not doc or doc.get("user_id") != user_id:
+                    raise ValueError(f"Document {did} not found or not accessible")
+                documents.append(doc)
+
+        if not documents:
+            raise ValueError("No documents to export")
 
         if not filename:
             timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -55,22 +81,35 @@ class ExportService:
         else:
             raise ValueError(f"Unsupported format: {fmt}")
 
-        # Store as base64 in Firestore (small exports only; production should use Cloud Storage)
+        # Store as base64 in Supabase (for small exports; production should use Supabase Storage)
         b64 = base64.b64encode(file_bytes).decode()
         record = {
             "user_id": user_id,
-            "document_ids": document_ids,
+            "document_ids": document_ids or [],
             "format": fmt,
             "filename": filename,
             "file_size": len(file_bytes),
             "file_url": f"data:application/octet-stream;base64,{b64}",
             "options": options,
             "status": "completed",
-            "expires_at": (datetime.utcnow() + timedelta(hours=24)).isoformat(),
         }
-        doc_id = await self.db.create(COLLECTIONS["exports"], record)
-        logger.info("export_created", export_id=doc_id, format=fmt)
-        return await self.db.get(COLLECTIONS["exports"], doc_id)
+        doc_id = await self.db.create(TABLES["exports"], record)
+        logger.info("export_created", export_id=doc_id, format=fmt, doc_count=len(documents))
+        return await self.db.get(TABLES["exports"], doc_id)
+
+    def _strip_html(self, html: str) -> str:
+        """Simple HTML to plain text conversion."""
+        import re
+        text = re.sub(r'<br\s*/?>', '\n', html)
+        text = re.sub(r'</(p|div|h[1-6]|li|tr)>', '\n', text)
+        text = re.sub(r'<[^>]+>', '', text)
+        text = re.sub(r'&nbsp;', ' ', text)
+        text = re.sub(r'&amp;', '&', text)
+        text = re.sub(r'&lt;', '<', text)
+        text = re.sub(r'&gt;', '>', text)
+        text = re.sub(r'&#\d+;', '', text)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        return text.strip()
 
     # ── PDF ──
     def _generate_pdf(self, documents: List[Dict[str, Any]], options: Optional[Dict[str, Any]] = None) -> bytes:
@@ -82,23 +121,25 @@ class ExportService:
         story: list = []
 
         for document in documents:
-            story.append(Paragraph(document.get("title", "Untitled"), title_style))
+            story.append(RLParagraph(document.get("title", "Untitled"), title_style))
             story.append(Spacer(1, 12))
-            for para in (document.get("content", "")).split("\n\n"):
+
+            content = document.get("content", "")
+            # If content is HTML, strip tags for PDF
+            if "<" in content and ">" in content:
+                content = self._strip_html(content)
+
+            for para in content.split("\n\n"):
                 para = para.strip()
                 if not para:
                     continue
-                para = para.replace("**", "<b>").replace("__", "<b>")
-                para = para.replace("*", "<i>").replace("_", "<i>")
-                if para.startswith("#"):
-                    level = min(len(para.split()[0]), 3)
-                    text = para.lstrip("#").strip()
-                    story.append(Paragraph(text, styles[f"Heading{level}"]))
-                elif para.startswith("- ") or para.startswith("* "):
-                    story.append(Paragraph("• " + para[2:], body_style))
-                else:
-                    story.append(Paragraph(para, body_style))
+                # Escape XML special chars for reportlab
+                para = para.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                story.append(RLParagraph(para, body_style))
             story.append(Spacer(1, 24))
+
+        if not story:
+            story.append(RLParagraph("No content to export.", body_style))
 
         doc.build(story)
         buffer.seek(0)
@@ -109,7 +150,12 @@ class ExportService:
         docx = DocxDocument()
         for document in documents:
             docx.add_heading(document.get("title", "Untitled"), level=1)
-            for para in (document.get("content", "")).split("\n\n"):
+
+            content = document.get("content", "")
+            if "<" in content and ">" in content:
+                content = self._strip_html(content)
+
+            for para in content.split("\n\n"):
                 para = para.strip()
                 if not para:
                     continue
@@ -119,12 +165,7 @@ class ExportService:
                 elif para.startswith("- ") or para.startswith("* "):
                     docx.add_paragraph(para[2:], style="List Bullet")
                 else:
-                    p = docx.add_paragraph()
-                    parts = para.split("**")
-                    for i, part in enumerate(parts):
-                        run = p.add_run(part)
-                        if i % 2 == 1:
-                            run.bold = True
+                    docx.add_paragraph(para)
             docx.add_page_break()
 
         buffer = io.BytesIO()
@@ -137,14 +178,17 @@ class ExportService:
         parts = []
         for document in documents:
             parts.append(f"# {document.get('title', 'Untitled')}\n\n")
-            parts.append(document.get("content", ""))
+            content = document.get("content", "")
+            if "<" in content and ">" in content:
+                content = self._strip_html(content)
+            parts.append(content)
             parts.append("\n\n---\n\n")
         return "".join(parts).encode("utf-8")
 
     # ── CRUD ──
     async def get_user_exports(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         return await self.db.query(
-            COLLECTIONS["exports"],
+            TABLES["exports"],
             filters=[("user_id", "==", user_id)],
             order_by="created_at",
             order_direction="DESCENDING",
@@ -152,7 +196,7 @@ class ExportService:
         )
 
     async def get_export(self, export_id: str, user_id: str) -> Optional[Dict[str, Any]]:
-        export = await self.db.get(COLLECTIONS["exports"], export_id)
+        export = await self.db.get(TABLES["exports"], export_id)
         if export and export.get("user_id") == user_id:
             return export
         return None
@@ -179,5 +223,5 @@ class ExportService:
         export = await self.get_export(export_id, user_id)
         if not export:
             return False
-        await self.db.delete(COLLECTIONS["exports"], export_id)
+        await self.db.delete(TABLES["exports"], export_id)
         return True

@@ -69,7 +69,7 @@ export function mapApplicationRow(row: any): ApplicationDoc {
     updatedAt: ts(row.updated_at),
     confirmedFacts: row.confirmed_facts ?? undefined,
     factsLocked: row.facts_locked ?? false,
-    modules: row.modules ?? { ...DEFAULT_MODULES },
+    modules: { ...DEFAULT_MODULES, ...(row.modules ?? {}) },
     benchmark: row.benchmark ?? undefined,
     gaps: row.gaps ?? undefined,
     learningPlan: row.learning_plan ?? undefined,
@@ -252,91 +252,618 @@ export async function setModuleStatus(
 /*  GENERATION PIPELINE — AI-powered via backend                       */
 /* ================================================================== */
 
-const AI_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Prefer IPv4 loopback to avoid environments where `localhost` resolves to IPv6 (::1)
+// while the backend is bound to 127.0.0.1.
+const AI_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+/** Progress event emitted by the SSE streaming pipeline */
+export interface PipelineProgress {
+  phase: string;
+  step: number;
+  totalSteps: number;
+  progress: number;
+  message: string;
+}
+
+function uuidv4(): string {
+  const c: any = typeof globalThis !== "undefined" ? (globalThis as any).crypto : undefined;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+
+  const bytes = new Uint8Array(16);
+  if (c && typeof c.getRandomValues === "function") {
+    c.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+async function syncAutoTasks(
+  appId: string,
+  userId: string,
+  gaps: any | undefined,
+  learningPlan: any | undefined
+): Promise<void> {
+  const sources = ["gaps", "learningPlan"] as const;
+
+  const { data: existingRows, error: existingErr } = await supabase
+    .from(TABLES.tasks)
+    .select("id, source, title, status")
+    .eq("user_id", userId)
+    .eq("application_id", appId)
+    .in("source", sources as unknown as string[]);
+
+  if (existingErr) throw existingErr;
+
+  const existingByKey = new Map<string, { id: string; status: TaskDoc["status"] }>();
+  for (const row of existingRows ?? []) {
+    const key = `${row.source}:${row.title}`;
+    existingByKey.set(key, { id: row.id, status: row.status ?? "todo" });
+  }
+
+  const candidates: Array<Omit<TaskDoc, "createdAt" | "updatedAt">> = [];
+
+  const missingKeywords: string[] = Array.isArray(gaps?.missingKeywords)
+    ? (gaps.missingKeywords as any[]).filter((k) => typeof k === "string")
+    : [];
+  const topMissing = missingKeywords.slice(0, 8);
+  for (let idx = 0; idx < topMissing.length; idx++) {
+    const kw = topMissing[idx]?.trim?.() ?? String(topMissing[idx] ?? "").trim();
+    if (!kw) continue;
+    candidates.push({
+      id: "",
+      userId,
+      applicationId: appId,
+      appId,
+      source: "gaps",
+      title: `Add proof for ${kw}`,
+      description: `Create one concrete artifact (project, certification, or link) that demonstrates ${kw}, then attach it in Evidence Vault.`,
+      detail: `Missing keyword: ${kw}`,
+      why: `This keyword appears in the JD signal. Proof-backed keywords improve match and credibility.`,
+      status: "todo",
+      priority: idx < 3 ? "high" : "medium",
+    });
+  }
+
+  const planWeeks: any[] = Array.isArray(learningPlan?.plan) ? learningPlan.plan : [];
+  for (const week of planWeeks.slice(0, 3)) {
+    const weekNum = typeof week?.week === "number" ? week.week : undefined;
+    const theme = typeof week?.theme === "string" ? week.theme : "Learning sprint";
+    const tasks: string[] = Array.isArray(week?.tasks)
+      ? (week.tasks as any[]).filter((t) => typeof t === "string")
+      : [];
+    for (const task of tasks.slice(0, 2)) {
+      const text = task.trim();
+      if (!text) continue;
+      const titleCore = text.length > 80 ? `${text.slice(0, 77)}…` : text;
+      candidates.push({
+        id: "",
+        userId,
+        applicationId: appId,
+        appId,
+        source: "learningPlan",
+        title: weekNum ? `Week ${weekNum}: ${titleCore}` : titleCore,
+        description: text,
+        detail: theme,
+        why: "Each learning sprint should produce a proof artifact you can attach to your application.",
+        status: "todo",
+        priority: "medium",
+      });
+    }
+  }
+
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    const key = `${candidate.source}:${candidate.title}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const existing = existingByKey.get(key);
+    if (existing) {
+      // Preserve completion state; refresh metadata for open tasks.
+      if (existing.status === "done" || existing.status === "skipped") continue;
+      await upsertTask({
+        ...candidate,
+        id: existing.id,
+        userId,
+        status: existing.status,
+      });
+      continue;
+    }
+
+    await upsertTask({
+      ...candidate,
+      id: uuidv4(),
+      userId,
+    });
+  }
+}
 
 export async function generateApplicationModules(
   appId: string,
   userId: string,
   confirmedFacts: ConfirmedFacts,
-  modules: ModuleKey[] = ["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "personalStatement", "portfolio", "scorecard"]
+  modules: ModuleKey[] = ["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "personalStatement", "portfolio", "scorecard"],
+  onProgress?: (p: PipelineProgress) => void,
+  opts?: { signal?: AbortSignal },
 ): Promise<void> {
   const jdText = confirmedFacts.jdText ?? "";
   const resumeText = confirmedFacts.resume?.text ?? "";
   const jobTitle = confirmedFacts.jobTitle ?? "";
   const company = confirmedFacts.company;
 
-  // Set all modules to "generating"
+  // Set modules to "generating" (single DB update; preserves other module states)
+  const { data: modRow, error: modFetchErr } = await supabase
+    .from(TABLES.applications)
+    .select("modules")
+    .eq("id", appId)
+    .maybeSingle();
+  if (modFetchErr) throw modFetchErr;
+
+  const moduleStates: Record<ModuleKey, ModuleStatus> = (modRow?.modules ?? { ...DEFAULT_MODULES }) as any;
+  const generatingAt = Date.now();
   for (const mod of modules) {
-    await setModuleStatus(appId, mod, "generating");
+    moduleStates[mod] = { state: "generating", updatedAt: generatingAt };
   }
 
-  try {
-    // ── Try AI-powered generation via backend ────────────────────────
-    const response = await fetch(`${AI_API_URL}/api/generate/pipeline`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        job_title: jobTitle,
-        company: company || "",
-        jd_text: jdText,
-        resume_text: resumeText,
-      }),
-    });
+  const { error: modSetErr } = await supabase
+    .from(TABLES.applications)
+    .update({ modules: moduleStates })
+    .eq("id", appId);
+  if (modSetErr) throw modSetErr;
 
-    if (!response.ok) {
-      const errBody = await response.text().catch(() => "");
-      throw new Error(`AI API error ${response.status}: ${errBody}`);
-    }
+  const MAX_RETRIES = 3;
+  let lastError: Error | null = null;
+  let cancelledByUserViaJob = false;
 
-    const result = await response.json();
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    let abortedBy: "user" | "hard_timeout" | "inactivity" | null = null;
+    let jobId: string | null = null;
+    let usedJobApi = false;
+    try {
+      const controller = new AbortController();
+      // Hard timeout: allow long generations (local LLMs can take 10+ minutes).
+      // Configurable via NEXT_PUBLIC_AI_HARD_TIMEOUT_MS.
+      const hardTimeoutMsRaw = Number.parseInt(process.env.NEXT_PUBLIC_AI_HARD_TIMEOUT_MS ?? "", 10);
+      const hardTimeoutMs = Number.isFinite(hardTimeoutMsRaw) && hardTimeoutMsRaw > 0 ? hardTimeoutMsRaw : 1_800_000;
+      const hardTimeout = setTimeout(() => {
+        abortedBy = abortedBy ?? "hard_timeout";
+        controller.abort();
+      }, hardTimeoutMs);
 
-    // ── Save all AI-generated results to Supabase ────────────────────
-    const patch: Record<string, any> = {};
+      console.log(`[HireStack] AI pipeline attempt ${attempt}/${MAX_RETRIES} (streaming)...`);
 
-    if (result.benchmark) {
-      patch.benchmark = { ...result.benchmark, createdAt: Date.now() };
-    }
-    if (result.gaps) {
-      patch.gaps = result.gaps;
-    }
-    if (result.learningPlan) {
-      patch.learningPlan = result.learningPlan;
-    }
-    if (result.cvHtml) {
-      patch.cvHtml = result.cvHtml;
-    }
-    if (result.coverLetterHtml) {
-      patch.coverLetterHtml = result.coverLetterHtml;
-    }
-    if (result.personalStatementHtml) {
-      patch.personalStatementHtml = result.personalStatementHtml;
-    }
-    if (result.portfolioHtml) {
-      patch.portfolioHtml = result.portfolioHtml;
-    }
-    if (result.validation) {
-      patch.validation = result.validation;
-    }
-    if (result.scorecard) {
-      patch.scorecard = { ...result.scorecard, updatedAt: Date.now() };
-    }
-    if (result.scores) {
-      patch.scores = result.scores;
-    }
+      // getUser() validates the token with Supabase and triggers a refresh if
+      // the access token is expired — ensures we always send a fresh token.
+      const { error: userErr } = await supabase.auth.getUser();
+      if (userErr) {
+        throw Object.assign(
+          new Error("Not authenticated. Please sign in again."),
+          { nonRetryable: true }
+        );
+      }
+      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+      if (sessionErr) throw sessionErr;
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        throw Object.assign(
+          new Error("Not authenticated. Please sign in again."),
+          { nonRetryable: true }
+        );
+      }
 
-    // Set all modules to "ready"
-    const allModules = { ...DEFAULT_MODULES };
-    for (const mod of modules) {
-      allModules[mod] = { state: "ready" as const, updatedAt: Date.now() };
-    }
-    patch.modules = allModules;
+      // Prefer DB-backed generation jobs (resilient to refresh/disconnect).
+      // Falls back to legacy /pipeline/stream if the endpoint isn't available.
+      const cancelJobBestEffort = async () => {
+        if (!jobId) return;
+        try {
+          await fetch(`${AI_API_URL}/api/generate/jobs/${jobId}/cancel`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+        } catch {
+          // ignore — cancellation is best-effort
+        }
+      };
 
-    await patchApplication(appId, patch);
-  } catch (apiError: any) {
-    console.warn("[HireStack] AI pipeline failed, falling back to local builders:", apiError.message);
-    // ── Fallback to local builders ───────────────────────────────────
-    await generateWithLocalBuilders(appId, userId, confirmedFacts, modules);
+      let response: Response | null = null;
+      let useLegacyStream = false;
+
+      try {
+        const jobResp = await fetch(`${AI_API_URL}/api/generate/jobs`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            application_id: appId,
+            requested_modules: modules,
+          }),
+          signal: controller.signal,
+        });
+
+        if (jobResp.ok) {
+          const jobJson = await jobResp.json().catch(() => ({}));
+          jobId = String(jobJson.job_id || jobJson.jobId || "");
+          if (!jobId) throw new Error("Job API returned no job_id");
+          usedJobApi = true;
+
+          response = await fetch(`${AI_API_URL}/api/generate/jobs/${jobId}/stream`, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+            signal: controller.signal,
+          });
+        } else if (jobResp.status === 404) {
+          const errBody = await jobResp.text().catch(() => "");
+          try {
+            const parsed = JSON.parse(errBody);
+            if (parsed?.detail === "Not Found") {
+              useLegacyStream = true;
+            }
+          } catch {
+            // ignore
+          }
+          if (!useLegacyStream) {
+            throw Object.assign(new Error(errBody || "Job creation failed"), {
+              code: jobResp.status,
+              nonRetryable: true,
+            });
+          }
+          // Jobs endpoint not deployed yet — trigger catch block to use legacy /pipeline/stream
+          throw new Error("jobs-api-unavailable");
+        } else {
+          const errBody = await jobResp.text().catch(() => "");
+          let userMessage: string;
+          try {
+            const parsed = JSON.parse(errBody);
+            userMessage = parsed.detail ?? errBody;
+          } catch {
+            userMessage = errBody || `HTTP ${jobResp.status}`;
+          }
+          const NON_RETRYABLE = [400, 401, 402, 403, 404];
+          if (NON_RETRYABLE.includes(jobResp.status)) {
+            throw Object.assign(new Error(userMessage), { nonRetryable: true, code: jobResp.status });
+          }
+          throw Object.assign(new Error(userMessage), { code: jobResp.status });
+        }
+      } catch (jobErr: any) {
+        if (useLegacyStream) {
+          response = await fetch(`${AI_API_URL}/api/generate/pipeline/stream`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({
+              job_title: jobTitle,
+              company: company || "",
+              jd_text: jdText,
+              resume_text: resumeText,
+            }),
+            signal: controller.signal,
+          });
+        } else {
+          throw jobErr;
+        }
+      }
+
+      if (!response) throw new Error("No AI response stream");
+
+      if (!response.ok) {
+        clearTimeout(hardTimeout);
+        const errBody = await response.text().catch(() => "");
+        let userMessage: string;
+        try {
+          const parsed = JSON.parse(errBody);
+          userMessage = parsed.detail ?? errBody;
+        } catch {
+          userMessage = errBody || `HTTP ${response.status}`;
+        }
+        const retryAfterHeader = response.headers.get("Retry-After");
+        const retryAfterSeconds = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : undefined;
+        const NON_RETRYABLE = [400, 401, 402, 403, 404, 499];
+        if (NON_RETRYABLE.includes(response.status)) {
+          throw Object.assign(new Error(userMessage), {
+            nonRetryable: true,
+            code: response.status,
+            retryAfterSeconds: Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : undefined,
+          });
+        }
+        throw Object.assign(new Error(userMessage), {
+          code: response.status,
+          retryAfterSeconds: Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : undefined,
+        });
+      }
+
+      // ── Parse SSE stream ──────────────────────────────────────────
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Streaming not supported by browser");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let result: any = null;
+      let streamError: string | null = null;
+
+      // Inactivity timeout: if no bytes arrive for a while, something is stuck
+      let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+      // Configurable via NEXT_PUBLIC_AI_INACTIVITY_TIMEOUT_MS.
+      const inactivityMsRaw = Number.parseInt(process.env.NEXT_PUBLIC_AI_INACTIVITY_TIMEOUT_MS ?? "", 10);
+      const inactivityMs = Number.isFinite(inactivityMsRaw) && inactivityMsRaw > 0 ? inactivityMsRaw : 900_000;
+      const resetInactivity = () => {
+        if (inactivityTimer) clearTimeout(inactivityTimer);
+        inactivityTimer = setTimeout(() => {
+          abortedBy = abortedBy ?? "inactivity";
+          controller.abort();
+        }, inactivityMs);
+      };
+      resetInactivity();
+
+      // Allow callers (wizard UI) to cancel without waiting for inactivity/hard timeouts.
+      const externalSignal = opts?.signal;
+      const onExternalAbort = () => {
+        abortedBy = abortedBy ?? "user";
+        // Propagate cancel to the backend job runner (so it stops burning quota).
+        void cancelJobBestEffort();
+        controller.abort();
+      };
+      if (externalSignal) {
+        if (externalSignal.aborted) {
+          onExternalAbort();
+        } else {
+          externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+        }
+      }
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          resetInactivity();
+          buffer += decoder.decode(value, { stream: true });
+
+          // Parse SSE events from buffer
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+          let currentEvent = "";
+          for (const line of lines) {
+            if (line.startsWith("event: ")) {
+              currentEvent = line.slice(7).trim();
+            } else if (line.startsWith("data: ")) {
+              const dataStr = line.slice(6);
+              try {
+                const data = JSON.parse(dataStr);
+
+                if (currentEvent === "progress") {
+                  onProgress?.(data as PipelineProgress);
+                } else if (currentEvent === "complete") {
+                  result = data.result;
+                  onProgress?.({
+                    phase: "complete",
+                    step: data.result ? 6 : 0,
+                    totalSteps: 6,
+                    progress: 100,
+                    message: "All done!",
+                  });
+                } else if (currentEvent === "error") {
+                  streamError = data.message || "AI generation failed";
+                  const code = data.code || 500;
+                  const retryAfterSeconds = data.retryAfterSeconds ?? data.retry_after_seconds ?? data.retryAfter ?? undefined;
+                  const NON_RETRYABLE_CODES = [400, 401, 402, 403, 404, 499];
+                  if (NON_RETRYABLE_CODES.includes(code)) {
+                    throw Object.assign(new Error(streamError ?? "AI generation failed"), {
+                      nonRetryable: true,
+                      code,
+                      retryAfterSeconds,
+                    });
+                  }
+                  throw Object.assign(new Error(streamError ?? "AI generation failed"), {
+                    code,
+                    retryAfterSeconds,
+                  });
+                }
+              } catch (parseErr: any) {
+                if (parseErr.nonRetryable) throw parseErr;
+                if (parseErr.message === streamError) throw parseErr;
+                console.warn("[HireStack] SSE parse error:", parseErr);
+              }
+              currentEvent = "";
+            }
+          }
+        }
+      } finally {
+        if (externalSignal) externalSignal.removeEventListener("abort", onExternalAbort);
+        if (inactivityTimer) clearTimeout(inactivityTimer);
+        clearTimeout(hardTimeout);
+        reader.releaseLock();
+      }
+
+      if (!result) {
+        throw new Error("AI pipeline stream ended without producing results");
+      }
+
+      // ── Sanity-check results and apply deterministic fallbacks ────
+      // When cloud providers are rate-limited, local models can occasionally
+      // return sparse/empty module payloads. Fill them from the confirmed
+      // facts to keep the workspace usable and avoid "Ready" modules with no content.
+      const keywords: string[] = Array.isArray(result?.benchmark?.keywords) && result.benchmark.keywords.length > 0
+        ? (result.benchmark.keywords as any[]).filter((k) => typeof k === "string")
+        : extractKeywords(jdText, 25);
+
+      const shouldReplaceBenchmark = !result?.benchmark
+        || !Array.isArray(result.benchmark.keywords)
+        || result.benchmark.keywords.length === 0
+        || !Array.isArray(result.benchmark.rubric)
+        || result.benchmark.rubric.length === 0;
+      if (shouldReplaceBenchmark) {
+        result.benchmark = {
+          ...(result.benchmark ?? {}),
+          ...buildBenchmark(jobTitle, company || undefined, keywords),
+        };
+      }
+
+      const isGapsEmpty = !result?.gaps
+        || (!Array.isArray(result.gaps.missingKeywords) || result.gaps.missingKeywords.length === 0)
+        && (!Array.isArray(result.gaps.strengths) || result.gaps.strengths.length === 0)
+        && (!Array.isArray(result.gaps.recommendations) || result.gaps.recommendations.length === 0);
+      if (isGapsEmpty) {
+        result.gaps = {
+          ...(result.gaps ?? {}),
+          ...buildGaps(confirmedFacts, keywords),
+          createdAt: Date.now(),
+        };
+      }
+
+      const missingKeywords = Array.isArray(result?.gaps?.missingKeywords) ? result.gaps.missingKeywords : [];
+      const shouldReplaceLearningPlan = !result?.learningPlan
+        || !Array.isArray(result.learningPlan.plan)
+        || result.learningPlan.plan.length === 0;
+      if (shouldReplaceLearningPlan) {
+        result.learningPlan = {
+          ...(result.learningPlan ?? {}),
+          ...buildLearningPlan(missingKeywords.length > 0 ? missingKeywords : keywords.slice(0, 8)),
+          createdAt: Date.now(),
+        };
+      }
+
+      if (!String(result.cvHtml ?? "").trim()) {
+        result.cvHtml = seedCvHtml(confirmedFacts, jobTitle, company || undefined, keywords, resumeText);
+      }
+      if (!String(result.coverLetterHtml ?? "").trim()) {
+        result.coverLetterHtml = seedCoverLetterHtml(confirmedFacts, jobTitle, company || undefined, keywords);
+      }
+      if (!String(result.personalStatementHtml ?? "").trim()) {
+        result.personalStatementHtml = seedPersonalStatementHtml(
+          confirmedFacts,
+          jobTitle,
+          company || undefined,
+          keywords,
+          resumeText
+        );
+      }
+      if (!String(result.portfolioHtml ?? "").trim()) {
+        result.portfolioHtml = seedPortfolioHtml(
+          confirmedFacts,
+          jobTitle,
+          company || undefined,
+          keywords,
+          resumeText
+        );
+      }
+
+      // Validate that we got at least something meaningful back
+      if (!String(result.cvHtml ?? "").trim() && !result.benchmark && !result.gaps) {
+        throw new Error("AI pipeline returned empty results");
+      }
+
+      // ── Save all AI-generated results to Supabase ────────────────
+      const patch: Record<string, any> = {};
+      const requested = new Set(modules);
+
+      if (requested.has("benchmark") && result.benchmark) {
+        patch.benchmark = { ...result.benchmark, createdAt: Date.now() };
+      }
+      if (requested.has("gaps") && result.gaps) patch.gaps = result.gaps;
+      if (requested.has("learningPlan") && result.learningPlan) patch.learningPlan = result.learningPlan;
+      if (requested.has("cv") && result.cvHtml) patch.cvHtml = result.cvHtml;
+      if (requested.has("coverLetter") && result.coverLetterHtml) patch.coverLetterHtml = result.coverLetterHtml;
+      if (requested.has("personalStatement") && result.personalStatementHtml) patch.personalStatementHtml = result.personalStatementHtml;
+      if (requested.has("portfolio") && result.portfolioHtml) patch.portfolioHtml = result.portfolioHtml;
+      if (requested.has("scorecard")) {
+        if (result.validation) patch.validation = result.validation;
+        if (result.scorecard) patch.scorecard = { ...result.scorecard, updatedAt: Date.now() };
+        if (result.scores) patch.scores = result.scores;
+      }
+
+      const readyAt = Date.now();
+      for (const mod of modules) {
+        moduleStates[mod] = { state: "ready", updatedAt: readyAt };
+      }
+      patch.modules = moduleStates;
+
+      await patchApplication(appId, patch);
+      if (requested.has("gaps") || requested.has("learningPlan")) {
+        try {
+          await syncAutoTasks(
+            appId,
+            userId,
+            requested.has("gaps") ? result.gaps : undefined,
+            requested.has("learningPlan") ? result.learningPlan : undefined
+          );
+        } catch (taskErr) {
+          console.warn("[HireStack] Task sync failed:", (taskErr as any)?.message ?? taskErr);
+        }
+      }
+      console.log("[HireStack] AI pipeline succeeded on attempt", attempt);
+      return; // Success
+    } catch (apiError: any) {
+      lastError = apiError;
+
+      if (apiError.name === "AbortError") {
+        if (abortedBy === "user") {
+          if (usedJobApi) cancelledByUserViaJob = true;
+          apiError.nonRetryable = true;
+          lastError = new Error("Generation cancelled.");
+        } else if (abortedBy === "inactivity") {
+          lastError = new Error("Generation appears stuck (no progress). Please try again.");
+        } else {
+          lastError = new Error("Generation timed out — the AI took too long. Please try again.");
+        }
+      }
+
+      console.warn(`[HireStack] AI pipeline attempt ${attempt} failed:`, lastError!.message);
+
+      if (apiError.nonRetryable) break;
+      if (attempt < MAX_RETRIES) {
+        const retryAfterSeconds = Number(apiError?.retryAfterSeconds);
+        const delayMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+          ? retryAfterSeconds * 1000
+          : attempt * 2000;
+        if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+          onProgress?.({
+            phase: "rate_limited",
+            step: 0,
+            totalSteps: 6,
+            progress: 5,
+            message: `AI rate limited — retrying in ${retryAfterSeconds}s…`,
+          });
+        }
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
   }
+
+  // All retries failed
+  console.error("[HireStack] AI pipeline failed after all retries:", lastError?.message);
+
+  const baseErrorMessage = (lastError?.message ?? "AI generation failed").trim();
+  if (cancelledByUserViaJob && baseErrorMessage.toLowerCase().includes("cancel")) {
+    // Job-based cancellation restores module states server-side; don't overwrite.
+    throw new Error("Generation cancelled.");
+  }
+  const needsPunctuation = !/[.!?]$/.test(baseErrorMessage);
+  const moduleErrorMessage = `${baseErrorMessage}${needsPunctuation ? "." : ""} Click Regenerate to retry.`;
+
+  const errorAt = Date.now();
+  for (const mod of modules) {
+    moduleStates[mod] = { state: "error", error: moduleErrorMessage, updatedAt: errorAt };
+  }
+  const { error: errorSetErr } = await supabase
+    .from(TABLES.applications)
+    .update({ modules: moduleStates })
+    .eq("id", appId);
+  if (errorSetErr) throw errorSetErr;
+
+  throw new Error(lastError?.message ?? "AI generation failed. Please try again.");
 }
 
 /**
@@ -640,8 +1167,11 @@ export async function upsertTask(task: Partial<TaskDoc> & { id: string; userId: 
   if (task.source !== undefined) row.source = task.source;
   if (task.title !== undefined) row.title = task.title;
   if (task.description !== undefined) row.description = task.description;
+  if (task.detail !== undefined) row.detail = task.detail;
+  if (task.why !== undefined) row.why = task.why;
   if (task.status !== undefined) row.status = task.status;
   if (task.priority !== undefined) row.priority = task.priority;
+  if (task.dueDate !== undefined) row.due_date = task.dueDate ? new Date(task.dueDate).toISOString() : null;
 
   const { error } = await supabase
     .from(TABLES.tasks)
@@ -716,8 +1246,9 @@ export async function uploadFile(
   });
   if (error) throw error;
 
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return data.publicUrl;
+  // Buckets are private by default; store a stable storage reference and
+  // resolve to a signed URL only when the user opens/downloads the file.
+  return `storage://${bucket}/${path}`;
 }
 
 export async function uploadResume(
@@ -725,8 +1256,48 @@ export async function uploadResume(
   file: File
 ): Promise<string> {
   const ext = file.name.split(".").pop() ?? "pdf";
-  const path = `${userId}/${uid("resume")}.${ext}`;
-  return uploadFile("resumes", path, file);
+  const path = `${userId}/resumes/${uid("resume")}.${ext}`;
+  return uploadFile("uploads", path, file);
+}
+
+/**
+ * Server-side resume parsing (PDF/DOCX/TXT) for reliable text extraction.
+ * Uses the backend `/api/resume/parse` endpoint (Supabase JWT auth).
+ */
+export async function parseResumeText(
+  file: File,
+  maxPages: number = 4
+): Promise<string> {
+  const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+  if (sessionErr) throw sessionErr;
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) throw new Error("Not authenticated. Please sign in again.");
+
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch(`${AI_API_URL}/api/resume/parse?max_pages=${maxPages}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: form,
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    let userMessage = errBody || `HTTP ${res.status}`;
+    try {
+      const parsed = JSON.parse(errBody);
+      userMessage = parsed.detail ?? userMessage;
+    } catch {
+      // ignore
+    }
+    throw new Error(userMessage);
+  }
+
+  const data = await res.json().catch(() => ({}));
+  return String(data?.text ?? "").trim();
 }
 
 export async function uploadEvidenceFile(
@@ -734,8 +1305,8 @@ export async function uploadEvidenceFile(
   file: File
 ): Promise<string> {
   const ext = file.name.split(".").pop() ?? "pdf";
-  const path = `${userId}/${uid("file")}.${ext}`;
-  return uploadFile("evidence", path, file);
+  const path = `${userId}/evidence/${uid("file")}.${ext}`;
+  return uploadFile("uploads", path, file);
 }
 
 /* ================================================================== */
@@ -1111,6 +1682,62 @@ export function buildScorecard(input: {
   };
 }
 
+export function computeEvidenceStrengthScore(input: {
+  evidence: EvidenceDoc[];
+  keywords: string[];
+}): number {
+  const norm = (s: string) =>
+    String(s ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+      .replace(/\s+/g, " ");
+
+  const keywordsNorm = Array.from(
+    new Set(
+      (input.keywords ?? [])
+        .filter((k) => typeof k === "string")
+        .map((k) => norm(k))
+        .filter(Boolean)
+    )
+  );
+  if (keywordsNorm.length === 0) return 0;
+
+  const evidenceText = norm(
+    (input.evidence ?? [])
+      .map((e) =>
+        [
+          e.title,
+          e.description,
+          ...(Array.isArray(e.skills) ? e.skills : []),
+          ...(Array.isArray(e.tools) ? e.tools : []),
+          ...(Array.isArray(e.tags) ? e.tags : []),
+        ]
+          .filter(Boolean)
+          .join(" ")
+      )
+      .join(" ")
+  );
+  if (!evidenceText) return 0;
+
+  const haystack = ` ${evidenceText} `;
+  let covered = 0;
+  for (const kw of keywordsNorm) {
+    const needle = ` ${kw} `;
+    if (haystack.includes(needle)) {
+      covered += 1;
+      continue;
+    }
+    // Allow substring matches for longer keywords (handles e.g. "tailwind" inside "tailwindcss").
+    if (kw.length >= 4 && haystack.includes(kw)) {
+      covered += 1;
+    }
+  }
+
+  const score = Math.round((covered / keywordsNorm.length) * 100);
+  return Math.max(0, Math.min(100, score));
+}
+
 /* ================================================================== */
 /*  COACH ACTIONS                                                       */
 /* ================================================================== */
@@ -1200,6 +1827,107 @@ export function seedCvHtml(
   }
 
   return html;
+}
+
+function extractResumeHighlights(resumeText: string, max = 6): string[] {
+  const lines = String(resumeText ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const bullets = lines
+    .filter((l) => /^[-•]\s+/.test(l))
+    .map((l) => l.replace(/^[-•]\s+/, "").trim())
+    .filter(Boolean);
+
+  // If there are no bullets, fall back to a few short lines near the top.
+  const fallback = lines
+    .slice(0, 12)
+    .filter((l) => l.length >= 12 && l.length <= 140 && !/^https?:\/\//.test(l));
+
+  const picks = bullets.length > 0 ? bullets : fallback;
+  return picks.slice(0, max);
+}
+
+export function seedPersonalStatementHtml(
+  facts: ConfirmedFacts,
+  jobTitle: string,
+  company: string | undefined,
+  keywords: string[],
+  resumeText: string
+): string {
+  const companyStr = company || "the company";
+  const resumeName = facts?.resume?.name;
+  const highlights = extractResumeHighlights(resumeText, 5);
+  const kw = (keywords ?? []).filter((k) => typeof k === "string" && k.trim()).slice(0, 6);
+
+  const parts: string[] = [];
+  parts.push("<h2>Personal Statement</h2>");
+  parts.push(
+    `<p>I’m applying for the <strong>${jobTitle}</strong> role at <strong>${companyStr}</strong>. I focus on proof-backed work: clear outcomes, measurable impact, and artifacts that make claims credible.</p>`
+  );
+  if (resumeName) {
+    parts.push(`<p><strong>Resume:</strong> ${resumeName}</p>`);
+  }
+
+  if (highlights.length > 0) {
+    parts.push("<p><strong>Highlights from my resume:</strong></p>");
+    parts.push("<ul>");
+    for (const h of highlights) parts.push(`<li>${h}</li>`);
+    parts.push("</ul>");
+  }
+
+  if (kw.length > 0) {
+    parts.push(
+      `<p>For this role, I’m emphasizing <strong>${kw.join(", ")}</strong> and making sure each key keyword is supported by evidence in my vault.</p>`
+    );
+  }
+
+  parts.push(
+    "<p>I’m excited to bring this approach to your team and deliver value quickly through thoughtful execution, collaboration, and a relentless focus on user outcomes.</p>"
+  );
+
+  return parts.join("");
+}
+
+export function seedPortfolioHtml(
+  facts: ConfirmedFacts,
+  jobTitle: string,
+  company: string | undefined,
+  keywords: string[],
+  resumeText: string
+): string {
+  const companyStr = company || "the company";
+  const resumeName = facts?.resume?.name;
+  const highlights = extractResumeHighlights(resumeText, 4);
+  const kw = (keywords ?? []).filter((k) => typeof k === "string" && k.trim()).slice(0, 8);
+
+  const parts: string[] = [];
+  parts.push("<h2>Portfolio & Evidence</h2>");
+  parts.push(`<p>Proof-first checklist for <strong>${jobTitle}</strong> at <strong>${companyStr}</strong>. Attach links/files in Evidence Vault and reference them in your docs.</p>`);
+  if (resumeName) {
+    parts.push(`<p><strong>Resume:</strong> ${resumeName}</p>`);
+  }
+
+  if (highlights.length > 0) {
+    parts.push("<p><strong>Resume proof hooks:</strong></p>");
+    parts.push("<ul>");
+    for (const h of highlights) parts.push(`<li>${h}</li>`);
+    parts.push("</ul>");
+  }
+
+  if (kw.length > 0) {
+    parts.push("<p><strong>Priority proof targets:</strong></p>");
+    parts.push("<ul>");
+    for (const k of kw) {
+      parts.push(
+        `<li><strong>${k}</strong> — Add 1 concrete artifact (project, cert, write-up) that demonstrates this keyword with measurable outcomes.</li>`
+      );
+    }
+    parts.push("</ul>");
+  }
+
+  return parts.join("");
 }
 
 export function seedCoverLetterHtml(

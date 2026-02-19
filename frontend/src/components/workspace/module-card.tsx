@@ -1,15 +1,17 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { AlertTriangle, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ModuleStatus } from "@/lib/firestore";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 
 function StatusBadge({ status }: { status: ModuleStatus }) {
+  if (!status) return null;
   if (status.state === "ready") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-700">
+      <span className="chip-premium animate-fade-in gap-1 border-emerald-300/60 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/30 dark:text-emerald-300">
         <CheckCircle2 className="h-3.5 w-3.5" />
         Ready
       </span>
@@ -17,7 +19,7 @@ function StatusBadge({ status }: { status: ModuleStatus }) {
   }
   if (status.state === "error") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-1 text-[11px] font-medium text-rose-700">
+      <span className="chip-premium animate-fade-in gap-1 border-rose-300/60 bg-rose-500/10 text-rose-700 dark:border-rose-400/30 dark:text-rose-300">
         <AlertTriangle className="h-3.5 w-3.5" />
         Needs attention
       </span>
@@ -25,14 +27,14 @@ function StatusBadge({ status }: { status: ModuleStatus }) {
   }
   if (status.state === "generating" || status.state === "queued") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">
+      <span className="chip-premium gap-1 border-primary/25 bg-primary/10 text-primary">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         {status.state === "queued" ? "Queued" : "Generating"}
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground">
+    <span className="chip-premium gap-1">
       Idle
     </span>
   );
@@ -53,11 +55,26 @@ export function ModuleCard({
   onOpen?: () => void;
   onRegenerate?: () => void;
 }) {
+  const [regenerating, setRegenerating] = useState(false);
+  const isGenerating = status?.state === "generating" || status?.state === "queued";
+  const isBusy = regenerating || isGenerating;
+
+  const handleRegenerate = async () => {
+    if (!onRegenerate || isBusy) return;
+    setRegenerating(true);
+    try {
+      await onRegenerate();
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
   return (
-    <div className="rounded-2xl border bg-card p-4 shadow-soft-sm hover:shadow-soft-md transition-shadow">
+    <div className="surface-premium group relative overflow-hidden rounded-2xl p-4 transition-all duration-300 hover:border-primary/20 hover:shadow-soft-lg">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-r from-primary/12 via-violet-500/8 to-transparent" />
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-start gap-3 min-w-0">
-          <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+          <div className="relative mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary transition-transform duration-200 group-hover:scale-105">
             {icon}
           </div>
           <div className="min-w-0">
@@ -73,8 +90,8 @@ export function ModuleCard({
       </div>
 
       {(status.state === "generating" || status.state === "queued") && (
-        <div className="mt-3">
-          <Progress value={status.progress ?? 0} />
+        <div className="mt-3 animate-fade-in">
+          <Progress value={status.progress ?? 0} className="h-2" />
           <div className="mt-1 text-[11px] text-muted-foreground">
             Building module… {status.progress ?? 0}%
           </div>
@@ -82,7 +99,7 @@ export function ModuleCard({
       )}
 
       {status.state === "error" && status.error ? (
-        <div className="mt-3 rounded-xl bg-rose-500/10 p-3 text-xs text-rose-700">
+        <div className="mt-3 rounded-xl border border-rose-300/50 bg-rose-500/10 p-3 text-xs text-rose-700 animate-fade-in dark:border-rose-400/30 dark:text-rose-300">
           {status.error}
         </div>
       ) : null}
@@ -94,20 +111,26 @@ export function ModuleCard({
           className="flex-1 rounded-xl"
           onClick={onOpen}
           disabled={!onOpen}
+          aria-label={`Open ${title}`}
         >
           Open
         </Button>
         <Button
           variant="outline"
           size="sm"
-          className="rounded-xl"
-          onClick={onRegenerate}
-          disabled={!onRegenerate}
+          className="rounded-xl gap-1.5"
+          onClick={handleRegenerate}
+          disabled={!onRegenerate || isBusy}
+          aria-label={`Regenerate ${title}`}
         >
-          Regenerate
+          {isBusy ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+          {isBusy ? "Working…" : "Regenerate"}
         </Button>
       </div>
     </div>
   );
 }
-

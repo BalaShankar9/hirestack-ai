@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /** Safely coerce any DB value to a renderable string — handles both
  *  plain strings and legacy object shapes (e.g. {dimension, indicators}). */
@@ -26,19 +26,19 @@ import {
   RefreshCw,
   Sparkles,
   Target,
-  UploadCloud,
   Download,
   ClipboardCopy,
   FileArchive,
   PenTool,
   FolderOpen,
   Loader2,
+  Trash2,
 } from "lucide-react";
-import { diffWordsWithSpace } from "diff";
-
 import { useAuth } from "@/components/providers";
 import {
   buildCoachActions,
+  deleteApplication,
+  generateApplicationModules,
   patchApplication,
   regenerateModule,
   restoreDocVersion,
@@ -48,8 +48,11 @@ import {
 } from "@/lib/firestore";
 import { useApplication, useEvidence, useTasks } from "@/lib/firestore";
 import type { ModuleKey } from "@/lib/firestore";
+import { toast } from "@/hooks";
 import {
   downloadPdf,
+  downloadDocx,
+  downloadImage,
   downloadAllAsZip,
   buildBenchmarkHtml,
   buildGapAnalysisHtml,
@@ -61,18 +64,24 @@ import { CoachPanel } from "@/components/workspace/coach-panel";
 import { ModuleCard } from "@/components/workspace/module-card";
 import { TaskQueue } from "@/components/workspace/task-queue";
 import { KeywordChips } from "@/components/workspace/keyword-chips";
-import { DiffToggle } from "@/components/workspace/diff-toggle";
 import { EvidencePicker } from "@/components/workspace/evidence-picker";
 import { VersionHistoryDrawer } from "@/components/workspace/version-history-drawer";
-import { TipTapEditor } from "@/components/editor/tiptap-editor";
+import { DocEditorModule, ExportCard, EmptyState } from "@/components/workspace/doc-editor-module";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 function stripHtml(html: string) {
   return (html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
@@ -136,6 +145,10 @@ export default function ApplicationWorkspacePage() {
   const [portfolioLocal, setPortfolioLocal] = useState<string>("");
 
   const [exporting, setExporting] = useState(false);
+  const [regeneratingModule, setRegeneratingModule] = useState<string | null>(null);
+  const [regeneratingAll, setRegeneratingAll] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Track workspace views
   useEffect(() => {
@@ -159,49 +172,62 @@ export default function ApplicationWorkspacePage() {
     setPortfolioLocal(app.portfolioHtml || "");
   }, [app?.cvHtml, app?.coverLetterHtml, app?.personalStatementHtml, app?.portfolioHtml]);
 
-  // Debounced persistence for editors
+  // Debounced persistence for editors — use refs to avoid effect re-runs on app changes
+  const appRef = useRef(app);
+  appRef.current = app;
+
   useEffect(() => {
-    if (!app) return;
+    if (!appRef.current) return;
     const t = setTimeout(() => {
-      if (cvLocal !== (app.cvHtml || "")) {
+      if (cvLocal !== (appRef.current?.cvHtml || "")) {
         patchApplication(appId, { cvHtml: cvLocal });
       }
     }, 900);
     return () => clearTimeout(t);
-  }, [app, appId, cvLocal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appId, cvLocal]);
 
   useEffect(() => {
-    if (!app) return;
+    if (!appRef.current) return;
     const t = setTimeout(() => {
-      if (clLocal !== (app.coverLetterHtml || "")) {
+      if (clLocal !== (appRef.current?.coverLetterHtml || "")) {
         patchApplication(appId, { coverLetterHtml: clLocal });
       }
     }, 900);
     return () => clearTimeout(t);
-  }, [app, appId, clLocal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appId, clLocal]);
 
   useEffect(() => {
-    if (!app) return;
+    if (!appRef.current) return;
     const t = setTimeout(() => {
-      if (psLocal !== (app.personalStatementHtml || "")) {
+      if (psLocal !== (appRef.current?.personalStatementHtml || "")) {
         patchApplication(appId, { personalStatementHtml: psLocal });
       }
     }, 900);
     return () => clearTimeout(t);
-  }, [app, appId, psLocal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appId, psLocal]);
 
   useEffect(() => {
-    if (!app) return;
+    if (!appRef.current) return;
     const t = setTimeout(() => {
-      if (portfolioLocal !== (app.portfolioHtml || "")) {
+      if (portfolioLocal !== (appRef.current?.portfolioHtml || "")) {
         patchApplication(appId, { portfolioHtml: portfolioLocal });
       }
     }, 900);
     return () => clearTimeout(t);
-  }, [app, appId, portfolioLocal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appId, portfolioLocal]);
 
   const keywords = useMemo(() => app?.benchmark?.keywords ?? [], [app?.benchmark?.keywords]);
   const missing = useMemo(() => app?.gaps?.missingKeywords ?? [], [app?.gaps?.missingKeywords]);
+
+  // Pre-strip HTML once per content change — avoids re-stripping per keyword per render
+  const strippedCv = useMemo(() => stripHtml(cvLocal).toLowerCase(), [cvLocal]);
+  const strippedCl = useMemo(() => stripHtml(clLocal).toLowerCase(), [clLocal]);
+  const strippedPs = useMemo(() => stripHtml(psLocal).toLowerCase(), [psLocal]);
+  const strippedPortfolio = useMemo(() => stripHtml(portfolioLocal).toLowerCase(), [portfolioLocal]);
 
   const coachActions = useMemo(() => {
     if (!app || !user) return [];
@@ -231,10 +257,10 @@ export default function ApplicationWorkspacePage() {
   const title = app?.title || app?.confirmedFacts?.jobTitle || "Application workspace";
   const subtitle = app?.confirmedFacts?.company ? `@ ${app.confirmedFacts.company}` : undefined;
 
-  const isCoveredCv = (kw: string) => stripHtml(cvLocal).toLowerCase().includes(kw.toLowerCase());
-  const isCoveredCl = (kw: string) => stripHtml(clLocal).toLowerCase().includes(kw.toLowerCase());
-  const isCoveredPs = (kw: string) => stripHtml(psLocal).toLowerCase().includes(kw.toLowerCase());
-  const isCoveredPortfolio = (kw: string) => stripHtml(portfolioLocal).toLowerCase().includes(kw.toLowerCase());
+  const isCoveredCv = useCallback((kw: string) => strippedCv.includes(kw.toLowerCase()), [strippedCv]);
+  const isCoveredCl = useCallback((kw: string) => strippedCl.includes(kw.toLowerCase()), [strippedCl]);
+  const isCoveredPs = useCallback((kw: string) => strippedPs.includes(kw.toLowerCase()), [strippedPs]);
+  const isCoveredPortfolio = useCallback((kw: string) => strippedPortfolio.includes(kw.toLowerCase()), [strippedPortfolio]);
 
   const onToggleTask = async (t: any) => {
     if (!user) return;
@@ -327,13 +353,53 @@ export default function ApplicationWorkspacePage() {
   ]);
 
   const regenerate = async (module: ModuleKey) => {
-    if (!user || !app) return;
-    await regenerateModule({
-      userId: user.uid,
-      appId,
-      module,
-      evidenceCount: evidence.length,
-    });
+    if (!user || !app || regeneratingModule || regeneratingAll) return;
+    setRegeneratingModule(module);
+    try {
+      await regenerateModule({
+        userId: user.uid,
+        appId,
+        module,
+        evidenceCount: evidence.length,
+      });
+      toast.success("Regenerated!", `${module} has been regenerated with fresh AI content.`);
+    } catch (err: any) {
+      toast.error("Regeneration failed", err?.message ?? "Make sure the backend is running and try again.");
+    } finally {
+      setRegeneratingModule(null);
+    }
+  };
+
+  const regenerateAll = async () => {
+    if (!user || !app || regeneratingAll || regeneratingModule) return;
+    if (!app.confirmedFacts) {
+      toast.error("Cannot regenerate", "This application is missing the original job/resume data needed to regenerate.");
+      return;
+    }
+    setRegeneratingAll(true);
+    try {
+      await generateApplicationModules(appId, user.uid, app.confirmedFacts);
+      toast.success("All modules regenerated! 🎉", "Your application has been refreshed with AI-generated content.");
+    } catch (err: any) {
+      toast.error("Regeneration failed", err?.message ?? "Make sure the backend is running and try again.");
+    } finally {
+      setRegeneratingAll(false);
+    }
+  };
+
+  const handleDeleteWorkspace = async () => {
+    if (!user) return;
+    setDeleting(true);
+    try {
+      await deleteApplication(appId);
+      await trackEvent(user.uid, { name: "app_deleted", appId });
+      toast.success("Workspace deleted", "The application has been permanently removed.");
+      router.push("/dashboard");
+    } catch (err: any) {
+      toast.error("Delete failed", err?.message ?? "Something went wrong.");
+      setDeleting(false);
+      setDeleteOpen(false);
+    }
   };
 
   if (loading || !app) {
@@ -350,7 +416,20 @@ export default function ApplicationWorkspacePage() {
 
   return (
     <div className="space-y-6">
-      <ScoreboardHeader title={title} subtitle={subtitle} scorecard={app.scores} />
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <ScoreboardHeader title={title} subtitle={subtitle} scorecard={app.scores} />
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0 gap-2 rounded-xl text-muted-foreground hover:text-destructive hover:border-destructive/30 hover:bg-destructive/5 transition-colors"
+          onClick={() => setDeleteOpen(true)}
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete
+        </Button>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <div className="min-w-0">
@@ -377,6 +456,33 @@ export default function ApplicationWorkspacePage() {
             </TabsList>
 
             <TabsContent value="overview" className="mt-4">
+              {/* Regenerate All banner */}
+              <div className="mb-4 flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                    <Sparkles className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">Regenerate All Modules</p>
+                    <p className="text-xs text-muted-foreground">
+                      Re-run the full AI pipeline to refresh every document with new content.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  className="gap-2 rounded-xl"
+                  onClick={regenerateAll}
+                  disabled={regeneratingAll || !!regeneratingModule}
+                  loading={regeneratingAll}
+                >
+                  {regeneratingAll ? (
+                    "Regenerating…"
+                  ) : (
+                    <><RefreshCw className="h-4 w-4" /> Regenerate All</>
+                  )}
+                </Button>
+              </div>
+
               <div className="grid gap-4 md:grid-cols-2">
                 <ModuleCard
                   title="Benchmark"
@@ -450,9 +556,9 @@ export default function ApplicationWorkspacePage() {
                       AI-generated profile of the perfect candidate. Your north star.
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => regenerate("benchmark")}>
-                    <RefreshCw className="h-4 w-4" />
-                    Regenerate
+                  <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => regenerate("benchmark")} disabled={regeneratingModule === "benchmark"}>
+                    {regeneratingModule === "benchmark" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {regeneratingModule === "benchmark" ? "Working…" : "Regenerate"}
                   </Button>
                 </div>
 
@@ -518,12 +624,66 @@ export default function ApplicationWorkspacePage() {
                         <KeywordChips keywords={app.benchmark.keywords ?? []} isCovered={() => true} />
                       </div>
                     </div>
+
+                    {/* ── Benchmark Ideal CV ─────────────────────────── */}
+                    {(app.benchmark as any).benchmarkCvHtml && (
+                      <div className="mt-2">
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <div className="text-xs font-semibold">Ideal Candidate CV</div>
+                            <div className="mt-0.5 text-[10px] text-muted-foreground">
+                              A full reference CV — your name with benchmark-level experience. Read-only north star.
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5 rounded-xl text-xs"
+                              onClick={async () => {
+                                try {
+                                  await downloadPdf((app.benchmark as any).benchmarkCvHtml, {
+                                    filename: "HireStack_Benchmark_CV",
+                                    documentType: "cv",
+                                  });
+                                } catch (err) {
+                                  console.error("Benchmark CV export failed:", err);
+                                }
+                              }}
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              PDF
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5 rounded-xl text-xs"
+                              onClick={() => {
+                                navigator.clipboard.writeText(
+                                  stripHtml((app.benchmark as any).benchmarkCvHtml || "")
+                                );
+                                toast.success("Copied!", "Benchmark CV text copied to clipboard.");
+                              }}
+                            >
+                              <ClipboardCopy className="h-3.5 w-3.5" />
+                              Copy
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="rounded-xl border bg-white/50 dark:bg-background/50 overflow-hidden">
+                          <div
+                            className="prose prose-sm max-w-none p-5 [&_h1]:text-xl [&_h1]:font-bold [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:border-b [&_h2]:pb-1 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_ul]:mt-1 [&_li]:text-xs [&_p]:text-xs [&_p]:text-muted-foreground"
+                            dangerouslySetInnerHTML={{ __html: (app.benchmark as any).benchmarkCvHtml }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <EmptyState
                     title="Benchmark not generated yet."
                     body="Run the wizard generation or regenerate the module here."
-                    action={<Button onClick={() => regenerate("benchmark")}>Generate benchmark</Button>}
+                    action={<Button onClick={() => regenerate("benchmark")} loading={regeneratingModule === "benchmark"}>Generate benchmark</Button>}
                   />
                 )}
               </div>
@@ -538,9 +698,9 @@ export default function ApplicationWorkspacePage() {
                       Gaps create the action queue. Fix one gap at a time, with evidence.
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => regenerate("gaps")}>
-                    <RefreshCw className="h-4 w-4" />
-                    Regenerate
+                  <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => regenerate("gaps")} disabled={regeneratingModule === "gaps"}>
+                    {regeneratingModule === "gaps" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {regeneratingModule === "gaps" ? "Working…" : "Regenerate"}
                   </Button>
                 </div>
 
@@ -611,7 +771,7 @@ export default function ApplicationWorkspacePage() {
                   <EmptyState
                     title="Gap analysis not generated yet."
                     body="Generate gaps to create your action queue."
-                    action={<Button onClick={() => regenerate("gaps")}>Generate gaps</Button>}
+                    action={<Button onClick={() => regenerate("gaps")} loading={regeneratingModule === "gaps"}>Generate gaps</Button>}
                   />
                 )}
               </div>
@@ -626,9 +786,9 @@ export default function ApplicationWorkspacePage() {
                       A sprint-based plan built from your gaps. Each week produces proof.
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => regenerate("learningPlan")}>
-                    <RefreshCw className="h-4 w-4" />
-                    Regenerate
+                  <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => regenerate("learningPlan")} disabled={regeneratingModule === "learningPlan"}>
+                    {regeneratingModule === "learningPlan" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {regeneratingModule === "learningPlan" ? "Working…" : "Regenerate"}
                   </Button>
                 </div>
 
@@ -693,7 +853,7 @@ export default function ApplicationWorkspacePage() {
                   <EmptyState
                     title="Learning plan not generated yet."
                     body="Generate it to get sprint tasks + resources."
-                    action={<Button onClick={() => regenerate("learningPlan")}>Generate learning plan</Button>}
+                    action={<Button onClick={() => regenerate("learningPlan")} loading={regeneratingModule === "learningPlan"}>Generate learning plan</Button>}
                   />
                 )}
               </div>
@@ -714,6 +874,7 @@ export default function ApplicationWorkspacePage() {
                 onEditorReady={setCvEditor}
                 onPickEvidence={() => openPicker("cv")}
                 onRegenerate={() => regenerate("cv")}
+                isRegenerating={regeneratingModule === "cv"}
                 onOpenVersions={() => {
                   setVersionsTarget("cv");
                   setVersionsOpen(true);
@@ -737,6 +898,7 @@ export default function ApplicationWorkspacePage() {
                 onEditorReady={setClEditor}
                 onPickEvidence={() => openPicker("coverLetter")}
                 onRegenerate={() => regenerate("coverLetter")}
+                isRegenerating={regeneratingModule === "coverLetter"}
                 onOpenVersions={() => {
                   setVersionsTarget("coverLetter");
                   setVersionsOpen(true);
@@ -760,6 +922,7 @@ export default function ApplicationWorkspacePage() {
                 onEditorReady={setPsEditor}
                 onPickEvidence={() => openPicker("personalStatement")}
                 onRegenerate={() => regenerate("personalStatement")}
+                isRegenerating={regeneratingModule === "personalStatement"}
                 onOpenVersions={() => {
                   setVersionsTarget("personalStatement");
                   setVersionsOpen(true);
@@ -783,6 +946,7 @@ export default function ApplicationWorkspacePage() {
                 onEditorReady={setPortfolioEditor}
                 onPickEvidence={() => openPicker("portfolio")}
                 onRegenerate={() => regenerate("portfolio")}
+                isRegenerating={regeneratingModule === "portfolio"}
                 onOpenVersions={() => {
                   setVersionsTarget("portfolio");
                   setVersionsOpen(true);
@@ -845,6 +1009,16 @@ export default function ApplicationWorkspacePage() {
                       await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "cv_pdf" } });
                       await downloadPdf(cvLocal, { filename: "HireStack_CV", documentType: "cv" });
                     }}
+                    onDownloadDocx={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "cv_docx" } });
+                      await downloadDocx(cvLocal, { filename: "HireStack_CV", documentType: "cv" });
+                    }}
+                    onDownloadImage={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "cv_jpg" } });
+                      await downloadImage(cvLocal, { filename: "HireStack_CV", documentType: "cv", format: "jpg" });
+                    }}
                     onCopyText={() => navigator.clipboard.writeText(stripHtml(cvLocal))}
                   />
                   <ExportCard
@@ -855,6 +1029,16 @@ export default function ApplicationWorkspacePage() {
                       if (!user) return;
                       await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "cl_pdf" } });
                       await downloadPdf(clLocal, { filename: "HireStack_Cover_Letter", documentType: "coverLetter" });
+                    }}
+                    onDownloadDocx={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "cl_docx" } });
+                      await downloadDocx(clLocal, { filename: "HireStack_Cover_Letter", documentType: "coverLetter" });
+                    }}
+                    onDownloadImage={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "cl_jpg" } });
+                      await downloadImage(clLocal, { filename: "HireStack_Cover_Letter", documentType: "coverLetter", format: "jpg" });
                     }}
                     onCopyText={() => navigator.clipboard.writeText(stripHtml(clLocal))}
                   />
@@ -867,6 +1051,16 @@ export default function ApplicationWorkspacePage() {
                       await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "ps_pdf" } });
                       await downloadPdf(psLocal, { filename: "HireStack_Personal_Statement", documentType: "personalStatement" });
                     }}
+                    onDownloadDocx={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "ps_docx" } });
+                      await downloadDocx(psLocal, { filename: "HireStack_Personal_Statement", documentType: "personalStatement" });
+                    }}
+                    onDownloadImage={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "ps_jpg" } });
+                      await downloadImage(psLocal, { filename: "HireStack_Personal_Statement", documentType: "personalStatement", format: "jpg" });
+                    }}
                     onCopyText={() => navigator.clipboard.writeText(stripHtml(psLocal))}
                   />
                   <ExportCard
@@ -877,6 +1071,16 @@ export default function ApplicationWorkspacePage() {
                       if (!user) return;
                       await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "portfolio_pdf" } });
                       await downloadPdf(portfolioLocal, { filename: "HireStack_Portfolio", documentType: "portfolio" });
+                    }}
+                    onDownloadDocx={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "portfolio_docx" } });
+                      await downloadDocx(portfolioLocal, { filename: "HireStack_Portfolio", documentType: "portfolio" });
+                    }}
+                    onDownloadImage={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "portfolio_jpg" } });
+                      await downloadImage(portfolioLocal, { filename: "HireStack_Portfolio", documentType: "portfolio", format: "jpg" });
                     }}
                     onCopyText={() => navigator.clipboard.writeText(stripHtml(portfolioLocal))}
                   />
@@ -889,6 +1093,18 @@ export default function ApplicationWorkspacePage() {
                       await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "learning_pdf" } });
                       const html = buildLearningPlanHtml(app.learningPlan);
                       await downloadPdf(html, { filename: "HireStack_Learning_Plan", documentType: "learningPlan" });
+                    }}
+                    onDownloadDocx={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "learning_docx" } });
+                      const html = buildLearningPlanHtml(app.learningPlan);
+                      await downloadDocx(html, { filename: "HireStack_Learning_Plan", documentType: "learningPlan" });
+                    }}
+                    onDownloadImage={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "learning_jpg" } });
+                      const html = buildLearningPlanHtml(app.learningPlan);
+                      await downloadImage(html, { filename: "HireStack_Learning_Plan", documentType: "learningPlan", format: "jpg" });
                     }}
                     onCopyText={() => {
                       const html = buildLearningPlanHtml(app.learningPlan);
@@ -905,6 +1121,18 @@ export default function ApplicationWorkspacePage() {
                       const html = buildGapAnalysisHtml(app.gaps);
                       await downloadPdf(html, { filename: "HireStack_Gap_Analysis", documentType: "gapAnalysis" });
                     }}
+                    onDownloadDocx={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "gaps_docx" } });
+                      const html = buildGapAnalysisHtml(app.gaps);
+                      await downloadDocx(html, { filename: "HireStack_Gap_Analysis", documentType: "gapAnalysis" });
+                    }}
+                    onDownloadImage={async () => {
+                      if (!user) return;
+                      await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "gaps_jpg" } });
+                      const html = buildGapAnalysisHtml(app.gaps);
+                      await downloadImage(html, { filename: "HireStack_Gap_Analysis", documentType: "gapAnalysis", format: "jpg" });
+                    }}
                     onCopyText={() => {
                       const html = buildGapAnalysisHtml(app.gaps);
                       navigator.clipboard.writeText(stripHtml(html));
@@ -915,7 +1143,7 @@ export default function ApplicationWorkspacePage() {
                 <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
                   <div className="text-xs font-semibold text-primary">Pro tip</div>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    Use "Download All (ZIP)" to get every document as a branded PDF bundle — ready to attach to any application. Snapshot your versions before exporting to keep a history.
+                    Use "Download All (ZIP)" to get every document as a branded PDF + Word bundle — ready to attach to any application. Snapshot your versions before exporting to keep a history.
                   </div>
                 </div>
               </div>
@@ -952,227 +1180,28 @@ export default function ApplicationWorkspacePage() {
           await restoreDocVersion(appId, versionsTarget, versionId);
         }}
       />
-    </div>
-  );
-}
 
-function EmptyState({
-  title,
-  body,
-  action,
-}: {
-  title: string;
-  body: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-2xl border border-dashed bg-card/50 p-6 text-center">
-      <div className="text-sm font-semibold">{title}</div>
-      <div className="mt-1 text-xs text-muted-foreground">{body}</div>
-      {action ? <div className="mt-4">{action}</div> : null}
-    </div>
-  );
-}
-
-function DiffView({ baseHtml, nextHtml }: { baseHtml: string; nextHtml: string }) {
-  const base = stripHtml(baseHtml);
-  const next = stripHtml(nextHtml);
-  const diffs = diffWordsWithSpace(base, next);
-  return (
-    <div className="rounded-2xl border bg-card">
-      <div className="px-4 py-3 text-sm font-semibold">Diff (base → tailored)</div>
-      <Separator />
-      <ScrollArea className="h-[520px]">
-        <div className="p-4 text-sm leading-relaxed">
-          {diffs.map((part, idx) => (
-            <span
-              key={idx}
-              className={
-                part.added
-                  ? "bg-emerald-500/10 text-emerald-800"
-                  : part.removed
-                    ? "bg-rose-500/10 text-rose-800 line-through"
-                    : ""
-              }
-            >
-              {part.value}
-            </span>
-          ))}
-        </div>
-      </ScrollArea>
-    </div>
-  );
-}
-
-function DocEditorModule({
-  title,
-  subtitle,
-  mode,
-  onModeChange,
-  keywords,
-  missingKeywords,
-  isCovered,
-  value,
-  onChange,
-  editorRef,
-  onEditorReady,
-  onPickEvidence,
-  onRegenerate,
-  onOpenVersions,
-  baseHtml,
-}: {
-  title: string;
-  subtitle: string;
-  mode: "edit" | "diff";
-  onModeChange: (m: "edit" | "diff") => void;
-  keywords: string[];
-  missingKeywords: string[];
-  isCovered: (k: string) => boolean;
-  value: string;
-  onChange: (html: string) => void;
-  editorRef: any;
-  onEditorReady?: (editor: any | null) => void;
-  onPickEvidence: () => void;
-  onRegenerate: () => void;
-  onOpenVersions: () => void;
-  baseHtml: string;
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-sm font-semibold">{title}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <DiffToggle mode={mode} onChange={onModeChange} />
-            <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={onOpenVersions}>
-              <Layers className="h-4 w-4" />
-              Versions
+      {/* Delete workspace confirmation dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Delete workspace</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete <span className="font-medium text-foreground">&ldquo;{title}&rdquo;</span>?
+              This will permanently remove all generated documents, benchmarks, gap analyses, and version history. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" className="rounded-xl" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+              Cancel
             </Button>
-            <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={onPickEvidence}>
-              <UploadCloud className="h-4 w-4" />
-              Use evidence
+            <Button variant="destructive" className="rounded-xl gap-2" onClick={handleDeleteWorkspace} loading={deleting}>
+              <Trash2 className="h-4 w-4" />
+              {deleting ? "Deleting…" : "Delete workspace"}
             </Button>
-            <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={onRegenerate}>
-              <RefreshCw className="h-4 w-4" />
-              Regenerate
-            </Button>
-          </div>
-        </div>
-
-        <Separator className="my-4" />
-
-        <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
-          <div className="min-w-0">
-            {mode === "diff" ? (
-              <DiffView baseHtml={baseHtml} nextHtml={value} />
-            ) : (
-              <TipTapEditor
-                content={value}
-                onChange={onChange}
-                editorRef={editorRef}
-                onReady={onEditorReady}
-                className="min-h-[560px]"
-              />
-            )}
-          </div>
-
-          <aside className="lg:sticky lg:top-28 h-fit space-y-3">
-            <div className="rounded-2xl border bg-card p-4">
-              <div className="text-sm font-semibold">Keyword coverage</div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                Green = covered in doc text. Amber = missing.
-              </div>
-              <div className="mt-3">
-                <KeywordChips keywords={keywords} isCovered={isCovered} />
-              </div>
-            </div>
-
-            <div className="rounded-2xl border bg-card p-4">
-              <div className="text-sm font-semibold">Suggestions</div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                Confirmed vs recommended — keep it honest.
-              </div>
-
-              <Separator className="my-3" />
-
-              <div>
-                <div className="text-xs font-semibold">Recommended fixes</div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {missingKeywords.slice(0, 10).map((k) => (
-                    <Badge key={k} variant="secondary" className="border bg-amber-500/10 text-amber-700 border-amber-200 text-[11px]">
-                      {k}
-                    </Badge>
-                  ))}
-                </div>
-                <div className="mt-3 text-xs text-muted-foreground">
-                  Click “Use evidence” to insert a proof bullet. Then add missing keywords naturally.
-                </div>
-              </div>
-            </div>
-          </aside>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ExportCard({
-  title,
-  description,
-  hasContent,
-  onDownloadPdf,
-  onCopyText,
-}: {
-  title: string;
-  description: string;
-  hasContent: boolean;
-  onDownloadPdf: () => Promise<void>;
-  onCopyText: () => void;
-}) {
-  const [downloading, setDownloading] = useState(false);
-
-  return (
-    <div className="rounded-2xl border bg-card p-4">
-      <div className="text-sm font-semibold">{title}</div>
-      <div className="mt-1 text-xs text-muted-foreground">{description}</div>
-      <div className="mt-4 flex items-center gap-2">
-        <Button
-          size="sm"
-          className="gap-2"
-          disabled={!hasContent || downloading}
-          onClick={async () => {
-            setDownloading(true);
-            try {
-              await onDownloadPdf();
-            } catch (err) {
-              console.error("PDF export failed:", err);
-            } finally {
-              setDownloading(false);
-            }
-          }}
-        >
-          {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-          PDF
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-2"
-          disabled={!hasContent}
-          onClick={onCopyText}
-        >
-          <ClipboardCopy className="h-3.5 w-3.5" />
-          Copy
-        </Button>
-      </div>
-      {!hasContent && (
-        <div className="mt-2 text-[10px] text-muted-foreground">
-          Generate this document first to enable export.
-        </div>
-      )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

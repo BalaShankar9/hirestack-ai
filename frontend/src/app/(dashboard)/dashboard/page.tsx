@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -14,15 +14,25 @@ import {
   Plus,
   Briefcase,
   TrendingUp,
+  Trash2,
   Zap,
 } from "lucide-react";
 
 import { useAuth } from "@/components/providers";
-import { useApplications, useEvidence, useTasks } from "@/lib/firestore";
-import { setTaskStatus, trackEvent } from "@/lib/firestore";
+import { computeEvidenceStrengthScore, useApplications, useEvidence, useTasks } from "@/lib/firestore";
+import { deleteApplication, setTaskStatus, trackEvent } from "@/lib/firestore";
+import { toast } from "@/hooks";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { TaskQueue } from "@/components/workspace/task-queue";
 import { cn } from "@/lib/utils";
 
@@ -52,11 +62,31 @@ export default function DashboardPage() {
   const router = useRouter();
   const { user } = useAuth();
 
-  const { data: apps = [], loading: appsLoading } = useApplications(user?.uid || null, 50);
+  const { data: apps = [], loading: appsLoading, removeItem: removeApp } = useApplications(user?.uid || null, 50);
   const { data: tasks = [], loading: tasksLoading } = useTasks(user?.uid || null, null, 200);
   const { data: evidence = [], loading: evidenceLoading } = useEvidence(user?.uid || null, 200);
 
   const topApps = useMemo(() => apps.slice(0, 8), [apps]);
+
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!deleteTarget || !user) return;
+    setDeleting(true);
+    try {
+      await deleteApplication(deleteTarget.id);
+      // Optimistic removal — card disappears instantly
+      removeApp(deleteTarget.id);
+      await trackEvent(user.uid, { name: "app_deleted", appId: deleteTarget.id });
+      toast.success("Workspace deleted", `"${deleteTarget.title}" has been removed.`);
+    } catch (err: any) {
+      toast.error("Delete failed", err?.message ?? "Something went wrong.");
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+    }
+  };
   const openTasks = useMemo(() => tasks.filter((t) => t.status === "todo"), [tasks]);
 
   const stats = useMemo(() => {
@@ -163,49 +193,92 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 animate-stagger">
-              {topApps.map((a) => (
-                <Link
-                  key={a.id}
-                  href={`/applications/${a.id}`}
-                  className="group rounded-2xl border bg-card p-5 shadow-soft-sm hover:shadow-soft-md hover:border-primary/20 transition-all duration-300"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-semibold truncate group-hover:text-primary transition-colors">
-                        {a.title || a.confirmedFacts?.jobTitle || "Untitled application"}
-                      </div>
-                      {a.confirmedFacts?.company && (
-                        <div className="mt-0.5 text-xs text-muted-foreground">{a.confirmedFacts.company}</div>
-                      )}
-                      <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                        <Clock className="h-3 w-3" />
-                        Updated {formatTime(a.updatedAt)}
-                      </div>
-                    </div>
-                    <Badge className={cn("border text-[11px] shrink-0", scoreTint(a.scores?.match ?? 0))} variant="secondary">
-                      {a.scores?.match ?? 0}% · {scoreLabel(a.scores?.match ?? 0)}
-                    </Badge>
-                  </div>
+              {topApps.map((a) => {
+                const appTitle = a.title || a.confirmedFacts?.jobTitle || "Untitled application";
+                const proofScore = Array.isArray(a.benchmark?.keywords) && a.benchmark!.keywords.length > 0
+                  ? computeEvidenceStrengthScore({ evidence, keywords: a.benchmark!.keywords })
+                  : (a.scores?.evidenceStrength ?? 0);
+                return (
+                  <div
+                    key={a.id}
+                    className="group relative rounded-2xl border bg-card p-5 shadow-soft-sm hover:shadow-soft-md hover:border-primary/20 transition-all duration-300"
+                  >
+                    {/* Delete button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDeleteTarget({ id: a.id, title: appTitle });
+                      }}
+                      className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-lg bg-transparent opacity-0 group-hover:opacity-100 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all duration-200"
+                      title="Delete workspace"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
 
-                  {/* Mini metrics */}
-                  <div className="mt-4 grid grid-cols-4 gap-2">
-                    <MiniMetric icon={<Target className="h-3 w-3" />} label="Match" value={a.scores?.match ?? 0} />
-                    <MiniMetric icon={<ShieldCheck className="h-3 w-3" />} label="ATS" value={a.scores?.atsReadiness ?? 0} />
-                    <MiniMetric icon={<ScanEye className="h-3 w-3" />} label="Scan" value={a.scores?.recruiterScan ?? 0} />
-                    <MiniMetric icon={<Award className="h-3 w-3" />} label="Proof" value={a.scores?.evidenceStrength ?? 0} />
-                  </div>
+                    <Link href={`/applications/${a.id}`} className="block">
+                      <div className="flex items-start justify-between gap-2 pr-6">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-semibold truncate group-hover:text-primary transition-colors">
+                            {appTitle}
+                          </div>
+                          {a.confirmedFacts?.company && (
+                            <div className="mt-0.5 text-xs text-muted-foreground">{a.confirmedFacts.company}</div>
+                          )}
+                          <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                            <Clock className="h-3 w-3" />
+                            Updated {formatTime(a.updatedAt)}
+                          </div>
+                        </div>
+                        <Badge className={cn("border text-[11px] shrink-0", scoreTint(a.scores?.match ?? 0))} variant="secondary">
+                          {a.scores?.match ?? 0}% · {scoreLabel(a.scores?.match ?? 0)}
+                        </Badge>
+                      </div>
 
-                  {/* Top fix */}
-                  <div className="mt-4 rounded-xl bg-primary/5 border border-primary/10 p-3">
-                    <div className="text-[11px] font-semibold text-primary">Top fix</div>
-                    <div className="mt-1 text-xs text-muted-foreground leading-snug">
-                      {typeof a.scores?.topFix === "string" ? a.scores.topFix : "Generate modules to get your first coach fix."}
-                    </div>
+                      {/* Mini metrics */}
+                      <div className="mt-4 grid grid-cols-4 gap-2">
+                        <MiniMetric icon={<Target className="h-3 w-3" />} label="Match" value={a.scores?.match ?? 0} />
+                        <MiniMetric icon={<ShieldCheck className="h-3 w-3" />} label="ATS" value={a.scores?.atsReadiness ?? 0} />
+                        <MiniMetric icon={<ScanEye className="h-3 w-3" />} label="Scan" value={a.scores?.recruiterScan ?? 0} />
+                        <MiniMetric icon={<Award className="h-3 w-3" />} label="Proof" value={proofScore} />
+                      </div>
+
+                      {/* Top fix */}
+                      <div className="mt-4 rounded-xl bg-primary/5 border border-primary/10 p-3">
+                        <div className="text-[11px] font-semibold text-primary">Top fix</div>
+                        <div className="mt-1 text-xs text-muted-foreground leading-snug">
+                          {typeof a.scores?.topFix === "string" ? a.scores.topFix : "Generate modules to get your first coach fix."}
+                        </div>
+                      </div>
+                    </Link>
                   </div>
-                </Link>
-              ))}
+                );
+              })}
             </div>
           )}
+
+          {/* Delete confirmation dialog */}
+          <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+            <DialogContent className="sm:max-w-md rounded-2xl">
+              <DialogHeader>
+                <DialogTitle>Delete workspace</DialogTitle>
+                <DialogDescription>
+                  Are you sure you want to delete <span className="font-medium text-foreground">&ldquo;{deleteTarget?.title}&rdquo;</span>?
+                  This will permanently remove all generated documents, benchmarks, and version history. This action cannot be undone.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button variant="outline" className="rounded-xl" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" className="rounded-xl gap-2" onClick={handleDelete} loading={deleting}>
+                  <Trash2 className="h-4 w-4" />
+                  {deleting ? "Deleting…" : "Delete workspace"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
 
         {/* Right: Task queue + evidence */}
@@ -282,4 +355,3 @@ function MiniMetric({ icon, label, value }: { icon: React.ReactNode; label: stri
     </div>
   );
 }
-

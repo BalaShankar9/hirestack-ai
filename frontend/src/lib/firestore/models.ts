@@ -73,6 +73,8 @@ export interface BenchmarkModule {
   /** Optional structured dimensions */
   dimensions?: BenchmarkDimension[];
   overallScore?: number;
+  /** Full HTML CV of the ideal benchmark candidate */
+  benchmarkCvHtml?: string;
   createdAt?: number;
 }
 

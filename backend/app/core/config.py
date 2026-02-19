@@ -3,16 +3,21 @@ HireStack AI - Configuration Module
 Central configuration management using pydantic-settings
 """
 from functools import lru_cache
-from typing import List, Optional
+from pathlib import Path
+from typing import List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Always load backend/.env regardless of cwd
+        env_file=str(_BACKEND_ROOT / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"
@@ -41,10 +46,33 @@ class Settings(BaseSettings):
     # Redis (optional - for caching)
     redis_url: str = "redis://localhost:6379"
 
+    # AI Provider — "gemini", "openai", or "ollama"
+    ai_provider: str = "gemini"
+
     # OpenAI
     openai_api_key: str = ""
     openai_model: str = "gpt-5.2"
     openai_max_tokens: int = 4096
+
+    # Gemini
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_max_tokens: int = 8192
+
+    # Gemini via Vertex AI (optional)
+    # If enabled, GEMINI_API_KEY is ignored and the google.genai SDK will use
+    # Application Default Credentials (ADC) for auth.
+    gemini_use_vertexai: bool = False
+    # Vertex AI mode (OAuth) — optional alternative to API key.
+    # Provide these when GEMINI_USE_VERTEXAI=true.
+    gemini_vertex_project: str = ""
+    gemini_vertex_location: str = ""
+
+    # Ollama (local LLM, optional)
+    # Requires: `ollama serve` and a pulled model (e.g. `ollama pull qwen3:4b`)
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen3:4b"
+    ollama_max_tokens: int = 1024
 
     # File Upload
     max_upload_size_mb: int = 10

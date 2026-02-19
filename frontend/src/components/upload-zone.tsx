@@ -74,12 +74,18 @@ export function UploadZone({
     setError(null)
   }
 
+  const ariaLabel = file ? "Change file" : "Choose file"
+
   return (
     <div className={cn("space-y-4", className)}>
       <div
-        {...getRootProps()}
+        {...getRootProps({
+          role: "button",
+          tabIndex: 0,
+          "aria-label": ariaLabel,
+        })}
         className={cn(
-          "border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all",
+          "border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-[border-color,background-color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background",
           isDragActive
             ? "border-primary bg-primary/5 shadow-glow-sm"
             : "border-muted-foreground/25 hover:border-primary/50 hover:bg-primary/[0.02]",

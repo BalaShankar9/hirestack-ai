@@ -1,20 +1,28 @@
 /**
  * HireStack AI - Professional Document Export Engine
- * Elite-quality PDF export with branded templates + ZIP bundle
+ * Elite-quality PDF, Word (DOCX), and Image export with branded templates + ZIP bundle
  */
 
-// Dynamic import to avoid SSR issues
+// Dynamic imports to avoid SSR issues
 const loadHtml2Pdf = async () => {
   if (typeof window === "undefined") {
     throw new Error("PDF export is only available in the browser");
   }
-  const html2pdf = (await import("html2pdf.js")).default;
-  return html2pdf;
+  const mod = await import("html2pdf.js");
+  return mod.default;
+};
+
+const loadHtml2Canvas = async () => {
+  if (typeof window === "undefined") {
+    throw new Error("Image export is only available in the browser");
+  }
+  const mod = await import("html2canvas");
+  return mod.default;
 };
 
 export interface ExportOptions {
   filename?: string;
-  format?: "pdf" | "html" | "docx";
+  format?: "pdf" | "html" | "docx" | "jpg" | "png";
   pageSize?: "letter" | "a4";
   margin?: number;
   quality?: number;
@@ -163,6 +171,10 @@ export async function exportToPdf(
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const html2pdf = await loadHtml2Pdf();
 
+  if (!htmlContent || htmlContent.trim().length === 0) {
+    throw new Error("Cannot export empty content to PDF");
+  }
+
   // Create a container for rendering
   const container = document.createElement("div");
   container.className = "pdf-container";
@@ -174,36 +186,53 @@ export async function exportToPdf(
   styleSheet.textContent = docStyles;
   container.prepend(styleSheet);
 
-  // Temporarily add to DOM for rendering
-  container.style.position = "absolute";
-  container.style.left = "-9999px";
+  // Add to DOM for rendering — must be visible for html2canvas to capture
+  // Using fixed positioning with opacity 0 (invisible but renderable)
+  container.style.position = "fixed";
+  container.style.top = "0";
+  container.style.left = "0";
   container.style.width = opts.pageSize === "a4" ? "210mm" : "8.5in";
+  container.style.background = "#ffffff";
+  container.style.zIndex = "-9999";
+  container.style.opacity = "0.01"; // Near-invisible but still rendered by html2canvas
   document.body.appendChild(container);
 
   try {
+    // Wait a tick for the browser to layout the container
+    await new Promise((r) => setTimeout(r, 100));
+
     const pdfOptions = {
       margin: opts.margin,
       filename: `${opts.filename}.pdf`,
       image: { type: "jpeg" as const, quality: 0.98 },
-      html2canvas: { 
+      html2canvas: {
         scale: opts.quality,
         useCORS: true,
         letterRendering: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+        windowWidth: opts.pageSize === "a4" ? 794 : 816, // px equivalent
       },
-      jsPDF: { 
-        unit: "in" as const, 
-        format: opts.pageSize, 
+      jsPDF: {
+        unit: "in" as const,
+        format: opts.pageSize,
         orientation: "portrait" as const,
       },
       pagebreak: { mode: ["avoid-all", "css", "legacy"] },
     };
 
-    const pdfBlob = await html2pdf()
+    // Use the explicit pipeline: from → toCanvas → toPdf → output
+    const pdfBlob: Blob = await html2pdf()
       .set(pdfOptions)
       .from(container)
-      .outputPdf("blob");
+      .toPdf()
+      .output("blob");
 
-    return pdfBlob as Blob;
+    if (!pdfBlob || pdfBlob.size < 100) {
+      throw new Error("PDF generation produced empty output");
+    }
+
+    return pdfBlob;
   } finally {
     document.body.removeChild(container);
   }
@@ -300,13 +329,143 @@ export async function exportDocument(
       downloadHtml(htmlContent, opts);
       break;
     case "docx":
-      // DOCX export would require additional library like docx
-      // For now, fall back to HTML which can be opened in Word
-      console.warn("DOCX export not yet implemented, falling back to HTML");
-      downloadHtml(htmlContent, { ...opts, filename: `${opts.filename}` });
+      await downloadDocx(htmlContent, opts);
+      break;
+    case "jpg":
+    case "png":
+      await downloadImage(htmlContent, opts);
       break;
     default:
       throw new Error(`Unsupported format: ${opts.format}`);
+  }
+}
+
+/**
+ * Export HTML content to Word (.docx) file
+ * Uses the HTML-to-MHTML technique — Word can natively open styled HTML as .docx
+ */
+export async function downloadDocx(
+  htmlContent: string,
+  options: ExportOptions = {}
+): Promise<void> {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
+
+  if (!htmlContent || htmlContent.trim().length === 0) {
+    throw new Error("Cannot export empty content to DOCX");
+  }
+
+  const docStyles = PROFESSIONAL_STYLES[opts.documentType ?? "cv"] || PROFESSIONAL_STYLES.cv;
+
+  // Build a complete HTML document that Word can open natively
+  const fullHtml = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+  <meta charset="utf-8">
+  <meta name="ProgId" content="Word.Document">
+  <meta name="Generator" content="HireStack AI">
+  <!--[if gte mso 9]>
+  <xml>
+    <w:WordDocument>
+      <w:View>Print</w:View>
+      <w:Zoom>100</w:Zoom>
+      <w:DoNotOptimizeForBrowser/>
+    </w:WordDocument>
+  </xml>
+  <![endif]-->
+  <style>
+    ${docStyles}
+    @page {
+      size: ${opts.pageSize === "a4" ? "A4" : "letter"};
+      margin: ${opts.margin}in;
+    }
+    body { font-family: Calibri, Arial, sans-serif; }
+  </style>
+</head>
+<body>
+${htmlContent}
+</body>
+</html>`;
+
+  const blob = new Blob([fullHtml], {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${opts.filename}.docx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Export HTML content to Image (JPG/PNG) file
+ */
+export async function downloadImage(
+  htmlContent: string,
+  options: ExportOptions = {}
+): Promise<void> {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
+  const html2canvas = await loadHtml2Canvas();
+
+  if (!htmlContent || htmlContent.trim().length === 0) {
+    throw new Error("Cannot export empty content to image");
+  }
+
+  // Create a container for rendering
+  const container = document.createElement("div");
+  container.className = "pdf-container";
+  container.innerHTML = htmlContent;
+
+  const styleSheet = document.createElement("style");
+  const docStyles = PROFESSIONAL_STYLES[opts.documentType ?? "cv"] || PROFESSIONAL_STYLES.cv;
+  styleSheet.textContent = docStyles;
+  container.prepend(styleSheet);
+
+  container.style.position = "fixed";
+  container.style.top = "0";
+  container.style.left = "0";
+  container.style.width = "8.5in";
+  container.style.padding = "0.5in";
+  container.style.background = "#ffffff";
+  container.style.zIndex = "-9999";
+  container.style.opacity = "0.01";
+  document.body.appendChild(container);
+
+  try {
+    await new Promise((r) => setTimeout(r, 100));
+
+    const canvas = await html2canvas(container, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      logging: false,
+    });
+
+    const isJpg = opts.format === "jpg";
+    const mimeType = isJpg ? "image/jpeg" : "image/png";
+    const ext = isJpg ? "jpg" : "png";
+
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${opts.filename}.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      },
+      mimeType,
+      isJpg ? 0.95 : undefined
+    );
+  } finally {
+    document.body.removeChild(container);
   }
 }
 
@@ -392,7 +551,7 @@ export interface DocumentBundle {
 }
 
 /**
- * Download all documents as a branded ZIP bundle with PDFs
+ * Download all documents as a branded ZIP bundle with PDFs and DOCX
  */
 export async function downloadAllAsZip(
   bundle: DocumentBundle,
@@ -406,6 +565,8 @@ export async function downloadAllAsZip(
     .replace(/\s+/g, "_");
 
   const folder = zip.folder(`HireStack_${prefix}`)!;
+  const pdfFolder = folder.folder("PDF")!;
+  const docxFolder = folder.folder("Word")!;
 
   // Generate PDFs for each available document
   const pdfTasks: Array<{ name: string; html: string; type: ExportOptions["documentType"] }> = [];
@@ -432,19 +593,45 @@ export async function downloadAllAsZip(
     pdfTasks.push({ name: "07_Gap_Analysis", html: bundle.gapAnalysisHtml, type: "gapAnalysis" });
   }
 
-  // Generate all PDFs in sequence (html2pdf can't run in parallel)
+  if (pdfTasks.length === 0) {
+    throw new Error("No documents available to export yet. Generate modules first, then export.");
+  }
+
+  // Load html-to-docx for DOCX generation (browser-compatible)
+  const generateDocxBlob = (html: string, type: string): Blob => {
+    const docStyles = PROFESSIONAL_STYLES[type ?? "cv"] || PROFESSIONAL_STYLES.cv;
+    const fullHtml = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><style>${docStyles}</style></head>
+<body>${html}</body></html>`;
+    return new Blob([fullHtml], {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+  };
+
+  // Generate all PDFs and DOCX in sequence
   for (const task of pdfTasks) {
+    // PDF
     try {
       const pdfBlob = await exportToPdf(task.html, {
         ...options,
         filename: task.name,
         documentType: task.type,
       });
-      folder.file(`${task.name}.pdf`, pdfBlob);
+      pdfFolder.file(`${task.name}.pdf`, pdfBlob);
     } catch (err) {
       console.warn(`Failed to generate PDF for ${task.name}:`, err);
-      // Fall back to HTML if PDF fails
-      folder.file(`${task.name}.html`, task.html);
+      pdfFolder.file(`${task.name}.html`, task.html);
+    }
+
+    // DOCX
+    try {
+      const docxBlob = generateDocxBlob(task.html, task.type ?? "cv");
+      docxFolder.file(`${task.name}.docx`, docxBlob);
+    } catch (err) {
+      console.warn(`Failed to generate DOCX for ${task.name}:`, err);
     }
   }
 

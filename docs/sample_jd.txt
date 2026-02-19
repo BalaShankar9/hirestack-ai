@@ -1,0 +1,16 @@
+Senior Frontend Engineer
+
+We are looking for a Senior Frontend Engineer to build a modern, high-performance web application.
+
+Responsibilities:
+- Build and maintain React/Next.js UI components
+- Collaborate with product, design, and backend teams
+- Optimize performance, accessibility, and reliability
+- Write tests and ship iteratively
+
+Requirements:
+- 5+ years frontend engineering
+- Strong TypeScript + React
+- Experience with Next.js, Tailwind CSS
+- Familiarity with Supabase or similar BaaS
+- Strong communication

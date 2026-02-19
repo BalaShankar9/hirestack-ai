@@ -1,6 +1,7 @@
 "use client";
 
-import { Clock, RotateCcw, Save } from "lucide-react";
+import { useState } from "react";
+import { Clock, RotateCcw, Save, Loader2, Check } from "lucide-react";
 import type { DocVersion } from "@/lib/firestore";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +35,30 @@ export function VersionHistoryDrawer({
   onSnapshot: (label: string) => void;
   onRestore: (versionId: string) => void;
 }) {
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+
+  const handleSnapshot = async () => {
+    setSaving(true);
+    try {
+      await onSnapshot(`Snapshot ${new Date().toLocaleTimeString()}`);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRestore = async (versionId: string) => {
+    setRestoringId(versionId);
+    try {
+      await onRestore(versionId);
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-[460px]">
@@ -46,10 +71,17 @@ export function VersionHistoryDrawer({
             <Button
               size="sm"
               className="gap-2 rounded-xl"
-              onClick={() => onSnapshot(`Snapshot ${new Date().toLocaleTimeString()}`)}
+              disabled={saving}
+              onClick={handleSnapshot}
             >
-              <Save className="h-4 w-4" />
-              Save snapshot
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : saved ? (
+                <Check className="h-4 w-4 text-emerald-500" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {saving ? "Saving…" : saved ? "Saved!" : "Save snapshot"}
             </Button>
           </div>
         </SheetHeader>
@@ -67,7 +99,7 @@ export function VersionHistoryDrawer({
           ) : (
             <div className="space-y-2">
               {versions.map((v) => (
-                <div key={v.id} className="rounded-xl border bg-card p-3">
+                <div key={v.id} className="rounded-xl border bg-card p-3 transition-all duration-200 hover:shadow-sm">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-sm font-semibold truncate">{v.label}</div>
@@ -80,10 +112,15 @@ export function VersionHistoryDrawer({
                       size="sm"
                       variant="outline"
                       className="gap-2"
-                      onClick={() => onRestore(v.id)}
+                      disabled={restoringId === v.id}
+                      onClick={() => handleRestore(v.id)}
                     >
-                      <RotateCcw className="h-4 w-4" />
-                      Restore
+                      {restoringId === v.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-4 w-4" />
+                      )}
+                      {restoringId === v.id ? "Restoring…" : "Restore"}
                     </Button>
                   </div>
                 </div>

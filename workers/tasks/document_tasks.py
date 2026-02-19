@@ -27,16 +27,20 @@ def generate_document_async(self, user_id: str, document_type: str, data: dict):
 
             if document_type == "cv":
                 return await generator.generate_cv(
-                    profile=data.get("profile", {}),
-                    benchmark=data.get("benchmark", {}),
-                    gaps=data.get("gaps", {}),
+                    user_profile=data.get("profile", {}),
+                    job_title=data.get("job_title", ""),
+                    company=data.get("company", ""),
+                    job_requirements=data.get("benchmark", {}),
+                    gap_insights=data.get("gaps", {}),
                 )
             elif document_type == "cover_letter":
                 return await generator.generate_cover_letter(
-                    profile=data.get("profile", {}),
+                    user_profile=data.get("profile", {}),
                     job_title=data.get("job_title", ""),
                     company=data.get("company", ""),
-                    job_description=data.get("job_description", ""),
+                    company_info=data.get("company_info", {}),
+                    job_requirements=data.get("job_requirements", {}),
+                    strengths=data.get("strengths", []),
                 )
             else:
                 raise ValueError(f"Unknown document type: {document_type}")

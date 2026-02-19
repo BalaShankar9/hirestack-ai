@@ -7,22 +7,28 @@ import {
   ArrowRight,
   Briefcase,
   CheckCircle2,
+  Circle,
   FileText,
   Loader2,
   Sparkles,
   Upload,
   X,
+  Timer,
+  RotateCcw,
 } from "lucide-react";
 
 import { useAuth } from "@/components/providers";
 import {
   createApplication,
   generateApplicationModules,
+  patchApplication,
+  parseResumeText,
   uploadResume,
   computeJDQuality,
   extractKeywords,
   trackEvent,
 } from "@/lib/firestore/ops";
+import type { PipelineProgress } from "@/lib/firestore/ops";
 import type { ConfirmedFacts, JDQuality, ResumeArtifact } from "@/lib/firestore/models";
 
 import { Button } from "@/components/ui/button";
@@ -30,33 +36,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { UploadZone } from "@/components/upload-zone";
-
-/* ------------------------------------------------------------------ */
-/*  PDF text extraction (client-side via pdf.js)                       */
-/* ------------------------------------------------------------------ */
-
-async function extractPdfText(file: File): Promise<string> {
-  try {
-    const pdfjsLib = await import("pdfjs-dist");
-    pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.mjs";
-
-    const buffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-    const pages: string[] = [];
-
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const tc = await page.getTextContent();
-      pages.push(tc.items.map((item: any) => item.str).join(" "));
-    }
-
-    return pages.join("\n\n");
-  } catch {
-    return "";
-  }
-}
 
 /* ------------------------------------------------------------------ */
 /*  Steps                                                               */
@@ -81,6 +61,7 @@ export default function NewApplicationPage() {
 
   const [step, setStep] = useState<Step>("job");
   const stepIndex = STEPS.findIndex((s) => s.key === step);
+  const [draftAppId, setDraftAppId] = useState<string | null>(null);
 
   // Step 1: Job
   const [jobTitle, setJobTitle] = useState("");
@@ -94,24 +75,33 @@ export default function NewApplicationPage() {
   const [resumeUrl, setResumeUrl] = useState("");
   const [uploading, setUploading] = useState(false);
 
-  // Step 4: Generate
+  // Step 4: Generate — real-time SSE progress
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [genError, setGenError] = useState<string | null>(null);
-  const [genStep, setGenStep] = useState("");
+  const [genMessage, setGenMessage] = useState("");
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const [completedPhases, setCompletedPhases] = useState<Set<number>>(new Set());
+  const [activePhaseIdx, setActivePhaseIdx] = useState(-1);
 
-  // AI generation progress messages
-  const GEN_STEPS = [
-    "Analyzing job description…",
-    "Parsing your resume with AI…",
-    "Building ideal candidate benchmark…",
-    "Identifying gaps and opportunities…",
-    "Crafting your tailored CV…",
-    "Writing compelling cover letter…",
-    "Building your learning roadmap…",
-    "Computing match scores…",
-    "Finalizing your application…",
+  // Pipeline phases matching the backend SSE events
+  const PIPELINE_PHASES = [
+    { label: "Parsing resume & building benchmark", icon: "📄" },
+    { label: "Analyzing skill gaps", icon: "🔍" },
+    { label: "Generating CV, cover letter & learning plan", icon: "✍️" },
+    { label: "Building personal statement & portfolio", icon: "📁" },
+    { label: "Validating document quality", icon: "✅" },
+    { label: "Packaging your application", icon: "📦" },
   ];
+
+  const formatElapsed = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+  };
 
   // Derived
   const keywords = useMemo(() => extractKeywords(jdText), [jdText]);
@@ -130,12 +120,23 @@ export default function NewApplicationPage() {
       setResumeFile(file);
 
       try {
-        // Extract text
-        const text = await extractPdfText(file);
-        setResumeText(text);
+        // Server-side text extraction (more reliable than client-side pdf.js across browsers)
+        const [text, url] = await Promise.all([
+          parseResumeText(file).catch((err) => {
+            console.warn("[HireStack] Resume parsing failed:", err);
+            return "";
+          }),
+          uploadResume(user.uid, file),
+        ]);
 
-        // Upload to storage
-        const url = await uploadResume(user.uid, file);
+        // Warn if parsing returned empty or very short text (likely parse failure)
+        if (!text || text.trim().length < 50) {
+          console.warn("[HireStack] Resume text extraction resulted in very short content (possible parse failure)");
+          // In a production app with toast system, you might show:
+          // toast.warning("Resume extraction incomplete", "The text extraction may have failed. Please review the parsed content.");
+        }
+
+        setResumeText(text);
         setResumeUrl(url);
       } catch (err) {
         console.error("Resume upload failed:", err);
@@ -164,50 +165,106 @@ export default function NewApplicationPage() {
     [jobTitle, company, jdText, jdQuality, resumeUrl, resumeText, resumeFile]
   );
 
-  /* ---- Generate ---- */
+  /* ---- Generate (SSE-streamed) ---- */
   const handleGenerate = useCallback(async () => {
     if (!user) return;
+    // If a previous run is still in-flight, cancel it before starting a new one.
+    abortRef.current?.abort();
     setGenerating(true);
     setGenError(null);
     setProgress(0);
-    setGenStep(GEN_STEPS[0]);
+    setGenMessage("Initializing AI engine…");
+    setElapsedMs(0);
+    setCompletedPhases(new Set());
+    setActivePhaseIdx(0);
 
+    // Start elapsed timer
+    const startTime = Date.now();
+    elapsedRef.current = setInterval(() => {
+      setElapsedMs(Date.now() - startTime);
+    }, 500);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    let appId = draftAppId;
     try {
-      // Create the application
-      const appId = await createApplication(user.uid, jobTitle || "New Application", confirmedFacts);
+      if (!appId) {
+        appId = await createApplication(
+          user.uid,
+          jobTitle || "New Application",
+          confirmedFacts
+        );
+        setDraftAppId(appId);
 
-      await trackEvent(user.uid, "app_created", appId, {
-        jobTitle,
-        company,
-        jdLength: jdText.length,
-        hasResume: !!resumeText,
+        await trackEvent(user.uid, "app_created", appId, {
+          jobTitle,
+          company,
+          jdLength: jdText.length,
+          hasResume: !!resumeText,
+        });
+      } else {
+        // Keep the existing draft workspace in sync before regenerating.
+        await patchApplication(appId, {
+          title: jobTitle || "New Application",
+          confirmedFacts,
+        });
+      }
+
+      // SSE progress callback — drives the entire UI
+      const handleProgress = (p: PipelineProgress) => {
+        setProgress(p.progress);
+        setGenMessage(p.message);
+
+        // Map SSE step (1-based) to phase index (0-based)
+        const phaseIdx = Math.max(0, p.step - 1);
+        setActivePhaseIdx(phaseIdx);
+
+        // Mark phases that are done (phase ending with "_done")
+        if (p.phase.endsWith("_done") || p.phase === "complete") {
+          setCompletedPhases((prev) => {
+            const next = new Set(prev);
+            next.add(phaseIdx);
+            return next;
+          });
+          // Advance active to next phase
+          if (p.phase !== "complete") {
+            setActivePhaseIdx(phaseIdx + 1);
+          }
+        }
+      };
+
+      await generateApplicationModules(appId, user.uid, confirmedFacts, undefined, handleProgress, {
+        signal: controller.signal,
       });
 
-      // Cycle through progress messages while AI generates
-      let stepIdx = 0;
-      const interval = setInterval(() => {
-        stepIdx = Math.min(stepIdx + 1, GEN_STEPS.length - 1);
-        setGenStep(GEN_STEPS[stepIdx]);
-        setProgress((p) => Math.min(p + 9, 92));
-      }, 3500);
-
-      await generateApplicationModules(appId, user.uid, confirmedFacts);
-
-      clearInterval(interval);
+      // Done!
       setProgress(100);
-      setGenStep("Done! Redirecting to your workspace…");
+      setGenMessage("Your application is ready! 🎉");
+      setCompletedPhases(new Set([0, 1, 2, 3, 4, 5]));
+      setActivePhaseIdx(-1);
 
       await trackEvent(user.uid, "app_generated", appId);
+      setDraftAppId(null);
 
-      // Redirect to workspace
       setTimeout(() => {
         router.push(`/applications/${appId}`);
-      }, 800);
+      }, 1000);
     } catch (err: any) {
-      setGenError(err?.message ?? "Generation failed");
+      const message = err?.name === "AbortError"
+        ? "Generation timed out. The AI took too long — please try again."
+        : err?.message ?? "Generation failed — please try again.";
+      setGenError(message);
       setGenerating(false);
+    } finally {
+      // Clear timer in all exit paths (success, error, abort)
+      if (elapsedRef.current) {
+        clearInterval(elapsedRef.current);
+        elapsedRef.current = null;
+      }
+      abortRef.current = null;
     }
-  }, [user, jobTitle, company, jdText, resumeText, confirmedFacts, router]);
+  }, [user, draftAppId, jobTitle, company, jdText, resumeText, confirmedFacts, router]);
 
   /* ---- Navigation ---- */
   function canAdvance(): boolean {
@@ -277,14 +334,15 @@ export default function NewApplicationPage() {
       </div>
 
       {step === "job" && (
-        <div className="rounded-2xl border bg-card p-6 shadow-soft-sm">
+        <div className="surface-premium rounded-2xl p-6">
           <h3 className="text-base font-bold">Paste the Job Description</h3>
           <p className="mt-1 text-xs text-muted-foreground">We’ll extract keywords and build a quality signal.</p>
           <div className="mt-5 space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label>Job Title</Label>
+                <Label htmlFor="job-title">Job Title</Label>
                 <Input
+                  id="job-title"
                   className="rounded-xl h-11"
                   placeholder="Senior Frontend Engineer"
                   value={jobTitle}
@@ -292,8 +350,9 @@ export default function NewApplicationPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Company (optional)</Label>
+                <Label htmlFor="company">Company (optional)</Label>
                 <Input
+                  id="company"
                   className="rounded-xl h-11"
                   placeholder="TechCorp"
                   value={company}
@@ -303,8 +362,9 @@ export default function NewApplicationPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Job Description</Label>
+              <Label htmlFor="job-description">Job Description</Label>
               <Textarea
+                id="job-description"
                 rows={12}
                 className="rounded-xl"
                 placeholder="Paste the full job description here…"
@@ -332,7 +392,7 @@ export default function NewApplicationPage() {
       )}
 
       {step === "resume" && (
-        <div className="rounded-2xl border bg-card p-6 shadow-soft-sm">
+        <div className="surface-premium rounded-2xl p-6">
           <h3 className="text-base font-bold">Upload Your Resume</h3>
           <p className="mt-1 text-xs text-muted-foreground">Optional but helps generate more accurate analysis.</p>
           <div className="mt-5 space-y-4">
@@ -387,7 +447,7 @@ export default function NewApplicationPage() {
       )}
 
       {step === "review" && (
-        <div className="rounded-2xl border bg-card p-6 shadow-soft-sm">
+        <div className="surface-premium rounded-2xl p-6">
           <h3 className="text-base font-bold">Review Confirmed Facts</h3>
           <p className="mt-1 text-xs text-muted-foreground">Everything looks right? Let’s generate your modules.</p>
           <div className="mt-5 space-y-4">
@@ -423,14 +483,20 @@ export default function NewApplicationPage() {
               </div>
             )}
 
-            <div className="rounded-xl border p-3 space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Resume</p>
-              <p className="text-sm">
-                {resumeFile
-                  ? `${resumeFile.name} (${resumeText.split(/\s+/).length} words)`
-                  : "No resume uploaded"}
-              </p>
-            </div>
+              <div className="rounded-xl border p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">Resume</p>
+                <p className="text-sm">
+                  {/** Avoid showing "1 words" when extraction is empty */}
+                  {(() => {
+                    const wordCount = resumeText.trim()
+                      ? resumeText.trim().split(/\s+/).length
+                      : 0;
+                    return resumeFile
+                      ? `${resumeFile.name} (${wordCount} words)`
+                      : "No resume uploaded";
+                  })()}
+                </p>
+              </div>
 
             <div className="rounded-xl border p-3 space-y-2">
               <p className="text-xs font-medium text-muted-foreground">
@@ -449,49 +515,133 @@ export default function NewApplicationPage() {
       )}
 
       {step === "generate" && (
-        <div className="rounded-2xl border bg-card shadow-soft-sm">
-          <div className="flex flex-col items-center justify-center py-16 space-y-4">
+        <div className="surface-premium rounded-2xl">
+          <div className="flex flex-col items-center justify-center py-10 px-6 space-y-6">
             {genError ? (
-              <>
+              <div className="flex flex-col items-center space-y-4 max-w-md">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-500/10">
                   <X className="h-7 w-7 text-rose-600" />
                 </div>
-                <p className="text-sm font-medium text-destructive">
-                  {genError}
-                </p>
-                <Button className="rounded-xl" onClick={() => { setStep("review"); setGenError(null); }}>
-                  Try Again
-                </Button>
-              </>
+                <div className="text-center space-y-1">
+                  <p className="text-base font-semibold text-destructive">Generation Failed</p>
+                  <p className="text-sm text-muted-foreground">{genError}</p>
+                  {genError.toLowerCase().includes("gemini") || genError.toLowerCase().includes("gemini_api_key") ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      The AI service is not properly configured. Please try again in a few moments, or contact support if the issue persists.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Button className="rounded-xl" onClick={() => { setStep("review"); setGenError(null); }}>
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    Try Again
+                  </Button>
+                  {draftAppId && (
+                    <Button
+                      variant="outline"
+                      className="rounded-xl"
+                      onClick={() => router.push(`/applications/${draftAppId}`)}
+                    >
+                      <ArrowRight className="mr-2 h-4 w-4" />
+                      Open Workspace
+                    </Button>
+                  )}
+                </div>
+              </div>
             ) : (
               <>
-                <div className="relative flex h-20 w-20 items-center justify-center">
-                  {/* Animated ring */}
-                  <svg className="absolute inset-0 h-20 w-20 -rotate-90" viewBox="0 0 80 80">
-                    <circle cx="40" cy="40" r="36" fill="none" stroke="hsl(var(--muted))" strokeWidth="3" />
-                    <circle cx="40" cy="40" r="36" fill="none" stroke="hsl(var(--primary))" strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeDasharray={`${2 * Math.PI * 36}`}
-                      strokeDashoffset={`${2 * Math.PI * 36 * (1 - progress / 100)}`}
-                      className="transition-all duration-500"
+                {/* Header */}
+                <div className="text-center space-y-2">
+                  <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5">
+                    <Sparkles className="h-4 w-4 text-primary animate-pulse" />
+                    <span className="text-sm font-semibold text-primary">
+                      {progress >= 100 ? "Complete!" : "Building Your Application"}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{genMessage}</p>
+                </div>
+
+                {/* Progress bar with percentage */}
+                <div className="w-full max-w-md space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium tabular-nums text-foreground">
+                      {progress}%
+                    </span>
+                    <span className="flex items-center gap-1 text-muted-foreground">
+                      <Timer className="h-3 w-3" />
+                      {formatElapsed(elapsedMs)}
+                    </span>
+                  </div>
+                  <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500 transition-all duration-700 ease-out"
+                      style={{ width: `${progress}%` }}
                     />
-                  </svg>
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
-                    <Sparkles className="h-7 w-7 text-primary animate-pulse" />
+                    {progress < 100 && progress > 0 && (
+                      <div
+                        className="absolute inset-y-0 w-8 rounded-full bg-white/30 animate-pulse"
+                        style={{ left: `calc(${progress}% - 16px)` }}
+                      />
+                    )}
                   </div>
                 </div>
-                <div className="text-center space-y-1">
-                  <p className="text-lg font-bold tabular-nums">
-                    {progress < 100 ? `${progress}%` : "✓"}
-                  </p>
-                  <p className="text-sm font-medium text-foreground">
-                    {genStep}
-                  </p>
+
+                {/* Phase checklist */}
+                <div className="w-full max-w-md rounded-xl border bg-muted/30 p-4 space-y-1">
+                  {PIPELINE_PHASES.map((phase, i) => {
+                    const isDone = completedPhases.has(i);
+                    const isActive = i === activePhaseIdx && !isDone;
+                    const isPending = !isDone && !isActive;
+                    return (
+                      <div
+                        key={i}
+                        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-300 ${
+                          isDone
+                            ? "text-foreground"
+                            : isActive
+                              ? "bg-primary/5 text-foreground font-medium"
+                              : "text-muted-foreground/60"
+                        }`}
+                      >
+                        {isDone ? (
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                        ) : isActive ? (
+                          <Loader2 className="h-4 w-4 shrink-0 text-primary animate-spin" />
+                        ) : (
+                          <Circle className="h-4 w-4 shrink-0" />
+                        )}
+                        <span className="flex items-center gap-2">
+                          <span>{phase.icon}</span>
+                          <span>{phase.label}</span>
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-                <Progress value={progress} className="w-72" />
-                <p className="text-xs text-muted-foreground max-w-sm text-center">
-                  Our AI is analyzing your profile and crafting a personalized application package. This typically takes 30–60 seconds.
+
+                {/* Elapsed time hint */}
+                <p className="text-xs text-muted-foreground text-center max-w-sm">
+                  {elapsedMs < 15_000
+                    ? "Typical: 1–2 min with cloud AI. Local/offline AI can take 5–20 min."
+                    : elapsedMs < 60_000
+                      ? "Making great progress — your application is taking shape!"
+                      : elapsedMs < 300_000
+                        ? "Still working — complex applications can take several minutes."
+                        : "Still running — keep this tab open while we finish."}
                 </p>
+
+                <Button
+                  variant="outline"
+                  className="rounded-xl"
+                  disabled={!generating}
+                  onClick={() => {
+                    setGenMessage("Cancelling…");
+                    abortRef.current?.abort();
+                  }}
+                >
+                  <X className="mr-2 h-4 w-4" />
+                  Cancel
+                </Button>
               </>
             )}
           </div>

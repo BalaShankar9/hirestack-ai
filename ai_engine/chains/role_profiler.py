@@ -25,28 +25,28 @@ Return ONLY valid JSON with no additional text or markdown."""
 RESUME_PARSER_PROMPT = """Parse the following resume and extract all information into this exact JSON structure:
 
 ```json
-{
+{{
   "name": "Full Name",
   "title": "Current or Target Job Title",
   "summary": "Professional summary or objective",
-  "contact_info": {
+  "contact_info": {{
     "email": "email@example.com",
     "phone": "+1234567890",
     "location": "City, State/Country",
     "linkedin": "linkedin.com/in/profile",
     "github": "github.com/username",
     "website": "personal website"
-  },
+  }},
   "skills": [
-    {
+    {{
       "name": "Skill Name",
       "level": "beginner|intermediate|advanced|expert",
       "years": 3.5,
       "category": "technical|soft|language|tool"
-    }
+    }}
   ],
   "experience": [
-    {
+    {{
       "company": "Company Name",
       "title": "Job Title",
       "location": "City, Country",
@@ -56,10 +56,10 @@ RESUME_PARSER_PROMPT = """Parse the following resume and extract all information
       "description": "Role description",
       "achievements": ["Achievement 1", "Achievement 2"],
       "technologies": ["Tech 1", "Tech 2"]
-    }
+    }}
   ],
   "education": [
-    {
+    {{
       "institution": "University Name",
       "degree": "Degree Type",
       "field": "Field of Study",
@@ -67,38 +67,38 @@ RESUME_PARSER_PROMPT = """Parse the following resume and extract all information
       "end_date": "Year",
       "gpa": "3.8/4.0",
       "achievements": ["Honor", "Award"]
-    }
+    }}
   ],
   "certifications": [
-    {
+    {{
       "name": "Certification Name",
       "issuer": "Issuing Organization",
       "date": "Month Year",
       "expiry": "Month Year",
       "credential_id": "ID123",
       "url": "verification URL"
-    }
+    }}
   ],
   "projects": [
-    {
+    {{
       "name": "Project Name",
       "description": "Project description",
       "role": "Your role",
       "technologies": ["Tech 1", "Tech 2"],
       "url": "project URL",
       "achievements": ["Outcome 1"]
-    }
+    }}
   ],
   "languages": [
-    {
+    {{
       "language": "English",
       "proficiency": "native|fluent|professional|conversational|basic"
-    }
+    }}
   ],
   "achievements": [
     "Notable achievement or award"
   ]
-}
+}}
 ```
 
 RESUME TEXT:
@@ -108,6 +108,109 @@ RESUME TEXT:
 
 Parse this resume carefully. Include only information that is actually present. Use null for missing fields.
 Return ONLY the JSON object, no other text."""
+
+RESUME_PARSER_SCHEMA: Dict[str, Any] = {
+    "type": "OBJECT",
+    "properties": {
+        "name": {"type": "STRING"},
+        "title": {"type": "STRING"},
+        "summary": {"type": "STRING"},
+        "contact_info": {
+            "type": "OBJECT",
+            "properties": {
+                "email": {"type": "STRING"},
+                "phone": {"type": "STRING"},
+                "location": {"type": "STRING"},
+                "linkedin": {"type": "STRING"},
+                "github": {"type": "STRING"},
+                "website": {"type": "STRING"},
+            },
+        },
+        "skills": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "name": {"type": "STRING"},
+                    "level": {"type": "STRING"},
+                    "years": {"type": "NUMBER"},
+                    "category": {"type": "STRING"},
+                },
+            },
+        },
+        "experience": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "company": {"type": "STRING"},
+                    "title": {"type": "STRING"},
+                    "location": {"type": "STRING"},
+                    "start_date": {"type": "STRING"},
+                    "end_date": {"type": "STRING"},
+                    "is_current": {"type": "BOOLEAN"},
+                    "description": {"type": "STRING"},
+                    "achievements": {"type": "ARRAY", "items": {"type": "STRING"}},
+                    "technologies": {"type": "ARRAY", "items": {"type": "STRING"}},
+                },
+            },
+        },
+        "education": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "institution": {"type": "STRING"},
+                    "degree": {"type": "STRING"},
+                    "field": {"type": "STRING"},
+                    "start_date": {"type": "STRING"},
+                    "end_date": {"type": "STRING"},
+                    "gpa": {"type": "STRING"},
+                    "achievements": {"type": "ARRAY", "items": {"type": "STRING"}},
+                },
+            },
+        },
+        "certifications": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "name": {"type": "STRING"},
+                    "issuer": {"type": "STRING"},
+                    "date": {"type": "STRING"},
+                    "expiry": {"type": "STRING"},
+                    "credential_id": {"type": "STRING"},
+                    "url": {"type": "STRING"},
+                },
+            },
+        },
+        "projects": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "name": {"type": "STRING"},
+                    "description": {"type": "STRING"},
+                    "role": {"type": "STRING"},
+                    "technologies": {"type": "ARRAY", "items": {"type": "STRING"}},
+                    "url": {"type": "STRING"},
+                    "achievements": {"type": "ARRAY", "items": {"type": "STRING"}},
+                },
+            },
+        },
+        "languages": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "language": {"type": "STRING"},
+                    "proficiency": {"type": "STRING"},
+                },
+            },
+        },
+        "achievements": {"type": "ARRAY", "items": {"type": "STRING"}},
+    },
+}
 
 
 class RoleProfilerChain:
@@ -126,7 +229,8 @@ class RoleProfilerChain:
             prompt=prompt,
             system=RESUME_PARSER_SYSTEM,
             temperature=0.2,
-            max_tokens=4000
+            max_tokens=4000,
+            schema=RESUME_PARSER_SCHEMA,
         )
 
         # Validate and clean the result

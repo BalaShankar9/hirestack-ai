@@ -28,7 +28,9 @@ env/
 out/
 dist/
 build/
+*.tsbuildinfo
 *.egg-info/
+*.tsbuildinfo
 
 # Firebase local artifacts
 .firebase/
@@ -48,6 +50,15 @@ Thumbs.db
 # Testing
 coverage/
 .pytest_cache/
+frontend/playwright-report/
+frontend/test-results/
+.playwright-cli/
+
+# Local artifacts
+output/
 
 # Uploads
 uploads/
+
+# Generated pdf.js assets (frontend postinstall)
+frontend/public/pdfjs/

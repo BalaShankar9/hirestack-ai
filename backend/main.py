@@ -16,6 +16,10 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from urllib.parse import urlparse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.database import init_supabase, get_supabase
@@ -38,6 +42,8 @@ structlog.configure(
 
 logger = structlog.get_logger()
 
+limiter = Limiter(key_func=get_remote_address)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
@@ -46,6 +52,34 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     logger.info("Starting HireStack AI", version=settings.app_version)
     init_supabase()
     logger.info("Supabase client initialized")
+
+    # Validate critical configuration
+    if not settings.supabase_url or settings.supabase_url == "https://placeholder.supabase.co":
+        logger.warning("SUPABASE_URL is not configured — database operations will fail")
+    if not settings.supabase_service_role_key:
+        logger.warning("SUPABASE_SERVICE_ROLE_KEY is not configured — backend DB access will fail")
+
+    ai_configured = False
+    if settings.ai_provider == "gemini" and settings.gemini_api_key:
+        ai_configured = True
+    elif settings.ai_provider == "openai" and settings.openai_api_key:
+        ai_configured = True
+    elif settings.ai_provider == "ollama":
+        ai_configured = True  # Ollama doesn't need an API key
+    if not ai_configured:
+        logger.warning(
+            "No AI provider configured — generation endpoints will fail",
+            provider=settings.ai_provider,
+        )
+
+    try:
+        from app.api.routes.generate import recover_inflight_generation_jobs
+
+        recovered = await recover_inflight_generation_jobs()
+        if recovered:
+            logger.info("Recovered inflight generation jobs", count=recovered)
+    except Exception as e:
+        logger.warning("Failed to recover inflight generation jobs", error=str(e))
     yield
     # Shutdown
     logger.info("Shutting down HireStack AI")
@@ -57,14 +91,44 @@ app = FastAPI(
     version=settings.app_version,
     description="AI-powered career intelligence and job application platform",
     docs_url="/docs" if settings.debug else None,
-    redoc_url="/redoc" if settings.debug else None,
+    redoc_url="/redoc",  # Always available for API reference
     lifespan=lifespan,
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS helpers
+def _split_origins(value: str) -> list[str]:
+    return [v.strip() for v in (value or "").split(",") if v.strip()]
+
+
+def _with_localhost_aliases(origins: list[str]) -> list[str]:
+    """Add localhost/127.0.0.1 aliases for the same scheme+port."""
+    out: set[str] = set()
+    for origin in origins:
+        try:
+            parsed = urlparse(origin)
+            if not parsed.scheme or not parsed.hostname:
+                continue
+            host = parsed.hostname
+            port = parsed.port
+            if host in ("localhost", "127.0.0.1") and port is not None:
+                other = "127.0.0.1" if host == "localhost" else "localhost"
+                out.add(f"{parsed.scheme}://{other}:{port}")
+        except Exception:
+            continue
+    return list(out)
+
+
 # CORS middleware
+base_origins = list(dict.fromkeys(settings.cors_origins + _split_origins(settings.allowed_origins)))
+extra_origins = _with_localhost_aliases(base_origins)
+allowed_origins = list(dict.fromkeys(base_origins + extra_origins))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins + [settings.allowed_origins],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

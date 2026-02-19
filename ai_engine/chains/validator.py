@@ -97,6 +97,52 @@ Return ONLY valid JSON:
 }}
 ```"""
 
+DOCUMENT_VALIDATION_SCHEMA: Dict[str, Any] = {
+    "type": "OBJECT",
+    "properties": {
+        "is_valid": {"type": "BOOLEAN"},
+        "quality_score": {"type": "INTEGER"},
+        "issues": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "severity": {"type": "STRING"},
+                    "category": {"type": "STRING"},
+                    "description": {"type": "STRING"},
+                    "location": {"type": "STRING"},
+                    "suggestion": {"type": "STRING"},
+                },
+            },
+        },
+        "warnings": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "improvements": {"type": "ARRAY", "items": {"type": "STRING"}},
+    },
+    "required": ["is_valid", "quality_score"],
+}
+
+
+ANALYSIS_VALIDATION_SCHEMA: Dict[str, Any] = {
+    "type": "OBJECT",
+    "properties": {
+        "is_valid": {"type": "BOOLEAN"},
+        "fairness_score": {"type": "INTEGER"},
+        "issues": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "type": {"type": "STRING"},
+                    "description": {"type": "STRING"},
+                    "suggestion": {"type": "STRING"},
+                },
+            },
+        },
+        "verified_elements": {"type": "ARRAY", "items": {"type": "STRING"}},
+    },
+    "required": ["is_valid"],
+}
+
 
 class ValidatorChain:
     """Chain for validating AI-generated content."""
@@ -125,7 +171,8 @@ class ValidatorChain:
             prompt=prompt,
             system=VALIDATOR_SYSTEM,
             temperature=0.2,
-            max_tokens=2000
+            max_tokens=2000,
+            schema=DOCUMENT_VALIDATION_SCHEMA,
         )
 
         is_valid = result.get("is_valid", True)
@@ -160,7 +207,8 @@ class ValidatorChain:
             prompt=prompt,
             system=VALIDATOR_SYSTEM,
             temperature=0.2,
-            max_tokens=2000
+            max_tokens=2000,
+            schema=ANALYSIS_VALIDATION_SCHEMA,
         )
 
         return result.get("is_valid", True), result

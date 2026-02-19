@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 
-from app.core.database import verify_token, get_db, SupabaseDB, TABLES
+from app.core.database import verify_token_async, AuthServiceUnavailable, get_db, SupabaseDB, TABLES
 from app.api.deps import get_current_user
 
 router = APIRouter()
@@ -26,7 +26,13 @@ async def verify_token_endpoint(
             detail="No token provided",
         )
 
-    decoded_token = verify_token(token)
+    try:
+        decoded_token = await verify_token_async(token)
+    except AuthServiceUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service is temporarily unavailable. Please try again.",
+        )
 
     if not decoded_token:
         raise HTTPException(

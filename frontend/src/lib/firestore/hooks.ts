@@ -6,7 +6,7 @@
  */
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { TABLES } from "./paths";
 import type {
@@ -20,14 +20,47 @@ import {
   mapTaskRow,
 } from "./ops";
 
+const REALTIME_DEBUG =
+  process.env.NEXT_PUBLIC_REALTIME_DEBUG === "1" ||
+  process.env.NEXT_PUBLIC_REALTIME_DEBUG === "true";
+
+const ENABLE_REALTIME_ENV = (process.env.NEXT_PUBLIC_ENABLE_REALTIME ?? "").toLowerCase();
+// Default OFF to avoid noisy websocket errors in local dev; polling is the baseline.
+const REALTIME_ENABLED_BY_ENV =
+  ["1", "true", "on", "yes"].includes(ENABLE_REALTIME_ENV);
+
+let REALTIME_DISABLED = false;
+
+function realtimeWarn(...args: any[]) {
+  if (!REALTIME_DEBUG) return;
+  // eslint-disable-next-line no-console
+  console.warn(...args);
+}
+
+function shouldUseRealtime(): boolean {
+  return REALTIME_ENABLED_BY_ENV && !REALTIME_DISABLED;
+}
+
+function disableRealtimeOnce(reason: string, err?: unknown) {
+  if (REALTIME_DISABLED) return;
+  REALTIME_DISABLED = true;
+  realtimeWarn("[HireStack][realtime] disabled:", reason, err);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Generic helper                                                      */
 /* ------------------------------------------------------------------ */
 
-interface UseRealtimeResult<T> {
+interface UseRealtimeResult<T extends { id: string }> {
   data: T[];
   loading: boolean;
   error: Error | null;
+  /** Optimistically add an item — instant UI update even if realtime is flaky */
+  addItem: (item: T) => void;
+  /** Optimistically remove an item by id — instant UI update before real-time fires */
+  removeItem: (id: string) => void;
+  /** Optimistically update an item by id */
+  updateItem: (id: string, patch: Partial<T>) => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -50,6 +83,19 @@ export function useApplications(
     }
 
     let cancelled = false;
+
+    let poll: ReturnType<typeof setInterval> | null = null;
+
+    function startPolling() {
+      if (poll) return;
+      poll = setInterval(fetchInitial, 10_000);
+    }
+
+    function stopPolling() {
+      if (!poll) return;
+      clearInterval(poll);
+      poll = null;
+    }
 
     // Initial fetch
     async function fetchInitial() {
@@ -75,6 +121,15 @@ export function useApplications(
     }
 
     fetchInitial();
+
+    // If realtime is disabled (env or runtime failure), use polling only.
+    if (!shouldUseRealtime()) {
+      startPolling();
+      return () => {
+        cancelled = true;
+        stopPolling();
+      };
+    }
 
     // Realtime subscription
     const channel = supabase
@@ -103,15 +158,43 @@ export function useApplications(
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (cancelled) return;
+        if (status === "SUBSCRIBED") {
+          stopPolling();
+          return;
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setError(err ?? new Error(`Realtime subscription error: ${status}`));
+          startPolling();
+          disableRealtimeOnce(status, err);
+          supabase.removeChannel(channel);
+          realtimeWarn("[HireStack][realtime][applications]", status, err);
+        } else if (status === "CLOSED") {
+          startPolling();
+        }
+      });
 
     return () => {
       cancelled = true;
+      stopPolling();
       supabase.removeChannel(channel);
     };
   }, [userId, limit]);
 
-  return { data, loading, error };
+  const addItem = useCallback((item: ApplicationDoc) => {
+    setData((prev) => (prev.some((a) => a.id === item.id) ? prev : [item, ...prev]));
+  }, []);
+
+  const removeItem = useCallback((id: string) => {
+    setData((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
+  const updateItem = useCallback((id: string, patch: Partial<ApplicationDoc>) => {
+    setData((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  }, []);
+
+  return { data, loading, error, addItem, removeItem, updateItem };
 }
 
 /* ------------------------------------------------------------------ */
@@ -133,6 +216,19 @@ export function useApplication(
     }
 
     let cancelled = false;
+
+    let poll: ReturnType<typeof setInterval> | null = null;
+
+    function startPolling() {
+      if (poll) return;
+      poll = setInterval(fetchOne, 10_000);
+    }
+
+    function stopPolling() {
+      if (!poll) return;
+      clearInterval(poll);
+      poll = null;
+    }
 
     async function fetchOne() {
       try {
@@ -157,6 +253,14 @@ export function useApplication(
 
     fetchOne();
 
+    if (!shouldUseRealtime()) {
+      startPolling();
+      return () => {
+        cancelled = true;
+        stopPolling();
+      };
+    }
+
     const channel = supabase
       .channel(`application:${appId}`)
       .on(
@@ -175,10 +279,26 @@ export function useApplication(
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (cancelled) return;
+        if (status === "SUBSCRIBED") {
+          stopPolling();
+          return;
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setError(err ?? new Error(`Realtime subscription error: ${status}`));
+          startPolling();
+          disableRealtimeOnce(status, err);
+          supabase.removeChannel(channel);
+          realtimeWarn("[HireStack][realtime][application]", status, err);
+        } else if (status === "CLOSED") {
+          startPolling();
+        }
+      });
 
     return () => {
       cancelled = true;
+      stopPolling();
       supabase.removeChannel(channel);
     };
   }, [appId]);
@@ -215,6 +335,19 @@ export function useEvidence(
 
     let cancelled = false;
 
+    let poll: ReturnType<typeof setInterval> | null = null;
+
+    function startPolling() {
+      if (poll) return;
+      poll = setInterval(fetchInitial, 10_000);
+    }
+
+    function stopPolling() {
+      if (!poll) return;
+      clearInterval(poll);
+      poll = null;
+    }
+
     async function fetchInitial() {
       try {
         let q = supabase
@@ -243,6 +376,14 @@ export function useEvidence(
     }
 
     fetchInitial();
+
+    if (!shouldUseRealtime()) {
+      startPolling();
+      return () => {
+        cancelled = true;
+        stopPolling();
+      };
+    }
 
     const filter = applicationId
       ? `user_id=eq.${userId},application_id=eq.${applicationId}`
@@ -275,15 +416,43 @@ export function useEvidence(
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (cancelled) return;
+        if (status === "SUBSCRIBED") {
+          stopPolling();
+          return;
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setError(err ?? new Error(`Realtime subscription error: ${status}`));
+          startPolling();
+          disableRealtimeOnce(status, err);
+          supabase.removeChannel(channel);
+          realtimeWarn("[HireStack][realtime][evidence]", status, err);
+        } else if (status === "CLOSED") {
+          startPolling();
+        }
+      });
 
     return () => {
       cancelled = true;
+      stopPolling();
       supabase.removeChannel(channel);
     };
   }, [userId, applicationId, effectiveLimit]);
 
-  return { data, loading, error };
+  const addItem = useCallback((item: EvidenceDoc) => {
+    setData((prev) => (prev.some((e) => e.id === item.id) ? prev : [item, ...prev]));
+  }, []);
+
+  const removeItem = useCallback((id: string) => {
+    setData((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
+  const updateItem = useCallback((id: string, patch: Partial<EvidenceDoc>) => {
+    setData((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+  }, []);
+
+  return { data, loading, error, addItem, removeItem, updateItem };
 }
 
 /* ------------------------------------------------------------------ */
@@ -318,6 +487,19 @@ export function useTasks(
 
     let cancelled = false;
 
+    let poll: ReturnType<typeof setInterval> | null = null;
+
+    function startPolling() {
+      if (poll) return;
+      poll = setInterval(fetchInitial, 10_000);
+    }
+
+    function stopPolling() {
+      if (!poll) return;
+      clearInterval(poll);
+      poll = null;
+    }
+
     async function fetchInitial() {
       try {
         let q = supabase
@@ -347,6 +529,14 @@ export function useTasks(
 
     fetchInitial();
 
+    if (!shouldUseRealtime()) {
+      startPolling();
+      return () => {
+        cancelled = true;
+        stopPolling();
+      };
+    }
+
     const channel = supabase
       .channel(`tasks:${userId}:${applicationId ?? "all"}`)
       .on(
@@ -374,13 +564,41 @@ export function useTasks(
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (cancelled) return;
+        if (status === "SUBSCRIBED") {
+          stopPolling();
+          return;
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setError(err ?? new Error(`Realtime subscription error: ${status}`));
+          startPolling();
+          disableRealtimeOnce(status, err);
+          supabase.removeChannel(channel);
+          realtimeWarn("[HireStack][realtime][tasks]", status, err);
+        } else if (status === "CLOSED") {
+          startPolling();
+        }
+      });
 
     return () => {
       cancelled = true;
+      stopPolling();
       supabase.removeChannel(channel);
     };
   }, [userId, applicationId, limit]);
+
+  const addItem = useCallback((item: TaskDoc) => {
+    setData((prev) => (prev.some((t) => t.id === item.id) ? prev : [item, ...prev]));
+  }, []);
+
+  const removeItem = useCallback((id: string) => {
+    setData((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const updateItem = useCallback((id: string, patch: Partial<TaskDoc>) => {
+    setData((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  }, []);
 
   const stats: TaskStats = {
     total: data.length,
@@ -388,5 +606,5 @@ export function useTasks(
     remaining: data.filter((t) => t.status !== "done" && t.status !== "skipped").length,
   };
 
-  return { data, loading, error, stats };
+  return { data, loading, error, stats, addItem, removeItem, updateItem };
 }

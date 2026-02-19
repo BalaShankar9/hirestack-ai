@@ -128,6 +128,19 @@ const config: Config = {
           "0%, 100%": { boxShadow: "0 0 8px 0px hsl(var(--primary) / 0.3)" },
           "50%": { boxShadow: "0 0 20px 4px hsl(var(--primary) / 0.5)" },
         },
+        "bounce-sm": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-2px)" },
+        },
+        "check-pop": {
+          "0%": { transform: "scale(0)", opacity: "0" },
+          "50%": { transform: "scale(1.2)" },
+          "100%": { transform: "scale(1)", opacity: "1" },
+        },
+        "slide-up": {
+          from: { opacity: "0", transform: "translateY(12px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -139,6 +152,9 @@ const config: Config = {
         shimmer: "shimmer 3s ease-in-out infinite",
         float: "float 3s ease-in-out infinite",
         "glow-pulse": "glow-pulse 2s ease-in-out infinite",
+        "bounce-sm": "bounce-sm 0.4s ease-out",
+        "check-pop": "check-pop 0.3s ease-out",
+        "slide-up": "slide-up 0.4s ease-out",
       },
     },
   },

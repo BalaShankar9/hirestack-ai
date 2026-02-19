@@ -9,6 +9,7 @@ import {
   FileText,
   Trash2,
   ExternalLink,
+  Loader2,
 } from "lucide-react";
 
 import { useAuth } from "@/components/providers";
@@ -19,6 +20,7 @@ import {
   uploadEvidenceFile,
 } from "@/lib/firestore/ops";
 import type { EvidenceDoc } from "@/lib/firestore/models";
+import { resolveFileUrl } from "@/lib/storage";
 
 import { Button } from "@/components/ui/button";
 
@@ -30,6 +32,7 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
+  DialogDescription,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
@@ -55,9 +58,10 @@ export default function EvidenceVaultPage() {
   const router = useRouter();
   const { user } = useAuth();
 
-  const { data: evidence = [], loading } = useEvidence(user?.uid ?? null);
+  const { data: evidence = [], loading, addItem, removeItem } = useEvidence(user?.uid ?? null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Form state
   const [kind, setKind] = useState<"link" | "file">("link");
@@ -87,16 +91,29 @@ export default function EvidenceVaultPage() {
     setUploading(true);
 
     try {
-      let fileUrl: string | undefined;
+      let storageUrl: string | undefined;
       let fileName: string | undefined;
 
       if (kind === "file" && fileRef.current?.files?.[0]) {
         const file = fileRef.current.files[0];
         fileName = file.name;
-        fileUrl = await uploadEvidenceFile(user.uid, file);
+        storageUrl = await uploadEvidenceFile(user.uid, file);
       }
 
-      await createEvidence(user.uid, {
+      const parsedSkills = skills
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const parsedTools = tools
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const parsedTags = tags
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      const id = await createEvidence(user.uid, {
         userId: user.uid,
         applicationId: null,
         kind,
@@ -104,21 +121,31 @@ export default function EvidenceVaultPage() {
         title,
         description: description || undefined,
         url: kind === "link" ? url : undefined,
-        storageUrl: fileUrl,
-        fileUrl,
+        storageUrl,
+        fileUrl: undefined,
         fileName,
-        skills: skills
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
-        tools: tools
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
-        tags: tags
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
+        skills: parsedSkills,
+        tools: parsedTools,
+        tags: parsedTags,
+      });
+
+      addItem({
+        id,
+        userId: user.uid,
+        applicationId: null,
+        kind,
+        type: type as EvidenceDoc["type"],
+        title,
+        description: description || undefined,
+        url: kind === "link" ? url : undefined,
+        storageUrl,
+        fileUrl: undefined,
+        fileName,
+        skills: parsedSkills,
+        tools: parsedTools,
+        tags: parsedTags,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
       });
 
       resetForm();
@@ -132,10 +159,14 @@ export default function EvidenceVaultPage() {
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this evidence item?")) return;
+    setDeletingId(id);
     try {
       await deleteEvidence(id);
+      removeItem(id);
     } catch (err) {
       console.error("Failed to delete evidence:", err);
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -170,121 +201,128 @@ export default function EvidenceVaultPage() {
             </Button>
           </DialogTrigger>
 
-          <DialogContent className="max-w-lg rounded-2xl">
-            <DialogHeader>
-              <DialogTitle>Add Evidence</DialogTitle>
-            </DialogHeader>
+          <DialogContent className="max-w-lg rounded-2xl p-0 overflow-hidden">
+            <div className="flex max-h-[85vh] flex-col">
+              <DialogHeader className="px-6 pt-6">
+                <DialogTitle>Add Evidence</DialogTitle>
+                <DialogDescription>
+                  Add a link or file that proves a skill. Keep it specific so you can reuse it across applications.
+                </DialogDescription>
+              </DialogHeader>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Kind toggle */}
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant={kind === "link" ? "default" : "outline"}
-                  size="sm"
-                  className="rounded-xl"
-                  onClick={() => setKind("link")}
-                >
-                  <Link2 className="mr-1.5 h-4 w-4" />
-                  Link
-                </Button>
-                <Button
-                  type="button"
-                  variant={kind === "file" ? "default" : "outline"}
-                  size="sm"
-                  className="rounded-xl"
-                  onClick={() => setKind("file")}
-                >
-                  <Upload className="mr-1.5 h-4 w-4" />
-                  File
-                </Button>
-              </div>
+              <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col gap-4 px-6 pb-6 pt-4">
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-2">
+                  {/* Kind toggle */}
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant={kind === "link" ? "default" : "outline"}
+                      size="sm"
+                      className="rounded-xl"
+                      onClick={() => setKind("link")}
+                    >
+                      <Link2 className="mr-1.5 h-4 w-4" />
+                      Link
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={kind === "file" ? "default" : "outline"}
+                      size="sm"
+                      className="rounded-xl"
+                      onClick={() => setKind("file")}
+                    >
+                      <Upload className="mr-1.5 h-4 w-4" />
+                      File
+                    </Button>
+                  </div>
 
-              <div className="space-y-1.5">
-                <Label>Title</Label>
-                <Input
-                  required
-                  className="rounded-xl h-11"
-                  placeholder="e.g. AWS Solutions Architect cert"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                />
-              </div>
+                  <div className="space-y-1.5">
+                    <Label>Title</Label>
+                    <Input
+                      required
+                      className="rounded-xl h-11"
+                      placeholder="e.g. AWS Solutions Architect cert"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                    />
+                  </div>
 
-              <div className="space-y-1.5">
-                <Label>Type</Label>
-                <Select value={type} onValueChange={setType}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {EVIDENCE_TYPES.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>
-                        {t.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                  <div className="space-y-1.5">
+                    <Label>Type</Label>
+                    <Select value={type} onValueChange={setType}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EVIDENCE_TYPES.map((t) => (
+                          <SelectItem key={t.value} value={t.value}>
+                            {t.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              <div className="space-y-1.5">
-                <Label>Description</Label>
-                <Textarea
-                  rows={2}
-                  placeholder="What does this prove?"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </div>
+                  <div className="space-y-1.5">
+                    <Label>Description</Label>
+                    <Textarea
+                      rows={2}
+                      placeholder="What does this prove?"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                    />
+                  </div>
 
-              {kind === "link" ? (
-                <div className="space-y-1.5">
-                  <Label>URL</Label>
-                  <Input
-                    type="url"
-                    placeholder="https://..."
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                  />
+                  {kind === "link" ? (
+                    <div key="evidence-url" className="space-y-1.5">
+                      <Label>URL</Label>
+                      <Input
+                        type="url"
+                        placeholder="https://..."
+                        value={url}
+                        onChange={(e) => setUrl(e.target.value)}
+                      />
+                    </div>
+                  ) : (
+                    <div key="evidence-file" className="space-y-1.5">
+                      <Label>File</Label>
+                      <Input type="file" ref={fileRef} />
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5">
+                    <Label>Skills (comma-separated)</Label>
+                    <Input
+                      placeholder="React, TypeScript, Node.js"
+                      value={skills}
+                      onChange={(e) => setSkills(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label>Tools (comma-separated)</Label>
+                    <Input
+                      placeholder="Docker, AWS, Figma"
+                      value={tools}
+                      onChange={(e) => setTools(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label>Tags (comma-separated)</Label>
+                    <Input
+                      placeholder="frontend, performance, leadership"
+                      value={tags}
+                      onChange={(e) => setTags(e.target.value)}
+                    />
+                  </div>
                 </div>
-              ) : (
-                <div className="space-y-1.5">
-                  <Label>File</Label>
-                  <Input type="file" ref={fileRef} />
-                </div>
-              )}
 
-              <div className="space-y-1.5">
-                <Label>Skills (comma-separated)</Label>
-                <Input
-                  placeholder="React, TypeScript, Node.js"
-                  value={skills}
-                  onChange={(e) => setSkills(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Tools (comma-separated)</Label>
-                <Input
-                  placeholder="Docker, AWS, Figma"
-                  value={tools}
-                  onChange={(e) => setTools(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Tags (comma-separated)</Label>
-                <Input
-                  placeholder="frontend, performance, leadership"
-                  value={tags}
-                  onChange={(e) => setTags(e.target.value)}
-                />
-              </div>
-
-              <Button type="submit" className="w-full rounded-xl" disabled={uploading}>
-                {uploading ? "Uploading…" : "Add Evidence"}
-              </Button>
-            </form>
+                <Button type="submit" className="w-full rounded-xl" disabled={uploading}>
+                  {uploading ? "Uploading…" : "Add Evidence"}
+                </Button>
+              </form>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
@@ -303,19 +341,30 @@ export default function EvidenceVaultPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {evidence.map((ev: EvidenceDoc) => {
-            const link = ev.kind === "link" ? ev.url : ev.storageUrl;
+            const link = ev.kind === "link" ? ev.url : ev.storageUrl ?? ev.fileUrl;
             return (
-              <div key={ev.id} className="relative group rounded-2xl border bg-card shadow-soft-sm hover:shadow-soft-md transition-shadow overflow-hidden">
+              <div key={ev.id} className="relative group rounded-2xl border bg-card shadow-soft-sm hover:shadow-soft-md transition-all duration-300 overflow-hidden">
                 <div className="p-4 pb-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="text-sm font-semibold truncate">{ev.title}</div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
                       {link && (
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7"
-                          onClick={() => window.open(link, "_blank", "noopener")}
+                          aria-label={ev.kind === "link" ? "Open link" : "Open file"}
+                          onClick={async () => {
+                            try {
+                              const resolved =
+                                ev.kind === "link"
+                                  ? link
+                                  : await resolveFileUrl(link);
+                              if (resolved) window.open(resolved, "_blank", "noopener");
+                            } catch (err) {
+                              console.error("Failed to open evidence:", err);
+                            }
+                          }}
                         >
                           <ExternalLink className="h-3.5 w-3.5" />
                         </Button>
@@ -324,9 +373,15 @@ export default function EvidenceVaultPage() {
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 text-destructive"
+                        disabled={deletingId === ev.id}
+                        aria-label="Delete evidence"
                         onClick={() => handleDelete(ev.id)}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        {deletingId === ev.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
                       </Button>
                     </div>
                   </div>

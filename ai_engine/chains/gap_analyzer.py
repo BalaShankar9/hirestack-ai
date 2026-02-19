@@ -20,156 +20,188 @@ Be specific, realistic, and supportive. Use data-driven comparisons where possib
 Scores should be fair and reflect actual gaps, not inflated to make the candidate feel good."""
 
 
-GAP_ANALYSIS_PROMPT = """Perform a comprehensive gap analysis comparing this candidate to the ideal benchmark.
+GAP_ANALYSIS_PROMPT = """Perform a gap analysis comparing this candidate to the ideal benchmark.
 
-CANDIDATE PROFILE:
+CANDIDATE_PROFILE_JSON:
 {user_profile}
 
-IDEAL BENCHMARK:
+IDEAL_BENCHMARK_JSON:
 {benchmark}
 
-TARGET ROLE: {job_title} at {company}
+ROLE: {job_title} at {company}
 
-Analyze every aspect and return ONLY valid JSON:
+Return ONLY valid MINIFIED JSON that matches the provided response schema exactly.
+Constraints:
+- Single-line JSON (no unescaped newlines).
+- No markdown, no code fences, no trailing commas, no extra commentary.
+- Keep strings short (aim <180 chars each).
+- Hard limits on list sizes:
+  - skill_gaps: max 12
+  - experience_gaps: max 6
+  - strengths: max 8
+  - recommendations: max 10
+  - quick_wins: max 8
+  - interview_readiness.preparation_needed: max 8
+  - interview_readiness.potential_questions: max 8
+  - interview_readiness.talking_points: max 8
+  - recommendations.action_items: max 5
+"""
 
-```json
-{{
-  "compatibility_score": 72,
-  "readiness_level": "needs-work|competitive|strong-match|not-ready",
-  "executive_summary": "2-3 sentence overview of the candidate's fit",
-
-  "category_scores": {{
-    "technical_skills": {{
-      "score": 75,
-      "weight": 0.30,
-      "weighted_score": 22.5,
-      "summary": "Brief assessment"
-    }},
-    "experience": {{
-      "score": 65,
-      "weight": 0.25,
-      "weighted_score": 16.25,
-      "summary": "Brief assessment"
-    }},
-    "education": {{
-      "score": 80,
-      "weight": 0.10,
-      "weighted_score": 8.0,
-      "summary": "Brief assessment"
-    }},
-    "certifications": {{
-      "score": 40,
-      "weight": 0.10,
-      "weighted_score": 4.0,
-      "summary": "Brief assessment"
-    }},
-    "soft_skills": {{
-      "score": 70,
-      "weight": 0.15,
-      "weighted_score": 10.5,
-      "summary": "Brief assessment"
-    }},
-    "projects_portfolio": {{
-      "score": 60,
-      "weight": 0.10,
-      "weighted_score": 6.0,
-      "summary": "Brief assessment"
-    }}
-  }},
-
-  "skill_gaps": [
-    {{
-      "skill": "Skill name",
-      "required_level": "expert",
-      "current_level": "intermediate",
-      "gap_severity": "critical|major|moderate|minor",
-      "importance_for_role": "critical|important|preferred",
-      "recommendation": "Specific steps to close the gap",
-      "resources": ["Course/book/resource suggestions"],
-      "estimated_time_to_close": "3-6 months"
-    }}
-  ],
-
-  "experience_gaps": [
-    {{
-      "area": "Leadership experience",
-      "required": "3+ years leading teams of 5+",
-      "current": "1 year leading team of 2",
-      "gap_severity": "major",
-      "recommendation": "How to gain this experience",
-      "alternatives": ["Ways to demonstrate this without direct experience"]
-    }}
-  ],
-
-  "education_gaps": [
-    {{
-      "requirement": "What's required",
-      "current_status": "What candidate has",
-      "gap_severity": "minor|moderate|major",
-      "recommendation": "How to address",
-      "alternatives": ["Alternative qualifications that could help"]
-    }}
-  ],
-
-  "certification_gaps": [
-    {{
-      "certification": "AWS Solutions Architect",
-      "importance": "required|highly_recommended|nice_to_have",
-      "recommendation": "Study path",
-      "estimated_time": "2-3 months",
-      "resources": ["Study resources"]
-    }}
-  ],
-
-  "project_gaps": [
-    {{
-      "project_type": "Type of project needed",
-      "importance": "critical|important|preferred",
-      "current_status": "What candidate has",
-      "recommendation": "Project idea to fill the gap",
-      "skills_demonstrated": ["Skills this would show"]
-    }}
-  ],
-
-  "strengths": [
-    {{
-      "area": "Strength area",
-      "description": "What makes this a strength",
-      "competitive_advantage": "How this helps the candidate stand out",
-      "how_to_leverage": "How to emphasize this in applications"
-    }}
-  ],
-
-  "recommendations": [
-    {{
-      "priority": 1,
-      "category": "skills|experience|certification|project|other",
-      "title": "Recommendation title",
-      "description": "Detailed recommendation",
-      "action_items": ["Step 1", "Step 2", "Step 3"],
-      "estimated_effort": "2 weeks|1 month|3 months",
-      "impact": "How much this will improve candidacy"
-    }}
-  ],
-
-  "quick_wins": [
-    "Things candidate can do immediately to improve"
-  ],
-
-  "long_term_investments": [
-    "Longer-term improvements to consider"
-  ],
-
-  "interview_readiness": {{
-    "ready_to_interview": true/false,
-    "preparation_needed": ["Areas to prepare"],
-    "potential_questions": ["Likely interview questions based on gaps"],
-    "talking_points": ["Strengths to emphasize"]
-  }}
-}}
-```
-
-Be thorough and honest. The candidate needs accurate feedback to improve."""
+GAP_ANALYSIS_SCHEMA: Dict[str, Any] = {
+    "type": "OBJECT",
+    "properties": {
+        "compatibility_score": {"type": "INTEGER"},
+        "readiness_level": {
+            "type": "STRING",
+            "enum": ["needs-work", "competitive", "strong-match", "not-ready"],
+        },
+        "executive_summary": {"type": "STRING"},
+        "category_scores": {
+            "type": "OBJECT",
+            "properties": {
+                "technical_skills": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "score": {"type": "INTEGER"},
+                        "weight": {"type": "NUMBER"},
+                        "weighted_score": {"type": "NUMBER"},
+                        "summary": {"type": "STRING"},
+                    },
+                },
+                "experience": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "score": {"type": "INTEGER"},
+                        "weight": {"type": "NUMBER"},
+                        "weighted_score": {"type": "NUMBER"},
+                        "summary": {"type": "STRING"},
+                    },
+                },
+                "education": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "score": {"type": "INTEGER"},
+                        "weight": {"type": "NUMBER"},
+                        "weighted_score": {"type": "NUMBER"},
+                        "summary": {"type": "STRING"},
+                    },
+                },
+                "certifications": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "score": {"type": "INTEGER"},
+                        "weight": {"type": "NUMBER"},
+                        "weighted_score": {"type": "NUMBER"},
+                        "summary": {"type": "STRING"},
+                    },
+                },
+                "soft_skills": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "score": {"type": "INTEGER"},
+                        "weight": {"type": "NUMBER"},
+                        "weighted_score": {"type": "NUMBER"},
+                        "summary": {"type": "STRING"},
+                    },
+                },
+                "projects_portfolio": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "score": {"type": "INTEGER"},
+                        "weight": {"type": "NUMBER"},
+                        "weighted_score": {"type": "NUMBER"},
+                        "summary": {"type": "STRING"},
+                    },
+                },
+            },
+        },
+        "skill_gaps": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "skill": {"type": "STRING"},
+                    "required_level": {
+                        "type": "STRING",
+                        "enum": ["expert", "advanced", "intermediate", "beginner"],
+                    },
+                    "current_level": {
+                        "type": "STRING",
+                        "enum": ["expert", "advanced", "intermediate", "beginner", "none"],
+                    },
+                    "gap_severity": {
+                        "type": "STRING",
+                        "enum": ["critical", "major", "moderate", "minor"],
+                    },
+                    "importance_for_role": {
+                        "type": "STRING",
+                        "enum": ["critical", "important", "preferred"],
+                    },
+                    "recommendation": {"type": "STRING"},
+                    "estimated_time_to_close": {"type": "STRING"},
+                },
+            },
+        },
+        "experience_gaps": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "area": {"type": "STRING"},
+                    "required": {"type": "STRING"},
+                    "current": {"type": "STRING"},
+                    "gap_severity": {
+                        "type": "STRING",
+                        "enum": ["critical", "major", "moderate", "minor"],
+                    },
+                    "recommendation": {"type": "STRING"},
+                    "alternatives": {"type": "ARRAY", "items": {"type": "STRING"}},
+                },
+            },
+        },
+        "strengths": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "area": {"type": "STRING"},
+                    "description": {"type": "STRING"},
+                    "competitive_advantage": {"type": "STRING"},
+                    "how_to_leverage": {"type": "STRING"},
+                },
+            },
+        },
+        "recommendations": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "priority": {"type": "INTEGER"},
+                    "category": {
+                        "type": "STRING",
+                        "enum": ["skills", "experience", "certification", "project", "other"],
+                    },
+                    "title": {"type": "STRING"},
+                    "description": {"type": "STRING"},
+                    "action_items": {"type": "ARRAY", "items": {"type": "STRING"}},
+                    "estimated_effort": {"type": "STRING"},
+                    "impact": {"type": "STRING"},
+                },
+            },
+        },
+        "quick_wins": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "interview_readiness": {
+            "type": "OBJECT",
+            "properties": {
+                "ready_to_interview": {"type": "BOOLEAN"},
+                "preparation_needed": {"type": "ARRAY", "items": {"type": "STRING"}},
+                "potential_questions": {"type": "ARRAY", "items": {"type": "STRING"}},
+                "talking_points": {"type": "ARRAY", "items": {"type": "STRING"}},
+            },
+        },
+    },
+    "required": ["compatibility_score", "readiness_level", "executive_summary"],
+}
 
 
 class GapAnalyzerChain:
@@ -190,18 +222,45 @@ class GapAnalyzerChain:
         """Perform comprehensive gap analysis."""
         import json
 
+        # Keep prompts compact to avoid shrinking the model's available output budget
+        # (large prompts can cause MAX_TOKENS truncation and invalid JSON).
+        compact_user = {
+            "name": user_profile.get("name"),
+            "title": user_profile.get("title"),
+            "summary": user_profile.get("summary"),
+            "skills": (user_profile.get("skills") or [])[:30],
+            "experience": (user_profile.get("experience") or [])[:10],
+            "education": (user_profile.get("education") or [])[:5],
+            "certifications": (user_profile.get("certifications") or [])[:10],
+            "projects": (user_profile.get("projects") or [])[:10],
+        }
+        compact_benchmark = {
+            "ideal_profile": benchmark.get("ideal_profile"),
+            "ideal_skills": (benchmark.get("ideal_skills") or [])[:25],
+            "ideal_experience": (benchmark.get("ideal_experience") or [])[:10],
+            "ideal_education": (benchmark.get("ideal_education") or [])[:5],
+            "ideal_certifications": (benchmark.get("ideal_certifications") or [])[:10],
+            "soft_skills": (benchmark.get("soft_skills") or [])[:12],
+            "industry_knowledge": (benchmark.get("industry_knowledge") or [])[:8],
+            "scoring_weights": benchmark.get("scoring_weights") or {},
+        }
+
+        user_str = json.dumps(compact_user, separators=(",", ":"), ensure_ascii=False)[:8000]
+        benchmark_str = json.dumps(compact_benchmark, separators=(",", ":"), ensure_ascii=False)[:8000]
+
         prompt = GAP_ANALYSIS_PROMPT.format(
-            user_profile=json.dumps(user_profile, indent=2),
-            benchmark=json.dumps(benchmark, indent=2),
+            user_profile=user_str,
+            benchmark=benchmark_str,
             job_title=job_title,
-            company=company
+            company=company,
         )
 
         result = await self.ai_client.complete_json(
             prompt=prompt,
             system=GAP_ANALYZER_SYSTEM,
-            temperature=0.3,
-            max_tokens=6000
+            temperature=0.0,
+            max_tokens=3000,
+            schema=GAP_ANALYSIS_SCHEMA,
         )
 
         return self._validate_result(result)
