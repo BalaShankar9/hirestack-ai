@@ -39,13 +39,24 @@ Seven specialized agent roles coordinated by an Orchestrator:
 Agents run in parallel stages using `asyncio.gather`, not sequentially:
 
 ```
-Stage 1 (parallel):  Researcher + Drafter
-Stage 2 (parallel):  Critic + Optimizer + Fact-Checker
-Stage 3 (if needed): Drafter revision (single pass with ALL feedback merged)
-Stage 4:             Validator
+Stage 1 (sequential): Researcher gathers context
+Stage 2 (uses research): Drafter generates first pass informed by research
+Stage 3 (parallel):     Critic + Optimizer + Fact-Checker analyze draft
+Stage 4 (if needed):    Drafter revision (single pass with ALL feedback merged)
+Stage 5:                Validator
 ```
 
-Estimated timing: 12–16s for full swarm vs 8–12s for current single-pass, with dramatically better output quality.
+**Why Stage 1→2 is sequential, not parallel:** The Researcher's output (industry signals, resume format, keyword emphasis) directly shapes the Drafter's prompt context. Running them in parallel would mean the Drafter generates without research context, defeating the purpose. The Researcher is lightweight (context analysis, not generation), typically completing in 3–5s.
+
+**Timing estimates** depend on model and hardware. With a local 120B model on high-end GPU (e.g., 80GB+ VRAM):
+- Stage 1 (Researcher): ~5–10s
+- Stage 2 (Drafter): ~15–40s (longest stage, generating full document)
+- Stage 3 (parallel): ~10–20s (three agents share GPU, longest wins)
+- Stage 4 (revision): ~15–30s if triggered, 0s if not
+- Stage 5 (Validator): ~2–5s (schema check + brief validation prompt)
+- **Total: ~35–75s** for full pipeline, ~25–45s if no revision needed
+
+With a faster model (e.g., quantized 70B or cloud-hosted): times reduce proportionally. The key win is not speed over single-pass — it's dramatically better output quality. The parallel Stage 3 saves ~20–40s compared to running Critic, Optimizer, and Fact-Checker sequentially.
 
 ### 2.3 Quality Mode
 
@@ -67,11 +78,13 @@ class BaseAgent(ABC):
     name: str                  # e.g., "critic"
     system_prompt: str         # loaded from prompts/ directory
     output_schema: dict        # JSON schema for structured output
-    ollama_model: str          # "gpt-oss-120b"
+    ai_client: AIClient        # uses existing AIClient (supports Ollama + fallback)
 
     async def run(self, context: dict) -> AgentResult: ...
     async def run_with_retry(self, context: dict, max_retries: int = 2) -> AgentResult: ...
 ```
+
+**Important:** Agents use the existing `AIClient` facade, NOT direct Ollama HTTP calls. This gives agents automatic multi-provider fallback (Ollama → Gemini → OpenAI). If Ollama is down, agents degrade to the next available provider. The `AIClient` already handles connection pooling, retry with exponential backoff, and provider health detection.
 
 ### 2.5 Pipeline Engine
 
@@ -82,38 +95,55 @@ class AgentPipeline:
     name: str                           # e.g., "cv_generation"
     stages: list[list[BaseAgent]]       # grouped by parallel execution stage
     max_iterations: int                 # max critic → drafter loops (always 2)
-    ollama_model: str                   # "gpt-oss-120b"
+    lock_manager: PipelineLockManager   # prevents concurrent runs per user+task
 
     async def execute(self, context: dict) -> PipelineResult:
-        # Stage 1: parallel research + draft
-        research, draft = await asyncio.gather(
-            self.researcher.run(context),
-            self.drafter.run(context),
-        )
-        enriched_draft = merge(draft, research)
+        pipeline_id = str(uuid4())
+        user_id = context["user_id"]
 
-        # Stage 2: parallel critique + optimize + fact-check
-        critic, optimizer, fact_check = await asyncio.gather(
-            self.critic.run(enriched_draft),
-            self.optimizer.run(enriched_draft),
-            self.fact_checker.run(enriched_draft, source=context),
-        )
+        # Concurrency control: one active pipeline per (user_id, pipeline_name)
+        async with self.lock_manager.acquire(user_id, self.name, pipeline_id):
 
-        # Stage 3: revise if critic rejects (single pass with all feedback)
-        if critic.needs_revision:
-            enriched_draft = await self.drafter.revise(
-                enriched_draft,
-                feedback={
-                    "critic": critic.feedback,
-                    "optimizer": optimizer.suggestions,
-                    "fact_check": fact_check.flags,
-                }
+            # Stage 1: Research (sequential — Drafter needs this output)
+            research = await self.researcher.run(context)
+            enriched_context = {**context, "research": research.content}
+
+            # Stage 2: Draft (uses research context)
+            draft = await self.drafter.run(enriched_context)
+
+            # Stage 3: Parallel critique + optimize + fact-check
+            critic, optimizer, fact_check = await asyncio.gather(
+                self.critic.run(draft),
+                self.optimizer.run(draft),
+                self.fact_checker.run(draft, source=context),
             )
-        else:
-            enriched_draft = apply_optimizations(enriched_draft, optimizer, fact_check)
 
-        # Stage 4: validate
-        return await self.validator.run(enriched_draft)
+            # Stage 4: Revise if critic rejects (single pass with all feedback)
+            if critic.needs_revision:
+                draft = await self.drafter.revise(
+                    draft,
+                    feedback={
+                        "critic": critic.feedback,
+                        "optimizer": optimizer.suggestions,
+                        "fact_check": fact_check.flags,
+                    }
+                )
+            else:
+                draft = apply_optimizations(draft, optimizer, fact_check)
+
+            # Stage 5: Validate
+            validation = await self.validator.run(draft)
+
+            # Assemble PipelineResult from all agent outputs
+            return PipelineResult(
+                content=validation.content,
+                quality_scores=critic.quality_scores,
+                optimization_report=optimizer.content,
+                fact_check_report=fact_check.content,
+                iterations_used=1 if critic.needs_revision else 0,
+                total_latency_ms=sum_latencies(research, draft, critic, optimizer, fact_check, validation),
+                trace_id=pipeline_id,
+            )
 
 class PipelineResult:
     content: dict              # final output
@@ -123,36 +153,80 @@ class PipelineResult:
     iterations_used: int       # how many critic loops
     total_latency_ms: int
     trace_id: str              # links to agent_traces table
+
+class PipelineLockManager:
+    """Prevents concurrent pipeline runs for the same (user_id, pipeline_name).
+
+    Uses an in-memory asyncio.Lock per key. If a second request arrives while
+    a pipeline is running for the same user+task, it waits (with timeout).
+    Prevents race conditions on agent_memory writes and duplicate generation.
+    """
+    async def acquire(self, user_id: str, pipeline_name: str, pipeline_id: str):
+        """Context manager that acquires a lock keyed on (user_id, pipeline_name)."""
+        ...
 ```
 
 ### 2.6 Wrapping Existing Chains
 
-The Drafter agent wraps existing chains without modifying them:
+The Drafter agent wraps existing chains. The initial `run()` delegates directly. The `revise()` method does NOT modify existing chain methods — instead, it constructs a new prompt that includes the original draft plus feedback, and calls the AIClient directly.
 
 ```python
 class DrafterAgent(BaseAgent):
-    def __init__(self, chain: Any):
-        self.chain = chain  # e.g., DocumentGeneratorChain instance
+    def __init__(self, chain: Any, method_name: str):
+        self.chain = chain           # e.g., DocumentGeneratorChain instance
+        self.method_name = method_name  # e.g., "generate_cv"
 
     async def run(self, context: dict) -> AgentResult:
-        # Delegates to existing chain method
-        result = await self.chain.generate_cv(
+        # Delegates to existing chain method — NO modifications to chain
+        method = getattr(self.chain, self.method_name)
+        result = await method(
             profile=context["user_profile"],
             job_title=context["job_title"],
             ...
         )
         return AgentResult(content=result, ...)
 
-    async def revise(self, draft: dict, feedback: dict) -> AgentResult:
-        # New method: re-generates with critic feedback injected into prompt
-        result = await self.chain.generate_cv(
-            ...,
-            revision_feedback=feedback,  # added parameter to chain
+    async def revise(self, draft: AgentResult, feedback: dict) -> AgentResult:
+        # Does NOT call the chain again. Instead, uses AIClient directly
+        # with a revision-specific prompt that includes the original draft
+        # plus all agent feedback. This avoids modifying any existing chain.
+        revision_prompt = REVISION_PROMPT_TEMPLATE.format(
+            original_draft=draft.content,
+            critic_feedback=feedback["critic"],
+            optimizer_suggestions=feedback["optimizer"],
+            fact_check_flags=feedback["fact_check"],
+        )
+        result = await self.ai_client.complete_json(
+            system_prompt=REVISION_SYSTEM_PROMPT,
+            user_prompt=revision_prompt,
+            schema=self.output_schema,
         )
         return AgentResult(content=result, ...)
 ```
 
-Existing chains gain one new optional parameter (`revision_feedback`) but are otherwise unchanged. Zero breaking changes.
+**Key design decision:** Existing chains are NOT modified at all. The `revise()` method is a separate code path that takes the original draft + feedback and asks the AI to produce an improved version. This means:
+- Zero breaking changes to existing chain code
+- Revision prompts are purpose-built for incorporating multi-agent feedback
+- The revision prompt template lives in `agents/prompts/drafter_revision.md`
+
+### 2.6.1 Fact-Checker vs. Strategic Enhancement — Boundary Definition
+
+The existing `DocumentGeneratorChain` prompts instruct the AI to "strategically reframe experience" and "add realistic freelance or project-based roles." This is a deliberate product feature, not a bug.
+
+The Fact-Checker operates with a **two-tier classification:**
+
+| Classification | Definition | Action |
+|---------------|-----------|--------|
+| **Verified** | Claim directly maps to data in the user's profile (skills, titles, companies, dates) | Marked as verified |
+| **Enhanced** | Claim is a strategic reframing of real experience (e.g., "Led cross-functional team" derived from "Worked with designers and backend engineers") | Marked as enhanced, kept in output |
+| **Fabricated** | Claim has NO basis in any profile data (invented company, fake certification, non-existent technology) | Flagged for removal |
+
+The Fact-Checker's system prompt explicitly defines these boundaries:
+- **Enhancement is allowed** — reframing, quantifying, and elevating real experience
+- **Fabrication is not allowed** — inventing experience, skills, or credentials that have zero basis in the profile
+- The quality report shows: "14 claims verified, 8 claims enhanced, 0 fabrications"
+
+This boundary is defined in `agents/prompts/fact_checker_system.md` and enforced via the Fact-Checker's output schema which requires each claim to be classified as `verified`, `enhanced`, or `fabricated` with a `source_reference` field pointing to the profile data that supports it.
 
 ### 2.7 Agent Memory (Per-User Learning)
 
@@ -181,21 +255,46 @@ CREATE INDEX idx_agent_memory_user ON agent_memory(user_id, agent_type);
 
 ```python
 class AgentMemory:
+    MAX_MEMORIES_PER_USER_AGENT = 50  # eviction threshold
+
     async def store(self, user_id: str, agent_type: str, key: str, value: dict):
-        """Store a learned pattern. Upserts on (user_id, agent_type, key)."""
+        """Store a learned pattern. Upserts on (user_id, agent_type, key).
+        If user+agent exceeds MAX_MEMORIES, evicts lowest-ranked memory."""
 
     async def recall(self, user_id: str, agent_type: str, limit: int = 10) -> list[dict]:
-        """Retrieve relevant memories for this agent, ordered by relevance_score * usage_count."""
+        """Retrieve relevant memories using weighted ranking:
+        rank = relevance_score * 0.7 + recency_score * 0.3
+        where recency_score = 1.0 / (1 + days_since_last_used)
+        This prevents high-frequency but mediocre memories from dominating."""
 
     async def feedback(self, memory_id: str, was_useful: bool):
-        """Adjust relevance_score based on whether the memory improved output."""
+        """Adjust relevance_score:
+        - Positive: relevance_score = min(1.0, relevance_score + 0.1)
+        - Negative: relevance_score = max(0.0, relevance_score - 0.15)
+        Negative feedback decays faster to quickly suppress unhelpful memories."""
 ```
 
-**What agents learn:**
-- **Critic** learns the user's preferred tone and style (formal vs conversational)
-- **Optimizer** learns which keywords the user has confirmed as relevant
-- **Drafter** adapts to the user's writing patterns and vocabulary
-- **Researcher** remembers the user's target industries and seniority level
+**Ranking formula:** `rank = relevance_score * 0.7 + (1.0 / (1 + days_since_last_used)) * 0.3`
+
+This ensures:
+- Highly relevant recent memories rank highest
+- Old but highly relevant memories still surface
+- Frequently used but mediocre memories decay over time
+- Memory eviction removes lowest-ranked entries when limit exceeded
+
+**What agents learn (concrete examples):**
+
+- **Critic** stores: `{key: "preferred_tone", value: {"tone": "formal", "evidence": "user edited 3 documents from casual to formal"}}` — triggered when user manually edits generated text in a consistent direction
+- **Optimizer** stores: `{key: "confirmed_keyword:react", value: {"keyword": "React", "confirmed": true, "context": "user kept this keyword in 5 documents"}}` — triggered when user does NOT remove an ATS keyword across multiple documents
+- **Drafter** stores: `{key: "writing_length_preference", value: {"cv_sections": "concise", "avg_edit_delta": -120}}` — triggered when user consistently shortens generated text
+- **Researcher** stores: `{key: "target_industry", value: {"industry": "fintech", "seniority": "senior", "derived_from_jobs": 4}}` — triggered after analyzing 3+ job descriptions in the same industry
+
+**When memories are written:** After each pipeline completes successfully, the Orchestrator calls a lightweight `learn()` pass that compares the pipeline's output against any user edits from the previous session. If patterns are detected (e.g., user consistently edits tone), a memory is stored.
+
+**Measurement methodology for success criterion:** Compare Critic quality scores between:
+- User's 1st–3rd pipeline runs (no memory) vs 6th–10th runs (with memory)
+- Track "user edit distance" (how much users change generated output) — should decrease over time
+- Both metrics stored in `agent_traces` for querying
 
 **Memory is injected into agent context:**
 
@@ -236,29 +335,43 @@ Every pipeline execution is fully logged: each agent's input summary, output sum
 
 | Feature | Agents | Parallel Groups | Max Iterations |
 |---------|--------|-----------------|----------------|
-| Resume Parse | Researcher, Drafter, Critic, FactChecker, Validator | (R+D), (C+FC), V | 1 |
-| Benchmark | Researcher, Drafter, Critic, Optimizer, FactChecker, Validator | (R+D), (C+O+FC), V | 1 |
+| Resume Parse | Researcher, Drafter, Critic, FactChecker, Validator | R→D, (C+FC), V | 1 |
+| Benchmark | Researcher, Drafter, Critic, Optimizer, FactChecker, Validator | R→D, (C+O+FC), V | 1 |
 | Gap Analysis | Drafter, Critic, Optimizer, FactChecker, Validator | D, (C+O+FC), V | 1 |
-| CV Generation | Researcher, Drafter, Critic, Optimizer, FactChecker, Validator | (R+D), (C+O+FC), revise, V | 2 |
-| Cover Letter | Researcher, Drafter, Critic, Optimizer, Validator | (R+D), (C+O), V | 2 |
+| CV Generation | Researcher, Drafter, Critic, Optimizer, FactChecker, Validator | R→D, (C+O+FC), revise, V | 2 |
+| Cover Letter | Researcher, Drafter, Critic, Optimizer, FactChecker, Validator | R→D, (C+O+FC), V | 2 |
 | Personal Statement | Drafter, Critic, Validator | D, C, V | 2 |
 | Portfolio | Drafter, Optimizer, Validator | D, O, V | 1 |
-| ATS Scanner | Researcher, Drafter, Optimizer, Validator | (R+D), O, V | 1 |
-| Interview Sim (text) | Researcher, Drafter, Critic, Validator | (R+D), C, V | 1 |
-| Career Roadmap | Researcher, Drafter, Critic, Optimizer, Validator | (R+D), (C+O), V | 1 |
-| Salary Coach | Researcher, Drafter, FactChecker, Validator | (R+D), FC, V | 1 |
-| A/B Lab | Drafter(x3), Critic, Optimizer, Validator | D+D+D, (C+O), V | 1 |
+| ATS Scanner | Researcher, Drafter, Optimizer, Validator | R→D, O, V | 1 |
+| Interview Sim (text) | Researcher, Drafter, Critic, Validator | R→D, C, V | 1 |
+| Career Roadmap | Researcher, Drafter, Critic, Optimizer, Validator | R→D, (C+O), V | 1 |
+| Salary Coach | Researcher, Drafter, FactChecker, Validator | R→D, FC, V | 1 |
+| A/B Lab | Drafter(x3 with tone_instruction), Critic(comparative), Optimizer, Validator | D+D+D (parallel), (C+O), V | 1 |
 | Learning | Drafter, Validator | D, V | 0 |
 
-### 2.10 Ollama Integration
+### 2.10 AI Provider Integration
 
-**Provider configuration:**
-- Model: `gpt-oss-120b` for all agents
-- Connection: localhost Ollama API
-- Connection pooling via `httpx.AsyncClient` with `limits=httpx.Limits(max_connections=8)`
-- Parallel inference: GPU handles concurrent requests (stages 1 and 2 benefit from batching)
-- Timeout: 120s per agent call (120B model needs headroom)
-- Retry: 2 attempts with 5s backoff on transient failures
+**Agents use the existing `AIClient` facade** — not direct HTTP calls. This is critical for reliability.
+
+**Configuration:**
+- Primary provider: Ollama (local, model name configurable via `settings.ollama_model`)
+- Fallback chain: Ollama → Gemini → OpenAI (existing AIClient behavior)
+- The actual model name (e.g., `llama3:70b`, `qwen2:72b`, or whatever is pulled in Ollama) is read from `settings.ollama_model`, NOT hardcoded
+- Connection pooling: handled by AIClient's existing `httpx.AsyncClient`
+- Timeout: 180s per agent call (large models need headroom for full document generation)
+- Retry: 2 attempts with 5s backoff on transient failures (existing AIClient retry logic)
+
+**Concurrency constraints for large models:**
+- Stage 3 runs Critic + Optimizer + Fact-Checker in parallel via `asyncio.gather`
+- On consumer hardware with a single GPU, Ollama serializes concurrent requests internally (queues them)
+- This means Stage 3's wall-clock time = longest single agent, NOT sum of all three
+- On multi-GPU setups or with smaller quantized models, true parallel inference is possible
+- The pipeline design is correct regardless — `asyncio.gather` handles both cases transparently
+
+**Hardware baseline for reference:**
+- 120B model: requires ~80GB VRAM (A100 80GB, or 2x RTX 4090 with model parallelism)
+- 70B quantized (Q4): requires ~40GB VRAM (single RTX 4090 or A6000)
+- Cloud-hosted API: no local hardware requirements, fastest option
 
 ### 2.11 File Structure
 
@@ -273,15 +386,17 @@ ai_engine/
 │   ├── optimizer.py             # OptimizerAgent (ATS, readability, structure)
 │   ├── fact_checker.py          # FactCheckerAgent (source verification)
 │   ├── researcher.py            # ResearcherAgent (context gathering)
-│   ├── validator.py             # ValidatorAgent (schema, format, completeness)
+│   ├── schema_validator.py      # ValidatorAgent (renamed to avoid collision with chains/validator.py)
 │   ├── memory.py                # AgentMemory service
 │   ├── trace.py                 # AgentTrace logging service
+│   ├── lock.py                  # PipelineLockManager (concurrency control)
 │   └── prompts/
+│       ├── drafter_revision.md  # Drafter's revision prompt (used by revise() method)
 │       ├── critic_system.md     # Critic's system prompt
 │       ├── optimizer_system.md  # Optimizer's system prompt
-│       ├── fact_checker_system.md
+│       ├── fact_checker_system.md  # includes verified/enhanced/fabricated classification rules
 │       ├── researcher_system.md
-│       └── validator_system.md
+│       └── schema_validator_system.md  # Validator's system prompt
 ├── chains/                      # existing chains (unchanged, wrapped by Drafter)
 │   ├── __init__.py
 │   ├── role_profiler.py
@@ -437,6 +552,37 @@ application_package/
 └── manifest.json
 ```
 
+**manifest.json schema:**
+```json
+{
+  "version": "1.0",
+  "generated_at": "2026-03-15T14:32:00Z",
+  "application": {
+    "job_title": "Senior Frontend Engineer",
+    "company": "Stripe",
+    "application_id": "uuid"
+  },
+  "documents": [
+    {
+      "filename": "CV.pdf",
+      "type": "cv",
+      "format": "pdf",
+      "quality_scores": { "impact": 87, "ats_readiness": 92, "readability": 76, "fact_accuracy": 100 },
+      "pipeline_trace_id": "uuid"
+    }
+  ],
+  "quality_summary": {
+    "avg_impact": 85,
+    "avg_ats_readiness": 89,
+    "total_claims_verified": 14,
+    "total_claims_enhanced": 8,
+    "total_fabrications": 0
+  }
+}
+```
+
+**quality_report.pdf generation:** Backend generates using `reportlab` (same library as document PDF export). Contains: per-document quality scores table, fact-check summary, ATS keyword coverage chart, and agent pipeline timing breakdown. Template defined in `backend/app/services/export.py`.
+
 ---
 
 ## 4. Feature Quality — Tier 2: Differentiators
@@ -503,11 +649,36 @@ application_package/
 
 ### 5.1 A/B Doc Lab
 
-**Agent pipeline:** Drafter(x3 parallel — conservative/balanced/creative), then Critic + Optimizer | parallel, then Validator. Max 1 iteration.
+**Agent pipeline:** Drafter(x3 parallel — conservative/balanced/creative), then Critic(multi-doc mode) + Optimizer | parallel, then Validator. Max 1 iteration.
+
+**Three-Drafter differentiation mechanism:** All three Drafter instances wrap the same `DocVariantChain` but receive different `tone_instruction` in their context:
+
+```python
+variants = await asyncio.gather(
+    drafter.run({**context, "tone_instruction": CONSERVATIVE_TONE}),
+    drafter.run({**context, "tone_instruction": BALANCED_TONE}),
+    drafter.run({**context, "tone_instruction": CREATIVE_TONE}),
+)
+```
+
+Where tone instructions are defined constants:
+- `CONSERVATIVE_TONE`: "Use formal language, traditional structure, quantified achievements, no personality flair"
+- `BALANCED_TONE`: "Professional but approachable, mix of quantified and narrative, moderate personality"
+- `CREATIVE_TONE`: "Bold opening, storytelling elements, unique framing, personality-forward"
+
+**Critic multi-document mode:** The Critic receives all three variants in a single call and scores them comparatively:
+
+```python
+critic_result = await critic.run({
+    "variants": [conservative, balanced, creative],
+    "evaluation_mode": "comparative",  # triggers multi-doc scoring prompt
+})
+# Returns: ranked list with per-variant scores and recommendation
+```
 
 **What the swarm adds:**
-- Three Drafter instances generate variants in parallel (3x speed improvement)
-- Critic scores all three for comparative ranking
+- Three Drafter instances generate variants in parallel (3x speed improvement over sequential)
+- Critic scores all three comparatively in a single call, providing ranking and recommendation
 - Optimizer provides ATS scores and readability for side-by-side comparison
 
 ### 5.2 Salary Coach
@@ -633,6 +804,62 @@ Generating your CV...
 
 **SSE events from backend** power this UI. Each agent stage emits a status event.
 
+### 6.4.1 SSE Event Specification
+
+**Endpoint:** `GET /api/generate/pipeline/stream?application_id={id}` (existing endpoint, enhanced)
+
+**Event schema:**
+
+```json
+event: agent_status
+data: {
+  "pipeline_id": "uuid",
+  "pipeline_name": "cv_generation",
+  "stage": "critic",
+  "status": "running" | "completed" | "failed" | "waiting",
+  "progress_pct": 62,
+  "latency_ms": 2100,
+  "message": "Reviewing for quality...",
+  "quality_scores": { "impact": 87, "clarity": 92 },
+  "timestamp": "2026-03-15T14:32:09Z"
+}
+
+event: pipeline_complete
+data: {
+  "pipeline_id": "uuid",
+  "pipeline_name": "cv_generation",
+  "total_latency_ms": 45200,
+  "iterations_used": 1,
+  "quality_scores": { ... },
+  "fact_check_summary": { "verified": 14, "enhanced": 8, "fabricated": 0 }
+}
+
+event: pipeline_error
+data: {
+  "pipeline_id": "uuid",
+  "error_code": "AI_PROVIDER_UNAVAILABLE",
+  "message": "AI generation temporarily unavailable",
+  "retryable": true
+}
+```
+
+**Frontend subscription:**
+
+```tsx
+// hooks/use-agent-status.ts
+function useAgentStatus(applicationId: string) {
+  // Uses EventSource API with auto-reconnect
+  // Returns: { stages, isRunning, currentStage, qualityScores, error }
+  // On disconnect: reconnects with Last-Event-ID header
+  // On pipeline_complete: closes connection, returns final result
+  // Timeout: 5 minutes (closes if no events received)
+}
+```
+
+**Reconnection:** If SSE connection drops, frontend reconnects with `Last-Event-ID` header. Backend replays missed events from the `agent_traces` table for that `pipeline_id`. If pipeline already completed, backend sends `pipeline_complete` immediately.
+
+**For A/B Lab (3 parallel Drafters):** Each Drafter emits its own `agent_status` events with a `variant` field (`conservative`, `balanced`, `creative`). Frontend shows three parallel progress tracks.
+
 ### 6.5 Inline Editing
 
 Click-to-edit on data elements throughout the app:
@@ -682,7 +909,7 @@ All numbers in IBM Plex Mono. Progress bar colors:
 | Tab switch | Underline slide | 0.2s |
 | Keyword chip added | `bounce-sm` | 0.4s |
 
-**New keyframes:**
+**New keyframes (additions to globals.css):**
 
 ```css
 @keyframes shake {
@@ -696,6 +923,18 @@ All numbers in IBM Plex Mono. Progress bar colors:
 @keyframes digit-flip {
   0% { transform: translateY(100%); opacity: 0; }
   100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes check-pop {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes bounce-sm {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-2px); }
+  60% { transform: translateY(1px); }
 }
 ```
 
@@ -972,52 +1211,61 @@ GitHub Actions workflow:
 
 ```
 Phase 1: Agent Framework Foundation                    (~Week 1)
-├── BaseAgent, AgentResult, AgentContext
-├── AgentPipeline execution engine with parallel stages
-├── Orchestrator with stage management
-├── OllamaProvider enhancement (connection pooling, parallel inference)
-├── AgentMemory table + service
+├── BaseAgent, AgentResult, AgentContext, PipelineLockManager
+├── AgentPipeline execution engine with sequential research → draft, parallel critique
+├── Orchestrator with stage management and SSE event emission
+├── AIClient integration (agents use existing facade, not direct HTTP)
+├── AgentMemory table + service (with ranking formula + eviction)
 ├── AgentTrace table + logging service
-├── Agent system prompts (critic, optimizer, fact-checker, researcher, validator)
+├── Agent system prompts (drafter_revision, critic, optimizer, fact_checker, researcher, schema_validator)
+├── Fact-Checker boundary definition (verified/enhanced/fabricated classification)
 ├── JSON schemas for all output types
+├── DB: agent_memory table, agent_traces table (required for framework)
+├── DB: RLS policy on review_comments (security fix, should not be deferred)
 ├── Shared ErrorCard, LoadingSkeleton components
-├── IBM Plex Mono font integration
-└── Command palette (cmdk) skeleton
+├── IBM Plex Mono font integration (via next/font/google)
+└── Command palette (cmdk v1) skeleton
 
 Phase 2: Tier 1 — Core Pipeline                       (~Weeks 2–4)
 ├── Resume Parsing (agents + backend fixes + frontend fixes)
 ├── Benchmark Generation (agents + backend fixes + frontend fixes)
+├── DB: UNIQUE(job_description_id) on benchmarks (required before benchmark agents run)
 ├── Gap Analysis (agents + backend fixes + frontend fixes)
 ├── Document Generation — all 4 types (agents + backend fixes + frontend fixes)
-├── Export overhaul (DOCX fix, ZIP manifest, progress tracking)
+├── Export overhaul (DOCX to backend python-docx, ZIP manifest, progress tracking)
 ├── applications/[id]/page.tsx refactor → panel workspace
-├── Resizable panel layout implementation
+├── Resizable panel layout (react-resizable-panels)
+├── SSE endpoint for agent progress + frontend useAgentStatus hook
 ├── Agent progress UI + quality report card
 ├── Dense score dashboard
 ├── Inline editing components
-├── Real-time status bar + generation log
+├── Real-time status bar + generation log (bottom panel)
+├── DB: composite indexes (user_id, status), (application_id, document_type)
 └── End-to-end validation of entire core pipeline
 
 Phase 3: Tier 2 — Differentiators                     (~Weeks 5–6)
 ├── ATS Scanner (agents + backend + frontend)
 ├── Interview Simulator — text only (agents + backend + frontend)
 ├── Career Consultant (agents + backend + frontend)
+├── DB: CHECK constraints for ats_scans, interview_sessions enums
 └── End-to-end validation
 
 Phase 4: Tier 3 — Engagement                          (~Weeks 7–8)
-├── A/B Doc Lab (agents + backend + frontend)
+├── A/B Doc Lab (3-Drafter variant + comparative Critic + agents + frontend)
 ├── Salary Coach (agents + backend + frontend)
 ├── Job Board Sync (backend + frontend polish)
 ├── Micro-Learning (agents + backend + frontend)
+├── DB: CHECK constraints for doc_variants, job_matches, learning_challenges enums
+├── DB: realtime publication for doc_variants, job_matches, review_comments, career_snapshots
 └── End-to-end validation
 
 Phase 5: Full Elevation                                (~Weeks 9–10)
-├── Unit + integration test suite
+├── Unit + integration test suite (conftest with mock AIClient)
 ├── CI/CD pipeline (GitHub Actions)
-├── Database fixes (indexes, RLS, constraints, pooling)
-├── Backend hardening (error format, pagination, config validation, logging)
-├── Monitoring setup (Sentry + agent traces)
-├── Docker improvements (networks, health checks, resource limits)
+├── DB: remaining indexes (user_id, created_at DESC), enable PgBouncer
+├── Backend hardening (error format, pagination, config validation, correlation IDs)
+├── Monitoring setup (Sentry + agent trace dashboard)
+├── Docker improvements (networks, health check conditions, resource limits)
 └── Final end-to-end validation of all features
 ```
 
@@ -1025,13 +1273,15 @@ Phase 5: Full Elevation                                (~Weeks 9–10)
 
 ## 12. Success Criteria
 
-- Every AI feature produces output that passes Fact-Checker with 0 fabrications
-- Every agent pipeline completes in under 20 seconds
+- Every AI feature produces output that passes Fact-Checker with 0 fabrications (verified + enhanced only)
+- Every agent pipeline completes within hardware-appropriate time limits (under 120s on recommended hardware)
 - Every frontend page has proper loading, error, and empty states
 - All `Record<string, any>` eliminated from TypeScript types
-- `applications/[id]/page.tsx` reduced from 64KB to < 5KB (composition of components)
+- `applications/[id]/page.tsx` reduced from 64KB to < 5KB (composition of extracted components)
 - All list endpoints support pagination
-- All error responses follow standardized format
-- Agent memory demonstrates measurable quality improvement after 5+ user sessions
-- Full test coverage on agent framework (unit) and core pipeline (integration)
+- All error responses follow standardized `{success, data/error, meta}` format
+- Agent memory demonstrates measurable quality improvement: user edit distance decreases by >20% after 5+ sessions (tracked via agent_traces)
+- Full test coverage on agent framework (unit) and core pipeline (integration), using mock AIClient
 - Zero bare `except Exception` blocks without logging
+- SSE agent progress events delivered reliably with reconnection support
+- Agents use AIClient facade with automatic provider fallback (no direct Ollama dependency)
