@@ -10,6 +10,16 @@ from ai_engine.agents.memory import AgentMemory
 from ai_engine.agents.trace import AgentTracer
 from ai_engine.agents.lock import PipelineLockManager
 from ai_engine.agents.orchestrator import AgentPipeline, PipelineResult
+from ai_engine.agents.pipelines import (
+    create_pipeline,
+    resume_parse_pipeline,
+    benchmark_pipeline,
+    gap_analysis_pipeline,
+    cv_generation_pipeline,
+    cover_letter_pipeline,
+    personal_statement_pipeline,
+    portfolio_pipeline,
+)
 
 __all__ = [
     "BaseAgent",
@@ -25,4 +35,12 @@ __all__ = [
     "PipelineLockManager",
     "AgentPipeline",
     "PipelineResult",
+    "create_pipeline",
+    "resume_parse_pipeline",
+    "benchmark_pipeline",
+    "gap_analysis_pipeline",
+    "cv_generation_pipeline",
+    "cover_letter_pipeline",
+    "personal_statement_pipeline",
+    "portfolio_pipeline",
 ]
