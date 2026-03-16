@@ -11,7 +11,7 @@ env/
 .env.local
 .env.*.local
 
-# Firebase credentials (NEVER commit these)
+# Supabase / service credentials (NEVER commit these)
 **/firebase-admin-sdk*.json
 **/serviceAccount*.json
 
@@ -32,9 +32,8 @@ build/
 *.egg-info/
 *.tsbuildinfo
 
-# Firebase local artifacts
-.firebase/
-firebase-debug.log*
+# Supabase local artifacts
+.supabase/
 
 # Generated assets
 frontend/public/pdf.worker.mjs
@@ -62,3 +61,6 @@ uploads/
 
 # Generated pdf.js assets (frontend postinstall)
 frontend/public/pdfjs/
+
+# Git worktrees
+.worktrees/
