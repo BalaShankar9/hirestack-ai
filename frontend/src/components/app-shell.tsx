@@ -29,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { CommandPalette } from "@/components/command-palette/command-palette";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: Home, description: "Overview & stats" },
@@ -314,6 +315,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="mx-auto max-w-[1360px] px-4 py-6 lg:px-8">{children}</div>
         </main>
       </div>
+      <CommandPalette />
     </div>
   );
 }
