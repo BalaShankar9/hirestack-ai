@@ -75,6 +75,9 @@ const config: Config = {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      fontFamily: {
+        mono: ['var(--font-mono)', 'IBM Plex Mono', 'monospace'],
+      },
       fontSize: {
         "2xs": ["0.65rem", { lineHeight: "0.85rem" }],
       },
