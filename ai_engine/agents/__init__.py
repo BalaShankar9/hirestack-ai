@@ -9,6 +9,7 @@ from ai_engine.agents.schema_validator import ValidatorAgent
 from ai_engine.agents.memory import AgentMemory
 from ai_engine.agents.trace import AgentTracer
 from ai_engine.agents.lock import PipelineLockManager
+from ai_engine.agents.orchestrator import AgentPipeline, PipelineResult
 
 __all__ = [
     "BaseAgent",
@@ -22,4 +23,6 @@ __all__ = [
     "AgentMemory",
     "AgentTracer",
     "PipelineLockManager",
+    "AgentPipeline",
+    "PipelineResult",
 ]
