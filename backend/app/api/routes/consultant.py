@@ -7,6 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.services.roadmap import RoadmapService
 from app.api.deps import get_current_user
+import structlog
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -25,7 +28,10 @@ async def generate_roadmap(
             title=request.get("title"),
         )
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except Exception as e:
+        logger.error("unexpected_error", error=str(e), endpoint="generate_roadmap")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
 @router.get("/roadmaps")

@@ -7,6 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 
 from app.services.profile import ProfileService
 from app.api.deps import get_current_user
+import structlog
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -41,8 +44,11 @@ async def upload_resume(
             is_primary=is_primary,
         )
         return profile
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to process resume: {e}")
+        logger.error("unexpected_error", error=str(e), endpoint="upload_resume")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
 @router.get("")

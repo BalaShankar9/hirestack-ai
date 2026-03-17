@@ -7,6 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 
 from app.services.document import DocumentService
 from app.api.deps import get_current_user
+import structlog
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -28,7 +31,10 @@ async def generate_document(
             options=request.get("options"),
         )
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except Exception as e:
+        logger.error("unexpected_error", error=str(e), endpoint="generate_document")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
 @router.post("/generate-all")
@@ -46,7 +52,10 @@ async def generate_all_documents(
         )
         return {"documents": documents, "count": len(documents)}
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except Exception as e:
+        logger.error("unexpected_error", error=str(e), endpoint="generate_all_documents")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
 @router.get("/documents")

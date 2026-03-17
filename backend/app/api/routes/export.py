@@ -4,10 +4,13 @@ Export routes - PDF/DOCX generation (Firestore)
 from typing import Dict, Any, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 
 from app.services.export import ExportService
 from app.api.deps import get_current_user
+import structlog
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -28,7 +31,10 @@ async def create_export(
             options=request.get("options"),
         )
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except Exception as e:
+        logger.error("unexpected_error", error=str(e), endpoint="create_export")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
 @router.get("")
@@ -69,6 +75,9 @@ async def download_export(
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        logger.error("unexpected_error", error=str(e), endpoint="download_export")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
 @router.delete("/{export_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -81,3 +90,33 @@ async def delete_export(
     deleted = await service.delete_export(export_id, current_user["id"])
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Export not found")
+
+
+@router.post("/docx")
+async def export_docx(
+    request: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Generate and download a DOCX file from HTML content."""
+    from app.services.export import generate_docx_from_html
+
+    content = request.get("content", "")
+    document_type = request.get("document_type", "document")
+
+    if not content or not content.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="content is required and cannot be empty",
+        )
+
+    try:
+        docx_bytes = generate_docx_from_html(content, document_type)
+        filename = f"{document_type}.docx"
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception as e:
+        logger.error("unexpected_error", error=str(e), endpoint="export_docx")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
