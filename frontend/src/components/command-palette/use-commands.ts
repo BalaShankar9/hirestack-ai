@@ -17,7 +17,13 @@ export function useCommands(): Command[] {
 
   return useMemo(
     () => [
+      // Actions
       { id: "new-app", label: "New Application", category: "actions" as const, shortcut: "⌘N", onSelect: () => router.push("/new") },
+      { id: "generate-cv", label: "Generate CV", category: "actions" as const, shortcut: "⌘G", onSelect: () => router.push("/new") },
+      { id: "run-ats", label: "Run ATS Scan", category: "actions" as const, shortcut: "⌘S", onSelect: () => router.push("/ats-scanner") },
+      { id: "start-interview", label: "Start Interview", category: "actions" as const, shortcut: "⌘I", onSelect: () => router.push("/interview") },
+      { id: "export-all", label: "Export All", category: "actions" as const, shortcut: "⌘E", onSelect: () => router.push("/dashboard") },
+      // Navigation
       { id: "nav-dashboard", label: "Dashboard", category: "navigate" as const, shortcut: "⌘1", onSelect: () => router.push("/dashboard") },
       { id: "nav-evidence", label: "Evidence Vault", category: "navigate" as const, shortcut: "⌘2", onSelect: () => router.push("/evidence") },
       { id: "nav-analytics", label: "Career Analytics", category: "navigate" as const, shortcut: "⌘3", onSelect: () => router.push("/career-analytics") },

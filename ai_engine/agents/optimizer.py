@@ -36,7 +36,11 @@ class OptimizerAgent(BaseAgent):
         else:
             draft_content = context.get("content") or context.get("draft", {})
 
-        jd_text = context.get("jd_text", "") if isinstance(context, dict) else ""
+        # JD text may be at top level or nested inside original_context (from orchestrator)
+        if isinstance(context, dict):
+            jd_text = context.get("jd_text", "") or context.get("original_context", {}).get("jd_text", "")
+        else:
+            jd_text = ""
 
         prompt = (
             f"Optimize this document for ATS compatibility and readability.\n\n"

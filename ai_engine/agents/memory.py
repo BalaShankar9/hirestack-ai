@@ -5,9 +5,14 @@ Stores learned patterns (tone preferences, keyword confirmations, length prefere
 and recalls them using a weighted ranking formula:
   rank = relevance_score * 0.7 + recency_score * 0.3
   where recency_score = 1.0 / (1 + days_since_last_used)
+
+All public methods are synchronous (Supabase Python client is sync).
+Use the async wrappers (astore, arecall, afeedback) from async code
+to avoid blocking the event loop.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -120,3 +125,18 @@ class AgentMemory:
         for mem in to_remove:
             self.db.table("agent_memory").delete().eq("id", mem["id"]).execute()
             logger.info("memory_evicted", user_id=user_id, agent_type=agent_type, memory_id=mem["id"])
+
+    # ── Async wrappers (use from async agent code) ──────────────────────
+
+    async def astore(
+        self, user_id: str, agent_type: str, key: str, value: dict
+    ) -> None:
+        await asyncio.to_thread(self.store, user_id, agent_type, key, value)
+
+    async def arecall(
+        self, user_id: str, agent_type: str, limit: int = 10
+    ) -> list[dict]:
+        return await asyncio.to_thread(self.recall, user_id, agent_type, limit)
+
+    async def afeedback(self, memory_id: str, was_useful: bool) -> None:
+        await asyncio.to_thread(self.feedback, memory_id, was_useful)

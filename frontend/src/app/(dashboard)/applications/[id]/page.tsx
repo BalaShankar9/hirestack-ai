@@ -67,6 +67,9 @@ import { KeywordChips } from "@/components/workspace/keyword-chips";
 import { EvidencePicker } from "@/components/workspace/evidence-picker";
 import { VersionHistoryDrawer } from "@/components/workspace/version-history-drawer";
 import { DocEditorModule, ExportCard, EmptyState } from "@/components/workspace/doc-editor-module";
+import { AgentProgress } from "@/components/workspace/agent-progress";
+import { QualityReport } from "@/components/workspace/quality-report";
+import { useAgentStatus } from "@/hooks/use-agent-status";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -149,6 +152,7 @@ export default function ApplicationWorkspacePage() {
   const [regeneratingAll, setRegeneratingAll] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const { state: agentState, subscribe: agentSubscribe, handleAgentEvent, handleComplete, handleError: handleAgentError, reset: agentReset } = useAgentStatus();
 
   // Track workspace views
   useEffect(() => {
@@ -1151,7 +1155,25 @@ export default function ApplicationWorkspacePage() {
           </Tabs>
         </div>
 
-        <CoachPanel actions={coachActions} statusLine={`${taskStats.remaining} open tasks · ${evidence.length} evidence`} />
+        <div className="space-y-4">
+          {(agentState.isRunning || agentState.stages.length > 0) && (
+            <div className="rounded-xl border p-4 bg-card">
+              <AgentProgress
+                stages={agentState.stages}
+                isRunning={agentState.isRunning}
+              />
+            </div>
+          )}
+          {Object.keys(agentState.qualityScores).length > 0 && (
+            <div className="rounded-xl border p-4 bg-card">
+              <QualityReport
+                scores={agentState.qualityScores}
+                factCheck={agentState.factCheckSummary}
+              />
+            </div>
+          )}
+          <CoachPanel actions={coachActions} statusLine={`${taskStats.remaining} open tasks · ${evidence.length} evidence`} />
+        </div>
       </div>
 
       <EvidencePicker

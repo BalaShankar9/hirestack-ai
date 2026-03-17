@@ -30,9 +30,9 @@ def create_pipeline(
     use_critic: bool = True,
     use_optimizer: bool = True,
     use_fact_checker: bool = True,
-    max_iterations: int = 2,
     on_stage_update: Optional[Callable] = None,
     ai_client: Optional[AIClient] = None,
+    db: Any = None,
 ) -> AgentPipeline:
     """Create a configured AgentPipeline for a specific feature."""
     client = ai_client or get_ai_client()
@@ -45,9 +45,9 @@ def create_pipeline(
         optimizer=OptimizerAgent(ai_client=client) if use_optimizer else None,
         fact_checker=FactCheckerAgent(ai_client=client) if use_fact_checker else None,
         validator=ValidatorAgent(ai_client=client),
-        max_iterations=max_iterations,
         lock_manager=_lock_manager,
         on_stage_update=on_stage_update,
+        db=db,
     )
 
 
@@ -60,7 +60,7 @@ def resume_parse_pipeline(
     chain = RoleProfilerChain(client)
     return create_pipeline(
         "resume_parse", chain, "parse_resume",
-        use_optimizer=False, max_iterations=1,
+        use_optimizer=False,
         ai_client=client, on_stage_update=on_stage_update,
     )
 
@@ -74,7 +74,7 @@ def benchmark_pipeline(
     chain = BenchmarkBuilderChain(client)
     return create_pipeline(
         "benchmark", chain, "create_ideal_profile",
-        max_iterations=1,
+
         ai_client=client, on_stage_update=on_stage_update,
     )
 
@@ -102,7 +102,7 @@ def cv_generation_pipeline(
     chain = DocumentGeneratorChain(client)
     return create_pipeline(
         "cv_generation", chain, "generate_tailored_cv",
-        max_iterations=2,
+
         ai_client=client, on_stage_update=on_stage_update,
     )
 
@@ -116,7 +116,7 @@ def cover_letter_pipeline(
     chain = DocumentGeneratorChain(client)
     return create_pipeline(
         "cover_letter", chain, "generate_tailored_cover_letter",
-        max_iterations=2,
+
         ai_client=client, on_stage_update=on_stage_update,
     )
 
@@ -131,7 +131,7 @@ def personal_statement_pipeline(
     return create_pipeline(
         "personal_statement", chain, "generate_tailored_personal_statement",
         use_researcher=False, use_optimizer=False, use_fact_checker=False,
-        max_iterations=2,
+
         ai_client=client, on_stage_update=on_stage_update,
     )
 
@@ -146,7 +146,7 @@ def portfolio_pipeline(
     return create_pipeline(
         "portfolio", chain, "generate_tailored_portfolio",
         use_researcher=False, use_critic=False, use_fact_checker=False,
-        max_iterations=1,
+
         ai_client=client, on_stage_update=on_stage_update,
     )
 
@@ -237,6 +237,6 @@ def learning_pipeline(
     return create_pipeline(
         "learning", chain, "generate_challenge",
         use_researcher=False, use_critic=False, use_optimizer=False,
-        use_fact_checker=False, max_iterations=0,
+        use_fact_checker=False,
         ai_client=client, on_stage_update=on_stage_update,
     )

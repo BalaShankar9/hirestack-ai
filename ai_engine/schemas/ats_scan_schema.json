@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ATS Scan Result",
+  "type": "object",
+  "required": ["overall_score", "keyword_matches", "format_issues", "recommendations"],
+  "properties": {
+    "overall_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "ATS compatibility score (0-100)"
+    },
+    "keyword_matches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["keyword", "found", "importance"],
+        "properties": {
+          "keyword": { "type": "string" },
+          "found": { "type": "boolean" },
+          "importance": { "type": "string", "enum": ["critical", "important", "nice_to_have"] },
+          "context": { "type": "string" }
+        }
+      }
+    },
+    "format_issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["issue", "severity"],
+        "properties": {
+          "issue": { "type": "string" },
+          "severity": { "type": "string", "enum": ["high", "medium", "low"] },
+          "fix": { "type": "string" }
+        }
+      }
+    },
+    "recommendations": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "section_scores": {
+      "type": "object",
+      "properties": {
+        "contact_info": { "type": "number" },
+        "experience": { "type": "number" },
+        "education": { "type": "number" },
+        "skills": { "type": "number" },
+        "formatting": { "type": "number" }
+      }
+    }
+  }
+}

@@ -86,9 +86,9 @@ class AgentPipeline:
         optimizer: Optional[BaseAgent] = None,
         fact_checker: Optional[BaseAgent] = None,
         validator: Optional[BaseAgent] = None,
-        max_iterations: int = 2,
         lock_manager: Optional[PipelineLockManager] = None,
         on_stage_update: Optional[Callable] = None,
+        db: Any = None,
     ):
         self.name = name
         self.researcher = researcher
@@ -97,9 +97,9 @@ class AgentPipeline:
         self.optimizer = optimizer
         self.fact_checker = fact_checker
         self.validator = validator
-        self.max_iterations = max_iterations
         self.lock_manager = lock_manager or PipelineLockManager()
         self.on_stage_update = on_stage_update  # SSE callback
+        self.db = db  # Supabase client for trace persistence
 
     async def execute(self, context: dict) -> PipelineResult:
         pipeline_id = str(uuid4())
@@ -202,8 +202,8 @@ class AgentPipeline:
 
             total_latency = sum(s["latency_ms"] for s in tracer.stages)
 
-            # TODO: Persist trace to database once db connection is threaded through
-            # tracer.persist(db)
+            if self.db:
+                tracer.persist(self.db)
 
             return PipelineResult(
                 content=validation.content,

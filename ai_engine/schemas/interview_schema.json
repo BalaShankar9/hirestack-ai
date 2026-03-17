@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Interview Session",
+  "type": "object",
+  "required": ["questions"],
+  "properties": {
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "question", "category", "difficulty"],
+        "properties": {
+          "id": { "type": "string" },
+          "question": { "type": "string" },
+          "category": {
+            "type": "string",
+            "enum": ["behavioral", "technical", "situational", "competency"]
+          },
+          "difficulty": {
+            "type": "string",
+            "enum": ["easy", "medium", "hard"]
+          },
+          "follow_ups": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "evaluation_criteria": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "sample_answer_outline": { "type": "string" }
+        }
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "properties": {
+        "overall_score": { "type": "number", "minimum": 0, "maximum": 100 },
+        "strengths": { "type": "array", "items": { "type": "string" } },
+        "improvements": { "type": "array", "items": { "type": "string" } },
+        "category_scores": {
+          "type": "object",
+          "additionalProperties": { "type": "number" }
+        }
+      }
+    }
+  }
+}
