@@ -11,8 +11,8 @@ ALTER TABLE learning_challenges
 CREATE INDEX IF NOT EXISTS idx_applications_user_status
   ON applications(user_id, status);
 
-CREATE INDEX IF NOT EXISTS idx_documents_app_type
-  ON documents(application_id, document_type);
+CREATE INDEX IF NOT EXISTS idx_documents_user_type
+  ON documents(user_id, document_type);
 
 CREATE INDEX IF NOT EXISTS idx_applications_user_created
   ON applications(user_id, created_at DESC);

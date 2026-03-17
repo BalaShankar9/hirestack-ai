@@ -47,10 +47,3 @@ CREATE POLICY "Users can view own agent traces"
 CREATE POLICY "Service role can insert agent traces"
     ON agent_traces FOR INSERT
     WITH CHECK (true);
-
--- Security fix: RLS on review_comments (deferred from earlier phases)
-ALTER TABLE review_comments ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users can manage own review comments"
-    ON review_comments FOR ALL
-    USING (auth.uid() = user_id);
