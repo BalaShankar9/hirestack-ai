@@ -130,7 +130,7 @@ class PipelineRequest(BaseModel):
 
 # ── Main pipeline endpoint ────────────────────────────────────────────
 @router.post("/pipeline")
-async def generate_pipeline(req: PipelineRequest):
+async def generate_pipeline(req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Run the complete AI generation pipeline and return all modules."""
     try:
         from ai_engine.client import AIClient

@@ -142,11 +142,16 @@ class AgentPipeline:
             for name in parallel_names:
                 await self._emit(name, "running")
 
-            parallel_results = await asyncio.gather(*parallel_agents) if parallel_agents else []
+            parallel_results = await asyncio.gather(*parallel_agents, return_exceptions=True) if parallel_agents else []
 
-            # Map results back to named variables
+            # Map results back to named variables — handle individual failures gracefully
             critic_result = optimizer_result = fact_check_result = None
             for name, result in zip(parallel_names, parallel_results):
+                if isinstance(result, Exception):
+                    logger.warning("parallel_agent_failed", agent=name, error=str(result))
+                    tracer.record_stage(name, 0, "failed")
+                    await self._emit(name, "failed", message=str(result))
+                    continue
                 tracer.record_stage(name, result.latency_ms, "completed")
                 await self._emit(name, "completed", result.latency_ms)
                 if name == "critic":
@@ -164,7 +169,7 @@ class AgentPipeline:
                     draft,
                     feedback={
                         "critic": critic_result.feedback or {},
-                        "optimizer": optimizer_result.suggestions if optimizer_result else {},
+                        "optimizer": (optimizer_result.suggestions or {}) if optimizer_result else {},
                         "fact_check": fact_check_result.flags if fact_check_result else [],
                     },
                 )

@@ -37,12 +37,13 @@ class AgentMemory:
     def store(
         self, user_id: str, agent_type: str, key: str, value: dict
     ) -> None:
+        # Exclude relevance_score from upsert so existing scores from
+        # feedback() are preserved on conflict. New rows get 1.0 from DB default.
         self.db.table("agent_memory").upsert({
             "user_id": user_id,
             "agent_type": agent_type,
             "memory_key": key,
             "memory_value": value,
-            "relevance_score": 1.0,
             "usage_count": 1,
             "last_used_at": datetime.now(timezone.utc).isoformat(),
         }, on_conflict="user_id,agent_type,memory_key").execute()

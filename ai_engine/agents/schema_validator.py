@@ -52,9 +52,8 @@ class ValidatorAgent(BaseAgent):
         valid = result.get("valid", True)
         issues = result.get("issues", [])
 
-        # Pass through the content if valid
-        if valid:
-            result["content"] = draft_content
+        # Always pass through the draft content — caller decides how to handle issues
+        result["content"] = draft_content
 
         return self._timed_result(
             start_ns=start,

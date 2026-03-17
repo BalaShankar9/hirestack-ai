@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
 export interface AgentStage {
   stage: string;
@@ -27,6 +27,13 @@ const INITIAL_STATE: AgentStatusState = {
   error: null,
 };
 
+/**
+ * State container for agent pipeline progress.
+ *
+ * Usage: call `subscribe()` to mark the pipeline as running, then feed SSE
+ * events via `handleAgentEvent`, `handleComplete`, and `handleError`.
+ * The caller is responsible for managing the EventSource connection.
+ */
 export function useAgentStatus(): {
   state: AgentStatusState;
   subscribe: (pipelineName: string) => void;
@@ -36,14 +43,9 @@ export function useAgentStatus(): {
   handleError: (message: string) => void;
 } {
   const [state, setState] = useState<AgentStatusState>(INITIAL_STATE);
-  const eventSourceRef = useRef<EventSource | null>(null);
 
   const reset = useCallback(() => {
     setState(INITIAL_STATE);
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
   }, []);
 
   const subscribe = useCallback((pipelineName: string) => {
