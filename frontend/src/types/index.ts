@@ -317,12 +317,35 @@ export interface Document {
   updated_at: string;
 }
 
+export interface QualityScores {
+  impact?: number;
+  clarity?: number;
+  tone_match?: number;
+  completeness?: number;
+  ats_readiness?: number;
+  readability?: number;
+}
+
+export interface FactCheckSummary {
+  verified: number;
+  enhanced: number;
+  fabricated: number;
+}
+
+export interface PipelineMeta {
+  quality_scores?: QualityScores;
+  fact_check?: FactCheckSummary;
+  agent_powered?: boolean;
+  trace_id?: string;
+  total_latency_ms?: number;
+}
+
 export interface DocumentGenerateRequest {
   document_type: string;
   profile_id: string;
   job_id: string;
   benchmark_id?: string;
-  options?: Record<string, any>;
+  options?: Record<string, unknown>;
 }
 
 export interface RoadmapGenerateRequest {
