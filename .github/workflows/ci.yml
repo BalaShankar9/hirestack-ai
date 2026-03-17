@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-type-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Python deps
+        run: pip install ruff mypy pytest pytest-asyncio structlog pydantic-settings httpx tenacity
+      - name: Lint Python
+        run: ruff check ai_engine/ backend/
+      - name: Install Node deps
+        working-directory: frontend
+        run: npm ci
+      - name: Lint TypeScript
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+  test-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt 2>/dev/null || pip install pytest pytest-asyncio structlog pydantic-settings httpx tenacity python-docx jsonschema
+      - name: Run tests
+        run: python -m pytest backend/tests/ -v --tb=short
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -f infra/Dockerfile.backend -t hirestack-backend .
+      - name: Build frontend image
+        run: docker build -f infra/Dockerfile.frontend -t hirestack-frontend .
