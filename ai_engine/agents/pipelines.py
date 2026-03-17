@@ -149,3 +149,94 @@ def portfolio_pipeline(
         max_iterations=1,
         ai_client=client, on_stage_update=on_stage_update,
     )
+
+
+def ats_scanner_pipeline(
+    ai_client: Optional[AIClient] = None,
+    on_stage_update: Optional[Callable] = None,
+) -> AgentPipeline:
+    client = ai_client or get_ai_client()
+    from ai_engine.chains import ATSScannerChain
+    chain = ATSScannerChain(client)
+    return create_pipeline(
+        "ats_scanner", chain, "scan_document",
+        use_critic=False, use_fact_checker=False, max_iterations=1,
+        ai_client=client, on_stage_update=on_stage_update,
+    )
+
+
+def interview_pipeline(
+    ai_client: Optional[AIClient] = None,
+    on_stage_update: Optional[Callable] = None,
+) -> AgentPipeline:
+    client = ai_client or get_ai_client()
+    from ai_engine.chains import InterviewSimulatorChain
+    chain = InterviewSimulatorChain(client)
+    return create_pipeline(
+        "interview", chain, "generate_questions",
+        use_optimizer=False, use_fact_checker=False, max_iterations=1,
+        ai_client=client, on_stage_update=on_stage_update,
+    )
+
+
+def career_roadmap_pipeline(
+    ai_client: Optional[AIClient] = None,
+    on_stage_update: Optional[Callable] = None,
+) -> AgentPipeline:
+    client = ai_client or get_ai_client()
+    from ai_engine.chains import CareerConsultantChain
+    chain = CareerConsultantChain(client)
+    return create_pipeline(
+        "career_roadmap", chain, "generate_roadmap",
+        use_fact_checker=False, max_iterations=1,
+        ai_client=client, on_stage_update=on_stage_update,
+    )
+
+
+# Tone constants for A/B Lab variants
+CONSERVATIVE_TONE = "Use formal language, traditional structure, quantified achievements, no personality flair"
+BALANCED_TONE = "Professional but approachable, mix of quantified and narrative, moderate personality"
+CREATIVE_TONE = "Bold opening, storytelling elements, unique framing, personality-forward"
+
+
+def ab_lab_pipeline(
+    ai_client: Optional[AIClient] = None,
+    on_stage_update: Optional[Callable] = None,
+) -> AgentPipeline:
+    client = ai_client or get_ai_client()
+    from ai_engine.chains import DocumentVariantChain
+    chain = DocumentVariantChain(client)
+    return create_pipeline(
+        "ab_lab", chain, "generate_variant",
+        use_researcher=False, use_fact_checker=False, max_iterations=1,
+        ai_client=client, on_stage_update=on_stage_update,
+    )
+
+
+def salary_coach_pipeline(
+    ai_client: Optional[AIClient] = None,
+    on_stage_update: Optional[Callable] = None,
+) -> AgentPipeline:
+    client = ai_client or get_ai_client()
+    from ai_engine.chains import SalaryCoachChain
+    chain = SalaryCoachChain(client)
+    return create_pipeline(
+        "salary_coach", chain, "analyze_salary",
+        use_critic=False, use_optimizer=False, max_iterations=1,
+        ai_client=client, on_stage_update=on_stage_update,
+    )
+
+
+def learning_pipeline(
+    ai_client: Optional[AIClient] = None,
+    on_stage_update: Optional[Callable] = None,
+) -> AgentPipeline:
+    client = ai_client or get_ai_client()
+    from ai_engine.chains import LearningChallengeChain
+    chain = LearningChallengeChain(client)
+    return create_pipeline(
+        "learning", chain, "generate_challenge",
+        use_researcher=False, use_critic=False, use_optimizer=False,
+        use_fact_checker=False, max_iterations=0,
+        ai_client=client, on_stage_update=on_stage_update,
+    )
