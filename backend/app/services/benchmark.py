@@ -25,6 +25,10 @@ class BenchmarkService:
         if not job or job.get("user_id") != user_id:
             raise ValueError("Job description not found")
 
+        jd = job.get("description", "")
+        if not jd.strip():
+            raise ValueError("Job description cannot be empty")
+
         # Check for existing benchmark
         existing = await self.db.query(
             COLLECTIONS["benchmarks"],

@@ -7,6 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.services.gap import GapService
 from app.api.deps import get_current_user
+from app.api.response import success_response
+import structlog
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -23,11 +27,13 @@ async def analyze_gaps(
     if not profile_id or not benchmark_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="profile_id and benchmark_id are required")
     try:
-        return await service.analyze_gaps(user_id=current_user["id"], profile_id=profile_id, benchmark_id=benchmark_id)
+        report = await service.analyze_gaps(user_id=current_user["id"], profile_id=profile_id, benchmark_id=benchmark_id)
+        return success_response(report)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to analyze gaps: {e}")
+        logger.error("unexpected_error", error=str(e), endpoint="analyze_gaps")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
 @router.get("")

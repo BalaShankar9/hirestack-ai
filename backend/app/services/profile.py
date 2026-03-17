@@ -9,6 +9,8 @@ from app.services.file_parser import FileParser
 from ai_engine.client import AIClient
 from ai_engine.chains.role_profiler import RoleProfilerChain
 
+MAX_RESUME_SIZE = 50 * 1024  # 50 KB of UTF-8 encoded text
+
 
 class ProfileService:
     """Service for profile operations."""
@@ -29,6 +31,12 @@ class ProfileService:
         """Create a profile from uploaded resume file."""
         # Extract text from file
         raw_text = await self.file_parser.extract_text(file_contents, file_type)
+
+        # Validate extracted text
+        if not raw_text.strip():
+            raise ValueError("Resume text cannot be empty")
+        if len(raw_text.encode("utf-8")) > MAX_RESUME_SIZE:
+            raise ValueError(f"Resume text exceeds maximum size of {MAX_RESUME_SIZE // 1024}KB")
 
         # Parse resume with AI
         profiler = RoleProfilerChain(self.ai_client)
@@ -147,9 +155,15 @@ class ProfileService:
         if not profile or not profile.get('raw_resume_text'):
             return None
 
+        raw_text = profile['raw_resume_text']
+        if not raw_text.strip():
+            raise ValueError("Resume text cannot be empty")
+        if len(raw_text.encode("utf-8")) > MAX_RESUME_SIZE:
+            raise ValueError(f"Resume text exceeds maximum size of {MAX_RESUME_SIZE // 1024}KB")
+
         # Re-parse with AI
         profiler = RoleProfilerChain(self.ai_client)
-        parsed_data = await profiler.parse_resume(profile['raw_resume_text'])
+        parsed_data = await profiler.parse_resume(raw_text)
 
         # Update profile
         update_data = {

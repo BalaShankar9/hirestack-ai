@@ -7,6 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.services.benchmark import BenchmarkService
 from app.api.deps import get_current_user
+from app.api.response import success_response
+import structlog
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -22,11 +26,13 @@ async def generate_benchmark(
     if not job_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="job_description_id is required")
     try:
-        return await service.generate_benchmark(user_id=current_user["id"], job_id=job_id)
+        benchmark = await service.generate_benchmark(user_id=current_user["id"], job_id=job_id)
+        return success_response(benchmark)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to generate benchmark: {e}")
+        logger.error("unexpected_error", error=str(e), endpoint="generate_benchmark")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
 @router.get("/{benchmark_id}")
