@@ -19,6 +19,15 @@ from ai_engine.agents.pipelines import (
     cover_letter_pipeline,
     personal_statement_pipeline,
     portfolio_pipeline,
+    ats_scanner_pipeline,
+    interview_pipeline,
+    career_roadmap_pipeline,
+    ab_lab_pipeline,
+    salary_coach_pipeline,
+    learning_pipeline,
+    CONSERVATIVE_TONE,
+    BALANCED_TONE,
+    CREATIVE_TONE,
 )
 
 __all__ = [
@@ -43,4 +52,13 @@ __all__ = [
     "cover_letter_pipeline",
     "personal_statement_pipeline",
     "portfolio_pipeline",
+    "ats_scanner_pipeline",
+    "interview_pipeline",
+    "career_roadmap_pipeline",
+    "ab_lab_pipeline",
+    "salary_coach_pipeline",
+    "learning_pipeline",
+    "CONSERVATIVE_TONE",
+    "BALANCED_TONE",
+    "CREATIVE_TONE",
 ]
