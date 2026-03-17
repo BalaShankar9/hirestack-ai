@@ -7,7 +7,6 @@ interface PanelLayoutProps {
   mainPanel: ReactNode;
   contextPanel: ReactNode;
   bottomPanel?: ReactNode;
-  bottomCollapsed?: boolean;
 }
 
 function ResizeHandle({ direction = "horizontal" }: { direction?: "horizontal" | "vertical" }) {

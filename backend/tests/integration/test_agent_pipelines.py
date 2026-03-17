@@ -5,42 +5,44 @@ from ai_engine.agents.pipelines import cv_generation_pipeline
 from ai_engine.agents.orchestrator import PipelineResult
 
 
+def _make_mock_complete_json():
+    """Create a mock complete_json with an enclosed call counter."""
+    call_count = {"value": 0}
+
+    async def _mock_complete_json(prompt: str, **kwargs) -> dict:
+        call_count["value"] += 1
+        prompt_lower = prompt.lower()
+
+        if "analyze" in prompt_lower and "job" in prompt_lower:
+            return {"industry": "tech", "keyword_priority": [{"keyword": "Python", "priority": "high"}]}
+        if "evaluate" in prompt_lower or "quality" in prompt_lower:
+            return {"quality_scores": {"impact": 85, "clarity": 90}, "needs_revision": False, "feedback": {}}
+        if "optimize" in prompt_lower or "ats" in prompt_lower:
+            return {"keyword_analysis": {"present": ["Python"], "missing": []}, "suggestions": []}
+        if "verify" in prompt_lower or "claim" in prompt_lower:
+            return {"summary": {"verified": 10, "enhanced": 3, "fabricated": 0}, "claims": [], "fabricated_claims": []}
+        if "validate" in prompt_lower:
+            return {"valid": True, "checks": {}, "issues": []}
+        return {"result": "mock"}
+
+    return _mock_complete_json, call_count
+
+
 @pytest.fixture
-def mock_ai():
+def mock_ai_with_counter():
+    mock_fn, call_count = _make_mock_complete_json()
     client = MagicMock()
-    client.complete_json = AsyncMock(side_effect=_mock_complete_json)
+    client.complete_json = AsyncMock(side_effect=mock_fn)
     client.complete = AsyncMock(return_value="<p>Generated CV HTML</p>")
     client.provider_name = "mock"
     client.model = "mock-model"
     client.max_tokens = 4096
-    return client
-
-
-_call_count = 0
-
-
-async def _mock_complete_json(prompt: str, **kwargs) -> dict:
-    global _call_count
-    _call_count += 1
-    prompt_lower = prompt.lower()
-
-    if "analyze" in prompt_lower and "job" in prompt_lower:
-        return {"industry": "tech", "keyword_priority": [{"keyword": "Python", "priority": "high"}]}
-    if "evaluate" in prompt_lower or "quality" in prompt_lower:
-        return {"quality_scores": {"impact": 85, "clarity": 90}, "needs_revision": False, "feedback": {}}
-    if "optimize" in prompt_lower or "ats" in prompt_lower:
-        return {"keyword_analysis": {"present": ["Python"], "missing": []}, "suggestions": []}
-    if "verify" in prompt_lower or "claim" in prompt_lower:
-        return {"summary": {"verified": 10, "enhanced": 3, "fabricated": 0}, "claims": [], "fabricated_claims": []}
-    if "validate" in prompt_lower:
-        return {"valid": True, "checks": {}, "issues": []}
-    return {"result": "mock"}
+    return client, call_count
 
 
 @pytest.mark.asyncio
-async def test_cv_pipeline_end_to_end(mock_ai):
-    global _call_count
-    _call_count = 0
+async def test_cv_pipeline_end_to_end(mock_ai_with_counter):
+    mock_ai, call_count = mock_ai_with_counter
 
     mock_chain = MagicMock()
     mock_chain.generate_tailored_cv = AsyncMock(return_value="<h1>John Doe</h1><p>Software Engineer</p>")
@@ -61,4 +63,4 @@ async def test_cv_pipeline_end_to_end(mock_ai):
     assert result.content is not None
     assert result.trace_id is not None
     assert result.total_latency_ms >= 0
-    assert _call_count >= 4
+    assert call_count["value"] >= 4

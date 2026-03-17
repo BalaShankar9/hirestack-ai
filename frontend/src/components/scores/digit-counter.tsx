@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 interface DigitCounterProps {
@@ -17,9 +17,11 @@ export const DigitCounter = memo(function DigitCounter({
   duration = 600,
 }: DigitCounterProps) {
   const [display, setDisplay] = useState(0);
+  const displayRef = useRef(display);
+  displayRef.current = display;
 
   useEffect(() => {
-    const start = display;
+    const start = displayRef.current;
     const diff = value - start;
     if (diff === 0) return;
 

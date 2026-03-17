@@ -34,3 +34,6 @@ class PipelineLockManager:
             yield
         finally:
             lock.release()
+            # Clean up lock if no one else is waiting on it to prevent memory leaks
+            if not lock.locked() and key in self._locks:
+                del self._locks[key]

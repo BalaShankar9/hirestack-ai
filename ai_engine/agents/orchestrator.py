@@ -127,13 +127,16 @@ class AgentPipeline:
             parallel_agents = []
             parallel_names = []
             if self.critic:
-                parallel_agents.append(self.critic.run(draft))
+                critic_ctx = {"draft": draft.content, "original_context": enriched_context}
+                parallel_agents.append(self.critic.run(critic_ctx))
                 parallel_names.append("critic")
             if self.optimizer:
-                parallel_agents.append(self.optimizer.run(draft))
+                optimizer_ctx = {"draft": draft.content, "original_context": enriched_context}
+                parallel_agents.append(self.optimizer.run(optimizer_ctx))
                 parallel_names.append("optimizer")
             if self.fact_checker:
-                parallel_agents.append(self.fact_checker.run({"draft": draft, "source": context}))
+                fact_check_ctx = {"draft": draft.content, "source": context}
+                parallel_agents.append(self.fact_checker.run(fact_check_ctx))
                 parallel_names.append("fact_checker")
 
             for name in parallel_names:
@@ -185,13 +188,17 @@ class AgentPipeline:
             # Stage 5: Validate
             if self.validator:
                 await self._emit("validator", "running")
-                validation = await self.validator.run(draft)
+                validator_ctx = {"draft": draft.content, "metadata": draft.metadata}
+                validation = await self.validator.run(validator_ctx)
                 tracer.record_stage("validator", validation.latency_ms, "completed")
                 await self._emit("validator", "completed", validation.latency_ms)
             else:
                 validation = draft
 
             total_latency = sum(s["latency_ms"] for s in tracer.stages)
+
+            # TODO: Persist trace to database once db connection is threaded through
+            # tracer.persist(db)
 
             return PipelineResult(
                 content=validation.content,

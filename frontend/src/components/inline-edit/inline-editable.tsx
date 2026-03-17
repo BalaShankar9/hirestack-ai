@@ -7,7 +7,6 @@ interface InlineEditableProps {
   value: string;
   onSave: (newValue: string) => void;
   className?: string;
-  hoverClassName?: string;
   inputClassName?: string;
   placeholder?: string;
 }
@@ -16,7 +15,6 @@ export const InlineEditable = memo(function InlineEditable({
   value,
   onSave,
   className = "",
-  hoverClassName = "bg-primary/5 rounded px-1 -mx-1",
   inputClassName = "",
   placeholder = "Click to edit",
 }: InlineEditableProps) {
@@ -71,7 +69,7 @@ export const InlineEditable = memo(function InlineEditable({
       tabIndex={0}
       onClick={() => { setDraft(value); setEditing(true); }}
       onKeyDown={(e) => { if (e.key === "Enter") { setDraft(value); setEditing(true); } }}
-      className={cn("cursor-pointer transition-colors", className, `hover:${hoverClassName}`)}
+      className={cn("cursor-pointer transition-colors hover:bg-primary/5 hover:rounded hover:px-1 hover:-mx-1", className)}
     >
       {value || <span className="text-muted-foreground italic">{placeholder}</span>}
     </span>
