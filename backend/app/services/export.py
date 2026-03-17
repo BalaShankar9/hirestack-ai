@@ -13,10 +13,40 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph as RLParagraph, Spacer
 from reportlab.lib.units import inch
 from docx import Document as DocxDocument
+from docx.shared import Pt, Cm
 
 from app.core.database import get_db, TABLES, SupabaseDB
 
 logger = structlog.get_logger()
+
+
+def generate_docx_from_html(html_content: str, document_type: str = "cv") -> bytes:
+    """Convert HTML content to proper DOCX using python-docx."""
+    import re
+
+    doc = DocxDocument()
+    for section in doc.sections:
+        section.top_margin = Cm(2.54)
+        section.bottom_margin = Cm(2.54)
+        section.left_margin = Cm(2.54)
+        section.right_margin = Cm(2.54)
+
+    text = re.sub(r"<br\s*/?>", "\n", html_content)
+    text = re.sub(r"</(p|div|h[1-6]|li)>", "\n", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"&nbsp;", " ", text)
+    text = re.sub(r"&amp;", "&", text)
+    text = re.sub(r"&lt;", "<", text)
+    text = re.sub(r"&gt;", ">", text)
+
+    paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
+    for para_text in paragraphs:
+        p = doc.add_paragraph(para_text)
+        p.style.font.size = Pt(11)
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()
 
 
 class ExportService:
