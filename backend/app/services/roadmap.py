@@ -57,13 +57,14 @@ class RoadmapService:
         }
 
         consultant = CareerConsultantChain(self.ai_client)
-        roadmap_data = await consultant.generate_roadmap(
+        raw_roadmap_data = await consultant.generate_roadmap(
             gap_analysis=gap_data,
             user_profile=profile_data,
             job_title=job.get("title", "Target Role") if job else "Target Role",
             company=job.get("company", "Target Company") if job else "Target Company",
         )
 
+        roadmap_data = self._validate_milestones(raw_roadmap_data)
         roadmap_content = roadmap_data.get("roadmap", {})
         record = {
             "user_id": user_id,
@@ -110,6 +111,16 @@ class RoadmapService:
         progress[milestone_id] = status
         await self.db.update(COLLECTIONS["roadmaps"], roadmap_id, {"progress": progress})
         return True
+
+    def _validate_milestones(self, roadmap: dict) -> dict:
+        """Ensure milestone dependency indices only reference earlier milestones."""
+        milestones = roadmap.get("milestones", [])
+        for i, milestone in enumerate(milestones):
+            deps = milestone.get("dependencies", [])
+            for dep_idx in deps:
+                if isinstance(dep_idx, int) and dep_idx >= i:
+                    milestone["dependencies"] = [d for d in deps if isinstance(d, int) and d < i]
+        return roadmap
 
     async def delete_roadmap(self, roadmap_id: str, user_id: str) -> bool:
         roadmap = await self.get_roadmap(roadmap_id, user_id)
