@@ -2,7 +2,6 @@
 
 import React, { useCallback, useRef, useState } from "react";
 import { useAuth } from "@/components/providers";
-import api from "@/lib/api";
 import { parseResumeText } from "@/lib/firestore/ops";
 import type { ATSScan } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -140,13 +139,23 @@ export default function ATSScannerPage() {
     setLoading(true);
     setError("");
     try {
-      const result = await api.ats.scan({
-        document_content: documentContent,
-        document_type: "cv",
-        job_title: jobTitle,
-        company,
-        jd_text: jdText,
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const res = await fetch(`${API_URL}/api/ats/scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          document_content: documentContent,
+          document_type: "cv",
+          job_title: jobTitle,
+          company,
+          jd_text: jdText,
+        }),
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || `Scan failed (${res.status})`);
+      }
+      const result = await res.json();
       setScan(result);
       toast({ title: "Scan complete", description: `ATS score: ${result.ats_score ?? "N/A"}` });
     } catch (e: any) {

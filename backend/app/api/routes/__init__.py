@@ -15,6 +15,9 @@ from app.api.routes.builder import router as builder_router
 from app.api.routes.export import router as export_router
 from app.api.routes.analytics import router as analytics_router
 from app.api.routes.generate import router as generate_router
+from app.api.routes.ats import router as ats_router
+from app.api.routes.interview import router as interview_router
+from app.api.routes.salary import router as salary_router
 
 router = APIRouter()
 
@@ -29,3 +32,6 @@ router.include_router(builder_router, prefix="/builder", tags=["Document Builder
 router.include_router(export_router, prefix="/export", tags=["Export"])
 router.include_router(analytics_router, prefix="/analytics", tags=["Analytics"])
 router.include_router(generate_router, prefix="/generate", tags=["AI Generation"])
+router.include_router(ats_router, prefix="/ats", tags=["ATS Scanner"])
+router.include_router(interview_router, prefix="/interview", tags=["Interview"])
+router.include_router(salary_router, prefix="/salary", tags=["Salary Coach"])
