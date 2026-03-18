@@ -120,7 +120,7 @@ class _OpenAIProvider:
     @retry(**_RETRY_KWARGS)
     async def complete_json(
         self, prompt: str, system: Optional[str] = None,
-        max_tokens: Optional[int] = None, temperature: float = 0.3,
+        max_tokens: Optional[int] = None, temperature: float = 0.3, **kwargs,
     ) -> Dict[str, Any]:
         system_prompt = (system or "You are a helpful AI assistant.")
         system_prompt += "\n\nIMPORTANT: Respond ONLY with valid JSON. No markdown, no explanations, just pure JSON."
@@ -249,7 +249,7 @@ class _GeminiProvider:
     @retry(**_RETRY_KWARGS)
     async def complete_json(
         self, prompt: str, system: Optional[str] = None,
-        max_tokens: Optional[int] = None, temperature: float = 0.3,
+        max_tokens: Optional[int] = None, temperature: float = 0.3, **kwargs,
     ) -> Dict[str, Any]:
         from google.genai import types
         _modality = getattr(types, "MediaModality", None) or getattr(types, "Modality", None)
@@ -374,6 +374,7 @@ class _OllamaProvider:
         system: Optional[str] = None,
         max_tokens: Optional[int] = None,
         temperature: float = 0.3,
+        **kwargs,
     ) -> Dict[str, Any]:
         system_prompt = (system or "You are a helpful AI assistant.")
         system_prompt += "\n\nIMPORTANT: Respond ONLY with valid JSON. No markdown, no explanations, just pure JSON."
@@ -557,7 +558,7 @@ class AIClient:
 
     async def complete_json(self, prompt: str, system: Optional[str] = None,
                             max_tokens: Optional[int] = None,
-                            temperature: float = 0.3) -> Dict[str, Any]:
+                            temperature: float = 0.3, **kwargs) -> Dict[str, Any]:
         return await self._call_with_fallback(
             "complete_json", prompt=prompt, system=system, max_tokens=max_tokens,
             temperature=temperature,

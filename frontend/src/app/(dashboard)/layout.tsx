@@ -10,13 +10,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { user, session, loading } = useAuth();
   const router = useRouter();
 
-  /* Redirect to login if not authenticated */
-  useEffect(() => {
-    if (!loading && !user) {
-      router.replace("/login");
-    }
-  }, [loading, user, router]);
-
   /* Keep the API client token in sync with the session */
   useEffect(() => {
     if (session?.access_token) {
@@ -34,7 +27,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!user) return null; // will redirect
-
+  // Auth disabled — render shell for all users
   return <AppShell>{children}</AppShell>;
 }

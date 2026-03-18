@@ -67,6 +67,8 @@ import { KeywordChips } from "@/components/workspace/keyword-chips";
 import { EvidencePicker } from "@/components/workspace/evidence-picker";
 import { VersionHistoryDrawer } from "@/components/workspace/version-history-drawer";
 import { DocEditorModule, ExportCard, EmptyState } from "@/components/workspace/doc-editor-module";
+import type { DocMode } from "@/components/workspace/diff-toggle";
+import { sanitizeHtml } from "@/lib/sanitize";
 import { AgentProgress } from "@/components/workspace/agent-progress";
 import { QualityReport } from "@/components/workspace/quality-report";
 import { useAgentStatus } from "@/hooks/use-agent-status";
@@ -121,10 +123,10 @@ export default function ApplicationWorkspacePage() {
   const { data: tasks = [], stats: taskStats } = useTasks(user?.uid || null, appId, 200);
 
   const [tab, setTab] = useState(() => searchParams.get("tab") || "overview");
-  const [cvMode, setCvMode] = useState<"edit" | "diff">("edit");
-  const [clMode, setClMode] = useState<"edit" | "diff">("edit");
-  const [psMode, setPsMode] = useState<"edit" | "diff">("edit");
-  const [portfolioMode, setPortfolioMode] = useState<"edit" | "diff">("edit");
+  const [cvMode, setCvMode] = useState<DocMode>("view");
+  const [clMode, setClMode] = useState<DocMode>("view");
+  const [psMode, setPsMode] = useState<DocMode>("view");
+  const [portfolioMode, setPortfolioMode] = useState<DocMode>("view");
 
   const cvEditorRef = useRef<any>(null);
   const clEditorRef = useRef<any>(null);
@@ -674,10 +676,10 @@ export default function ApplicationWorkspacePage() {
                             </Button>
                           </div>
                         </div>
-                        <div className="rounded-xl border bg-white/50 dark:bg-background/50 overflow-hidden">
+                        <div className="mx-auto max-w-[800px]">
                           <div
-                            className="prose prose-sm max-w-none p-5 [&_h1]:text-xl [&_h1]:font-bold [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:border-b [&_h2]:pb-1 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_ul]:mt-1 [&_li]:text-xs [&_p]:text-xs [&_p]:text-muted-foreground"
-                            dangerouslySetInnerHTML={{ __html: (app.benchmark as any).benchmarkCvHtml }}
+                            className="doc-preview"
+                            dangerouslySetInnerHTML={{ __html: sanitizeHtml((app.benchmark as any).benchmarkCvHtml || "") }}
                           />
                         </div>
                       </div>

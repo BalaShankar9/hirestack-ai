@@ -1300,7 +1300,7 @@ async def create_generation_job(
         .select("id,confirmed_facts")
         .eq("id", req.application_id)
         .eq("user_id", user_id)
-        .maybeSingle()
+        .maybe_single()
         .execute()
     )
     if not app_resp.data:
@@ -1316,11 +1316,9 @@ async def create_generation_job(
     job_resp = await asyncio.to_thread(
         lambda: sb.table(TABLES["generation_jobs"])
         .insert(job_row)
-        .select("id")
-        .single()
         .execute()
     )
-    return {"job_id": job_resp.data["id"]}
+    return {"job_id": job_resp.data[0]["id"]}
 
 
 @router.get("/jobs/{job_id}/stream")
@@ -1340,7 +1338,7 @@ async def stream_generation_job(
         .select("*")
         .eq("id", job_id)
         .eq("user_id", user_id)
-        .maybeSingle()
+        .maybe_single()
         .execute()
     )
     if not job_resp.data:
@@ -1354,7 +1352,7 @@ async def stream_generation_job(
         lambda: sb.table(TABLES["applications"])
         .select("confirmed_facts")
         .eq("id", app_id)
-        .maybeSingle()
+        .maybe_single()
         .execute()
     )
     if not app_resp.data:
@@ -1388,7 +1386,7 @@ async def stream_generation_job(
                         lambda: sb.table(TABLES["generation_jobs"])
                         .select("cancel_requested")
                         .eq("id", job_id)
-                        .maybeSingle()
+                        .maybe_single()
                         .execute()
                     )
                     return bool((r.data or {}).get("cancel_requested"))

@@ -276,7 +276,7 @@ class RoleProfilerChain:
     def _clean_skill(self, skill: Dict[str, Any]) -> Dict[str, Any]:
         """Clean and validate a skill entry."""
         valid_levels = ["beginner", "intermediate", "advanced", "expert"]
-        level = skill.get("level", "intermediate").lower()
+        level = (skill.get("level") or "intermediate").lower()
         if level not in valid_levels:
             level = "intermediate"
 
