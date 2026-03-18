@@ -15,6 +15,7 @@ type Phase = "setup" | "active" | "review";
 
 export default function InterviewSimulatorPage() {
   const { user } = useAuth();
+  const userId = user?.uid || user?.id || null;
   const [phase, setPhase] = useState<Phase>("setup");
 
   // Setup
@@ -103,10 +104,12 @@ export default function InterviewSimulatorPage() {
   return (
     <div className="space-y-8 p-6 max-w-4xl mx-auto">
       <div className="flex items-center gap-3">
-        <Mic className="h-8 w-8 text-primary" />
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-500/10">
+          <Mic className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+        </div>
         <div>
-          <h1 className="text-3xl font-bold">Interview Simulator</h1>
-          <p className="text-muted-foreground">Practice with AI-generated questions and get STAR-method feedback</p>
+          <h1 className="text-xl font-bold">Interview Simulator</h1>
+          <p className="text-xs text-muted-foreground">Practice with AI-generated questions and get STAR-method feedback</p>
         </div>
       </div>
 
@@ -114,7 +117,7 @@ export default function InterviewSimulatorPage() {
 
       {/* Setup Phase */}
       {phase === "setup" && (
-        <div className="space-y-6 rounded-xl border p-6">
+        <div className="space-y-6 rounded-2xl border p-6 shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
           <h2 className="text-xl font-semibold">Configure Your Interview</h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -200,13 +203,13 @@ export default function InterviewSimulatorPage() {
           </div>
 
           {/* Question Card */}
-          <div className="rounded-xl border p-6 space-y-4">
+          <div className="rounded-2xl border p-6 space-y-4 shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
             <div className="flex items-start gap-3">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
                 Q{currentIdx + 1}
               </span>
               <div>
-                <span className="text-xs px-2 py-0.5 rounded bg-muted font-medium uppercase">
+                <span className="text-[11px] px-2 py-0.5 rounded-lg bg-muted font-medium uppercase">
                   {questions[currentIdx].type || interviewType}
                 </span>
                 <p className="text-lg font-medium mt-2">{questions[currentIdx].text}</p>
@@ -236,8 +239,8 @@ export default function InterviewSimulatorPage() {
       {phase === "review" && session && (
         <div className="space-y-6">
           {/* Summary */}
-          <div className="rounded-xl border p-6 text-center space-y-3">
-            <CheckCircle className="h-12 w-12 text-green-500 mx-auto" />
+          <div className="rounded-2xl border p-6 text-center space-y-3 shadow-soft-sm">
+            <CheckCircle className="h-12 w-12 text-green-500 dark:text-green-400 mx-auto" />
             <h2 className="text-2xl font-bold">Interview Complete!</h2>
             {session.overall_score !== undefined && (
               <div className="text-4xl font-bold text-primary">{session.overall_score}/100</div>
@@ -248,11 +251,11 @@ export default function InterviewSimulatorPage() {
           {/* Answer Reviews */}
           <div className="space-y-4">
             {answers.map((a, i) => (
-              <div key={i} className="rounded-xl border p-5 space-y-3">
+              <div key={i} className="rounded-2xl border p-5 space-y-3 shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold">Q{i + 1}: {questions[i]?.text?.slice(0, 80)}...</h3>
                   <span className={`text-lg font-bold ${
-                    a.score >= 80 ? "text-green-600" : a.score >= 60 ? "text-yellow-600" : "text-red-600"
+                    a.score >= 80 ? "text-green-600 dark:text-green-400" : a.score >= 60 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"
                   }`}>
                     {a.score}/100
                   </span>
@@ -263,7 +266,7 @@ export default function InterviewSimulatorPage() {
                   <div className="grid grid-cols-4 gap-2">
                     {Object.entries(a.star_scores).map(([key, val]) => (
                       <div key={key} className="text-center p-2 rounded-lg bg-muted/30">
-                        <div className="text-xs uppercase text-muted-foreground">{key}</div>
+                        <div className="text-[11px] uppercase text-muted-foreground">{key}</div>
                         <div className="font-bold">{val as number}/25</div>
                       </div>
                     ))}

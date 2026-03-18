@@ -9,6 +9,7 @@ import { Zap, Loader2, CheckCircle, XCircle, Flame, Trophy, Star, RefreshCw } fr
 
 export default function LearningPage() {
   const { user } = useAuth();
+  const userId = user?.uid || user?.id || null;
   const [streak, setStreak] = useState<LearningStreak | null>(null);
   const [challenges, setChallenges] = useState<LearningChallenge[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -85,10 +86,12 @@ export default function LearningPage() {
   return (
     <div className="space-y-8 p-6 max-w-4xl mx-auto">
       <div className="flex items-center gap-3">
-        <Zap className="h-8 w-8 text-primary" />
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/10">
+          <Zap className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+        </div>
         <div>
-          <h1 className="text-3xl font-bold">Micro-Learning</h1>
-          <p className="text-muted-foreground">Daily skill challenges with streak tracking</p>
+          <h1 className="text-xl font-bold">Micro-Learning</h1>
+          <p className="text-xs text-muted-foreground">Daily skill challenges with streak tracking</p>
         </div>
       </div>
 
@@ -97,22 +100,22 @@ export default function LearningPage() {
       {/* Streak Banner */}
       {streak && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="rounded-xl border p-4 text-center bg-gradient-to-br from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20">
-            <Flame className="h-8 w-8 text-orange-500 mx-auto mb-1" />
-            <div className="text-3xl font-bold text-orange-600">{streak.current_streak || 0}</div>
+          <div className="rounded-2xl border p-4 text-center bg-gradient-to-br from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
+            <Flame className="h-8 w-8 text-orange-500 dark:text-orange-400 mx-auto mb-1" />
+            <div className="text-3xl font-bold text-orange-600 dark:text-orange-400">{streak.current_streak || 0}</div>
             <div className="text-xs text-muted-foreground">Day Streak</div>
           </div>
-          <div className="rounded-xl border p-4 text-center">
-            <Trophy className="h-8 w-8 text-yellow-500 mx-auto mb-1" />
+          <div className="rounded-2xl border p-4 text-center shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
+            <Trophy className="h-8 w-8 text-yellow-500 dark:text-yellow-400 mx-auto mb-1" />
             <div className="text-3xl font-bold">{streak.longest_streak || 0}</div>
             <div className="text-xs text-muted-foreground">Best Streak</div>
           </div>
-          <div className="rounded-xl border p-4 text-center">
+          <div className="rounded-2xl border p-4 text-center shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
             <Star className="h-8 w-8 text-primary mx-auto mb-1" />
             <div className="text-3xl font-bold">{streak.total_points || 0}</div>
             <div className="text-xs text-muted-foreground">Total Points</div>
           </div>
-          <div className="rounded-xl border p-4 text-center">
+          <div className="rounded-2xl border p-4 text-center shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
             <div className="text-4xl mb-1">
               {(streak.level || 1) <= 3 ? "🌱" : (streak.level || 1) <= 7 ? "🌿" : (streak.level || 1) <= 15 ? "🌳" : "🏆"}
             </div>
@@ -141,9 +144,9 @@ export default function LearningPage() {
           </Button>
         </div>
       ) : allDone ? (
-        <div className="text-center py-12 space-y-4 rounded-xl border bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20">
-          <CheckCircle className="h-16 w-16 text-green-500 mx-auto" />
-          <h2 className="text-2xl font-bold">All Done! 🎉</h2>
+        <div className="text-center py-12 space-y-4 rounded-2xl border bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 shadow-soft-sm">
+          <CheckCircle className="h-16 w-16 text-green-500 dark:text-green-400 mx-auto" />
+          <h2 className="text-2xl font-bold">All Done!</h2>
           <p className="text-muted-foreground">You completed all {challenges.length} challenges for today.</p>
           <Button onClick={generateChallenges} disabled={generating} variant="outline">
             <RefreshCw className="h-4 w-4 mr-2" /> Generate More
@@ -160,12 +163,12 @@ export default function LearningPage() {
           </div>
 
           {/* Challenge Card */}
-          <div className="rounded-xl border p-6 space-y-5">
+          <div className="rounded-2xl border p-6 space-y-5 shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
             <div className="flex items-center gap-3">
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                current.challenge_type === "quiz" ? "bg-blue-100 text-blue-700" :
-                current.challenge_type === "scenario" ? "bg-purple-100 text-purple-700" :
-                "bg-green-100 text-green-700"
+              <span className={`px-3 py-1 rounded-lg text-[11px] font-medium ${
+                current.challenge_type === "quiz" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
+                current.challenge_type === "scenario" ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" :
+                "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
               }`}>
                 {current.challenge_type || "quiz"}
               </span>
@@ -236,9 +239,9 @@ export default function LearningPage() {
               <div className={`rounded-lg p-4 ${answerResult.is_correct ? "bg-green-50 dark:bg-green-900/20" : "bg-red-50 dark:bg-red-900/20"}`}>
                 <div className="flex items-center gap-2 mb-2">
                   {answerResult.is_correct ? (
-                    <><CheckCircle className="h-5 w-5 text-green-600" /><span className="font-semibold text-green-600">Correct! +{answerResult.points_earned || 0} pts</span></>
+                    <><CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" /><span className="font-semibold text-green-600 dark:text-green-400">Correct! +{answerResult.points_earned || 0} pts</span></>
                   ) : (
-                    <><XCircle className="h-5 w-5 text-red-600" /><span className="font-semibold text-red-600">Incorrect</span></>
+                    <><XCircle className="h-5 w-5 text-red-600 dark:text-red-400" /><span className="font-semibold text-red-600 dark:text-red-400">Incorrect</span></>
                   )}
                 </div>
                 {answerResult.explanation && <p className="text-sm text-muted-foreground">{answerResult.explanation}</p>}
@@ -248,7 +251,7 @@ export default function LearningPage() {
             {/* Next Button */}
             {answerResult && (
               <Button onClick={nextChallenge} className="w-full">
-                {currentIdx < challenges.length - 1 ? "Next Challenge →" : "Finish 🎉"}
+                {currentIdx < challenges.length - 1 ? "Next Challenge" : "Finish"}
               </Button>
             )}
           </div>

@@ -9,6 +9,7 @@ import { TrendingUp, Loader2, Camera, Calendar, BarChart3, Target, Award } from 
 
 export default function CareerAnalyticsPage() {
   const { user } = useAuth();
+  const userId = user?.uid || user?.id || null;
   const [timeline, setTimeline] = useState<CareerSnapshot[]>([]);
   const [portfolio, setPortfolio] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -51,10 +52,12 @@ export default function CareerAnalyticsPage() {
     <div className="space-y-8 p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <TrendingUp className="h-8 w-8 text-primary" />
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-500/10">
+            <TrendingUp className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+          </div>
           <div>
-            <h1 className="text-3xl font-bold">Career Analytics</h1>
-            <p className="text-muted-foreground">Track your career readiness over time</p>
+            <h1 className="text-xl font-bold">Career Analytics</h1>
+            <p className="text-xs text-muted-foreground">Track your career readiness over time</p>
           </div>
         </div>
         <Button onClick={captureSnapshot} disabled={capturing}>
@@ -74,16 +77,16 @@ export default function CareerAnalyticsPage() {
           {/* Portfolio Summary */}
           {portfolio && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <StatCard icon={<BarChart3 className="h-6 w-6 text-blue-500" />} label="Applications" value={portfolio.total_applications || 0} />
-              <StatCard icon={<Target className="h-6 w-6 text-green-500" />} label="Avg. Match Score" value={`${portfolio.avg_match_score || 0}%`} />
-              <StatCard icon={<Award className="h-6 w-6 text-yellow-500" />} label="Documents" value={portfolio.total_documents || 0} />
-              <StatCard icon={<TrendingUp className="h-6 w-6 text-purple-500" />} label="Snapshots" value={timeline.length} />
+              <StatCard icon={<BarChart3 className="h-6 w-6 text-blue-500 dark:text-blue-400" />} label="Applications" value={portfolio.total_applications || 0} />
+              <StatCard icon={<Target className="h-6 w-6 text-green-500 dark:text-green-400" />} label="Avg. Match Score" value={`${portfolio.avg_match_score || 0}%`} />
+              <StatCard icon={<Award className="h-6 w-6 text-yellow-500 dark:text-yellow-400" />} label="Documents" value={portfolio.total_documents || 0} />
+              <StatCard icon={<TrendingUp className="h-6 w-6 text-purple-500 dark:text-purple-400" />} label="Snapshots" value={timeline.length} />
             </div>
           )}
 
           {/* Score Trends */}
           {timeline.length > 0 && (
-            <div className="rounded-xl border p-6 space-y-4">
+            <div className="rounded-2xl border p-6 space-y-4 shadow-soft-sm">
               <h2 className="text-xl font-semibold flex items-center gap-2">
                 <Calendar className="h-5 w-5" /> Score Timeline
               </h2>
@@ -118,7 +121,7 @@ export default function CareerAnalyticsPage() {
 
           {/* Timeline Detail */}
           {timeline.length > 0 && (
-            <div className="rounded-xl border p-6 space-y-4">
+            <div className="rounded-2xl border p-6 space-y-4 shadow-soft-sm">
               <h2 className="text-xl font-semibold">Snapshot History</h2>
               <div className="space-y-4">
                 {timeline.slice().reverse().map((s, i) => (
@@ -139,16 +142,16 @@ export default function CareerAnalyticsPage() {
                           })}
                         </span>
                         <span className={`text-lg font-bold ${
-                          (s.overall_score || 0) >= 80 ? "text-green-600" : (s.overall_score || 0) >= 60 ? "text-yellow-600" : "text-red-600"
+                          (s.overall_score || 0) >= 80 ? "text-green-600 dark:text-green-400" : (s.overall_score || 0) >= 60 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"
                         }`}>
                           {s.overall_score || 0}%
                         </span>
                       </div>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        {s.technical_score !== undefined && <span className="text-xs bg-muted px-2 py-0.5 rounded">Technical: {s.technical_score}</span>}
-                        {s.experience_score !== undefined && <span className="text-xs bg-muted px-2 py-0.5 rounded">Experience: {s.experience_score}</span>}
-                        {s.education_score !== undefined && <span className="text-xs bg-muted px-2 py-0.5 rounded">Education: {s.education_score}</span>}
-                        {s.avg_ats_score !== undefined && <span className="text-xs bg-muted px-2 py-0.5 rounded">Avg ATS: {s.avg_ats_score}</span>}
+                        {s.technical_score !== undefined && <span className="text-[11px] bg-muted px-2 py-0.5 rounded-lg">Technical: {s.technical_score}</span>}
+                        {s.experience_score !== undefined && <span className="text-[11px] bg-muted px-2 py-0.5 rounded-lg">Experience: {s.experience_score}</span>}
+                        {s.education_score !== undefined && <span className="text-[11px] bg-muted px-2 py-0.5 rounded-lg">Education: {s.education_score}</span>}
+                        {s.avg_ats_score !== undefined && <span className="text-[11px] bg-muted px-2 py-0.5 rounded-lg">Avg ATS: {s.avg_ats_score}</span>}
                       </div>
                     </div>
                   </div>
@@ -171,7 +174,7 @@ export default function CareerAnalyticsPage() {
 
 function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | number }) {
   return (
-    <div className="rounded-xl border p-4 text-center space-y-2">
+    <div className="rounded-2xl border p-4 text-center space-y-2 shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
       <div className="flex justify-center">{icon}</div>
       <div className="text-2xl font-bold">{value}</div>
       <div className="text-xs text-muted-foreground">{label}</div>

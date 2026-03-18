@@ -12,6 +12,7 @@ import { toast } from "@/hooks/use-toast";
 
 export default function ATSScannerPage() {
   const { user } = useAuth();
+  const userId = user?.uid || user?.id || null;
   const [documentContent, setDocumentContent] = useState("");
   const [jdText, setJdText] = useState("");
   const [jobTitle, setJobTitle] = useState("");
@@ -42,18 +43,20 @@ export default function ATSScannerPage() {
   };
 
   const passIcon = scan?.pass_prediction === "pass"
-    ? <CheckCircle className="h-8 w-8 text-green-500" />
+    ? <CheckCircle className="h-8 w-8 text-green-500 dark:text-green-400" />
     : scan?.pass_prediction === "fail"
-    ? <XCircle className="h-8 w-8 text-red-500" />
-    : <AlertTriangle className="h-8 w-8 text-yellow-500" />;
+    ? <XCircle className="h-8 w-8 text-red-500 dark:text-red-400" />
+    : <AlertTriangle className="h-8 w-8 text-yellow-500 dark:text-yellow-400" />;
 
   return (
     <div className="space-y-8 p-6 max-w-6xl mx-auto">
       <div className="flex items-center gap-3">
-        <ScanSearch className="h-8 w-8 text-primary" />
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-cyan-500/10">
+          <ScanSearch className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
+        </div>
         <div>
-          <h1 className="text-3xl font-bold">Recruiter Lens — ATS Scanner</h1>
-          <p className="text-muted-foreground">See your document through an ATS system&apos;s eyes</p>
+          <h1 className="text-xl font-bold">Recruiter Lens — ATS Scanner</h1>
+          <p className="text-xs text-muted-foreground">See your document through an ATS system&apos;s eyes</p>
         </div>
       </div>
 
@@ -123,30 +126,30 @@ export default function ATSScannerPage() {
             <ScoreCard
               label="Prediction"
               value={scan.pass_prediction?.toUpperCase()}
-              color={scan.pass_prediction === "pass" ? "text-green-600" : scan.pass_prediction === "fail" ? "text-red-600" : "text-yellow-600"}
+              color={scan.pass_prediction === "pass" ? "text-green-600 dark:text-green-400" : scan.pass_prediction === "fail" ? "text-red-600 dark:text-red-400" : "text-yellow-600 dark:text-yellow-400"}
             />
           </div>
 
           {/* Matched Keywords */}
-          <div className="rounded-xl border p-6">
-            <h3 className="font-semibold text-lg mb-3 text-green-600">✅ Matched Keywords ({scan.matched_keywords?.length || 0})</h3>
+          <div className="rounded-2xl border p-6 shadow-soft-sm">
+            <h3 className="font-semibold text-lg mb-3 text-green-600 dark:text-green-400">Matched Keywords ({scan.matched_keywords?.length || 0})</h3>
             <div className="flex flex-wrap gap-2">
               {scan.matched_keywords?.map((k, i) => (
-                <span key={i} className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-sm">
-                  {k.keyword} <span className="text-xs opacity-70">×{k.frequency}</span>
+                <span key={i} className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg text-sm">
+                  {k.keyword} <span className="text-[11px] opacity-70">x{k.frequency}</span>
                 </span>
               ))}
             </div>
           </div>
 
           {/* Missing Keywords */}
-          <div className="rounded-xl border p-6">
-            <h3 className="font-semibold text-lg mb-3 text-red-600">❌ Missing Keywords ({scan.missing_keywords?.length || 0})</h3>
+          <div className="rounded-2xl border p-6 shadow-soft-sm">
+            <h3 className="font-semibold text-lg mb-3 text-red-600 dark:text-red-400">Missing Keywords ({scan.missing_keywords?.length || 0})</h3>
             <div className="space-y-2">
               {scan.missing_keywords?.map((k, i) => (
                 <div key={i} className="flex items-start gap-2">
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                    k.importance === "critical" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"
+                  <span className={`px-2 py-0.5 rounded-lg text-[11px] font-medium ${
+                    k.importance === "critical" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
                   }`}>
                     {k.importance}
                   </span>
@@ -158,8 +161,8 @@ export default function ATSScannerPage() {
           </div>
 
           {/* Recommendations */}
-          <div className="rounded-xl border p-6">
-            <h3 className="font-semibold text-lg mb-3">🎯 Recommendations</h3>
+          <div className="rounded-2xl border p-6 shadow-soft-sm">
+            <h3 className="font-semibold text-lg mb-3">Recommendations</h3>
             <div className="space-y-3">
               {scan.recommendations?.map((r, i) => (
                 <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
@@ -167,8 +170,8 @@ export default function ATSScannerPage() {
                     {r.priority}
                   </span>
                   <div>
-                    <span className={`text-xs px-2 py-0.5 rounded mr-2 ${
-                      r.impact === "high" ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"
+                    <span className={`text-[11px] px-2 py-0.5 rounded-lg mr-2 ${
+                      r.impact === "high" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
                     }`}>
                       {r.impact} impact
                     </span>
@@ -199,11 +202,11 @@ function ScoreCard({
 }) {
   const numVal = typeof value === "number" ? value : 0;
   const scoreColor = color || (typeof value === "number"
-    ? numVal >= 80 ? "text-green-600" : numVal >= 60 ? "text-yellow-600" : "text-red-600"
+    ? numVal >= 80 ? "text-green-600 dark:text-green-400" : numVal >= 60 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"
     : "");
 
   return (
-    <div className="rounded-xl border p-4 text-center">
+    <div className="rounded-2xl border p-4 text-center shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
       {icon && <div className="flex justify-center mb-2">{icon}</div>}
       <div className={`text-2xl font-bold ${scoreColor}`}>
         {value}{suffix}

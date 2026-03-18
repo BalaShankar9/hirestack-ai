@@ -10,6 +10,7 @@ import { DollarSign, Loader2, TrendingUp, MessageSquare, ArrowUp, Target } from 
 
 export default function SalaryCoachPage() {
   const { user } = useAuth();
+  const userId = user?.uid || user?.id || null;
   const [jobTitle, setJobTitle] = useState("");
   const [company, setCompany] = useState("");
   const [location, setLocation] = useState("");
@@ -44,15 +45,17 @@ export default function SalaryCoachPage() {
   return (
     <div className="space-y-8 p-6 max-w-5xl mx-auto">
       <div className="flex items-center gap-3">
-        <DollarSign className="h-8 w-8 text-primary" />
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10">
+          <DollarSign className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+        </div>
         <div>
-          <h1 className="text-3xl font-bold">Salary Coach</h1>
-          <p className="text-muted-foreground">Market data, negotiation scripts, and counter-offer guidance</p>
+          <h1 className="text-xl font-bold">Salary Coach</h1>
+          <p className="text-xs text-muted-foreground">Market data, negotiation scripts, and counter-offer guidance</p>
         </div>
       </div>
 
       {/* Input Form */}
-      <div className="rounded-xl border p-6 space-y-4">
+      <div className="rounded-2xl border p-6 space-y-4 shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="space-y-2">
             <label htmlFor="salary-job-title" className="text-sm font-medium">Job Title *</label>
@@ -86,22 +89,22 @@ export default function SalaryCoachPage() {
       {analysis && (
         <div className="space-y-6">
           {/* Salary Range Visualization */}
-          <div className="rounded-xl border p-6 space-y-4">
+          <div className="rounded-2xl border p-6 space-y-4 shadow-soft-sm">
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <Target className="h-5 w-5" /> Market Salary Range
             </h2>
             <div className="grid grid-cols-3 gap-4 text-center">
               <div className="rounded-lg bg-red-50 dark:bg-red-900/20 p-4">
                 <div className="text-xs text-muted-foreground uppercase">Low (P25)</div>
-                <div className="text-2xl font-bold text-red-600">{fmt(analysis.market_data?.percentile_25 || 0)}</div>
+                <div className="text-2xl font-bold text-red-600 dark:text-red-400">{fmt(analysis.market_data?.percentile_25 || 0)}</div>
               </div>
               <div className="rounded-lg bg-green-50 dark:bg-green-900/20 p-4 ring-2 ring-green-500">
                 <div className="text-xs text-muted-foreground uppercase">Median (P50)</div>
-                <div className="text-2xl font-bold text-green-600">{fmt(analysis.market_data?.median || 0)}</div>
+                <div className="text-2xl font-bold text-green-600 dark:text-green-400">{fmt(analysis.market_data?.median || 0)}</div>
               </div>
               <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 p-4">
                 <div className="text-xs text-muted-foreground uppercase">High (P75)</div>
-                <div className="text-2xl font-bold text-blue-600">{fmt(analysis.market_data?.percentile_75 || 0)}</div>
+                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{fmt(analysis.market_data?.percentile_75 || 0)}</div>
               </div>
             </div>
 
@@ -120,12 +123,12 @@ export default function SalaryCoachPage() {
                 />
               )}
             </div>
-            {currentSalary && <p className="text-xs text-muted-foreground text-center">▲ Your current salary: {fmt(parseInt(currentSalary))}</p>}
+            {currentSalary && <p className="text-xs text-muted-foreground text-center">Your current salary: {fmt(parseInt(currentSalary))}</p>}
           </div>
 
           {/* Recommended Target */}
           {analysis.salary_range?.target && (
-            <div className="rounded-xl border-2 border-primary p-6 text-center space-y-2">
+            <div className="rounded-2xl border-2 border-primary p-6 text-center space-y-2 shadow-soft-sm">
               <ArrowUp className="h-8 w-8 text-primary mx-auto" />
               <div className="text-sm text-muted-foreground">Your Recommended Target</div>
               <div className="text-4xl font-bold text-primary">{fmt(analysis.salary_range.target)}</div>
@@ -140,7 +143,7 @@ export default function SalaryCoachPage() {
 
           {/* Negotiation Scripts */}
           {analysis.negotiation_scripts && analysis.negotiation_scripts.length > 0 && (
-            <div className="rounded-xl border p-6 space-y-4">
+            <div className="rounded-2xl border p-6 space-y-4 shadow-soft-sm">
               <h2 className="text-xl font-semibold flex items-center gap-2">
                 <MessageSquare className="h-5 w-5" /> Negotiation Scripts
               </h2>
@@ -148,7 +151,7 @@ export default function SalaryCoachPage() {
                 {analysis.negotiation_scripts.map((script, i) => (
                   <div key={i} className="rounded-lg bg-muted/30 p-4 space-y-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">{script.scenario}</span>
+                      <span className="text-[11px] px-2 py-0.5 rounded-lg bg-primary/10 text-primary font-medium">{script.scenario}</span>
                     </div>
                     <p className="text-sm italic leading-relaxed">&ldquo;{script.opening_line}&rdquo;</p>
                     {script.key_points && script.key_points.length > 0 && (
@@ -165,8 +168,8 @@ export default function SalaryCoachPage() {
 
           {/* Counter Offer Guidance */}
           {analysis.counter_offers && analysis.counter_offers.length > 0 && (
-            <div className="rounded-xl border p-6 space-y-3">
-              <h2 className="text-xl font-semibold">💼 Counter-Offer Strategy</h2>
+            <div className="rounded-2xl border p-6 space-y-3 shadow-soft-sm">
+              <h2 className="text-xl font-semibold">Counter-Offer Strategy</h2>
               <div className="space-y-3">
                 {analysis.counter_offers.map((co, i) => (
                   <div key={i} className="rounded-lg bg-muted/30 p-4 space-y-2">
