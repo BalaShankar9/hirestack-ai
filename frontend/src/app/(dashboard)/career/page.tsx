@@ -17,9 +17,10 @@ import { TaskQueue } from "@/components/workspace/task-queue";
 export default function CareerLabPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const userId = user?.uid || user?.id || null;
 
-  const { data: apps = [], loading: appsLoading } = useApplications(user?.uid || null, 50);
-  const { data: tasks = [], loading: tasksLoading } = useTasks(user?.uid || null, null, 300);
+  const { data: apps = [], loading: appsLoading } = useApplications(userId, 50);
+  const { data: tasks = [], loading: tasksLoading } = useTasks(userId, null, 300);
 
   const learningTasks = useMemo(
     () => tasks.filter((t) => t.source === "learningPlan"),
@@ -36,7 +37,7 @@ export default function CareerLabPage() {
     return active[0]?.learningPlan || null;
   }, [apps]);
 
-  if (!user) return null;
+  // Auth-disabled mode: render even without user
 
   return (
     <div className="space-y-6 animate-fade-in">
