@@ -314,6 +314,72 @@ class APIClient {
     delete: async (documentId: string) =>
       this.request(`/builder/documents/${documentId}`, { method: "DELETE" }),
   };
+
+  // ── Feature API methods ──────────────────────────────────────────
+
+  ats = {
+    scan: async (data: { document_content: string; document_type?: string; job_title?: string; company?: string; jd_text?: string }) =>
+      this.request("/ats/scan", { method: "POST", body: data }),
+    get: async (scanId: string) => this.request(`/ats/${scanId}`),
+  };
+
+  interview = {
+    start: async (data: { job_title: string; interview_type?: string; difficulty?: string; question_count?: number }) =>
+      this.request("/interview/sessions", { method: "POST", body: data }),
+    submitAnswer: async (sessionId: string, data: { question_id: string; answer: string }) =>
+      this.request(`/interview/sessions/${sessionId}/answers`, { method: "POST", body: data }),
+    complete: async (sessionId: string) =>
+      this.request(`/interview/sessions/${sessionId}/complete`, { method: "POST" }),
+    get: async (sessionId: string) => this.request(`/interview/sessions/${sessionId}`),
+  };
+
+  salary = {
+    analyze: async (data: { job_title: string; company?: string; location?: string; years_experience?: number; current_salary?: number }) =>
+      this.request("/salary/analyze", { method: "POST", body: data }),
+  };
+
+  career = {
+    timeline: async () => this.request("/career/timeline"),
+    portfolio: async () => this.request("/career/portfolio"),
+    snapshot: async () => this.request("/career/snapshot", { method: "POST" }),
+  };
+
+  learning = {
+    getStreak: async () => this.request("/learning/streak"),
+    getToday: async () => this.request("/learning/today"),
+    generate: async (data: { topic?: string; difficulty?: string }) =>
+      this.request("/learning/generate", { method: "POST", body: data }),
+    submitAnswer: async (challengeId: string, data: { answer: string }) =>
+      this.request(`/learning/${challengeId}/answer`, { method: "POST", body: data }),
+  };
+
+  variants = {
+    generate: async (data: { application_id: string; document_type: string; tones?: string[] }) =>
+      this.request("/variants/generate", { method: "POST", body: data }),
+    select: async (variantId: string) =>
+      this.request(`/variants/${variantId}/select`, { method: "POST" }),
+  };
+
+  jobSync = {
+    getAlerts: async () => this.request("/job-sync/alerts"),
+    getMatches: async (alertId?: string) =>
+      this.request(`/job-sync/matches${alertId ? `?alert_id=${alertId}` : ""}`),
+    createAlert: async (data: { keywords: string[]; location?: string; min_salary?: number; max_salary?: number }) =>
+      this.request("/job-sync/match", { method: "POST", body: data }),
+    deleteAlert: async (alertId: string) =>
+      this.request(`/job-sync/alerts`, { method: "DELETE", body: { alert_id: alertId } }),
+    updateMatchStatus: async (matchId: string, status: string) =>
+      this.request(`/job-sync/matches/${matchId}/status`, { method: "PUT", body: { status } }),
+  };
+
+  apiKeys = {
+    list: async () => this.request("/api-keys/keys"),
+    usage: async () => this.request("/api-keys/usage"),
+    create: async (data: { name: string }) =>
+      this.request("/api-keys/keys", { method: "POST", body: data }),
+    revoke: async (keyId: string) =>
+      this.request(`/api-keys/keys/${keyId}`, { method: "DELETE" }),
+  };
 }
 
 export const api = new APIClient(API_URL);
