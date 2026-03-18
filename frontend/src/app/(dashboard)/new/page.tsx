@@ -58,6 +58,7 @@ const STEPS: { key: Step; label: string; icon: any }[] = [
 export default function NewApplicationPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const userId = user?.uid || user?.id || null;
 
   const [step, setStep] = useState<Step>("job");
   const stepIndex = STEPS.findIndex((s) => s.key === step);
@@ -574,7 +575,7 @@ export default function NewApplicationPage() {
                   </div>
                   <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-muted">
                     <div
-                      className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500 transition-all duration-700 ease-out"
+                      className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-primary via-violet-500 to-indigo-500 transition-all duration-700 ease-out"
                       style={{ width: `${progress}%` }}
                     />
                     {progress < 100 && progress > 0 && (
