@@ -33,6 +33,9 @@ import {
   FolderOpen,
   Loader2,
   Trash2,
+  LayoutGrid,
+  BarChart3,
+  Package,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import {
@@ -118,9 +121,10 @@ export default function ApplicationWorkspacePage() {
   const searchParams = useSearchParams();
 
   const { user } = useAuth();
+  const userId = user?.uid || user?.id || null;
   const { data: app, loading } = useApplication(appId);
-  const { data: evidence = [] } = useEvidence(user?.uid || null, 200);
-  const { data: tasks = [], stats: taskStats } = useTasks(user?.uid || null, appId, 200);
+  const { data: evidence = [] } = useEvidence(userId, 200);
+  const { data: tasks = [], stats: taskStats } = useTasks(userId, appId, 200);
 
   const [tab, setTab] = useState(() => searchParams.get("tab") || "overview");
   const [cvMode, setCvMode] = useState<DocMode>("view");
@@ -449,45 +453,53 @@ export default function ApplicationWorkspacePage() {
               router.replace(nextUrl);
             }}
           >
-            <TabsList className="w-full justify-start overflow-x-auto">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="benchmark">Benchmark</TabsTrigger>
-              <TabsTrigger value="gaps">Gap analysis</TabsTrigger>
-              <TabsTrigger value="learning">Learning plan</TabsTrigger>
-              <TabsTrigger value="cv">Tailored CV</TabsTrigger>
-              <TabsTrigger value="cover">Cover letter</TabsTrigger>
-              <TabsTrigger value="statement">Personal statement</TabsTrigger>
-              <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
-              <TabsTrigger value="export">Export</TabsTrigger>
+            <TabsList className="w-full justify-start overflow-x-auto h-auto flex-wrap gap-1 bg-muted/50 p-1.5 rounded-xl">
+              <TabsTrigger value="overview" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><LayoutGrid className="h-3.5 w-3.5" />Overview</TabsTrigger>
+              <TabsTrigger value="benchmark" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><Target className="h-3.5 w-3.5" />Benchmark</TabsTrigger>
+              <TabsTrigger value="gaps" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><BarChart3 className="h-3.5 w-3.5" />Gaps</TabsTrigger>
+              <TabsTrigger value="learning" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><GraduationCap className="h-3.5 w-3.5" />Learning</TabsTrigger>
+              <TabsTrigger value="cv" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><FileText className="h-3.5 w-3.5" />CV</TabsTrigger>
+              <TabsTrigger value="cover" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><FileText className="h-3.5 w-3.5" />Cover Letter</TabsTrigger>
+              <TabsTrigger value="statement" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><PenTool className="h-3.5 w-3.5" />Statement</TabsTrigger>
+              <TabsTrigger value="portfolio" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><FolderOpen className="h-3.5 w-3.5" />Portfolio</TabsTrigger>
+              <TabsTrigger value="export" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><Package className="h-3.5 w-3.5" />Export</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="mt-4">
-              {/* Regenerate All banner */}
-              <div className="mb-4 flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 p-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-                    <Sparkles className="h-5 w-5 text-primary" />
+              {/* Module completion progress */}
+              {(() => {
+                const moduleKeys = ["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "personalStatement", "portfolio"] as const;
+                const completed = moduleKeys.filter((k) => app.modules[k] === "done" || app.modules[k] === "ready").length;
+                const pct = Math.round((completed / moduleKeys.length) * 100);
+                return (
+                  <div className="mb-4 rounded-2xl border bg-gradient-to-r from-primary/5 via-violet-500/5 to-transparent p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 shrink-0">
+                          <Sparkles className="h-5 w-5 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold">{completed}/{moduleKeys.length} modules complete</p>
+                          <div className="mt-1.5 flex items-center gap-3">
+                            <div className="h-1.5 flex-1 max-w-[200px] rounded-full bg-muted overflow-hidden">
+                              <div className={`h-full rounded-full transition-all duration-500 ${pct === 100 ? "bg-emerald-500" : "bg-primary"}`} style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="text-xs font-medium tabular-nums text-muted-foreground">{pct}%</span>
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        className="gap-2 rounded-xl shrink-0"
+                        onClick={regenerateAll}
+                        disabled={regeneratingAll || !!regeneratingModule}
+                        loading={regeneratingAll}
+                      >
+                        {regeneratingAll ? "Regenerating…" : <><RefreshCw className="h-4 w-4" /> Regenerate All</>}
+                      </Button>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold">Regenerate All Modules</p>
-                    <p className="text-xs text-muted-foreground">
-                      Re-run the full AI pipeline to refresh every document with new content.
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  className="gap-2 rounded-xl"
-                  onClick={regenerateAll}
-                  disabled={regeneratingAll || !!regeneratingModule}
-                  loading={regeneratingAll}
-                >
-                  {regeneratingAll ? (
-                    "Regenerating…"
-                  ) : (
-                    <><RefreshCw className="h-4 w-4" /> Regenerate All</>
-                  )}
-                </Button>
-              </div>
+                );
+              })()}
 
               <div className="grid gap-4 md:grid-cols-2">
                 <ModuleCard
@@ -763,12 +775,18 @@ export default function ApplicationWorkspacePage() {
 
                     <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
                       <div className="text-xs font-semibold text-primary">Recommendations</div>
-                      <ul className="mt-2 space-y-1 text-sm text-foreground/80">
+                      <div className="mt-2 space-y-2">
                         {(app.gaps.recommendations ?? []).map((r: any, i: number) => {
                           const label = toLabel(r);
-                          return <li key={label || i}>• {label}</li>;
+                          const priority = typeof r === "object" ? r?.priority : undefined;
+                          return (
+                            <div key={label || i} className="flex items-start gap-2">
+                              <div className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${priority <= 1 ? "bg-rose-500" : priority <= 3 ? "bg-amber-500" : "bg-blue-500"}`} />
+                              <span className="text-sm text-foreground/80 leading-relaxed">{label}</span>
+                            </div>
+                          );
                         })}
-                      </ul>
+                      </div>
                     </div>
 
                     <TaskQueue tasks={tasks} onToggle={onToggleTask} />
@@ -817,21 +835,26 @@ export default function ApplicationWorkspacePage() {
                     </div>
 
                     <div className="grid gap-3 md:grid-cols-2">
-                      {(app.learningPlan.plan ?? []).map((w: any) => (
-                        <div key={w.week} className="rounded-2xl border bg-card p-4">
-                          <div className="text-sm font-semibold">{w.theme ?? `Week ${w.week}`}</div>
-                          <div className="mt-2 text-xs text-muted-foreground font-medium">Outcomes</div>
+                      {(app.learningPlan.plan ?? []).map((w: any, idx: number) => (
+                        <div key={w.week ?? idx} className="rounded-2xl border bg-card p-4 hover:shadow-soft-sm transition-shadow">
+                          <div className="flex items-center gap-2">
+                            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary text-xs font-bold shrink-0">
+                              W{w.week ?? idx + 1}
+                            </div>
+                            <div className="text-sm font-semibold truncate">{w.theme ?? `Week ${w.week ?? idx + 1}`}</div>
+                          </div>
+                          <div className="mt-3 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Outcomes</div>
                           <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
                             {(w.outcomes ?? w.goals ?? []).map((o: any, i: number) => {
                               const label = toLabel(o);
-                              return <li key={label || i}>• {label}</li>;
+                              return <li key={label || i} className="flex items-start gap-1.5"><span className="text-emerald-500 mt-0.5">✓</span> {label}</li>;
                             })}
                           </ul>
-                          <div className="mt-3 text-xs text-muted-foreground font-medium">Tasks</div>
+                          <div className="mt-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Tasks</div>
                           <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
                             {(w.tasks ?? []).map((t: any, i: number) => {
                               const label = toLabel(t);
-                              return <li key={label || i}>• {label}</li>;
+                              return <li key={label || i} className="flex items-start gap-1.5"><span className="text-primary">→</span> {label}</li>;
                             })}
                           </ul>
                         </div>
@@ -1157,9 +1180,10 @@ export default function ApplicationWorkspacePage() {
           </Tabs>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 lg:sticky lg:top-6 h-fit">
           {(agentState.isRunning || agentState.stages.length > 0) && (
-            <div className="rounded-xl border p-4 bg-card">
+            <div className="rounded-2xl border p-4 bg-card shadow-soft-sm">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Agent Pipeline</div>
               <AgentProgress
                 stages={agentState.stages}
                 isRunning={agentState.isRunning}
@@ -1167,7 +1191,7 @@ export default function ApplicationWorkspacePage() {
             </div>
           )}
           {Object.keys(agentState.qualityScores).length > 0 && (
-            <div className="rounded-xl border p-4 bg-card">
+            <div className="rounded-2xl border p-4 bg-card shadow-soft-sm">
               <QualityReport
                 scores={agentState.qualityScores}
                 factCheck={agentState.factCheckSummary}
