@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -10,6 +10,14 @@ import {
   Trash2,
   ExternalLink,
   Loader2,
+  Search,
+  Award,
+  BookOpen,
+  Code2,
+  Trophy,
+  Newspaper,
+  Package,
+  ShieldCheck,
 } from "lucide-react";
 
 import { useAuth } from "@/components/providers";
@@ -23,7 +31,6 @@ import type { EvidenceDoc } from "@/lib/firestore/models";
 import { resolveFileUrl } from "@/lib/storage";
 
 import { Button } from "@/components/ui/button";
-
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -44,24 +51,33 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 
 const EVIDENCE_TYPES = [
-  { value: "cert", label: "Certification" },
-  { value: "project", label: "Project" },
-  { value: "course", label: "Course" },
-  { value: "award", label: "Award" },
-  { value: "publication", label: "Publication" },
-  { value: "other", label: "Other" },
+  { value: "cert", label: "Certification", icon: Award, color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800" },
+  { value: "project", label: "Project", icon: Code2, color: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800" },
+  { value: "course", label: "Course", icon: BookOpen, color: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-200 dark:border-violet-800" },
+  { value: "award", label: "Award", icon: Trophy, color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800" },
+  { value: "publication", label: "Publication", icon: Newspaper, color: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800" },
+  { value: "other", label: "Other", icon: Package, color: "bg-muted text-muted-foreground border-border" },
 ] as const;
+
+function getTypeConfig(type: string) {
+  return EVIDENCE_TYPES.find((t) => t.value === type) ?? EVIDENCE_TYPES[5];
+}
 
 export default function EvidenceVaultPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const userId = user?.uid || user?.id || null;
 
-  const { data: evidence = [], loading, addItem, removeItem } = useEvidence(user?.uid ?? null);
+  const { data: evidence = [], loading, addItem, removeItem } = useEvidence(userId);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [filterType, setFilterType] = useState<string>("all");
 
   // Form state
   const [kind, setKind] = useState<"link" | "file">("link");
@@ -85,9 +101,35 @@ export default function EvidenceVaultPage() {
     setTags("");
   }
 
+  const filtered = useMemo(() => {
+    let items = evidence;
+    if (filterType !== "all") {
+      items = items.filter((e) => e.type === filterType);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      items = items.filter(
+        (e) =>
+          e.title?.toLowerCase().includes(q) ||
+          e.description?.toLowerCase().includes(q) ||
+          (e.skills ?? []).some((s: string) => s.toLowerCase().includes(q)) ||
+          (e.tools ?? []).some((t: string) => t.toLowerCase().includes(q))
+      );
+    }
+    return items;
+  }, [evidence, search, filterType]);
+
+  const typeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const ev of evidence) {
+      counts[ev.type] = (counts[ev.type] || 0) + 1;
+    }
+    return counts;
+  }, [evidence]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!user) return;
+    if (!userId) return;
     setUploading(true);
 
     try {
@@ -97,24 +139,15 @@ export default function EvidenceVaultPage() {
       if (kind === "file" && fileRef.current?.files?.[0]) {
         const file = fileRef.current.files[0];
         fileName = file.name;
-        storageUrl = await uploadEvidenceFile(user.uid, file);
+        storageUrl = await uploadEvidenceFile(userId, file);
       }
 
-      const parsedSkills = skills
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      const parsedTools = tools
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      const parsedTags = tags
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
+      const parsedSkills = skills.split(",").map((s) => s.trim()).filter(Boolean);
+      const parsedTools = tools.split(",").map((s) => s.trim()).filter(Boolean);
+      const parsedTags = tags.split(",").map((s) => s.trim()).filter(Boolean);
 
-      const id = await createEvidence(user.uid, {
-        userId: user.uid,
+      const id = await createEvidence(userId, {
+        userId,
         applicationId: null,
         kind,
         type: type as EvidenceDoc["type"],
@@ -131,7 +164,7 @@ export default function EvidenceVaultPage() {
 
       addItem({
         id,
-        userId: user.uid,
+        userId,
         applicationId: null,
         kind,
         type: type as EvidenceDoc["type"],
@@ -172,7 +205,7 @@ export default function EvidenceVaultPage() {
 
   if (loading) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-6">
         <Skeleton className="h-10 w-48" />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
@@ -185,18 +218,24 @@ export default function EvidenceVaultPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Evidence Vault</h1>
-          <p className="text-muted-foreground text-sm">
-            Collect and organize proof of your skills — certifications, projects, links, and more.
-          </p>
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/10">
+            <ShieldCheck className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold">Evidence Vault</h1>
+            <p className="text-xs text-muted-foreground">
+              {evidence.length} item{evidence.length !== 1 ? "s" : ""} — certifications, projects, courses, and proof
+            </p>
+          </div>
         </div>
 
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="rounded-xl">
-              <Plus className="mr-2 h-4 w-4" />
+            <Button className="rounded-xl gap-2">
+              <Plus className="h-4 w-4" />
               Add Evidence
             </Button>
           </DialogTrigger>
@@ -206,57 +245,34 @@ export default function EvidenceVaultPage() {
               <DialogHeader className="px-6 pt-6">
                 <DialogTitle>Add Evidence</DialogTitle>
                 <DialogDescription>
-                  Add a link or file that proves a skill. Keep it specific so you can reuse it across applications.
+                  Add a link or file that proves a skill. Specific is better — reuse it across applications.
                 </DialogDescription>
               </DialogHeader>
 
               <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col gap-4 px-6 pb-6 pt-4">
                 <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-2">
-                  {/* Kind toggle */}
                   <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant={kind === "link" ? "default" : "outline"}
-                      size="sm"
-                      className="rounded-xl"
-                      onClick={() => setKind("link")}
-                    >
-                      <Link2 className="mr-1.5 h-4 w-4" />
-                      Link
+                    <Button type="button" variant={kind === "link" ? "default" : "outline"} size="sm" className="rounded-xl" onClick={() => setKind("link")}>
+                      <Link2 className="mr-1.5 h-4 w-4" />Link
                     </Button>
-                    <Button
-                      type="button"
-                      variant={kind === "file" ? "default" : "outline"}
-                      size="sm"
-                      className="rounded-xl"
-                      onClick={() => setKind("file")}
-                    >
-                      <Upload className="mr-1.5 h-4 w-4" />
-                      File
+                    <Button type="button" variant={kind === "file" ? "default" : "outline"} size="sm" className="rounded-xl" onClick={() => setKind("file")}>
+                      <Upload className="mr-1.5 h-4 w-4" />File
                     </Button>
                   </div>
 
                   <div className="space-y-1.5">
                     <Label>Title</Label>
-                    <Input
-                      required
-                      className="rounded-xl h-11"
-                      placeholder="e.g. AWS Solutions Architect cert"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                    />
+                    <Input required className="rounded-xl h-11" placeholder="e.g. AWS Solutions Architect cert" value={title} onChange={(e) => setTitle(e.target.value)} />
                   </div>
 
                   <div className="space-y-1.5">
                     <Label>Type</Label>
                     <Select value={type} onValueChange={setType}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {EVIDENCE_TYPES.map((t) => (
                           <SelectItem key={t.value} value={t.value}>
-                            {t.label}
+                            <span className="flex items-center gap-2"><t.icon className="h-3.5 w-3.5" />{t.label}</span>
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -265,61 +281,40 @@ export default function EvidenceVaultPage() {
 
                   <div className="space-y-1.5">
                     <Label>Description</Label>
-                    <Textarea
-                      rows={2}
-                      placeholder="What does this prove?"
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                    />
+                    <Textarea rows={2} placeholder="What does this prove?" value={description} onChange={(e) => setDescription(e.target.value)} />
                   </div>
 
                   {kind === "link" ? (
-                    <div key="evidence-url" className="space-y-1.5">
+                    <div className="space-y-1.5">
                       <Label>URL</Label>
-                      <Input
-                        type="url"
-                        placeholder="https://..."
-                        value={url}
-                        onChange={(e) => setUrl(e.target.value)}
-                      />
+                      <Input type="url" placeholder="https://..." value={url} onChange={(e) => setUrl(e.target.value)} />
                     </div>
                   ) : (
-                    <div key="evidence-file" className="space-y-1.5">
+                    <div className="space-y-1.5">
                       <Label>File</Label>
                       <Input type="file" ref={fileRef} />
                     </div>
                   )}
 
-                  <div className="space-y-1.5">
-                    <Label>Skills (comma-separated)</Label>
-                    <Input
-                      placeholder="React, TypeScript, Node.js"
-                      value={skills}
-                      onChange={(e) => setSkills(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label>Tools (comma-separated)</Label>
-                    <Input
-                      placeholder="Docker, AWS, Figma"
-                      value={tools}
-                      onChange={(e) => setTools(e.target.value)}
-                    />
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label>Skills (comma-separated)</Label>
+                      <Input placeholder="React, TypeScript" value={skills} onChange={(e) => setSkills(e.target.value)} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Tools (comma-separated)</Label>
+                      <Input placeholder="Docker, AWS" value={tools} onChange={(e) => setTools(e.target.value)} />
+                    </div>
                   </div>
 
                   <div className="space-y-1.5">
                     <Label>Tags (comma-separated)</Label>
-                    <Input
-                      placeholder="frontend, performance, leadership"
-                      value={tags}
-                      onChange={(e) => setTags(e.target.value)}
-                    />
+                    <Input placeholder="frontend, performance, leadership" value={tags} onChange={(e) => setTags(e.target.value)} />
                   </div>
                 </div>
 
                 <Button type="submit" className="w-full rounded-xl" disabled={uploading}>
-                  {uploading ? "Uploading…" : "Add Evidence"}
+                  {uploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Uploading…</> : "Add Evidence"}
                 </Button>
               </form>
             </div>
@@ -327,39 +322,97 @@ export default function EvidenceVaultPage() {
         </Dialog>
       </div>
 
+      {/* Search + Filter */}
+      {evidence.length > 0 && (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              className="pl-9 rounded-xl h-10"
+              placeholder="Search evidence..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <Badge
+              variant={filterType === "all" ? "default" : "secondary"}
+              className="cursor-pointer text-xs rounded-lg"
+              onClick={() => setFilterType("all")}
+            >
+              All ({evidence.length})
+            </Badge>
+            {EVIDENCE_TYPES.map((t) => {
+              const count = typeCounts[t.value] || 0;
+              if (count === 0) return null;
+              return (
+                <Badge
+                  key={t.value}
+                  variant={filterType === t.value ? "default" : "secondary"}
+                  className={cn("cursor-pointer text-xs rounded-lg border", filterType === t.value ? "" : t.color)}
+                  onClick={() => setFilterType(filterType === t.value ? "all" : t.value)}
+                >
+                  <t.icon className="h-3 w-3 mr-1" />
+                  {t.label} ({count})
+                </Badge>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Grid */}
       {evidence.length === 0 ? (
         <div className="rounded-2xl border border-dashed bg-card/50">
-          <div className="flex flex-col items-center justify-center py-12">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
-              <FileText className="h-6 w-6 text-primary" />
+          <div className="flex flex-col items-center justify-center py-16">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+              <ShieldCheck className="h-7 w-7 text-primary" />
             </div>
-            <p className="mt-4 text-sm text-muted-foreground">
-              No evidence yet. Click “Add Evidence” to get started.
+            <h3 className="mt-4 text-sm font-semibold">Build your proof library</h3>
+            <p className="mt-1 text-xs text-muted-foreground max-w-sm text-center">
+              Add certifications, projects, courses, and awards. The AI will use these to back up claims in your documents.
             </p>
+            <Button className="mt-5 gap-2 rounded-xl" onClick={() => setDialogOpen(true)}>
+              <Plus className="h-4 w-4" /> Add your first evidence
+            </Button>
           </div>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-2xl border border-dashed bg-card/50 p-8 text-center">
+          <p className="text-sm text-muted-foreground">No evidence matches your search.</p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {evidence.map((ev: EvidenceDoc) => {
+          {filtered.map((ev: EvidenceDoc) => {
             const link = ev.kind === "link" ? ev.url : ev.storageUrl ?? ev.fileUrl;
+            const typeConfig = getTypeConfig(ev.type);
+            const TypeIcon = typeConfig.icon;
+
             return (
               <div key={ev.id} className="relative group rounded-2xl border bg-card shadow-soft-sm hover:shadow-soft-md transition-all duration-300 overflow-hidden">
-                <div className="p-4 pb-2">
+                {/* Type indicator strip */}
+                <div className={cn("h-1 w-full", typeConfig.color.split(" ")[0])} />
+
+                <div className="p-4 space-y-3">
                   <div className="flex items-start justify-between gap-2">
-                    <div className="text-sm font-semibold truncate">{ev.title}</div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg shrink-0", typeConfig.color)}>
+                        <TypeIcon className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold truncate">{ev.title}</div>
+                        <div className="text-[11px] text-muted-foreground capitalize">{typeConfig.label}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200">
                       {link && (
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7"
-                          aria-label={ev.kind === "link" ? "Open link" : "Open file"}
                           onClick={async () => {
                             try {
-                              const resolved =
-                                ev.kind === "link"
-                                  ? link
-                                  : await resolveFileUrl(link);
+                              const resolved = ev.kind === "link" ? link : await resolveFileUrl(link);
                               if (resolved) window.open(resolved, "_blank", "noopener");
                             } catch (err) {
                               console.error("Failed to open evidence:", err);
@@ -374,39 +427,27 @@ export default function EvidenceVaultPage() {
                         size="icon"
                         className="h-7 w-7 text-destructive"
                         disabled={deletingId === ev.id}
-                        aria-label="Delete evidence"
                         onClick={() => handleDelete(ev.id)}
                       >
-                        {deletingId === ev.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-3.5 w-3.5" />
-                        )}
+                        {deletingId === ev.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                       </Button>
                     </div>
                   </div>
-                </div>
-                <div className="px-4 pb-4 space-y-2">
+
                   {ev.description && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">
-                      {ev.description}
-                    </p>
+                    <p className="text-xs text-muted-foreground line-clamp-2">{ev.description}</p>
                   )}
-                  <div className="flex flex-wrap gap-1">
-                    <Badge variant="outline" className="text-[10px]">
-                      {ev.type}
-                    </Badge>
-                    {(Array.isArray(ev.skills) ? ev.skills : []).slice(0, 3).map((s: string) => (
-                      <Badge key={s} variant="secondary" className="text-[10px]">
-                        {s}
-                      </Badge>
-                    ))}
-                    {(Array.isArray(ev.tools) ? ev.tools : []).slice(0, 3).map((t: string) => (
-                      <Badge key={t} variant="secondary" className="text-[10px]">
-                        {t}
-                      </Badge>
-                    ))}
-                  </div>
+
+                  {((ev.skills?.length ?? 0) > 0 || (ev.tools?.length ?? 0) > 0) && (
+                    <div className="flex flex-wrap gap-1">
+                      {(ev.skills ?? []).slice(0, 3).map((s: string) => (
+                        <Badge key={s} variant="secondary" className="text-[10px] rounded-md">{s}</Badge>
+                      ))}
+                      {(ev.tools ?? []).slice(0, 2).map((t: string) => (
+                        <Badge key={t} variant="outline" className="text-[10px] rounded-md">{t}</Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );
