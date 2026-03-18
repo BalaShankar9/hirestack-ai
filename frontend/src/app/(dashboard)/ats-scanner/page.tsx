@@ -486,9 +486,3 @@ function SubScore({ icon, label, value, suffix = "" }: { icon: React.ReactNode; 
     </div>
   );
 }
-
-function scoreColor(v: number) {
-  if (v >= 80) return "text-emerald-600 dark:text-emerald-400";
-  if (v >= 60) return "text-amber-600 dark:text-amber-400";
-  return "text-rose-600 dark:text-rose-400";
-}
