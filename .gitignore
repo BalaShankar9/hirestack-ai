@@ -64,3 +64,6 @@ frontend/public/pdfjs/
 
 # Git worktrees
 .worktrees/
+
+# Local Netlify folder
+.netlify
