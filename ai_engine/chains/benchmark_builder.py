@@ -406,7 +406,8 @@ class BenchmarkBuilderChain:
             prompt=prompt,
             system=BENCHMARK_SYSTEM,
             temperature=0.4,
-            max_tokens=4000
+            max_tokens=4000,
+            task_type="reasoning",
         )
 
     async def create_ideal_cv(
@@ -515,6 +516,111 @@ class BenchmarkBuilderChain:
             temperature=0.5,
             max_tokens=4000
         )
+
+    async def generate_perfect_application(
+        self,
+        jd_text: str,
+        job_title: str,
+        company: str,
+        user_profile: Dict[str, Any],
+        required_documents: List[Dict[str, Any]],
+        discovery_context: Dict[str, Any] = None,
+    ) -> Dict[str, Any]:
+        """Generate a COMPLETE 100% match application with ALL required documents.
+
+        Uses the user's real data as the base, fabricates any missing details
+        to create the perfect benchmark application.
+        """
+        import json
+        from ai_engine.chains.adaptive_document import AdaptiveDocumentChain
+
+        # Step 1: Create perfect profile (existing method)
+        ideal_data = await self.create_ideal_profile(job_title, company, jd_text)
+
+        # Step 2: Merge user's real data with ideal profile for benchmark context
+        merged_profile = dict(user_profile)
+        ideal = ideal_data.get("ideal_profile") or {}
+        # Keep user's real identity but enhance with ideal qualifications
+        merged_profile["name"] = user_profile.get("name") or ideal.get("name", "Ideal Candidate")
+        merged_profile["title"] = ideal.get("title") or user_profile.get("title", "")
+        merged_profile["summary"] = ideal.get("summary") or user_profile.get("summary", "")
+
+        # Merge skills: user's real + ideal additions
+        user_skills = user_profile.get("skills") or []
+        ideal_skills = ideal_data.get("ideal_skills") or []
+        merged_skills = list(user_skills)
+        existing_names = {s.get("name", "").lower() for s in user_skills if isinstance(s, dict)}
+        for s in ideal_skills:
+            if isinstance(s, dict) and s.get("name", "").lower() not in existing_names:
+                merged_skills.append({"name": s["name"], "level": s.get("level", "advanced"), "category": s.get("category", "technical"), "source": "benchmark"})
+        merged_profile["skills"] = merged_skills
+
+        # Merge experience: user's real + ideal additions
+        user_exp = user_profile.get("experience") or []
+        ideal_exp = ideal_data.get("ideal_experience") or []
+        merged_profile["experience"] = user_exp + [
+            {**e, "source": "benchmark"} for e in ideal_exp
+            if isinstance(e, dict) and not any(
+                ue.get("company", "").lower() == e.get("company", "").lower()
+                for ue in user_exp if isinstance(ue, dict)
+            )
+        ]
+
+        # Build context for document generation
+        context = {
+            "profile": merged_profile,
+            "jd_text": jd_text,
+            "job_title": job_title,
+            "company": company,
+            "industry": (discovery_context or {}).get("industry", "professional"),
+            "tone": (discovery_context or {}).get("tone", "professional"),
+            "key_themes": (discovery_context or {}).get("key_themes", []),
+            "benchmark_keywords": ", ".join(
+                s.get("name", "") for s in ideal_skills[:15] if isinstance(s, dict)
+            ),
+        }
+
+        # Step 3: Generate every required document using AdaptiveDocumentChain
+        doc_chain = AdaptiveDocumentChain(self.ai_client)
+        benchmark_documents: Dict[str, str] = {}
+
+        for doc in required_documents:
+            doc_key = doc.get("key", "")
+            doc_label = doc.get("label", doc_key)
+            if doc_key in ("learning_plan", "scorecard"):
+                continue  # Skip internal modules for benchmark
+
+            try:
+                html = await doc_chain.generate(
+                    doc_type=doc_key,
+                    doc_label=doc_label,
+                    context=context,
+                    mode="benchmark",
+                )
+                benchmark_documents[doc_key] = html
+            except Exception as e:
+                benchmark_documents[doc_key] = f"<p>Generation failed: {str(e)[:100]}</p>"
+
+        # Track what was fabricated vs real
+        enhancements = []
+        for s in merged_skills:
+            if isinstance(s, dict) and s.get("source") == "benchmark":
+                enhancements.append(f"Added skill: {s.get('name')}")
+        for e in merged_profile.get("experience", []):
+            if isinstance(e, dict) and e.get("source") == "benchmark":
+                enhancements.append(f"Added experience: {e.get('title')} at {e.get('company')}")
+
+        return {
+            "ideal_profile": ideal,
+            "ideal_skills": ideal_data.get("ideal_skills", []),
+            "ideal_experience": ideal_data.get("ideal_experience", []),
+            "ideal_education": ideal_data.get("ideal_education", []),
+            "ideal_certifications": ideal_data.get("ideal_certifications", []),
+            "scoring_weights": ideal_data.get("scoring_weights", {}),
+            "benchmark_documents": benchmark_documents,
+            "enhancements_made": enhancements,
+            "score": 100,
+        }
 
     async def create_benchmark_cv_html(
         self,

@@ -1,0 +1,16 @@
+.env
+.env.*
+.env.local
+.git
+.gitignore
+node_modules
+.next
+out
+.turbo
+*.log
+.idea
+.vscode
+coverage
+test-results
+playwright-report
+e2e

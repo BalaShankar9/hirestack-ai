@@ -192,6 +192,7 @@ export default function DashboardPage() {
               </Button>
             </div>
           ) : (
+            <div className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2 animate-stagger">
               {topApps.map((a) => {
                 const appTitle = a.title || a.confirmedFacts?.jobTitle || "Untitled application";
@@ -231,9 +232,16 @@ export default function DashboardPage() {
                             Updated {formatTime(a.updatedAt)}
                           </div>
                         </div>
-                        <Badge className={cn("border text-[11px] shrink-0", scoreTint(a.scores?.match ?? 0))} variant="secondary">
-                          {a.scores?.match ?? 0}% · {scoreLabel(a.scores?.match ?? 0)}
-                        </Badge>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <Badge className={cn("border text-[11px]", scoreTint(a.scores?.match ?? 0))} variant="secondary">
+                            {a.scores?.match ?? 0}% · {scoreLabel(a.scores?.match ?? 0)}
+                          </Badge>
+                          {a.status && a.status !== "active" && (
+                            <Badge variant="outline" className="text-[10px] capitalize">
+                              {a.status}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
 
                       {/* Mini metrics */}
@@ -255,6 +263,14 @@ export default function DashboardPage() {
                   </div>
                 );
               })}
+            </div>
+            {apps.length > 8 && (
+              <div className="text-center pt-2">
+                <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground" onClick={() => router.push('/applications')}>
+                  View all {apps.length} workspaces <ArrowRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
             </div>
           )}
 

@@ -129,7 +129,19 @@ class AgentPipeline:
                     }
                 )
             else:
-                draft = apply_optimizations(draft, optimizer, fact_check)
+                # Apply optimizer suggestions and fact-check fixes to the draft
+                # without a full re-generation. Merges optimizer.suggestions
+                # (keyword injection, readability fixes) and removes any
+                # fact_check.flags marked as "fabricated" from draft.content.
+                draft = AgentResult(
+                    content=merge_optimizations(
+                        draft.content, optimizer.content, fact_check.content
+                    ),
+                    quality_scores=critic.quality_scores,
+                    flags=fact_check.flags,
+                    latency_ms=draft.latency_ms,
+                    metadata=draft.metadata,
+                )
 
             # Stage 5: Validate
             validation = await self.validator.run(draft)
@@ -141,7 +153,7 @@ class AgentPipeline:
                 optimization_report=optimizer.content,
                 fact_check_report=fact_check.content,
                 iterations_used=1 if critic.needs_revision else 0,
-                total_latency_ms=sum_latencies(research, draft, critic, optimizer, fact_check, validation),
+                total_latency_ms=sum(a.latency_ms for a in [research, draft, critic, optimizer, fact_check, validation]),
                 trace_id=pipeline_id,
             )
 
@@ -430,7 +442,7 @@ Each feature is a vertical slice: backend fix + agent swarm + frontend fix, vali
 
 ### 3.1 Resume Parsing & Profile Extraction
 
-**Agent pipeline:** Researcher → Drafter(RoleProfilerChain) | parallel, then Critic + FactChecker | parallel, then Validator. Max 1 iteration.
+**Agent pipeline:** Researcher → Drafter(RoleProfilerChain) | sequential, then Critic + FactChecker | sequential, then Validator. Max 1 iteration.
 
 **What the swarm adds:**
 - Researcher pre-identifies resume format (chronological/functional/hybrid) for targeted extraction
@@ -453,7 +465,7 @@ Each feature is a vertical slice: backend fix + agent swarm + frontend fix, vali
 
 ### 3.2 Benchmark Generation
 
-**Agent pipeline:** Researcher + Drafter(BenchmarkBuilderChain) | parallel, then Critic + Optimizer + FactChecker | parallel, then Validator. Max 1 iteration.
+**Agent pipeline:** Researcher + Drafter(BenchmarkBuilderChain) | sequential, then Critic + Optimizer + FactChecker | sequential, then Validator. Max 1 iteration.
 
 **What the swarm adds:**
 - Researcher extracts hidden JD signals (startup vs enterprise culture, growth vs maintenance role)
@@ -474,7 +486,7 @@ Each feature is a vertical slice: backend fix + agent swarm + frontend fix, vali
 
 ### 3.3 Gap Analysis
 
-**Agent pipeline:** Drafter(GapAnalyzerChain), then Critic + Optimizer + FactChecker | parallel, then Validator. Max 1 iteration.
+**Agent pipeline:** Drafter(GapAnalyzerChain), then Critic + Optimizer + FactChecker | sequential, then Validator. Max 1 iteration.
 
 **What the swarm adds:**
 - Critic verifies score-to-gap consistency (85% score shouldn't have 10 critical gaps)
@@ -495,7 +507,7 @@ Each feature is a vertical slice: backend fix + agent swarm + frontend fix, vali
 
 ### 3.4 Document Generation (CV, Cover Letter, Personal Statement, Portfolio)
 
-**Agent pipeline (CV/Cover Letter):** Researcher + Drafter(DocumentGeneratorChain) | parallel, then Critic + Optimizer + FactChecker | parallel, revise if Critic score < 80, then Validator. Max 2 iterations.
+**Agent pipeline (CV/Cover Letter):** Researcher + Drafter(DocumentGeneratorChain) | sequential, then Critic + Optimizer + FactChecker | parallel, revise if Critic score < 80, then Validator. Max 2 iterations.
 
 **Agent pipeline (Personal Statement):** Drafter, Critic, Validator. Max 2 iterations.
 
@@ -589,7 +601,7 @@ application_package/
 
 ### 4.1 ATS Scanner
 
-**Agent pipeline:** Researcher + Drafter(ATSScannerChain) | parallel, then Optimizer, then Validator. Max 1 iteration.
+**Agent pipeline:** Researcher + Drafter(ATSScannerChain) | sequential, then Optimizer, then Validator. Max 1 iteration.
 
 **What the swarm adds:**
 - Researcher analyzes the JD for industry-specific ATS patterns
@@ -608,7 +620,7 @@ application_package/
 
 ### 4.2 Interview Simulator (Text Only)
 
-**Agent pipeline:** Researcher + Drafter(InterviewSimulatorChain) | parallel, then Critic, then Validator. Max 1 iteration.
+**Agent pipeline:** Researcher + Drafter(InterviewSimulatorChain) | sequential, then Critic, then Validator. Max 1 iteration.
 
 **What the swarm adds:**
 - Researcher uses gap report to target questions at weak areas (not random topics)
@@ -628,7 +640,7 @@ application_package/
 
 ### 4.3 Career Consultant (Roadmaps)
 
-**Agent pipeline:** Researcher + Drafter(CareerConsultantChain) | parallel, then Critic + Optimizer | parallel, then Validator. Max 1 iteration.
+**Agent pipeline:** Researcher + Drafter(CareerConsultantChain) | sequential, then Critic + Optimizer | sequential, then Validator. Max 1 iteration.
 
 **What the swarm adds:**
 - Researcher uses gap report + benchmark to prioritize roadmap milestones
@@ -649,7 +661,7 @@ application_package/
 
 ### 5.1 A/B Doc Lab
 
-**Agent pipeline:** Drafter(x3 parallel — conservative/balanced/creative), then Critic(multi-doc mode) + Optimizer | parallel, then Validator. Max 1 iteration.
+**Agent pipeline:** Drafter(x3 parallel — conservative/balanced/creative), then Critic(multi-doc mode) + Optimizer | sequential, then Validator. Max 1 iteration.
 
 **Three-Drafter differentiation mechanism:** All three Drafter instances wrap the same `DocVariantChain` but receive different `tone_instruction` in their context:
 
@@ -683,7 +695,7 @@ critic_result = await critic.run({
 
 ### 5.2 Salary Coach
 
-**Agent pipeline:** Researcher + Drafter(SalaryCoachChain) | parallel, then FactChecker, then Validator. Max 1 iteration.
+**Agent pipeline:** Researcher + Drafter(SalaryCoachChain) | sequential, then FactChecker, then Validator. Max 1 iteration.
 
 **What the swarm adds:**
 - Researcher contextualizes with benchmark seniority and gap scores

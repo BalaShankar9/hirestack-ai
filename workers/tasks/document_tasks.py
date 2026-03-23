@@ -2,7 +2,21 @@
 Document Generation Tasks
 Async tasks for generating documents with AI
 """
+import asyncio
+import structlog
+
 from workers.celery_app import app
+
+logger = structlog.get_logger()
+
+
+def _run_async(coro):
+    """Run an async coroutine inside a sync Celery task."""
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 @app.task(bind=True, max_retries=3)
@@ -16,13 +30,11 @@ def generate_document_async(self, user_id: str, document_type: str, data: dict):
         data: Document generation data
     """
     try:
-        # Import here to avoid circular imports
-        import asyncio
-        from ai_engine.client import AIClient
+        from ai_engine.client import get_ai_client
         from ai_engine.chains.document_generator import DocumentGeneratorChain
 
         async def _generate():
-            client = AIClient()
+            client = get_ai_client()
             generator = DocumentGeneratorChain(client)
 
             if document_type == "cv":
@@ -45,10 +57,11 @@ def generate_document_async(self, user_id: str, document_type: str, data: dict):
             else:
                 raise ValueError(f"Unknown document type: {document_type}")
 
-        result = asyncio.run(_generate())
+        result = _run_async(_generate())
         return {"success": True, "content": result}
 
     except Exception as exc:
+        logger.error("document_gen_task_failed", document_type=document_type, error=str(exc))
         self.retry(exc=exc, countdown=60)
 
 
@@ -58,18 +71,19 @@ def analyze_gaps_async(self, user_id: str, profile_id: str, benchmark_id: str):
     Async task to perform gap analysis.
     """
     try:
-        import asyncio
-        from ai_engine.client import AIClient
-        from ai_engine.chains.gap_analyzer import GapAnalyzerChain
+        from app.services.gap import GapService
 
         async def _analyze():
-            client = AIClient()
-            analyzer = GapAnalyzerChain(client)
-            # This would need to fetch profile and benchmark from DB
-            # Simplified for now
-            return {"success": True, "message": "Analysis queued"}
+            service = GapService()
+            return await service.analyze_gaps(
+                user_id=user_id,
+                profile_id=profile_id,
+                benchmark_id=benchmark_id,
+            )
 
-        return asyncio.run(_analyze())
+        result = _run_async(_analyze())
+        return {"success": True, "report_id": result.get("id"), "score": result.get("compatibility_score")}
 
     except Exception as exc:
+        logger.error("gap_analysis_task_failed", user_id=user_id, error=str(exc))
         self.retry(exc=exc, countdown=60)

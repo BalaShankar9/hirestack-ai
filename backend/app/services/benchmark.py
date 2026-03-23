@@ -1,33 +1,33 @@
 """
 Benchmark Service
-Handles benchmark generation and management with Firestore
+Handles benchmark generation and management with Supabase
 """
 from typing import Optional, Dict, Any, List
 import structlog
 
-from app.core.database import get_firestore_db, COLLECTIONS, FirestoreDB
-from ai_engine.client import AIClient
+from app.core.database import get_db, TABLES, SupabaseDB
+from ai_engine.client import get_ai_client
 from ai_engine.chains.benchmark_builder import BenchmarkBuilderChain
 
 logger = structlog.get_logger()
 
 
 class BenchmarkService:
-    """Service for benchmark operations using Firestore."""
+    """Service for benchmark operations using Supabase."""
 
-    def __init__(self, db: Optional[FirestoreDB] = None):
-        self.db = db or get_firestore_db()
-        self.ai_client = AIClient()
+    def __init__(self, db: Optional[SupabaseDB] = None):
+        self.db = db or get_db()
+        self.ai_client = get_ai_client()
 
     async def generate_benchmark(self, user_id: str, job_id: str) -> Dict[str, Any]:
         """Generate a complete benchmark package for a job."""
-        job = await self.db.get(COLLECTIONS["jobs"], job_id)
+        job = await self.db.get(TABLES["jobs"], job_id)
         if not job or job.get("user_id") != user_id:
             raise ValueError("Job description not found")
 
         # Check for existing benchmark
         existing = await self.db.query(
-            COLLECTIONS["benchmarks"],
+            TABLES["benchmarks"],
             filters=[("job_description_id", "==", job_id)],
             order_by="created_at",
             order_direction="DESCENDING",
@@ -66,27 +66,32 @@ class BenchmarkService:
             "status": "generated",
         }
 
-        doc_id = await self.db.create(COLLECTIONS["benchmarks"], record)
+        doc_id = await self.db.create(TABLES["benchmarks"], record)
         logger.info("benchmark_generated", benchmark_id=doc_id, job_id=job_id)
-        return await self.db.get(COLLECTIONS["benchmarks"], doc_id)
+        return await self.db.get(TABLES["benchmarks"], doc_id)
 
     async def get_benchmark(self, benchmark_id: str, user_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific benchmark, verifying ownership via linked job."""
-        benchmark = await self.db.get(COLLECTIONS["benchmarks"], benchmark_id)
+        benchmark = await self.db.get(TABLES["benchmarks"], benchmark_id)
         if not benchmark:
             return None
         # Verify ownership
         job_id = benchmark.get("job_description_id")
         if job_id:
-            job = await self.db.get(COLLECTIONS["jobs"], job_id)
+            job = await self.db.get(TABLES["jobs"], job_id)
             if not job or job.get("user_id") != user_id:
                 return None
         return benchmark
 
     async def get_benchmark_for_job(self, job_id: str, user_id: str) -> Optional[Dict[str, Any]]:
-        """Get the latest benchmark for a specific job."""
+        """Get the latest benchmark for a specific job (verifies job ownership)."""
+        # Verify the job belongs to the requesting user
+        job = await self.db.get(TABLES["jobs"], job_id)
+        if not job or job.get("user_id") != user_id:
+            return None
+
         results = await self.db.query(
-            COLLECTIONS["benchmarks"],
+            TABLES["benchmarks"],
             filters=[("job_description_id", "==", job_id)],
             order_by="created_at",
             order_direction="DESCENDING",
@@ -102,12 +107,12 @@ class BenchmarkService:
         if not old:
             return None
         job_id = old.get("job_description_id")
-        await self.db.delete(COLLECTIONS["benchmarks"], benchmark_id)
+        await self.db.delete(TABLES["benchmarks"], benchmark_id)
         return await self.generate_benchmark(user_id, job_id)
 
     async def delete_benchmark(self, benchmark_id: str, user_id: str) -> bool:
         benchmark = await self.get_benchmark(benchmark_id, user_id)
         if not benchmark:
             return False
-        await self.db.delete(COLLECTIONS["benchmarks"], benchmark_id)
+        await self.db.delete(TABLES["benchmarks"], benchmark_id)
         return True

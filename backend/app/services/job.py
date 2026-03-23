@@ -1,12 +1,12 @@
 """
 Job Service
-Handles job description management and parsing with Firestore
+Handles job description management and parsing with Supabase
 """
 from typing import List, Optional, Dict, Any
 import structlog
 
-from app.core.database import get_firestore_db, COLLECTIONS, FirestoreDB
-from ai_engine.client import AIClient
+from app.core.database import get_db, TABLES, SupabaseDB
+from ai_engine.client import get_ai_client
 
 logger = structlog.get_logger()
 
@@ -39,16 +39,16 @@ Return ONLY valid JSON:
 
 
 class JobService:
-    """Service for job description operations using Firestore."""
+    """Service for job description operations using Supabase."""
 
     ALLOWED_FIELDS = {
         "title", "company", "location", "job_type", "experience_level",
         "salary_range", "description", "source_url",
     }
 
-    def __init__(self, db: Optional[FirestoreDB] = None):
-        self.db = db or get_firestore_db()
-        self.ai_client = AIClient()
+    def __init__(self, db: Optional[SupabaseDB] = None):
+        self.db = db or get_db()
+        self.ai_client = get_ai_client()
 
     async def create_job(self, user_id: str, job_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new job description and optionally parse it."""
@@ -56,8 +56,8 @@ class JobService:
         safe["user_id"] = user_id
         safe["raw_text"] = safe.get("description", "")
 
-        doc_id = await self.db.create(COLLECTIONS["jobs"], safe)
-        created = await self.db.get(COLLECTIONS["jobs"], doc_id)
+        doc_id = await self.db.create(TABLES["jobs"], safe)
+        created = await self.db.get(TABLES["jobs"], doc_id)
 
         # Best-effort AI parsing
         try:
@@ -68,7 +68,7 @@ class JobService:
 
     async def get_user_jobs(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         return await self.db.query(
-            COLLECTIONS["jobs"],
+            TABLES["jobs"],
             filters=[("user_id", "==", user_id)],
             order_by="created_at",
             order_direction="DESCENDING",
@@ -76,7 +76,7 @@ class JobService:
         )
 
     async def get_job(self, job_id: str, user_id: str) -> Optional[Dict[str, Any]]:
-        job = await self.db.get(COLLECTIONS["jobs"], job_id)
+        job = await self.db.get(TABLES["jobs"], job_id)
         if job and job.get("user_id") == user_id:
             return job
         return None
@@ -88,14 +88,14 @@ class JobService:
         safe = {k: v for k, v in update_data.items() if k in self.ALLOWED_FIELDS}
         if not safe:
             return job
-        await self.db.update(COLLECTIONS["jobs"], job_id, safe)
-        return await self.db.get(COLLECTIONS["jobs"], job_id)
+        await self.db.update(TABLES["jobs"], job_id, safe)
+        return await self.db.get(TABLES["jobs"], job_id)
 
     async def delete_job(self, job_id: str, user_id: str) -> bool:
         job = await self.get_job(job_id, user_id)
         if not job:
             return False
-        await self.db.delete(COLLECTIONS["jobs"], job_id)
+        await self.db.delete(TABLES["jobs"], job_id)
         return True
 
     async def parse_job(self, job_id: str, user_id: str) -> Optional[Dict[str, Any]]:
@@ -105,7 +105,7 @@ class JobService:
         return await self._parse_and_update(job)
 
     async def _parse_and_update(self, job: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse job description with AI and update the Firestore document."""
+        """Parse job description with AI and update the Supabase document."""
         description = job.get("description", "")
         if not description:
             return job
@@ -127,5 +127,17 @@ class JobService:
         if not job.get("company") and parsed.get("company"):
             update["company"] = parsed["company"]
 
-        await self.db.update(COLLECTIONS["jobs"], job["id"], update)
-        return await self.db.get(COLLECTIONS["jobs"], job["id"])
+        await self.db.update(TABLES["jobs"], job["id"], update)
+        return await self.db.get(TABLES["jobs"], job["id"])
+
+
+# ── Singleton ─────────────────────────────────────────────────────
+_instance: Optional[JobService] = None
+
+
+def get_job_service() -> JobService:
+    """Return a shared JobService singleton (avoids per-request AIClient)."""
+    global _instance
+    if _instance is None:
+        _instance = JobService()
+    return _instance

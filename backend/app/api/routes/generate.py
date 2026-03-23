@@ -15,6 +15,7 @@ import json
 import math
 import re
 import traceback
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,6 +30,21 @@ except ImportError:
     _openai_module = None  # type: ignore
 
 import structlog
+
+try:
+    from ai_engine.agents.pipelines import (
+        resume_parse_pipeline,
+        benchmark_pipeline,
+        gap_analysis_pipeline,
+        cv_generation_pipeline,
+        cover_letter_pipeline,
+        personal_statement_pipeline,
+        portfolio_pipeline,
+    )
+    from ai_engine.agents.orchestrator import PipelineResult
+    _AGENT_PIPELINES_AVAILABLE = True
+except ImportError:
+    _AGENT_PIPELINES_AVAILABLE = False
 
 
 def _extract_retry_after_seconds(err: str) -> Optional[int]:
@@ -114,7 +130,7 @@ class PipelineRequest(BaseModel):
 
 # ── Main pipeline endpoint ────────────────────────────────────────────
 @router.post("/pipeline")
-async def generate_pipeline(req: PipelineRequest):
+async def generate_pipeline(req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Run the complete AI generation pipeline and return all modules."""
     try:
         from ai_engine.client import AIClient
@@ -124,6 +140,8 @@ async def generate_pipeline(req: PipelineRequest):
         from ai_engine.chains.document_generator import DocumentGeneratorChain
         from ai_engine.chains.career_consultant import CareerConsultantChain
         from ai_engine.chains.validator import ValidatorChain
+        from ai_engine.chains.document_discovery import DocumentDiscoveryChain
+        from ai_engine.chains.adaptive_document import AdaptiveDocumentChain
 
         ai = AIClient()
         company = req.company or "the company"
@@ -135,6 +153,44 @@ async def generate_pipeline(req: PipelineRequest):
             jd_length=len(req.jd_text),
             resume_length=len(req.resume_text),
         )
+
+        # ── Phase 0: Document Discovery ───────────────────────────────
+        discovery_chain = DocumentDiscoveryChain(ai)
+        try:
+            discovery = await discovery_chain.discover(req.jd_text, req.job_title, company)
+            required_docs = discovery.get("required_documents", [])
+            optional_docs = discovery.get("optional_documents", [])
+            logger.info("pipeline.discovery_done", required=len(required_docs), optional=len(optional_docs))
+        except Exception as disc_err:
+            logger.warning("pipeline.discovery_failed", error=str(disc_err))
+            # Fallback to standard docs
+            discovery = {"industry": "other", "tone": "professional", "key_themes": []}
+            required_docs = [
+                {"key": "cv", "label": "Tailored CV", "priority": "critical"},
+                {"key": "cover_letter", "label": "Cover Letter", "priority": "critical"},
+                {"key": "personal_statement", "label": "Personal Statement", "priority": "high"},
+                {"key": "portfolio", "label": "Portfolio", "priority": "medium"},
+            ]
+            optional_docs = [{"key": "learning_plan", "label": "Learning Plan", "priority": "medium"}]
+
+        # ── Phase 0.5: Company Intelligence Gathering ────────────────
+        from ai_engine.chains.company_intel import CompanyIntelChain
+
+        company_intel = {}
+        try:
+            intel_chain = CompanyIntelChain(ai)
+            company_intel = await intel_chain.gather_intel(
+                company=company,
+                job_title=req.job_title,
+                jd_text=req.jd_text,
+            )
+            logger.info(
+                "pipeline.intel_done",
+                confidence=company_intel.get("confidence", "unknown"),
+                sources=len(company_intel.get("data_sources", [])),
+            )
+        except Exception as intel_err:
+            logger.warning("pipeline.intel_failed", error=str(intel_err)[:200])
 
         # ── Phase 1: Parse resume + Build benchmark (parallel) ────────
         profiler = RoleProfilerChain(ai)
@@ -155,18 +211,34 @@ async def generate_pipeline(req: PipelineRequest):
 
         logger.info("pipeline.phase1_done", has_profile=bool(user_profile))
 
-        # Generate benchmark CV HTML (uses user identity + ideal experience)
+        # Generate benchmark documents for ALL required types (100% match)
         benchmark_cv_html = ""
+        benchmark_documents = {}
         try:
-            benchmark_cv_html = await benchmark_chain.create_benchmark_cv_html(
-                user_profile=user_profile,
-                benchmark_data=benchmark_data,
+            benchmark_result = await benchmark_chain.generate_perfect_application(
+                jd_text=req.jd_text,
                 job_title=req.job_title,
                 company=company,
-                jd_text=req.jd_text,
+                user_profile=user_profile,
+                required_documents=required_docs,
+                discovery_context=discovery,
             )
+            benchmark_documents = benchmark_result.get("benchmark_documents", {})
+            benchmark_cv_html = benchmark_documents.get("cv", "")
+            logger.info("pipeline.benchmark_docs_done", count=len(benchmark_documents))
         except Exception as bcv_err:
-            logger.warning("pipeline.benchmark_cv_failed", error=str(bcv_err))
+            logger.warning("pipeline.benchmark_docs_failed", error=str(bcv_err)[:200])
+            # Fallback: try just the CV
+            try:
+                benchmark_cv_html = await benchmark_chain.create_benchmark_cv_html(
+                    user_profile=user_profile,
+                    benchmark_data=benchmark_data,
+                    job_title=req.job_title,
+                    company=company,
+                    jd_text=req.jd_text,
+                )
+            except Exception:
+                pass
 
         # Extract keywords from benchmark ideal skills
         ideal_skills = benchmark_data.get("ideal_skills", [])
@@ -189,11 +261,10 @@ async def generate_pipeline(req: PipelineRequest):
             compatibility=gap_analysis.get("compatibility_score", 0),
         )
 
-        # ── Phase 3: Generate documents (parallel) ────────────────────
+        # ── Phase 3: Generate FIXED standard documents (parallel) ─────
         doc_chain = DocumentGeneratorChain(ai)
         consultant = CareerConsultantChain(ai)
 
-        # Prepare context strings for the prompts
         skill_gaps = gap_analysis.get("skill_gaps", [])
         strengths = gap_analysis.get("strengths", [])
         key_gaps_str = ", ".join(
@@ -202,104 +273,127 @@ async def generate_pipeline(req: PipelineRequest):
         strengths_str = ", ".join(
             s.get("area", "") for s in strengths[:8] if isinstance(s, dict)
         ) or "None identified"
-        compatibility = gap_analysis.get("compatibility_score", 50)
 
+        # Generate the 4 standard documents (always, for every job)
         cv_html, cl_html, roadmap = await asyncio.gather(
             doc_chain.generate_tailored_cv(
-                user_profile=user_profile,
-                job_title=req.job_title,
-                company=company,
-                jd_text=req.jd_text,
-                gap_analysis=gap_analysis,
-                resume_text=req.resume_text,
+                user_profile=user_profile, job_title=req.job_title,
+                company=company, jd_text=req.jd_text,
+                gap_analysis=gap_analysis, resume_text=req.resume_text,
             ),
             doc_chain.generate_tailored_cover_letter(
-                user_profile=user_profile,
-                job_title=req.job_title,
-                company=company,
-                jd_text=req.jd_text,
-                gap_analysis=gap_analysis,
+                user_profile=user_profile, job_title=req.job_title,
+                company=company, jd_text=req.jd_text, gap_analysis=gap_analysis,
             ),
-            consultant.generate_roadmap(
-                gap_analysis, user_profile, req.job_title, company
-            ),
+            consultant.generate_roadmap(gap_analysis, user_profile, req.job_title, company),
             return_exceptions=True,
         )
-
-        # Handle exceptions from gather
         if isinstance(cv_html, Exception):
-            logger.error("pipeline.cv_failed", error=str(cv_html))
-            cv_html = ""
+            logger.error("pipeline.cv_failed", error=str(cv_html)); cv_html = ""
         if isinstance(cl_html, Exception):
-            logger.error("pipeline.cl_failed", error=str(cl_html))
-            cl_html = ""
+            logger.error("pipeline.cl_failed", error=str(cl_html)); cl_html = ""
         if isinstance(roadmap, Exception):
-            logger.error("pipeline.roadmap_failed", error=str(roadmap))
-            roadmap = {}
+            logger.error("pipeline.roadmap_failed", error=str(roadmap)); roadmap = {}
 
-        logger.info(
-            "pipeline.phase3_done",
-            cv_length=len(cv_html) if isinstance(cv_html, str) else 0,
-            cl_length=len(cl_html) if isinstance(cl_html, str) else 0,
-        )
-
-        # ── Phase 4: Personal statement + Portfolio (parallel) ────────
-        ps_html = ""
-        portfolio_html = ""
+        # Personal Statement + Portfolio (always generated)
+        ps_html, portfolio_html = "", ""
         try:
             ps_result, portfolio_result = await asyncio.gather(
                 doc_chain.generate_tailored_personal_statement(
-                    user_profile=user_profile,
-                    job_title=req.job_title,
-                    company=company,
-                    jd_text=req.jd_text,
-                    gap_analysis=gap_analysis,
-                    resume_text=req.resume_text,
+                    user_profile=user_profile, job_title=req.job_title,
+                    company=company, jd_text=req.jd_text,
+                    gap_analysis=gap_analysis, resume_text=req.resume_text,
                 ),
                 doc_chain.generate_tailored_portfolio(
-                    user_profile=user_profile,
-                    job_title=req.job_title,
-                    company=company,
-                    jd_text=req.jd_text,
-                    gap_analysis=gap_analysis,
-                    resume_text=req.resume_text,
+                    user_profile=user_profile, job_title=req.job_title,
+                    company=company, jd_text=req.jd_text,
+                    gap_analysis=gap_analysis, resume_text=req.resume_text,
                 ),
                 return_exceptions=True,
             )
+            ps_html = ps_result if isinstance(ps_result, str) else ""
+            portfolio_html = portfolio_result if isinstance(portfolio_result, str) else ""
+        except Exception as p4_err:
+            logger.error("pipeline.phase4_error", error=str(p4_err))
 
-            if isinstance(ps_result, Exception):
-                logger.error("pipeline.ps_failed", error=str(ps_result))
-            else:
-                ps_html = ps_result if isinstance(ps_result, str) else ""
+        logger.info("pipeline.standard_docs_done", cv=len(str(cv_html)), cl=len(str(cl_html)))
 
-            if isinstance(portfolio_result, Exception):
-                logger.error("pipeline.portfolio_failed", error=str(portfolio_result))
-            else:
-                portfolio_html = portfolio_result if isinstance(portfolio_result, str) else ""
-        except Exception as phase4_err:
-            logger.error("pipeline.phase4_error", error=str(phase4_err))
+        # ── Phase 3b: Generate EXTRA job-specific documents ───────────
+        # Only generate docs that aren't already in the fixed set
+        FIXED_DOC_KEYS = {"cv", "cover_letter", "personal_statement", "portfolio", "learning_plan", "scorecard"}
+        extra_docs_to_generate = [
+            d for d in required_docs
+            if d.get("key") not in FIXED_DOC_KEYS
+        ]
 
-        logger.info(
-            "pipeline.phase4_done",
-            ps_length=len(ps_html),
-            portfolio_length=len(portfolio_html),
-        )
+        generated_docs: Dict[str, str] = {}
+        if extra_docs_to_generate:
+            adaptive_chain = AdaptiveDocumentChain(ai)
+            # Build intel summary for document context
+            intel_summary = ""
+            if company_intel:
+                strategy = company_intel.get("application_strategy", {})
+                culture = company_intel.get("culture_and_values", {})
+                intel_parts = []
+                if culture.get("core_values"):
+                    intel_parts.append(f"Company values: {', '.join(culture['core_values'][:5])}")
+                if culture.get("mission_statement"):
+                    intel_parts.append(f"Mission: {culture['mission_statement']}")
+                if strategy.get("keywords_to_use"):
+                    intel_parts.append(f"Keywords to include: {', '.join(strategy['keywords_to_use'][:8])}")
+                if strategy.get("things_to_mention"):
+                    intel_parts.append(f"Reference: {'; '.join(strategy['things_to_mention'][:3])}")
+                intel_summary = "\n".join(intel_parts)
 
-        # ── Phase 5: Validate key documents (non-blocking) ───────────
+            doc_context = {
+                "profile": user_profile,
+                "jd_text": req.jd_text,
+                "job_title": req.job_title,
+                "company": company,
+                "industry": discovery.get("industry", "professional"),
+                "tone": discovery.get("tone", "professional"),
+                "key_themes": discovery.get("key_themes", []),
+                "gaps_summary": key_gaps_str,
+                "strengths_summary": strengths_str,
+                "benchmark_keywords": ", ".join(keywords[:15]),
+                "company_intel": intel_summary,
+            }
+
+            for i in range(0, len(extra_docs_to_generate), 2):
+                batch = extra_docs_to_generate[i:i+2]
+                results = await asyncio.gather(
+                    *[
+                        adaptive_chain.generate(
+                            doc_type=d["key"], doc_label=d.get("label", d["key"]),
+                            context=doc_context, mode="user",
+                        )
+                        for d in batch
+                    ],
+                    return_exceptions=True,
+                )
+                for d, result in zip(batch, results):
+                    if isinstance(result, Exception):
+                        logger.error(f"pipeline.extra_doc_{d['key']}_failed", error=str(result)[:200])
+                    else:
+                        generated_docs[d["key"]] = result if isinstance(result, str) else ""
+
+            logger.info("pipeline.extra_docs_done", count=len(generated_docs), keys=list(generated_docs.keys()))
+
+        # ── Phase 4: Validate key documents (non-blocking) ───────────
         validation = {}
         try:
             validator = ValidatorChain(ai)
-            cv_valid, cv_validation = await validator.validate_document(
-                document_type="Tailored CV",
-                content=cv_html[:3000] if cv_html else "",
-                profile_data=user_profile,
-            )
-            validation["cv"] = {
-                "valid": cv_valid,
-                "qualityScore": cv_validation.get("quality_score", 0),
-                "issues": len(cv_validation.get("issues", [])),
-            }
-            logger.info("pipeline.validation_done", cv_valid=cv_valid)
+            if cv_html:
+                cv_valid, cv_validation = await validator.validate_document(
+                    document_type="Tailored CV",
+                    content=cv_html[:3000],
+                    profile_data=user_profile,
+                )
+                validation["cv"] = {
+                    "valid": cv_valid,
+                    "qualityScore": cv_validation.get("quality_score", 0),
+                    "issues": len(cv_validation.get("issues", [])),
+                }
         except Exception as val_err:
             logger.warning("pipeline.validation_skipped", error=str(val_err))
 
@@ -308,8 +402,8 @@ async def generate_pipeline(req: PipelineRequest):
             benchmark_data=benchmark_data,
             gap_analysis=gap_analysis,
             roadmap=roadmap if isinstance(roadmap, dict) else {},
-            cv_html=cv_html if isinstance(cv_html, str) else "",
-            cl_html=cl_html if isinstance(cl_html, str) else "",
+            cv_html=cv_html,
+            cl_html=cl_html,
             ps_html=ps_html,
             portfolio_html=portfolio_html,
             validation=validation,
@@ -318,7 +412,17 @@ async def generate_pipeline(req: PipelineRequest):
             benchmark_cv_html=benchmark_cv_html,
         )
 
-        logger.info("pipeline.complete", overall_score=response["scores"]["overall"])
+        # Add new fields: discovered documents, all generated docs, benchmark docs
+        response["discoveredDocuments"] = required_docs + optional_docs
+        response["generatedDocuments"] = {
+            k: v for k, v in generated_docs.items() if v
+        }
+        response["benchmarkDocuments"] = benchmark_documents
+        response["documentStrategy"] = discovery.get("document_strategy", "")
+        if company_intel:
+            response["companyIntel"] = company_intel
+
+        logger.info("pipeline.complete", overall_score=response["scores"]["overall"], docs_generated=len(generated_docs))
         return response
 
     except Exception as e:
@@ -350,14 +454,400 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
+def _agent_sse(pipeline_name: str, stage: str, status: str, latency_ms: int = 0, message: str = "", quality_scores: dict | None = None) -> str:
+    """Emit an agent_status SSE event."""
+    data = {
+        "pipeline_name": pipeline_name,
+        "stage": stage,
+        "status": status,
+        "latency_ms": latency_ms,
+        "message": message,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if quality_scores:
+        data["quality_scores"] = quality_scores
+    return f"event: agent_status\ndata: {json.dumps(data)}\n\n"
+
+
+async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncGenerator[str, None]:
+    """
+    Agent-powered SSE pipeline.
+    Each phase delegates to an AgentPipeline (Researcher → Drafter → Critic →
+    Optimizer → FactChecker → Validator) and emits agent_status events in
+    real-time alongside the regular progress events.
+    """
+    try:
+        from ai_engine.client import AIClient
+        from ai_engine.chains.career_consultant import CareerConsultantChain
+
+        ai = AIClient()
+        company = req.company or "the company"
+
+        logger.info("agent_pipeline.start", job_title=req.job_title, company=company, user_id=user_id)
+
+        yield _sse("progress", {
+            "phase": "initializing",
+            "step": 0,
+            "totalSteps": 6,
+            "progress": 5,
+            "message": "Initializing agent pipeline…",
+            "agent_powered": True,
+        })
+
+        # ── Shared callback that queues agent_status SSE events ───────
+        events_queue: list[str] = []
+
+        async def stage_callback(event: dict) -> None:
+            events_queue.append(_agent_sse(
+                pipeline_name=event.get("pipeline_name", ""),
+                stage=event.get("stage", ""),
+                status=event.get("status", ""),
+                latency_ms=event.get("latency_ms", 0),
+                message=event.get("message", ""),
+            ))
+
+        # ── Phase 1a: Resume parse pipeline ──────────────────────────
+        yield _sse("progress", {
+            "phase": "profiling",
+            "step": 1,
+            "totalSteps": 6,
+            "progress": 8,
+            "message": "Agent: parsing resume…",
+        })
+
+        user_profile: dict = {}
+        if req.resume_text.strip():
+            pipe = resume_parse_pipeline(ai_client=ai, on_stage_update=stage_callback)
+            parse_result: PipelineResult = await pipe.execute({
+                "user_id": user_id,
+                "resume_text": req.resume_text,
+            })
+            for ev in events_queue:
+                yield ev
+            events_queue.clear()
+            user_profile = parse_result.content if isinstance(parse_result.content, dict) else {}
+
+        # ── Phase 1b: Benchmark pipeline ─────────────────────────────
+        yield _sse("progress", {
+            "phase": "profiling",
+            "step": 1,
+            "totalSteps": 6,
+            "progress": 15,
+            "message": "Agent: building candidate benchmark…",
+        })
+
+        bench_pipe = benchmark_pipeline(ai_client=ai, on_stage_update=stage_callback)
+        bench_result: PipelineResult = await bench_pipe.execute({
+            "user_id": user_id,
+            "job_title": req.job_title,
+            "company": company,
+            "jd_text": req.jd_text,
+        })
+        for ev in events_queue:
+            yield ev
+        events_queue.clear()
+        benchmark_data = bench_result.content if isinstance(bench_result.content, dict) else {}
+
+        ideal_skills = benchmark_data.get("ideal_skills", [])
+        keywords = [s.get("name", "") for s in ideal_skills if isinstance(s, dict) and s.get("name")]
+        if not keywords:
+            keywords = _extract_keywords_from_jd(req.jd_text)
+
+        # Generate benchmark CV (best-effort, uses legacy chain directly)
+        benchmark_cv_html = ""
+        try:
+            from ai_engine.chains.benchmark_builder import BenchmarkBuilderChain
+            bc = BenchmarkBuilderChain(ai)
+            benchmark_cv_html = await bc.create_benchmark_cv_html(
+                user_profile=user_profile,
+                benchmark_data=benchmark_data,
+                job_title=req.job_title,
+                company=company,
+                jd_text=req.jd_text,
+            )
+        except Exception as bcv_err:
+            logger.warning("agent_pipeline.benchmark_cv_failed", error=str(bcv_err))
+
+        yield _sse("progress", {
+            "phase": "profiling_done",
+            "step": 1,
+            "totalSteps": 6,
+            "progress": 25,
+            "message": "Resume parsed & benchmark built ✓",
+        })
+
+        # ── Phase 2: Gap analysis pipeline ───────────────────────────
+        yield _sse("progress", {
+            "phase": "gap_analysis",
+            "step": 2,
+            "totalSteps": 6,
+            "progress": 30,
+            "message": "Agent: analyzing skill gaps…",
+        })
+
+        gap_pipe = gap_analysis_pipeline(ai_client=ai, on_stage_update=stage_callback)
+        gap_result: PipelineResult = await gap_pipe.execute({
+            "user_id": user_id,
+            "user_profile": user_profile,
+            "benchmark": benchmark_data,
+            "job_title": req.job_title,
+            "company": company,
+        })
+        for ev in events_queue:
+            yield ev
+        events_queue.clear()
+        gap_analysis = gap_result.content if isinstance(gap_result.content, dict) else {}
+
+        yield _sse("progress", {
+            "phase": "gap_analysis_done",
+            "step": 2,
+            "totalSteps": 6,
+            "progress": 45,
+            "message": "Gap analysis complete ✓",
+        })
+
+        # ── Phase 3: CV + Cover letter + Roadmap (parallel) ──────────
+        yield _sse("progress", {
+            "phase": "documents",
+            "step": 3,
+            "totalSteps": 6,
+            "progress": 50,
+            "message": "Agents: generating CV, cover letter & learning plan…",
+        })
+
+        doc_context = {
+            "user_id": user_id,
+            "user_profile": user_profile,
+            "job_title": req.job_title,
+            "company": company,
+            "jd_text": req.jd_text,
+            "gap_analysis": gap_analysis,
+            "resume_text": req.resume_text,
+        }
+
+        cv_queue: list[str] = []
+        cl_queue: list[str] = []
+
+        async def cv_callback(event: dict) -> None:
+            cv_queue.append(_agent_sse(
+                pipeline_name=event.get("pipeline_name", ""),
+                stage=event.get("stage", ""),
+                status=event.get("status", ""),
+                latency_ms=event.get("latency_ms", 0),
+                message=event.get("message", ""),
+            ))
+
+        async def cl_callback(event: dict) -> None:
+            cl_queue.append(_agent_sse(
+                pipeline_name=event.get("pipeline_name", ""),
+                stage=event.get("stage", ""),
+                status=event.get("status", ""),
+                latency_ms=event.get("latency_ms", 0),
+                message=event.get("message", ""),
+            ))
+
+        cv_pipe = cv_generation_pipeline(ai_client=ai, on_stage_update=cv_callback)
+        cl_pipe = cover_letter_pipeline(ai_client=ai, on_stage_update=cl_callback)
+        consultant = CareerConsultantChain(ai)
+
+        cv_result_raw, cl_result_raw, roadmap = await asyncio.gather(
+            cv_pipe.execute(doc_context),
+            cl_pipe.execute(doc_context),
+            consultant.generate_roadmap(gap_analysis, user_profile, req.job_title, company),
+            return_exceptions=True,
+        )
+
+        for ev in cv_queue:
+            yield ev
+        for ev in cl_queue:
+            yield ev
+
+        cv_result: PipelineResult | None = None
+        cl_result: PipelineResult | None = None
+
+        if isinstance(cv_result_raw, Exception):
+            logger.error("agent_pipeline.cv_failed", error=str(cv_result_raw))
+            cv_html = ""
+        else:
+            cv_result = cv_result_raw
+            raw = cv_result.content
+            cv_html = raw.get("html", "") if isinstance(raw, dict) else (raw if isinstance(raw, str) else "")
+
+        if isinstance(cl_result_raw, Exception):
+            logger.error("agent_pipeline.cl_failed", error=str(cl_result_raw))
+            cl_html = ""
+        else:
+            cl_result = cl_result_raw
+            raw = cl_result.content
+            cl_html = raw.get("html", "") if isinstance(raw, dict) else (raw if isinstance(raw, str) else "")
+
+        if isinstance(roadmap, Exception):
+            logger.error("agent_pipeline.roadmap_failed", error=str(roadmap))
+            roadmap = {}
+
+        yield _sse("progress", {
+            "phase": "documents_done",
+            "step": 3,
+            "totalSteps": 6,
+            "progress": 70,
+            "message": "CV, cover letter & learning plan ready ✓",
+        })
+
+        # ── Phase 4: Personal statement + Portfolio (parallel) ────────
+        yield _sse("progress", {
+            "phase": "portfolio",
+            "step": 4,
+            "totalSteps": 6,
+            "progress": 75,
+            "message": "Agents: building personal statement & portfolio…",
+        })
+
+        ps_queue: list[str] = []
+        pf_queue: list[str] = []
+
+        async def ps_callback(event: dict) -> None:
+            ps_queue.append(_agent_sse(
+                pipeline_name=event.get("pipeline_name", ""),
+                stage=event.get("stage", ""),
+                status=event.get("status", ""),
+                latency_ms=event.get("latency_ms", 0),
+                message=event.get("message", ""),
+            ))
+
+        async def pf_callback(event: dict) -> None:
+            pf_queue.append(_agent_sse(
+                pipeline_name=event.get("pipeline_name", ""),
+                stage=event.get("stage", ""),
+                status=event.get("status", ""),
+                latency_ms=event.get("latency_ms", 0),
+                message=event.get("message", ""),
+            ))
+
+        ps_pipe = personal_statement_pipeline(ai_client=ai, on_stage_update=ps_callback)
+        pf_pipe = portfolio_pipeline(ai_client=ai, on_stage_update=pf_callback)
+
+        ps_raw, pf_raw = await asyncio.gather(
+            ps_pipe.execute(doc_context),
+            pf_pipe.execute(doc_context),
+            return_exceptions=True,
+        )
+
+        for ev in ps_queue:
+            yield ev
+        for ev in pf_queue:
+            yield ev
+
+        ps_html = ""
+        portfolio_html = ""
+        if isinstance(ps_raw, Exception):
+            logger.error("agent_pipeline.ps_failed", error=str(ps_raw))
+        else:
+            raw = ps_raw.content
+            ps_html = raw.get("html", "") if isinstance(raw, dict) else (raw if isinstance(raw, str) else "")
+
+        if isinstance(pf_raw, Exception):
+            logger.error("agent_pipeline.portfolio_failed", error=str(pf_raw))
+        else:
+            raw = pf_raw.content
+            portfolio_html = raw.get("html", "") if isinstance(raw, dict) else (raw if isinstance(raw, str) else "")
+
+        yield _sse("progress", {
+            "phase": "portfolio_done",
+            "step": 4,
+            "totalSteps": 6,
+            "progress": 88,
+            "message": "Personal statement & portfolio ready ✓",
+        })
+
+        # ── Phase 5: Format response with quality metadata ────────────
+        yield _sse("progress", {
+            "phase": "formatting",
+            "step": 6,
+            "totalSteps": 6,
+            "progress": 98,
+            "message": "Packaging your application…",
+        })
+
+        cv_quality = cv_result.quality_scores if cv_result else {}
+        cl_quality = cl_result.quality_scores if cl_result else {}
+        cv_fact_check = cv_result.fact_check_report if cv_result else {}
+
+        validation = {
+            "cv": {
+                "valid": bool(cv_html),
+                "qualityScore": cv_quality.get("overall", 0) if isinstance(cv_quality, dict) else 0,
+                "issues": 0,
+                "agent_powered": True,
+            }
+        }
+
+        response = _format_response(
+            benchmark_data=benchmark_data,
+            gap_analysis=gap_analysis,
+            roadmap=roadmap if isinstance(roadmap, dict) else {},
+            cv_html=cv_html,
+            cl_html=cl_html,
+            ps_html=ps_html,
+            portfolio_html=portfolio_html,
+            validation=validation,
+            keywords=keywords,
+            job_title=req.job_title,
+            benchmark_cv_html=benchmark_cv_html,
+        )
+
+        response["meta"] = {
+            "quality_scores": {"cv": cv_quality, "cover_letter": cl_quality},
+            "fact_check": cv_fact_check,
+            "agent_powered": True,
+        }
+
+        logger.info("agent_pipeline.complete", overall_score=response["scores"]["overall"])
+
+        yield _agent_sse("pipeline", "complete", "completed", message="All agent pipelines completed")
+        yield _sse("complete", {"progress": 100, "result": response})
+
+    except Exception as e:
+        classified = _classify_ai_error(e)
+        if classified:
+            code = int(classified["code"])
+            msg = str(classified["message"])
+            retry_after = classified.get("retry_after_seconds")
+            logger.error("agent_pipeline.ai_error", code=code, message=msg, retry_after_seconds=retry_after)
+            payload: Dict[str, Any] = {"message": msg, "code": code}
+            if retry_after:
+                payload["retryAfterSeconds"] = retry_after
+            yield _sse("error", payload)
+        else:
+            logger.error("agent_pipeline.error", error=str(e), traceback=traceback.format_exc())
+            yield _sse("error", {
+                "message": "AI generation failed due to an unexpected error. Please try again.",
+                "code": 500,
+            })
+
+
 @router.post("/pipeline/stream")
-async def generate_pipeline_stream(req: PipelineRequest):
+async def generate_pipeline_stream(req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     SSE streaming version of the pipeline.
-    Emits real-time progress events as each phase completes,
-    then emits the final result as a 'complete' event.
+    Uses the agent pipeline (Researcher → Drafter → Critic → Optimizer →
+    FactChecker → Validator) when available and emits agent_status events
+    alongside regular progress events.
+    Falls back to the legacy direct-chain path if agents are unavailable.
     """
+    user_id = current_user.get("id") or current_user.get("uid") or current_user.get("sub") or "anonymous"
 
+    if _AGENT_PIPELINES_AVAILABLE:
+        return StreamingResponse(
+            _stream_agent_pipeline(req, user_id),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    # ── Legacy fallback ────────────────────────────────────────────────
     async def event_stream() -> AsyncGenerator[str, None]:
         try:
             from ai_engine.client import AIClient
@@ -898,7 +1388,7 @@ async def create_generation_job(
         .select("id,confirmed_facts")
         .eq("id", req.application_id)
         .eq("user_id", user_id)
-        .maybeSingle()
+        .maybe_single()
         .execute()
     )
     if not app_resp.data:
@@ -914,11 +1404,9 @@ async def create_generation_job(
     job_resp = await asyncio.to_thread(
         lambda: sb.table(TABLES["generation_jobs"])
         .insert(job_row)
-        .select("id")
-        .single()
         .execute()
     )
-    return {"job_id": job_resp.data["id"]}
+    return {"job_id": job_resp.data[0]["id"]}
 
 
 @router.get("/jobs/{job_id}/stream")
@@ -938,7 +1426,7 @@ async def stream_generation_job(
         .select("*")
         .eq("id", job_id)
         .eq("user_id", user_id)
-        .maybeSingle()
+        .maybe_single()
         .execute()
     )
     if not job_resp.data:
@@ -952,7 +1440,7 @@ async def stream_generation_job(
         lambda: sb.table(TABLES["applications"])
         .select("confirmed_facts")
         .eq("id", app_id)
-        .maybeSingle()
+        .maybe_single()
         .execute()
     )
     if not app_resp.data:
@@ -986,7 +1474,7 @@ async def stream_generation_job(
                         lambda: sb.table(TABLES["generation_jobs"])
                         .select("cancel_requested")
                         .eq("id", job_id)
-                        .maybeSingle()
+                        .maybe_single()
                         .execute()
                     )
                     return bool((r.data or {}).get("cancel_requested"))

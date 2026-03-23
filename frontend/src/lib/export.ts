@@ -4,6 +4,7 @@
  */
 
 // Dynamic imports to avoid SSR issues
+import { escapeHtml } from "@/lib/sanitize";
 const loadHtml2Pdf = async () => {
   if (typeof window === "undefined") {
     throw new Error("PDF export is only available in the browser");
@@ -178,7 +179,9 @@ export async function exportToPdf(
   // Create a container for rendering
   const container = document.createElement("div");
   container.className = "pdf-container";
-  container.innerHTML = htmlContent;
+  // Sanitize HTML to prevent XSS (M9-F1)
+  const DOMPurify = (await import("dompurify")).default;
+  container.innerHTML = DOMPurify.sanitize(htmlContent, { ADD_ATTR: ['target'] });
 
   // Add professional branded styling based on document type
   const styleSheet = document.createElement("style");
@@ -267,12 +270,14 @@ export function downloadHtml(
 ): void {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   
+  const safeFilename = opts.filename.replace(/[<>"'&]/g, '_');
   const fullHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${opts.filename}</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: https:;">
+  <title>${safeFilename}</title>
   <style>
     body {
       font-family: 'Georgia', 'Times New Roman', serif;
@@ -363,6 +368,7 @@ export async function downloadDocx(
       xmlns="http://www.w3.org/TR/REC-html40">
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
   <meta name="ProgId" content="Word.Document">
   <meta name="Generator" content="HireStack AI">
   <!--[if gte mso 9]>
@@ -418,7 +424,9 @@ export async function downloadImage(
   // Create a container for rendering
   const container = document.createElement("div");
   container.className = "pdf-container";
-  container.innerHTML = htmlContent;
+  // Sanitize HTML to prevent XSS (M9-F1)
+  const DOMPurify = (await import("dompurify")).default;
+  container.innerHTML = DOMPurify.sanitize(htmlContent, { ADD_ATTR: ['target'] });
 
   const styleSheet = document.createElement("style");
   const docStyles = PROFESSIONAL_STYLES[opts.documentType ?? "cv"] || PROFESSIONAL_STYLES.cv;
@@ -653,17 +661,17 @@ export async function downloadAllAsZip(
 export function buildBenchmarkHtml(benchmark: any, jobTitle: string): string {
   if (!benchmark) return "";
   const skills = (benchmark.idealSkills ?? [])
-    .map((s: any) => `<li><strong>${s?.name || "Skill"}</strong> — ${s?.level || "required"} (${s?.importance || "important"})</li>`)
+    .map((s: any) => `<li><strong>${escapeHtml(s?.name || "Skill")}</strong> — ${escapeHtml(s?.level || "required")} (${escapeHtml(s?.importance || "important")})</li>`)
     .join("");
   const rubric = (benchmark.rubric ?? [])
-    .map((r: any) => `<li>${typeof r === "string" ? r : r?.dimension || JSON.stringify(r)}</li>`)
+    .map((r: any) => `<li>${typeof r === "string" ? escapeHtml(r) : escapeHtml(r?.dimension || JSON.stringify(r))}</li>`)
     .join("");
-  const keywords = (benchmark.keywords ?? []).join(", ");
+  const keywords = (benchmark.keywords ?? []).map((k: any) => escapeHtml(k)).join(", ");
 
   return `
     <h2>Benchmark — Ideal Candidate Profile</h2>
-    <p><em>Target role: ${jobTitle}</em></p>
-    <p>${benchmark.summary || ""}</p>
+    <p><em>Target role: ${escapeHtml(jobTitle)}</em></p>
+    <p>${escapeHtml(benchmark.summary || "")}</p>
     <h3>Key Skills Required</h3>
     <ul>${skills}</ul>
     <h3>Scoring Rubric</h3>
@@ -676,19 +684,19 @@ export function buildBenchmarkHtml(benchmark: any, jobTitle: string): string {
 export function buildGapAnalysisHtml(gaps: any): string {
   if (!gaps) return "";
   const missing = (gaps.missingKeywords ?? []).map((k: any) =>
-    `<li>${typeof k === "string" ? k : k?.dimension || JSON.stringify(k)}</li>`
+    `<li>${typeof k === "string" ? escapeHtml(k) : escapeHtml(k?.dimension || JSON.stringify(k))}</li>`
   ).join("");
   const strengths = (gaps.strengths ?? []).map((s: any) =>
-    `<li>${typeof s === "string" ? s : s?.area || JSON.stringify(s)}</li>`
+    `<li>${typeof s === "string" ? escapeHtml(s) : escapeHtml(s?.area || JSON.stringify(s))}</li>`
   ).join("");
   const recs = (gaps.recommendations ?? []).map((r: any) =>
-    `<li>${typeof r === "string" ? r : r?.title || JSON.stringify(r)}</li>`
+    `<li>${typeof r === "string" ? escapeHtml(r) : escapeHtml(r?.title || JSON.stringify(r))}</li>`
   ).join("");
 
   return `
     <h2>Gap Analysis</h2>
-    ${gaps.compatibility != null ? `<p><strong>Compatibility Score: ${gaps.compatibility}%</strong></p>` : ""}
-    ${gaps.summary ? `<p>${gaps.summary}</p>` : ""}
+    ${gaps.compatibility != null ? `<p><strong>Compatibility Score: ${escapeHtml(String(gaps.compatibility))}%</strong></p>` : ""}
+    ${gaps.summary ? `<p>${escapeHtml(gaps.summary)}</p>` : ""}
     <h3>Missing Keywords</h3>
     <ul>${missing}</ul>
     <h3>Strengths</h3>
@@ -700,18 +708,18 @@ export function buildGapAnalysisHtml(gaps: any): string {
 
 export function buildLearningPlanHtml(plan: any): string {
   if (!plan) return "";
-  const focus = (plan.focus ?? []).join(", ");
+  const focus = (plan.focus ?? []).map((f: any) => escapeHtml(f)).join(", ");
   const weeks = (plan.plan ?? []).map((w: any) => {
-    const outcomes = (w.outcomes ?? w.goals ?? []).map((o: any) => `<li>${typeof o === "string" ? o : JSON.stringify(o)}</li>`).join("");
-    const tasks = (w.tasks ?? []).map((t: any) => `<li>${typeof t === "string" ? t : JSON.stringify(t)}</li>`).join("");
+    const outcomes = (w.outcomes ?? w.goals ?? []).map((o: any) => `<li>${typeof o === "string" ? escapeHtml(o) : escapeHtml(JSON.stringify(o))}</li>`).join("");
+    const tasks = (w.tasks ?? []).map((t: any) => `<li>${typeof t === "string" ? escapeHtml(t) : escapeHtml(JSON.stringify(t))}</li>`).join("");
     return `
-      <h3>Week ${w.week}: ${w.theme || ""}</h3>
+      <h3>Week ${escapeHtml(String(w.week))}: ${escapeHtml(w.theme || "")}</h3>
       <p><strong>Outcomes:</strong></p><ul>${outcomes}</ul>
       <p><strong>Tasks:</strong></p><ul>${tasks}</ul>
     `;
   }).join("");
   const resources = (plan.resources ?? []).map((r: any) =>
-    `<li><strong>${r.title || ""}</strong> — ${r.provider || "Resource"} (${r.timebox || "Self-paced"})</li>`
+    `<li><strong>${escapeHtml(r.title || "")}</strong> — ${escapeHtml(r.provider || "Resource")} (${escapeHtml(r.timebox || "Self-paced")})</li>`
   ).join("");
 
   return `

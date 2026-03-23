@@ -14,7 +14,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph as RLParagraph, Spac
 from reportlab.lib.units import inch
 from docx import Document as DocxDocument
 
-from app.core.database import get_db, TABLES, SupabaseDB
+from app.core.database import get_db, get_supabase, TABLES, SupabaseDB
 
 logger = structlog.get_logger()
 
@@ -81,21 +81,59 @@ class ExportService:
         else:
             raise ValueError(f"Unsupported format: {fmt}")
 
-        # Store as base64 in Supabase (for small exports; production should use Supabase Storage)
-        b64 = base64.b64encode(file_bytes).decode()
+        # Upload to Supabase Storage (preferred), fall back to base64 in DB
+        file_url = await self._upload_to_storage(user_id, filename, file_bytes, fmt)
+
         record = {
             "user_id": user_id,
             "document_ids": document_ids or [],
             "format": fmt,
             "filename": filename,
             "file_size": len(file_bytes),
-            "file_url": f"data:application/octet-stream;base64,{b64}",
+            "file_url": file_url,
             "options": options,
             "status": "completed",
         }
         doc_id = await self.db.create(TABLES["exports"], record)
         logger.info("export_created", export_id=doc_id, format=fmt, doc_count=len(documents))
         return await self.db.get(TABLES["exports"], doc_id)
+
+    async def _upload_to_storage(self, user_id: str, filename: str, file_bytes: bytes, fmt: str) -> str:
+        """Upload export file to Supabase Storage, returning a signed URL.
+        Falls back to inline base64 data URI if Storage upload fails."""
+        try:
+            client = get_supabase()
+            storage_path = f"{user_id}/exports/{filename}"
+            content_types = {
+                "pdf": "application/pdf",
+                "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "markdown": "text/markdown",
+            }
+            content_type = content_types.get(fmt, "application/octet-stream")
+
+            # Upload to the 'uploads' bucket
+            client.storage.from_("uploads").upload(
+                path=storage_path,
+                file=file_bytes,
+                file_options={"content-type": content_type, "upsert": "true"},
+            )
+
+            # Generate a signed URL valid for 7 days
+            signed = client.storage.from_("uploads").create_signed_url(
+                storage_path, expires_in=7 * 24 * 3600
+            )
+            if signed and signed.get("signedURL"):
+                logger.info("export_uploaded_to_storage", path=storage_path)
+                return signed["signedURL"]
+
+            # Fallback: public URL
+            public = client.storage.from_("uploads").get_public_url(storage_path)
+            return public
+        except Exception as e:
+            logger.warning("storage_upload_failed_falling_back_to_base64", error=str(e))
+            # Fallback to base64 data URI
+            b64 = base64.b64encode(file_bytes).decode()
+            return f"data:application/octet-stream;base64,{b64}"
 
     def _strip_html(self, html: str) -> str:
         """Simple HTML to plain text conversion."""
@@ -208,16 +246,34 @@ class ExportService:
             raise ValueError("Export not found")
 
         file_url = export.get("file_url", "")
-        if not file_url.startswith("data:"):
-            raise ValueError("Export file not available")
-
-        file_content = base64.b64decode(file_url.split(",")[1])
         content_types = {
             "pdf": "application/pdf",
             "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "markdown": "text/markdown",
         }
-        return file_content, export.get("filename", "export"), content_types.get(export.get("format", ""), "application/octet-stream")
+        content_type = content_types.get(export.get("format", ""), "application/octet-stream")
+        filename = export.get("filename", "export")
+
+        # Legacy base64 data URI
+        if file_url.startswith("data:"):
+            file_content = base64.b64decode(file_url.split(",")[1])
+            return file_content, filename, content_type
+
+        # Supabase Storage signed/public URL — fetch via httpx
+        if file_url.startswith("http"):
+            # SSRF protection: only allow URLs from our Supabase instance
+            from urllib.parse import urlparse
+            parsed = urlparse(file_url)
+            allowed_hosts = ["dkfmcnfhvbqwsgpkgoag.supabase.co", "supabase.co"]
+            if not parsed.hostname or not any(h in parsed.hostname for h in allowed_hosts):
+                raise ValueError("Export file URL is not from a trusted source")
+            import httpx
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(file_url, follow_redirects=False)
+                resp.raise_for_status()
+                return resp.content, filename, content_type
+
+        raise ValueError("Export file not available")
 
     async def delete_export(self, export_id: str, user_id: str) -> bool:
         export = await self.get_export(export_id, user_id)

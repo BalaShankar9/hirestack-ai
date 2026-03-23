@@ -263,13 +263,13 @@
 /* ── Glass card utility ──────────────────────────────── */
 @layer components {
   .glass {
-    @apply bg-white/70 backdrop-blur-xl border border-white/20;
+    @apply bg-white/70 backdrop-blur-xl border border-white/20 dark:bg-card/70 dark:border-white/5;
   }
   .glass-card {
-    @apply bg-white/80 backdrop-blur-xl border border-white/30 rounded-2xl shadow-soft-md;
+    @apply bg-white/80 backdrop-blur-xl border border-white/30 rounded-2xl shadow-soft-md dark:bg-card/80 dark:border-white/5;
   }
   .glass-panel {
-    @apply bg-white/60 backdrop-blur-lg border border-white/20 rounded-xl;
+    @apply bg-white/60 backdrop-blur-lg border border-white/20 rounded-xl dark:bg-card/60 dark:border-white/5;
   }
   .gradient-text {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-violet-500 to-indigo-500;

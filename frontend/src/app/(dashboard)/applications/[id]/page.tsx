@@ -33,6 +33,9 @@ import {
   FolderOpen,
   Loader2,
   Trash2,
+  LayoutGrid,
+  BarChart3,
+  Package,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import {
@@ -67,6 +70,11 @@ import { KeywordChips } from "@/components/workspace/keyword-chips";
 import { EvidencePicker } from "@/components/workspace/evidence-picker";
 import { VersionHistoryDrawer } from "@/components/workspace/version-history-drawer";
 import { DocEditorModule, ExportCard, EmptyState } from "@/components/workspace/doc-editor-module";
+import type { DocMode } from "@/components/workspace/diff-toggle";
+import { sanitizeHtml } from "@/lib/sanitize";
+import { AgentProgress } from "@/components/workspace/agent-progress";
+import { QualityReport } from "@/components/workspace/quality-report";
+import { useAgentStatus } from "@/hooks/use-agent-status";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -113,15 +121,16 @@ export default function ApplicationWorkspacePage() {
   const searchParams = useSearchParams();
 
   const { user } = useAuth();
+  const userId = user?.uid || user?.id || null;
   const { data: app, loading } = useApplication(appId);
-  const { data: evidence = [] } = useEvidence(user?.uid || null, 200);
-  const { data: tasks = [], stats: taskStats } = useTasks(user?.uid || null, appId, 200);
+  const { data: evidence = [] } = useEvidence(userId, 200);
+  const { data: tasks = [], stats: taskStats } = useTasks(userId, appId, 200);
 
   const [tab, setTab] = useState(() => searchParams.get("tab") || "overview");
-  const [cvMode, setCvMode] = useState<"edit" | "diff">("edit");
-  const [clMode, setClMode] = useState<"edit" | "diff">("edit");
-  const [psMode, setPsMode] = useState<"edit" | "diff">("edit");
-  const [portfolioMode, setPortfolioMode] = useState<"edit" | "diff">("edit");
+  const [cvMode, setCvMode] = useState<DocMode>("view");
+  const [clMode, setClMode] = useState<DocMode>("view");
+  const [psMode, setPsMode] = useState<DocMode>("view");
+  const [portfolioMode, setPortfolioMode] = useState<DocMode>("view");
 
   const cvEditorRef = useRef<any>(null);
   const clEditorRef = useRef<any>(null);
@@ -149,6 +158,7 @@ export default function ApplicationWorkspacePage() {
   const [regeneratingAll, setRegeneratingAll] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const { state: agentState, subscribe: agentSubscribe, handleAgentEvent, handleComplete, handleError: handleAgentError, reset: agentReset } = useAgentStatus();
 
   // Track workspace views
   useEffect(() => {
@@ -443,45 +453,68 @@ export default function ApplicationWorkspacePage() {
               router.replace(nextUrl);
             }}
           >
-            <TabsList className="w-full justify-start overflow-x-auto">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="benchmark">Benchmark</TabsTrigger>
-              <TabsTrigger value="gaps">Gap analysis</TabsTrigger>
-              <TabsTrigger value="learning">Learning plan</TabsTrigger>
-              <TabsTrigger value="cv">Tailored CV</TabsTrigger>
-              <TabsTrigger value="cover">Cover letter</TabsTrigger>
-              <TabsTrigger value="statement">Personal statement</TabsTrigger>
-              <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
-              <TabsTrigger value="export">Export</TabsTrigger>
+            <TabsList className="w-full justify-start overflow-x-auto h-auto flex-wrap gap-1 bg-muted/50 p-1.5 rounded-xl">
+              <TabsTrigger value="overview" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><LayoutGrid className="h-3.5 w-3.5" />Overview</TabsTrigger>
+              <TabsTrigger value="benchmark" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><Target className="h-3.5 w-3.5" />Benchmark</TabsTrigger>
+              <TabsTrigger value="gaps" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><BarChart3 className="h-3.5 w-3.5" />Gaps</TabsTrigger>
+              <TabsTrigger value="learning" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><GraduationCap className="h-3.5 w-3.5" />Learning</TabsTrigger>
+              <TabsTrigger value="cv" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><FileText className="h-3.5 w-3.5" />CV</TabsTrigger>
+              <TabsTrigger value="cover" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><FileText className="h-3.5 w-3.5" />Cover Letter</TabsTrigger>
+              <TabsTrigger value="statement" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><PenTool className="h-3.5 w-3.5" />Statement</TabsTrigger>
+              <TabsTrigger value="portfolio" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><FolderOpen className="h-3.5 w-3.5" />Portfolio</TabsTrigger>
+              {/* Dynamic extra document tabs from Document Discovery */}
+              {app.generatedDocuments && Object.keys(app.generatedDocuments).length > 0 && (
+                Object.entries(app.generatedDocuments).map(([key, html]) => {
+                  if (!html) return null;
+                  // Find the label from discoveredDocuments
+                  const docInfo = (app.discoveredDocuments || []).find((d: any) => d.key === key);
+                  const label = docInfo?.label || key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+                  return (
+                    <TabsTrigger key={key} value={`extra-${key}`} className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm">
+                      <Sparkles className="h-3 w-3 text-teal-500" />
+                      <span className="text-xs">{label}</span>
+                    </TabsTrigger>
+                  );
+                })
+              )}
+              <TabsTrigger value="export" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><Package className="h-3.5 w-3.5" />Export</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="mt-4">
-              {/* Regenerate All banner */}
-              <div className="mb-4 flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 p-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-                    <Sparkles className="h-5 w-5 text-primary" />
+              {/* Module completion progress */}
+              {(() => {
+                const moduleKeys = ["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "personalStatement", "portfolio"] as const;
+                const completed = moduleKeys.filter((k) => app.modules[k]?.state === "ready").length;
+                const pct = Math.round((completed / moduleKeys.length) * 100);
+                return (
+                  <div className="mb-4 rounded-2xl border bg-gradient-to-r from-primary/5 via-violet-500/5 to-transparent p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 shrink-0">
+                          <Sparkles className="h-5 w-5 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold">{completed}/{moduleKeys.length} modules complete</p>
+                          <div className="mt-1.5 flex items-center gap-3">
+                            <div className="h-1.5 flex-1 max-w-[200px] rounded-full bg-muted overflow-hidden">
+                              <div className={`h-full rounded-full transition-all duration-500 ${pct === 100 ? "bg-emerald-500" : "bg-primary"}`} style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="text-xs font-medium tabular-nums text-muted-foreground">{pct}%</span>
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        className="gap-2 rounded-xl shrink-0"
+                        onClick={regenerateAll}
+                        disabled={regeneratingAll || !!regeneratingModule}
+                        loading={regeneratingAll}
+                      >
+                        {regeneratingAll ? "Regenerating…" : <><RefreshCw className="h-4 w-4" /> Regenerate All</>}
+                      </Button>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold">Regenerate All Modules</p>
-                    <p className="text-xs text-muted-foreground">
-                      Re-run the full AI pipeline to refresh every document with new content.
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  className="gap-2 rounded-xl"
-                  onClick={regenerateAll}
-                  disabled={regeneratingAll || !!regeneratingModule}
-                  loading={regeneratingAll}
-                >
-                  {regeneratingAll ? (
-                    "Regenerating…"
-                  ) : (
-                    <><RefreshCw className="h-4 w-4" /> Regenerate All</>
-                  )}
-                </Button>
-              </div>
+                );
+              })()}
 
               <div className="grid gap-4 md:grid-cols-2">
                 <ModuleCard
@@ -670,10 +703,10 @@ export default function ApplicationWorkspacePage() {
                             </Button>
                           </div>
                         </div>
-                        <div className="rounded-xl border bg-white/50 dark:bg-background/50 overflow-hidden">
+                        <div className="mx-auto max-w-[800px]">
                           <div
-                            className="prose prose-sm max-w-none p-5 [&_h1]:text-xl [&_h1]:font-bold [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:border-b [&_h2]:pb-1 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_ul]:mt-1 [&_li]:text-xs [&_p]:text-xs [&_p]:text-muted-foreground"
-                            dangerouslySetInnerHTML={{ __html: (app.benchmark as any).benchmarkCvHtml }}
+                            className="doc-preview"
+                            dangerouslySetInnerHTML={{ __html: sanitizeHtml((app.benchmark as any).benchmarkCvHtml || "") }}
                           />
                         </div>
                       </div>
@@ -685,6 +718,43 @@ export default function ApplicationWorkspacePage() {
                     body="Run the wizard generation or regenerate the module here."
                     action={<Button onClick={() => regenerate("benchmark")} loading={regeneratingModule === "benchmark"}>Generate benchmark</Button>}
                   />
+                )}
+
+                {/* Benchmark Documents — Perfect 100% Application */}
+                {app.benchmarkDocuments && Object.keys(app.benchmarkDocuments).length > 0 && (
+                  <div className="mt-6">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10">
+                        <Target className="h-4 w-4 text-emerald-500" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold">Perfect Application Documents</p>
+                        <p className="text-xs text-muted-foreground">100% match benchmark — use as reference to improve yours</p>
+                      </div>
+                      <Badge variant="outline" className="ml-auto text-[10px] border-emerald-500/30 text-emerald-500">
+                        {Object.keys(app.benchmarkDocuments).length} documents
+                      </Badge>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {Object.entries(app.benchmarkDocuments).map(([key, html]) => {
+                        if (!html) return null;
+                        const docInfo = (app.discoveredDocuments || []).find((d: any) => d.key === key);
+                        const label = docInfo?.label || key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+                        return (
+                          <details key={key} className="rounded-xl border bg-card/50 overflow-hidden group">
+                            <summary className="px-4 py-2.5 flex items-center gap-2 cursor-pointer list-none select-none hover:bg-muted/30 transition-colors">
+                              <FileText className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                              <span className="text-xs font-medium flex-1">{label}</span>
+                              <span className="text-[9px] text-emerald-500 font-mono">100%</span>
+                            </summary>
+                            <div className="border-t p-4 max-h-[400px] overflow-y-auto">
+                              <div className="prose prose-sm dark:prose-invert max-w-none text-xs" dangerouslySetInnerHTML={{ __html: html }} />
+                            </div>
+                          </details>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
               </div>
             </TabsContent>
@@ -757,12 +827,18 @@ export default function ApplicationWorkspacePage() {
 
                     <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
                       <div className="text-xs font-semibold text-primary">Recommendations</div>
-                      <ul className="mt-2 space-y-1 text-sm text-foreground/80">
+                      <div className="mt-2 space-y-2">
                         {(app.gaps.recommendations ?? []).map((r: any, i: number) => {
                           const label = toLabel(r);
-                          return <li key={label || i}>• {label}</li>;
+                          const priority = typeof r === "object" ? r?.priority : undefined;
+                          return (
+                            <div key={label || i} className="flex items-start gap-2">
+                              <div className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${priority <= 1 ? "bg-rose-500" : priority <= 3 ? "bg-amber-500" : "bg-blue-500"}`} />
+                              <span className="text-sm text-foreground/80 leading-relaxed">{label}</span>
+                            </div>
+                          );
                         })}
-                      </ul>
+                      </div>
                     </div>
 
                     <TaskQueue tasks={tasks} onToggle={onToggleTask} />
@@ -811,21 +887,26 @@ export default function ApplicationWorkspacePage() {
                     </div>
 
                     <div className="grid gap-3 md:grid-cols-2">
-                      {(app.learningPlan.plan ?? []).map((w: any) => (
-                        <div key={w.week} className="rounded-2xl border bg-card p-4">
-                          <div className="text-sm font-semibold">{w.theme ?? `Week ${w.week}`}</div>
-                          <div className="mt-2 text-xs text-muted-foreground font-medium">Outcomes</div>
+                      {(app.learningPlan.plan ?? []).map((w: any, idx: number) => (
+                        <div key={w.week ?? idx} className="rounded-2xl border bg-card p-4 hover:shadow-soft-sm transition-shadow">
+                          <div className="flex items-center gap-2">
+                            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary text-xs font-bold shrink-0">
+                              W{w.week ?? idx + 1}
+                            </div>
+                            <div className="text-sm font-semibold truncate">{w.theme ?? `Week ${w.week ?? idx + 1}`}</div>
+                          </div>
+                          <div className="mt-3 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Outcomes</div>
                           <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
                             {(w.outcomes ?? w.goals ?? []).map((o: any, i: number) => {
                               const label = toLabel(o);
-                              return <li key={label || i}>• {label}</li>;
+                              return <li key={label || i} className="flex items-start gap-1.5"><span className="text-emerald-500 mt-0.5">✓</span> {label}</li>;
                             })}
                           </ul>
-                          <div className="mt-3 text-xs text-muted-foreground font-medium">Tasks</div>
+                          <div className="mt-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Tasks</div>
                           <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
                             {(w.tasks ?? []).map((t: any, i: number) => {
                               const label = toLabel(t);
-                              return <li key={label || i}>• {label}</li>;
+                              return <li key={label || i} className="flex items-start gap-1.5"><span className="text-primary">→</span> {label}</li>;
                             })}
                           </ul>
                         </div>
@@ -954,6 +1035,70 @@ export default function ApplicationWorkspacePage() {
                 baseHtml=""
               />
             </TabsContent>
+
+            {/* Dynamic extra document tab content panels */}
+            {app.generatedDocuments && Object.entries(app.generatedDocuments).map(([key, html]) => {
+              if (!html) return null;
+              const docInfo = (app.discoveredDocuments || []).find((d: any) => d.key === key);
+              const label = docInfo?.label || key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+              const benchmarkHtml = app.benchmarkDocuments?.[key] || "";
+              return (
+                <TabsContent key={key} value={`extra-${key}`} className="mt-4">
+                  <div className="space-y-4">
+                    {/* Document info */}
+                    {docInfo?.reason && (
+                      <div className="rounded-xl border border-teal-500/20 bg-teal-500/5 p-3 flex items-start gap-2">
+                        <Sparkles className="h-4 w-4 text-teal-500 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs font-semibold text-teal-600 dark:text-teal-400">AI-Discovered Document</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{docInfo.reason}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Document content */}
+                    <div className="rounded-2xl border bg-card shadow-soft-sm overflow-hidden">
+                      <div className="border-b bg-muted/20 px-5 py-3 flex items-center justify-between">
+                        <h3 className="text-sm font-semibold">{label}</h3>
+                        <div className="flex items-center gap-2">
+                          {benchmarkHtml && (
+                            <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-500">
+                              Benchmark available
+                            </Badge>
+                          )}
+                          <Badge variant="secondary" className="text-[10px]">
+                            {docInfo?.priority || "standard"}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="p-5">
+                        <div
+                          className="prose prose-sm dark:prose-invert max-w-none"
+                          dangerouslySetInnerHTML={{ __html: html }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Benchmark comparison */}
+                    {benchmarkHtml && (
+                      <details className="rounded-2xl border bg-card shadow-soft-sm overflow-hidden group">
+                        <summary className="px-5 py-3 border-b bg-emerald-500/5 flex items-center gap-2 cursor-pointer list-none select-none">
+                          <Target className="h-4 w-4 text-emerald-500" />
+                          <span className="text-sm font-semibold">Benchmark Version (100% Match)</span>
+                          <span className="text-xs text-muted-foreground ml-auto">Click to compare</span>
+                        </summary>
+                        <div className="p-5">
+                          <div
+                            className="prose prose-sm dark:prose-invert max-w-none opacity-90"
+                            dangerouslySetInnerHTML={{ __html: benchmarkHtml }}
+                          />
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                </TabsContent>
+              );
+            })}
 
             <TabsContent value="export" className="mt-4">
               <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
@@ -1143,7 +1288,7 @@ export default function ApplicationWorkspacePage() {
                 <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
                   <div className="text-xs font-semibold text-primary">Pro tip</div>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    Use "Download All (ZIP)" to get every document as a branded PDF + Word bundle — ready to attach to any application. Snapshot your versions before exporting to keep a history.
+                    Use &ldquo;Download All (ZIP)&rdquo; to get every document as a branded PDF + Word bundle — ready to attach to any application. Snapshot your versions before exporting to keep a history.
                   </div>
                 </div>
               </div>
@@ -1151,7 +1296,26 @@ export default function ApplicationWorkspacePage() {
           </Tabs>
         </div>
 
-        <CoachPanel actions={coachActions} statusLine={`${taskStats.remaining} open tasks · ${evidence.length} evidence`} />
+        <div className="space-y-4 lg:sticky lg:top-6 h-fit">
+          {(agentState.isRunning || agentState.stages.length > 0) && (
+            <div className="rounded-2xl border p-4 bg-card shadow-soft-sm">
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Agent Pipeline</div>
+              <AgentProgress
+                stages={agentState.stages}
+                isRunning={agentState.isRunning}
+              />
+            </div>
+          )}
+          {Object.keys(agentState.qualityScores).length > 0 && (
+            <div className="rounded-2xl border p-4 bg-card shadow-soft-sm">
+              <QualityReport
+                scores={agentState.qualityScores}
+                factCheck={agentState.factCheckSummary}
+              />
+            </div>
+          )}
+          <CoachPanel actions={coachActions} statusLine={`${taskStats.remaining} open tasks · ${evidence.length} evidence`} />
+        </div>
       </div>
 
       <EvidencePicker

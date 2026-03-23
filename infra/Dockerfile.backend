@@ -1,31 +1,49 @@
-# HireStack AI Backend Dockerfile
+# HireStack AI Backend — Multi-stage Production Build
+# Stage 1: Build dependencies
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# Stage 2: Production image
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Only runtime deps (no build tools)
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    libpq-dev \
+    libpq5 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
 
 # Copy application code
-COPY . .
+COPY backend/ ./backend/
+COPY ai_engine/ ./ai_engine/
+COPY workers/ ./workers/
 
 # Create uploads directory
 RUN mkdir -p /app/uploads
 
-# Expose port
+# Non-root user
+RUN addgroup --system --gid 1001 appgroup && \
+    adduser --system --uid 1001 --ingroup appgroup appuser && \
+    chown -R appuser:appgroup /app
+USER appuser
+
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENV PYTHONPATH=/app
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

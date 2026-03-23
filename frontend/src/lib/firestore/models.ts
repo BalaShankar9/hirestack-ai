@@ -205,6 +205,12 @@ export interface ApplicationDoc {
   /** AI validation results */
   validation?: Record<string, any>;
 
+  /** Adaptive document engine outputs */
+  discoveredDocuments?: Array<{ key: string; label: string; priority: string; reason?: string }>;
+  generatedDocuments?: Record<string, string>;
+  benchmarkDocuments?: Record<string, string>;
+  documentStrategy?: string;
+
   /** Scores snapshot for list views */
   scores?: {
     match?: number;

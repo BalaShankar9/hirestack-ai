@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { ALLOWED_STORAGE_BUCKETS } from "@/lib/sanitize";
 
 export type StorageRef = {
   bucket: string;
@@ -40,6 +41,12 @@ export async function resolveFileUrl(
 
   const parsed = parseStorageRef(urlOrRef);
   if (!parsed) return null;
+
+  // Validate bucket against allowlist (M9-F9)
+  if (!ALLOWED_STORAGE_BUCKETS.has(parsed.bucket)) {
+    console.warn(`[Storage] Blocked access to disallowed bucket: ${parsed.bucket}`);
+    return null;
+  }
 
   const { data, error } = await supabase.storage
     .from(parsed.bucket)

@@ -21,15 +21,28 @@ async def get_token_from_header(
     return authorization.replace("Bearer ", "")
 
 
+DEV_USER: Dict[str, Any] = {
+    "uid": "00000000-0000-0000-0000-000000000000",
+    "id": "00000000-0000-0000-0000-000000000000",
+    "email": "dev@hirestack.local",
+    "full_name": "Dev User",
+    "is_active": True,
+    "is_premium": True,
+}
+
+
 async def get_current_user(
     token: Optional[str] = Depends(get_token_from_header),
     db: SupabaseDB = Depends(get_db),
 ) -> Dict[str, Any]:
     """Get current authenticated user from Supabase JWT."""
     if not token:
+        # Only allow dev user in debug mode
+        if getattr(settings, "debug", False):
+            return DEV_USER
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
+            detail="Authentication required",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

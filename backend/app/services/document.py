@@ -1,23 +1,23 @@
 """
 Document Service
-Handles document generation and management with Firestore
+Handles document generation and management with Supabase
 """
 from typing import List, Optional, Dict, Any
 import structlog
 
-from app.core.database import get_firestore_db, COLLECTIONS, FirestoreDB
-from ai_engine.client import AIClient
+from app.core.database import get_db, TABLES, SupabaseDB
+from ai_engine.client import get_ai_client
 from ai_engine.chains.document_generator import DocumentGeneratorChain
 
 logger = structlog.get_logger()
 
 
 class DocumentService:
-    """Service for document operations using Firestore."""
+    """Service for document operations using Supabase."""
 
-    def __init__(self, db: Optional[FirestoreDB] = None):
-        self.db = db or get_firestore_db()
-        self.ai_client = AIClient()
+    def __init__(self, db: Optional[SupabaseDB] = None):
+        self.db = db or get_db()
+        self.ai_client = get_ai_client()
 
     async def generate_document(
         self,
@@ -30,14 +30,14 @@ class DocumentService:
     ) -> Dict[str, Any]:
         """Generate a document using AI."""
         # Fetch profile
-        profile = await self.db.get(COLLECTIONS["profiles"], profile_id)
+        profile = await self.db.get(TABLES["profiles"], profile_id)
         if not profile or profile.get("user_id") != user_id:
             raise ValueError("Profile not found")
 
         # Fetch optional job
         job = None
         if job_id:
-            job = await self.db.get(COLLECTIONS["jobs"], job_id)
+            job = await self.db.get(TABLES["jobs"], job_id)
             if job and job.get("user_id") != user_id:
                 job = None
 
@@ -45,7 +45,7 @@ class DocumentService:
         gap_analysis: Optional[Dict[str, Any]] = None
         if benchmark_id:
             gaps = await self.db.query(
-                COLLECTIONS["gap_reports"],
+                TABLES["gap_reports"],
                 filters=[
                     ("user_id", "==", user_id),
                     ("profile_id", "==", profile_id),
@@ -107,13 +107,13 @@ class DocumentService:
             "content": content,
             "target_job_id": job_id,
             "target_company": company,
-            "doc_metadata": {"generated": True, "options": options},
+            "metadata": {"generated": True, "options": options},
             "status": "draft",
         }
 
-        doc_id = await self.db.create(COLLECTIONS["documents"], record)
+        doc_id = await self.db.create(TABLES["documents"], record)
         logger.info("document_generated", doc_id=doc_id, type=document_type)
-        return await self.db.get(COLLECTIONS["documents"], doc_id)
+        return await self.db.get(TABLES["documents"], doc_id)
 
     async def generate_all_documents(
         self, user_id: str, profile_id: str, job_id: str
@@ -133,11 +133,11 @@ class DocumentService:
         if document_type:
             filters.append(("document_type", "==", document_type))
         return await self.db.query(
-            COLLECTIONS["documents"], filters=filters, order_by="created_at", order_direction="DESCENDING", limit=limit,
+            TABLES["documents"], filters=filters, order_by="created_at", order_direction="DESCENDING", limit=limit,
         )
 
     async def get_document(self, document_id: str, user_id: str) -> Optional[Dict[str, Any]]:
-        doc = await self.db.get(COLLECTIONS["documents"], document_id)
+        doc = await self.db.get(TABLES["documents"], document_id)
         if doc and doc.get("user_id") == user_id:
             return doc
         return None
@@ -152,12 +152,37 @@ class DocumentService:
             # Bump version on content change
             if "content" in safe:
                 safe["version"] = (doc.get("version") or 0) + 1
-            await self.db.update(COLLECTIONS["documents"], document_id, safe)
-        return await self.db.get(COLLECTIONS["documents"], document_id)
+            await self.db.update(TABLES["documents"], document_id, safe)
+        return await self.db.get(TABLES["documents"], document_id)
+
+    async def create_version(self, document_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        """Create a versioned snapshot of the current document content."""
+        doc = await self.get_document(document_id, user_id)
+        if not doc:
+            return None
+
+        current_version = doc.get("version") or 1
+        new_version = current_version + 1
+
+        # Store a snapshot in doc_versions table
+        version_record = {
+            "user_id": user_id,
+            "document_id": document_id,
+            "version": current_version,
+            "content": doc.get("content", ""),
+            "title": doc.get("title", ""),
+            "metadata": {"document_type": doc.get("document_type"), "snapshot": True},
+        }
+        await self.db.create(TABLES["doc_versions"], version_record)
+
+        # Bump version number on the main document
+        await self.db.update(TABLES["documents"], document_id, {"version": new_version})
+        logger.info("document_version_created", doc_id=document_id, version=new_version)
+        return await self.db.get(TABLES["documents"], document_id)
 
     async def delete_document(self, document_id: str, user_id: str) -> bool:
         doc = await self.get_document(document_id, user_id)
         if not doc:
             return False
-        await self.db.delete(COLLECTIONS["documents"], document_id)
+        await self.db.delete(TABLES["documents"], document_id)
         return True

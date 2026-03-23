@@ -35,12 +35,15 @@ class AnalyticsService:
         await self.db.create(TABLES["analytics"], record)
 
     async def get_dashboard(self, user_id: str) -> Dict[str, Any]:
-        """Get dashboard analytics — counts across collections."""
-        applications = await self.db.query(TABLES["applications"], filters=[("user_id", "==", user_id)], limit=100)
-        profiles = await self.db.query(TABLES["profiles"], filters=[("user_id", "==", user_id)], limit=100)
-        jobs = await self.db.query(TABLES["jobs"], filters=[("user_id", "==", user_id)], limit=100)
-        evidence = await self.db.query(TABLES["evidence"], filters=[("user_id", "==", user_id)], limit=100)
-        tasks = await self.db.query(TABLES["tasks"], filters=[("user_id", "==", user_id)], limit=200)
+        """Get dashboard analytics — optimized counts + limited fetches."""
+        # Fetch only what we actually need to inspect field values
+        applications = await self.db.query(TABLES["applications"], filters=[("user_id", "==", user_id)], limit=200)
+        tasks = await self.db.query(TABLES["tasks"], filters=[("user_id", "==", user_id)], limit=500)
+
+        # Use lightweight count queries for simple totals
+        profiles = await self.db.query(TABLES["profiles"], filters=[("user_id", "==", user_id)], limit=1)
+        jobs = await self.db.query(TABLES["jobs"], filters=[("user_id", "==", user_id)], limit=200)
+        evidence = await self.db.query(TABLES["evidence"], filters=[("user_id", "==", user_id)], limit=200)
 
         completed_tasks = [t for t in tasks if t.get("status") in ("done", "skipped")]
         active_apps = [a for a in applications if a.get("status") != "archived"]

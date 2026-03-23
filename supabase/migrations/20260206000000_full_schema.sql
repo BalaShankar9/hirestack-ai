@@ -157,7 +157,9 @@ CREATE TABLE IF NOT EXISTS public.gap_reports (
     recommendations JSONB,
     priority_actions JSONB,
     summary JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    status VARCHAR(50) DEFAULT 'pending',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 ALTER TABLE public.gap_reports ENABLE ROW LEVEL SECURITY;
@@ -351,11 +353,16 @@ CREATE TABLE IF NOT EXISTS public.applications (
     learning_plan JSONB,
     cv_html TEXT,
     cover_letter_html TEXT,
+    personal_statement_html TEXT,
+    portfolio_html TEXT,
     scorecard JSONB,
+    validation JSONB,
 
     -- Version histories
     cv_versions JSONB DEFAULT '[]'::jsonb,
     cl_versions JSONB DEFAULT '[]'::jsonb,
+    ps_versions JSONB DEFAULT '[]'::jsonb,
+    portfolio_versions JSONB DEFAULT '[]'::jsonb,
 
     -- Scores snapshot
     scores JSONB,
@@ -514,7 +521,7 @@ BEGIN
     ON CONFLICT (id) DO NOTHING;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
@@ -539,14 +546,14 @@ DECLARE
 BEGIN
     FOR t IN SELECT unnest(ARRAY[
         'users', 'profiles', 'job_descriptions', 'benchmarks',
-        'roadmaps', 'projects', 'documents', 'applications',
-        'evidence', 'tasks', 'learning_plans'
+        'gap_reports', 'roadmaps', 'projects', 'documents', 'exports',
+        'applications', 'evidence', 'tasks', 'learning_plans'
     ]) LOOP
         EXECUTE format(
-            'DROP TRIGGER IF EXISTS update_%s_updated_at ON public.%I; '
-            'CREATE TRIGGER update_%s_updated_at BEFORE UPDATE ON public.%I '
+            'DROP TRIGGER IF EXISTS %I ON public.%I; '
+            'CREATE TRIGGER %I BEFORE UPDATE ON public.%I '
             'FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();',
-            t, t, t, t
+            'update_' || t || '_updated_at', t, 'update_' || t || '_updated_at', t
         );
     END LOOP;
 END;

@@ -23,9 +23,81 @@ export interface Profile {
   education?: Education[];
   certifications?: Certification[];
   projects?: Project[];
+  languages?: Language[];
+  achievements?: string[];
+  social_links?: ProfileSocialLinks;
+  universal_documents?: UniversalDocuments;
+  profile_version?: number;
+  universal_docs_version?: number;
+  completeness_score?: number;
+  resume_worth_score?: number;
+  raw_resume_text?: string;
   is_primary: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface SocialLinkEntry {
+  url: string;
+  status?: "linked" | "connected" | "error";
+  data?: Record<string, any>;
+  connected_at?: string;
+  error?: string;
+}
+
+export interface ProfileSocialLinks {
+  linkedin?: string | SocialLinkEntry;
+  github?: string | SocialLinkEntry;
+  website?: string | SocialLinkEntry;
+  twitter?: string | SocialLinkEntry;
+  other?: string;
+}
+
+/** Extract URL from a social link entry (handles old string format + new object format) */
+export function getSocialUrl(entry: string | SocialLinkEntry | undefined): string {
+  if (!entry) return "";
+  if (typeof entry === "string") return entry;
+  return entry.url || "";
+}
+
+/** Get connection status from a social link entry */
+export function getSocialStatus(entry: string | SocialLinkEntry | undefined): "none" | "linked" | "connected" | "error" {
+  if (!entry) return "none";
+  if (typeof entry === "string") return entry ? "linked" : "none";
+  return entry.status || "none";
+}
+
+export interface UniversalDocuments {
+  universal_resume_html?: string;
+  full_cv_html?: string;
+  personal_statement_html?: string;
+  portfolio_html?: string;
+  generated_at?: string;
+}
+
+export interface ProfileCompleteness {
+  score: number;
+  sections: Record<string, number>;
+  suggestions: string[];
+}
+
+export interface ResumeWorthScore {
+  score: number;
+  breakdown: Record<string, number>;
+  label: string;
+}
+
+export interface AggregateGapAnalysis {
+  most_missing_skills: { skill: string; frequency: number; avg_severity: string }[];
+  strongest_areas: { area: string; frequency: number }[];
+  recommended_learning: { skill: string; appears_in_jobs: number; total_jobs: number; priority: string }[];
+  trending_skills: { skill: string; frequency: number; avg_severity: string }[];
+  total_applications_analyzed: number;
+}
+
+export interface Language {
+  language: string;
+  proficiency?: string;
 }
 
 export interface ContactInfo {
@@ -42,6 +114,7 @@ export interface Skill {
   level?: "beginner" | "intermediate" | "advanced" | "expert";
   years?: number;
   category?: string;
+  source?: "resume" | "github" | "linkedin" | "manual";
 }
 
 export interface Experience {
@@ -317,12 +390,35 @@ export interface Document {
   updated_at: string;
 }
 
+export interface QualityScores {
+  impact?: number;
+  clarity?: number;
+  tone_match?: number;
+  completeness?: number;
+  ats_readiness?: number;
+  readability?: number;
+}
+
+export interface FactCheckSummary {
+  verified: number;
+  enhanced: number;
+  fabricated: number;
+}
+
+export interface PipelineMeta {
+  quality_scores?: QualityScores;
+  fact_check?: FactCheckSummary;
+  agent_powered?: boolean;
+  trace_id?: string;
+  total_latency_ms?: number;
+}
+
 export interface DocumentGenerateRequest {
   document_type: string;
   profile_id: string;
   job_id: string;
   benchmark_id?: string;
-  options?: Record<string, any>;
+  options?: Record<string, unknown>;
 }
 
 export interface RoadmapGenerateRequest {
@@ -356,4 +452,186 @@ export interface DashboardData {
     has_documents: boolean;
     has_roadmap: boolean;
   };
+}
+
+// ── Feature types ──────────────────────────────────────────
+
+export interface ATSScan {
+  id: string;
+  ats_score: number;
+  keyword_score: number;
+  keyword_match_rate: number;
+  readability_score: number;
+  format_score: number;
+  content_score: number;
+  pass_prediction: string;
+  matched_keywords: { keyword: string; frequency: number }[];
+  missing_keywords: { keyword: string; importance: string; suggestion?: string }[];
+  recommendations: { priority: number; impact: string; category: string; text: string }[];
+  created_at: string;
+  [key: string]: any;
+}
+
+export interface InterviewSession {
+  id: string;
+  job_title: string;
+  interview_type: string;
+  difficulty: string;
+  questions: InterviewQuestion[];
+  status: string;
+  overall_score?: number;
+  overall_feedback?: string;
+  feedback?: string;
+  created_at: string;
+  [key: string]: any;
+}
+
+export interface InterviewQuestion {
+  id: string;
+  text: string;
+  question?: string;
+  type: string;
+  category?: string;
+  difficulty: string;
+  tips?: string[];
+}
+
+export interface InterviewAnswer {
+  question_id: string;
+  answer: string;
+  answer_text?: string;
+  score: number;
+  feedback?: string;
+  star_scores?: Record<string, number>;
+  model_answer?: string;
+  strengths?: string[];
+  improvements?: string[];
+  follow_up_suggestion?: string;
+}
+
+export interface SalaryAnalysis {
+  market_range?: { low: number; median: number; high: number };
+  market_data?: { percentile_25: number; median: number; percentile_75: number; percentile_90: number; sample_size: number };
+  salary_range?: { low: number; mid: number; high: number; target?: number; recommended_min?: number; recommended_max?: number; reasoning?: string; currency: string };
+  percentile?: number;
+  negotiation_scripts?: any[];
+  talking_points?: string[];
+  comparables?: { company: string; range: string; source?: string }[];
+  counter_offers?: any[];
+  [key: string]: any;
+}
+
+export interface CareerSnapshot {
+  id: string;
+  date: string;
+  snapshot_date: string;
+  overall_score: number;
+  technical_score?: number;
+  experience_score?: number;
+  education_score?: number;
+  avg_ats_score?: number;
+  skills_count: number;
+  experience_years: number;
+  certifications_count: number;
+  compatibility_score?: number;
+  highlights?: string[];
+  [key: string]: any;
+}
+
+export interface LearningChallenge {
+  id: string;
+  question: string;
+  options: string[];
+  correct_answer?: string;
+  explanation?: string;
+  difficulty: string;
+  topic: string;
+  challenge_type?: string;
+  skill?: string;
+  points_earned?: number;
+  [key: string]: any;
+}
+
+export interface LearningStreak {
+  current_streak: number;
+  longest_streak: number;
+  total_completed: number;
+  today_completed: number;
+  total_points?: number;
+  total_challenges?: number;
+  correct_challenges?: number;
+  level?: number;
+  skills_mastered?: string[];
+}
+
+export interface DocVariant {
+  id: string;
+  tone: string;
+  content: string;
+  score?: number;
+  label?: string;
+  ats_score?: number;
+  readability_score?: number;
+  [key: string]: any;
+}
+
+export interface JobAlert {
+  id: string;
+  keywords: string[];
+  location?: string;
+  min_salary?: number;
+  max_salary?: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface JobMatch {
+  id: string;
+  alert_id: string;
+  title: string;
+  company: string;
+  location?: string;
+  salary_range?: string;
+  url?: string;
+  source_url?: string;
+  match_score?: number;
+  match_reasons?: string[];
+  description?: string;
+  source?: string;
+  status: string;
+  created_at: string;
+}
+
+export interface APIKey {
+  id: string;
+  name: string;
+  prefix: string;
+  key_prefix?: string;
+  created_at: string;
+  last_used?: string;
+  last_used_at?: string;
+  is_active: boolean;
+}
+
+export interface ReviewSession {
+  id: string;
+  document_id: string;
+  token: string;
+  reviewer_email?: string;
+  status: string;
+  document_content?: string;
+  document_title?: string;
+  document_type?: string;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface ReviewComment {
+  id: string;
+  session_id: string;
+  reviewer_name: string;
+  comment_text: string;
+  section?: string;
+  sentiment?: string;
+  created_at: string;
 }

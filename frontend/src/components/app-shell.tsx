@@ -17,6 +17,14 @@ import {
   Loader2,
   Moon,
   Sun,
+  FileSearch,
+  MessageSquare,
+  DollarSign,
+  BarChart3,
+  BookOpen,
+  FlaskConical,
+  Fingerprint,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import { Button } from "@/components/ui/button";
@@ -29,12 +37,25 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { CommandPalette } from "@/components/command-palette/command-palette";
 
 const NAV = [
+  // Core
   { href: "/dashboard", label: "Dashboard", icon: Home, description: "Overview & stats" },
+  { href: "/nexus", label: "Career Nexus", icon: Fingerprint, description: "Your career identity" },
   { href: "/new", label: "New Application", icon: Plus, description: "Start a workspace" },
   { href: "/career", label: "Career Lab", icon: GraduationCap, description: "Skill sprints" },
   { href: "/evidence", label: "Evidence Vault", icon: ShieldCheck, description: "Proof library" },
+  // Features
+  { href: "/ats-scanner", label: "ATS Scanner", icon: FileSearch, description: "Scan documents" },
+  { href: "/interview", label: "Interview Prep", icon: MessageSquare, description: "Practice questions" },
+  { href: "/salary", label: "Salary Coach", icon: DollarSign, description: "Negotiate better" },
+  { href: "/career-analytics", label: "Analytics", icon: BarChart3, description: "Track progress" },
+  { href: "/job-board", label: "Job Board", icon: Briefcase, description: "Find opportunities" },
+  { href: "/learning", label: "Daily Learn", icon: BookOpen, description: "Skill challenges" },
+  { href: "/ab-lab", label: "A/B Lab", icon: FlaskConical, description: "Compare variants" },
+  // Enterprise
+  { href: "/settings", label: "Settings", icon: Settings, description: "Organization & billing" },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -314,6 +335,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="mx-auto max-w-[1360px] px-4 py-6 lg:px-8">{children}</div>
         </main>
       </div>
+      <CommandPalette />
     </div>
   );
 }

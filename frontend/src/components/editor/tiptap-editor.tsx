@@ -7,6 +7,7 @@ import TextAlign from "@tiptap/extension-text-align"
 import Link from "@tiptap/extension-link"
 import Placeholder from "@tiptap/extension-placeholder"
 import { cn } from "@/lib/utils"
+import { sanitizeUrl } from "@/lib/sanitize"
 import {
   Bold,
   Italic,
@@ -118,7 +119,14 @@ function TipTapEditor({
       return
     }
 
-    editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run()
+    // Validate URL protocol to prevent javascript: XSS (M10-F1)
+    const safeUrl = sanitizeUrl(url)
+    if (!safeUrl) {
+      window.alert("Invalid URL. Only http, https, and mailto links are allowed.")
+      return
+    }
+
+    editor.chain().focus().extendMarkRange("link").setLink({ href: safeUrl }).run()
   }, [editor])
 
   if (!editor) {

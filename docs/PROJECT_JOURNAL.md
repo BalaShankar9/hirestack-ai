@@ -17,23 +17,25 @@
 - **Framework**: Next.js 14 (App Router)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
-- **UI Components**: Custom components with Lucide icons
+- **UI Components**: Custom components with Lucide icons + shadcn/ui
 - **State Management**: React Query (@tanstack/react-query)
-- **Authentication**: Firebase Auth (client-side)
+- **Authentication**: Supabase Auth (client-side)
 
 ### Backend
 - **Framework**: FastAPI (Python)
-- **Language**: Python 3.9+
-- **Database**: Firebase Firestore (NoSQL)
-- **Authentication**: Firebase Admin SDK (token verification)
-- **AI**: Anthropic Claude API
+- **Language**: Python 3.11+
+- **Database**: Supabase (PostgreSQL + PostgREST)
+- **Authentication**: Supabase Auth (JWT verification)
+- **AI**: Google Gemini (primary), OpenAI (fallback), Ollama (local dev)
 
 ### Infrastructure
-- **Auth & Database**: Firebase (Authentication + Firestore)
-- **File Storage**: Firebase Storage
+- **Auth & Database**: Supabase (Authentication + PostgreSQL + Realtime + Storage)
+- **File Storage**: Supabase Storage
+- **Background Tasks**: Celery + Redis
 - **Hosting**:
-  - Frontend: Firebase Hosting / Vercel
+  - Frontend: Vercel
   - Backend: Railway / Google Cloud Run
+  - Docker Compose for local development
 
 ---
 
@@ -340,14 +342,15 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 ### Backend (.env)
 ```env
-# Firebase
-FIREBASE_PROJECT_ID=your-project-id
-FIREBASE_CREDENTIALS_PATH=./firebase-admin-sdk.json
+# Supabase
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...
+SUPABASE_JWT_SECRET=your-jwt-secret
 
-# AI
-ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_MODEL=claude-sonnet-4-20250514
-ANTHROPIC_MAX_TOKENS=4096
+# AI (primary: gemini, fallback: openai, local: ollama)
+AI_PROVIDER=gemini
+GEMINI_API_KEY=your-gemini-key
+OPENAI_API_KEY=your-openai-key
 
 # App
 DEBUG=true
@@ -359,9 +362,10 @@ ALLOWED_ORIGINS=http://localhost:3000
 ## Running the Application
 
 ### Prerequisites
-- Node.js 18+
-- Python 3.9+
-- Firebase project with Authentication and Firestore enabled
+- Node.js 20+
+- Python 3.11+
+- Supabase project with Authentication, Database, and Storage enabled
+- Redis (for Celery background tasks)
 
 ### Frontend
 ```bash
