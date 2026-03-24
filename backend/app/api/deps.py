@@ -30,6 +30,16 @@ DEV_USER: Dict[str, Any] = {
     "is_premium": True,
 }
 
+GUEST_USER: Dict[str, Any] = {
+    "uid": "guest",
+    "id": "guest",
+    "email": "guest@hirestack.tech",
+    "full_name": "Guest User",
+    "is_active": True,
+    "is_premium": False,
+    "is_guest": True,
+}
+
 
 async def get_current_user(
     token: Optional[str] = Depends(get_token_from_header),
@@ -37,7 +47,6 @@ async def get_current_user(
 ) -> Dict[str, Any]:
     """Get current authenticated user from Supabase JWT."""
     if not token:
-        # Only allow dev user in debug mode
         if getattr(settings, "debug", False):
             return DEV_USER
         raise HTTPException(
@@ -91,6 +100,21 @@ async def get_current_user(
             detail=f"Authentication failed: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+async def get_current_user_or_guest(
+    token: Optional[str] = Depends(get_token_from_header),
+    db: SupabaseDB = Depends(get_db),
+) -> Dict[str, Any]:
+    """Get current user OR allow guest access for tryout endpoints."""
+    if not token:
+        if getattr(settings, "debug", False):
+            return DEV_USER
+        return GUEST_USER
+    try:
+        return await get_current_user(token, db)
+    except HTTPException:
+        return GUEST_USER
 
 
 async def get_current_user_optional(

@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_current_user_or_guest
 from app.core.config import settings
 from app.services.file_parser import FileParser
 
@@ -28,7 +28,7 @@ def _max_bytes() -> int:
 @router.post("/parse")
 async def parse_resume(
     file: UploadFile = File(...),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(get_current_user_or_guest),
     max_pages: int = 4,
 ) -> Dict[str, Any]:
     """

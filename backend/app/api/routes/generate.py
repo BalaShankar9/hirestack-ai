@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_current_user_or_guest
 
 try:
     import openai as _openai_module
@@ -130,8 +130,8 @@ class PipelineRequest(BaseModel):
 
 # ── Main pipeline endpoint ────────────────────────────────────────────
 @router.post("/pipeline")
-async def generate_pipeline(req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
-    """Run the complete AI generation pipeline and return all modules."""
+async def generate_pipeline(req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user_or_guest)):
+    """Run the complete AI generation pipeline and return all modules. Allows guest access."""
     try:
         from ai_engine.client import AIClient
         from ai_engine.chains.role_profiler import RoleProfilerChain
@@ -826,7 +826,7 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
 
 
 @router.post("/pipeline/stream")
-async def generate_pipeline_stream(req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def generate_pipeline_stream(req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user_or_guest)):
     """
     SSE streaming version of the pipeline.
     Uses the agent pipeline (Researcher → Drafter → Critic → Optimizer →

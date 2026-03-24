@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 // Routes that don't require authentication
-const PUBLIC_PATHS = ["/login", "/auth/callback"];
-const PUBLIC_PREFIXES = ["/_next/", "/api/", "/favicon", "/review/"];
+// Guest mode: /new is public so anyone can try 1 free application
+const PUBLIC_PATHS = ["/login", "/auth/callback", "/new"];
+const PUBLIC_PREFIXES = ["/_next/", "/api/", "/favicon", "/review/", "/applications/"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
