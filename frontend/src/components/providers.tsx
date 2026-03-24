@@ -104,12 +104,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = useCallback(
     async (email: string, password: string, name?: string) => {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: { data: { full_name: name ?? "" } },
       });
       if (error) throw error;
+      // If user already exists, signUp returns a user with no session
+      // In that case, try signing in instead
+      if (data?.user && !data?.session) {
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInError) throw new Error("Account exists. Please sign in instead.");
+      }
     },
     []
   );
