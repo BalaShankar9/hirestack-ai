@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["name", "skills", "experience"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1 },
+    "title": { "type": "string" },
+    "summary": { "type": "string" },
+    "contact_info": { "type": "object" },
+    "skills": {
+      "type": "array",
+      "items": { "type": ["string", "object"] }
+    },
+    "experience": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string" },
+          "company": { "type": "string" },
+          "start_date": { "type": "string" },
+          "end_date": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "education": { "type": "array" },
+    "certifications": { "type": "array" },
+    "projects": { "type": "array" },
+    "languages": { "type": "array" },
+    "achievements": { "type": "array" }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["ideal_candidate"],
+  "properties": {
+    "ideal_candidate": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "experience_years": { "type": "number" },
+        "required_skills": { "type": "array", "items": { "type": "string" } },
+        "preferred_skills": { "type": "array", "items": { "type": "string" } },
+        "education": { "type": "array" },
+        "certifications": { "type": "array" }
+      }
+    }
+  }
+}

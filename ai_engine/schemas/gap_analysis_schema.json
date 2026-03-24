@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["compatibility_score"],
+  "properties": {
+    "compatibility_score": { "type": "number", "minimum": 0, "maximum": 100 },
+    "readiness_level": { "type": "string" },
+    "category_scores": { "type": "object" },
+    "skill_gaps": { "type": "array" },
+    "experience_gaps": { "type": "array" },
+    "strengths": { "type": "array" },
+    "recommendations": { "type": "array" },
+    "quick_wins": { "type": "array" },
+    "interview_readiness": { "type": "object" }
+  }
+}
