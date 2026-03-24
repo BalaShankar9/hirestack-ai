@@ -260,16 +260,38 @@
   @apply bg-transparent p-0;
 }
 
+/* ── Document preview — paper-like rendering ─────────── */
+.doc-preview {
+  @apply bg-white dark:bg-card rounded-xl border shadow-soft-sm;
+  @apply px-10 py-8;
+  font-family: 'Calibri', 'Inter', sans-serif;
+  font-size: 13px;
+  line-height: 1.65;
+  color: hsl(var(--foreground) / 0.85);
+}
+.doc-preview h1 { @apply text-xl font-bold mb-1; }
+.doc-preview h2 { @apply text-base font-semibold mt-6 mb-2 border-b pb-1; border-color: hsl(var(--border) / 0.5); }
+.doc-preview h3 { @apply text-sm font-semibold mt-4 mb-1; }
+.doc-preview ul { @apply mt-1 space-y-0.5 list-disc pl-5; }
+.doc-preview ol { @apply mt-1 space-y-0.5 list-decimal pl-5; }
+.doc-preview li { @apply text-[13px] leading-relaxed; }
+.doc-preview p { @apply text-[13px] leading-relaxed mb-2; }
+.doc-preview a { @apply text-primary underline; }
+.doc-preview strong { @apply font-semibold; }
+.doc-preview table { @apply w-full border-collapse mt-2 mb-3; }
+.doc-preview th, .doc-preview td { @apply border px-3 py-1.5 text-xs text-left; }
+.doc-preview th { @apply bg-muted font-semibold; }
+
 /* ── Glass card utility ──────────────────────────────── */
 @layer components {
   .glass {
-    @apply bg-white/70 backdrop-blur-xl border border-white/20 dark:bg-card/70 dark:border-white/5;
+    @apply bg-white/70 backdrop-blur-xl border border-white/20;
   }
   .glass-card {
-    @apply bg-white/80 backdrop-blur-xl border border-white/30 rounded-2xl shadow-soft-md dark:bg-card/80 dark:border-white/5;
+    @apply bg-white/80 backdrop-blur-xl border border-white/30 rounded-2xl shadow-soft-md;
   }
   .glass-panel {
-    @apply bg-white/60 backdrop-blur-lg border border-white/20 rounded-xl dark:bg-card/60 dark:border-white/5;
+    @apply bg-white/60 backdrop-blur-lg border border-white/20 rounded-xl;
   }
   .gradient-text {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-violet-500 to-indigo-500;
@@ -326,6 +348,58 @@
 ::selection {
   background: hsl(var(--primary) / 0.15);
   color: hsl(var(--primary));
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+
+@keyframes digit-flip {
+  0% { transform: translateY(100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes check-pop {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes bounce-sm {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-2px); }
+  60% { transform: translateY(1px); }
+}
+
+.animate-shake { animation: shake 0.3s ease-out; }
+.animate-digit-flip { animation: digit-flip 0.6s ease-out; }
+.animate-check-pop { animation: check-pop 0.3s ease-out; }
+.animate-bounce-sm { animation: bounce-sm 0.4s ease-out; }
+
+details, details > summary { outline: none; }
+details:focus, details > summary:focus { outline: none; }
+
+/* ── Pipeline Agent Animations ────────────────────────── */
+.agent-card-active {
+  box-shadow: 0 0 16px -4px hsl(var(--primary) / 0.2);
+}
+.agent-icon-spin {
+  animation: spin 3s linear infinite;
+}
+.agent-log-line {
+  animation: log-line-in 0.2s ease-out both;
+}
+.timeline-dot-active::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  border: 2px solid hsl(var(--primary) / 0.5);
+  animation: timeline-pulse 2s ease-in-out infinite;
 }
 
 /* ── Premium layout surfaces ─────────────────────────── */

@@ -1,23 +1,23 @@
 """
 Roadmap Service
-Handles career roadmap generation and management with Supabase
+Handles career roadmap generation and management with Firestore
 """
 from typing import List, Optional, Dict, Any
 import structlog
 
-from app.core.database import get_db, TABLES, SupabaseDB
-from ai_engine.client import get_ai_client
+from app.core.database import get_firestore_db, COLLECTIONS, FirestoreDB
+from ai_engine.client import AIClient
 from ai_engine.chains.career_consultant import CareerConsultantChain
 
 logger = structlog.get_logger()
 
 
 class RoadmapService:
-    """Service for roadmap operations using Supabase."""
+    """Service for roadmap operations using Firestore."""
 
-    def __init__(self, db: Optional[SupabaseDB] = None):
-        self.db = db or get_db()
-        self.ai_client = get_ai_client()
+    def __init__(self, db: Optional[FirestoreDB] = None):
+        self.db = db or get_firestore_db()
+        self.ai_client = AIClient()
 
     async def generate_roadmap(
         self,
@@ -26,20 +26,20 @@ class RoadmapService:
         title: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate a career improvement roadmap."""
-        gap_report = await self.db.get(TABLES["gap_reports"], gap_report_id)
+        gap_report = await self.db.get(COLLECTIONS["gap_reports"], gap_report_id)
         if not gap_report or gap_report.get("user_id") != user_id:
             raise ValueError("Gap report not found")
 
         # Fetch related profile
         profile_id = gap_report.get("profile_id")
-        profile = await self.db.get(TABLES["profiles"], profile_id) if profile_id else None
+        profile = await self.db.get(COLLECTIONS["profiles"], profile_id) if profile_id else None
 
         # Fetch benchmark + job
         benchmark_id = gap_report.get("benchmark_id")
-        benchmark = await self.db.get(TABLES["benchmarks"], benchmark_id) if benchmark_id else None
+        benchmark = await self.db.get(COLLECTIONS["benchmarks"], benchmark_id) if benchmark_id else None
         job = None
         if benchmark and benchmark.get("job_description_id"):
-            job = await self.db.get(TABLES["jobs"], benchmark["job_description_id"])
+            job = await self.db.get(COLLECTIONS["jobs"], benchmark["job_description_id"])
 
         # Build data for AI
         profile_data = {
@@ -57,13 +57,14 @@ class RoadmapService:
         }
 
         consultant = CareerConsultantChain(self.ai_client)
-        roadmap_data = await consultant.generate_roadmap(
+        raw_roadmap_data = await consultant.generate_roadmap(
             gap_analysis=gap_data,
             user_profile=profile_data,
             job_title=job.get("title", "Target Role") if job else "Target Role",
             company=job.get("company", "Target Company") if job else "Target Company",
         )
 
+        roadmap_data = self._validate_milestones(raw_roadmap_data)
         roadmap_content = roadmap_data.get("roadmap", {})
         record = {
             "user_id": user_id,
@@ -81,13 +82,13 @@ class RoadmapService:
             "status": "active",
         }
 
-        doc_id = await self.db.create(TABLES["roadmaps"], record)
+        doc_id = await self.db.create(COLLECTIONS["roadmaps"], record)
         logger.info("roadmap_generated", roadmap_id=doc_id)
-        return await self.db.get(TABLES["roadmaps"], doc_id)
+        return await self.db.get(COLLECTIONS["roadmaps"], doc_id)
 
     async def get_user_roadmaps(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         return await self.db.query(
-            TABLES["roadmaps"],
+            COLLECTIONS["roadmaps"],
             filters=[("user_id", "==", user_id)],
             order_by="created_at",
             order_direction="DESCENDING",
@@ -95,33 +96,35 @@ class RoadmapService:
         )
 
     async def get_roadmap(self, roadmap_id: str, user_id: str) -> Optional[Dict[str, Any]]:
-        roadmap = await self.db.get(TABLES["roadmaps"], roadmap_id)
+        roadmap = await self.db.get(COLLECTIONS["roadmaps"], roadmap_id)
         if roadmap and roadmap.get("user_id") == user_id:
             return roadmap
         return None
 
-    VALID_MILESTONE_STATUSES = {"not_started", "in_progress", "completed", "skipped"}
-
     async def update_milestone_progress(
         self, roadmap_id: str, user_id: str, milestone_id: str, status: str
     ) -> bool:
-        # Validate inputs
-        if len(milestone_id) > 200:
-            return False
-        if status not in self.VALID_MILESTONE_STATUSES:
-            return False
-
         roadmap = await self.get_roadmap(roadmap_id, user_id)
         if not roadmap:
             return False
         progress = roadmap.get("progress", {})
         progress[milestone_id] = status
-        await self.db.update(TABLES["roadmaps"], roadmap_id, {"progress": progress})
+        await self.db.update(COLLECTIONS["roadmaps"], roadmap_id, {"progress": progress})
         return True
+
+    def _validate_milestones(self, roadmap: dict) -> dict:
+        """Ensure milestone dependency indices only reference earlier milestones."""
+        milestones = roadmap.get("milestones", [])
+        for i, milestone in enumerate(milestones):
+            deps = milestone.get("dependencies", [])
+            for dep_idx in deps:
+                if isinstance(dep_idx, int) and dep_idx >= i:
+                    milestone["dependencies"] = [d for d in deps if isinstance(d, int) and d < i]
+        return roadmap
 
     async def delete_roadmap(self, roadmap_id: str, user_id: str) -> bool:
         roadmap = await self.get_roadmap(roadmap_id, user_id)
         if not roadmap:
             return False
-        await self.db.delete(TABLES["roadmaps"], roadmap_id)
+        await self.db.delete(COLLECTIONS["roadmaps"], roadmap_id)
         return True

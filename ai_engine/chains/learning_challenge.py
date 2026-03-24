@@ -1,113 +1,132 @@
 """
 Learning Challenge Chain
-Generates micro-learning challenges (quizzes, scenarios, flashcards) for skill building
+Generates personalized learning challenges and skill-building exercises
 """
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from ai_engine.client import AIClient
 
 
-CHALLENGE_SYSTEM = """You are an expert educational content creator who designs engaging, bite-sized learning challenges.
-Each challenge should take 2-5 minutes to complete and test practical, job-relevant knowledge.
-Questions must be accurate, unambiguous, and progressively challenging."""
+LEARNING_SYSTEM = """You are an expert learning designer and skill development coach.
+You create engaging, practical learning challenges that help professionals rapidly develop
+new skills for career advancement.
 
-GENERATE_CHALLENGE_PROMPT = """Generate a {challenge_type} challenge for this skill.
+Your challenges are:
+- Concrete and actionable (not just "read about X")
+- Time-boxed with clear deliverables
+- Progressive in difficulty
+- Directly tied to job market demands
+- Measurable with clear success criteria"""
 
-SKILL: {skill}
+
+CHALLENGE_PROMPT = """Generate a learning challenge for this skill gap.
+
+SKILL TO DEVELOP: {skill_name}
+CURRENT LEVEL: {current_level}
+TARGET LEVEL: {target_level}
 DIFFICULTY: {difficulty}
-CONTEXT: The learner is preparing for a {job_context} role.
+TIME AVAILABLE: {time_available}
+CONTEXT: {context}
 
-Return ONLY valid JSON:
-```json
-{{
-    "skill": "{skill}",
-    "difficulty": "{difficulty}",
-    "challenge_type": "{challenge_type}",
-    "question": "The challenge question or scenario (clear and specific)",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
-    "correct_answer": "The correct option text",
-    "explanation": "Why this is correct and the others aren't (educational, 2-3 sentences)",
-    "learning_tip": "A practical tip related to this concept",
-    "points": 10
-}}
-```"""
+Return ONLY valid MINIFIED JSON (no markdown, no code fences).
+Hard limits: steps max 8, resources max 6, success_criteria max 6.
+"""
 
-GENERATE_DAILY_SET_PROMPT = """Generate a set of {count} diverse learning challenges covering these skills.
-
-SKILLS TO COVER: {skills}
-DIFFICULTY RANGE: {difficulty}
-JOB CONTEXT: {job_context}
-
-Mix challenge types: quiz, scenario, flashcard.
-Make each unique and progressively harder.
-
-Return ONLY valid JSON:
-```json
-{{
-    "challenges": [
-        {{
-            "skill": "skill name",
-            "difficulty": "easy|medium|hard",
-            "challenge_type": "quiz|scenario|flashcard",
-            "question": "The question",
-            "options": ["A", "B", "C", "D"],
-            "correct_answer": "Correct option text",
-            "explanation": "Why correct",
-            "learning_tip": "Practical tip",
-            "points": 10
-        }}
-    ],
-    "theme": "Today's learning theme",
-    "estimated_time_minutes": 15
-}}
-```"""
+CHALLENGE_SCHEMA: Dict[str, Any] = {
+    "type": "OBJECT",
+    "properties": {
+        "title": {"type": "STRING"},
+        "description": {"type": "STRING"},
+        "difficulty": {"type": "STRING"},
+        "estimated_hours": {"type": "NUMBER"},
+        "skill": {"type": "STRING"},
+        "learning_objectives": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "steps": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "step_number": {"type": "INTEGER"},
+                    "title": {"type": "STRING"},
+                    "description": {"type": "STRING"},
+                    "deliverable": {"type": "STRING"},
+                    "estimated_hours": {"type": "NUMBER"},
+                },
+            },
+        },
+        "resources": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "title": {"type": "STRING"},
+                    "type": {"type": "STRING"},
+                    "url": {"type": "STRING"},
+                    "is_free": {"type": "BOOLEAN"},
+                },
+            },
+        },
+        "success_criteria": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "portfolio_output": {"type": "STRING"},
+        "next_challenge": {"type": "STRING"},
+    },
+    "required": ["title", "description", "difficulty", "steps", "success_criteria"],
+}
 
 
 class LearningChallengeChain:
-    """Generates micro-learning challenges."""
+    """Chain for generating learning challenges."""
+
+    VERSION = "1.0.0"
 
     def __init__(self, ai_client: AIClient):
-        self.ai = ai_client
+        self.ai_client = ai_client
 
     async def generate_challenge(
         self,
-        skill: str,
-        difficulty: str = "medium",
-        challenge_type: str = "quiz",
-        job_context: str = "software engineering",
+        skill_name: str,
+        current_level: str = "beginner",
+        target_level: str = "intermediate",
+        difficulty: str = "intermediate",
+        time_available: str = "1 week",
+        context: str = "",
+        **kwargs: Any,
     ) -> Dict[str, Any]:
-        """Generate a single learning challenge."""
-        prompt = GENERATE_CHALLENGE_PROMPT.format(
-            skill=skill,
+        """Generate a learning challenge for a specific skill."""
+        prompt = CHALLENGE_PROMPT.format(
+            skill_name=skill_name,
+            current_level=current_level,
+            target_level=target_level,
             difficulty=difficulty,
-            challenge_type=challenge_type,
-            job_context=job_context,
-        )
-        return await self.ai.complete_json(
-            prompt=prompt,
-            system=CHALLENGE_SYSTEM,
-            max_tokens=1024,
-            temperature=0.7,
+            time_available=time_available,
+            context=context[:1000],
         )
 
-    async def generate_daily_set(
-        self,
-        skills: List[str],
-        difficulty: str = "medium",
-        count: int = 5,
-        job_context: str = "software engineering",
-    ) -> Dict[str, Any]:
-        """Generate a daily set of mixed challenges."""
-        import json
-        prompt = GENERATE_DAILY_SET_PROMPT.format(
-            skills=json.dumps(skills),
-            difficulty=difficulty,
-            count=count,
-            job_context=job_context,
-        )
-        return await self.ai.complete_json(
+        result = await self.ai_client.complete_json(
             prompt=prompt,
-            system=CHALLENGE_SYSTEM,
-            max_tokens=4096,
-            temperature=0.7,
+            system=LEARNING_SYSTEM,
+            temperature=0.3,
+            max_tokens=2000,
+            schema=CHALLENGE_SCHEMA,
         )
+
+        return self._validate_result(result)
+
+    def _validate_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        defaults: Dict[str, Any] = {
+            "title": "",
+            "description": "",
+            "difficulty": "intermediate",
+            "estimated_hours": 8.0,
+            "skill": "",
+            "learning_objectives": [],
+            "steps": [],
+            "resources": [],
+            "success_criteria": [],
+            "portfolio_output": "",
+            "next_challenge": "",
+        }
+        for key, default in defaults.items():
+            if key not in result:
+                result[key] = default
+        return result

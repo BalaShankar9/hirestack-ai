@@ -12,13 +12,14 @@ import { FlaskConical, Loader2, Check, ArrowLeftRight, Star, ClipboardCopy } fro
 import { toast } from "@/hooks/use-toast";
 
 const TONE_CONFIG = {
-  conservative: { label: "Conservative", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", desc: "Formal, traditional approach" },
-  balanced: { label: "Balanced", color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300", desc: "Professional middle ground" },
-  creative: { label: "Creative", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", desc: "Bold, innovative style" },
+  conservative: { label: "Conservative", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400", desc: "Formal, traditional approach" },
+  balanced: { label: "Balanced", color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", desc: "Professional middle ground" },
+  creative: { label: "Creative", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400", desc: "Bold, innovative style" },
 };
 
 export default function ABLabPage() {
   const { user } = useAuth();
+  const userId = user?.uid || user?.id || null;
   const [applicationId, setApplicationId] = useState("");
   const [documentContent, setDocumentContent] = useState("");
   const [documentType, setDocumentType] = useState("cv");
@@ -62,15 +63,17 @@ export default function ABLabPage() {
   return (
     <div className="space-y-8 p-6 max-w-7xl mx-auto">
       <div className="flex items-center gap-3">
-        <FlaskConical className="h-8 w-8 text-primary" />
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-fuchsia-500/10">
+          <FlaskConical className="h-5 w-5 text-fuchsia-600 dark:text-fuchsia-400" />
+        </div>
         <div>
-          <h1 className="text-3xl font-bold">A/B Document Lab</h1>
-          <p className="text-muted-foreground">Generate 3 tone variants and pick the winner</p>
+          <h1 className="text-xl font-bold">A/B Document Lab</h1>
+          <p className="text-xs text-muted-foreground">Generate 3 tone variants and pick the winner</p>
         </div>
       </div>
 
       {/* Input */}
-      <div className="rounded-xl border p-6 space-y-4">
+      <div className="rounded-2xl border p-6 space-y-4 shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
         <h2 className="text-lg font-semibold">Source Document</h2>
         <div className="space-y-4">
           <div className="space-y-2">
@@ -134,12 +137,12 @@ export default function ABLabPage() {
               return (
                 <div
                   key={v.id}
-                  className={`rounded-xl border-2 p-6 space-y-4 transition-all ${
+                  className={`rounded-2xl border-2 p-6 space-y-4 shadow-soft-sm hover:shadow-soft-md transition-all duration-300 ${
                     isSelected ? "border-primary shadow-lg" : "border-border hover:border-primary/50"
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${tone.color}`}>
+                    <span className={`px-3 py-1 rounded-lg text-[11px] font-medium ${tone.color}`}>
                       {tone.label}
                     </span>
                     {isSelected && (
@@ -155,13 +158,13 @@ export default function ABLabPage() {
                   <div className="grid grid-cols-2 gap-2">
                     {v.ats_score !== undefined && (
                       <div className="text-center p-2 rounded-lg bg-muted/30">
-                        <div className="text-xs text-muted-foreground">ATS</div>
+                        <div className="text-[11px] text-muted-foreground">ATS</div>
                         <div className="font-bold text-lg">{v.ats_score}</div>
                       </div>
                     )}
                     {v.readability_score !== undefined && (
                       <div className="text-center p-2 rounded-lg bg-muted/30">
-                        <div className="text-xs text-muted-foreground">Readability</div>
+                        <div className="text-[11px] text-muted-foreground">Readability</div>
                         <div className="font-bold text-lg">{v.readability_score}</div>
                       </div>
                     )}
@@ -214,8 +217,8 @@ export default function ABLabPage() {
 
           {/* Comparison Summary */}
           {comparison && (
-            <div className="rounded-xl border p-6">
-              <h3 className="font-semibold text-lg mb-3">🔬 AI Comparison</h3>
+            <div className="rounded-2xl border p-6 shadow-soft-sm">
+              <h3 className="font-semibold text-lg mb-3">AI Comparison</h3>
               <p className="text-sm text-muted-foreground">{comparison.summary || JSON.stringify(comparison)}</p>
             </div>
           )}

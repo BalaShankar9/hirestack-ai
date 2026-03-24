@@ -9,28 +9,21 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co";
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "placeholder";
 
-const IS_CONFIGURED = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+const IS_CONFIGURED = !!(
+  process.env.NEXT_PUBLIC_SUPABASE_URL &&
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
 if (!IS_CONFIGURED && typeof window !== "undefined") {
-  console.error(
-    "[HireStack] FATAL: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY not set — " +
-    "Supabase calls will fail. Set them in .env.local."
+  console.warn(
+    "[HireStack] NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY not set — Supabase calls will fail."
   );
 }
 
 function createSupabaseClient(): SupabaseClient {
-  if (!IS_CONFIGURED) {
-    // Still create the client to avoid undefined errors, but with an obvious marker URL.
-    // All calls will fail fast with a network error instead of hanging.
-    return createClient(
-      SUPABASE_URL || "https://not-configured.supabase.co",
-      SUPABASE_ANON_KEY || "not-configured",
-      { auth: { persistSession: false } },
-    );
-  }
   return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
       persistSession: true,
@@ -58,6 +51,8 @@ if (process.env.NODE_ENV !== "production") {
   globalForSupabase.__hirestackSupabase = supabase;
 }
 
-// M9-F5: Removed window.__hirestackSupabase assignment for security
+if (process.env.NODE_ENV !== "production" && typeof window !== "undefined") {
+  (window as any).__hirestackSupabase = supabase;
+}
 
 export const supabaseAuth = supabase.auth;

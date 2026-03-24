@@ -35,29 +35,6 @@ function LoginContent() {
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<"google" | "github" | null>(null);
 
-  // Password strength
-  function getPasswordStrength(pw: string): { score: number; label: string; color: string; feedback: string } {
-    let score = 0;
-    if (pw.length >= 8) score++;
-    if (pw.length >= 12) score++;
-    if (/[A-Z]/.test(pw)) score++;
-    if (/[0-9]/.test(pw)) score++;
-    if (/[^A-Za-z0-9]/.test(pw)) score++;
-    if (score <= 1) return { score, label: "Weak", color: "bg-destructive", feedback: "Use 8+ characters with uppercase, numbers, and symbols" };
-    if (score <= 2) return { score, label: "Fair", color: "bg-orange-500", feedback: "Add numbers or symbols for stronger security" };
-    if (score <= 3) return { score, label: "Good", color: "bg-yellow-500", feedback: "Almost there — try a longer password" };
-    return { score, label: "Strong", color: "bg-green-500", feedback: "" };
-  }
-
-  const strength = getPasswordStrength(password);
-
-  function validatePassword(pw: string): string | null {
-    if (pw.length < 8) return "Password must be at least 8 characters";
-    if (!/[A-Z]/.test(pw)) return "Password must include an uppercase letter";
-    if (!/[0-9]/.test(pw)) return "Password must include a number";
-    return null;
-  }
-
   // Read ?mode=register from URL so "Get Started" links land on sign-up
   useEffect(() => {
     if (searchParams.get("mode") === "register") {
@@ -71,23 +48,13 @@ function LoginContent() {
     setLoading(true);
     try {
       if (isRegister) {
-        const pwError = validatePassword(password);
-        if (pwError) {
-          setError(pwError);
-          setLoading(false);
-          return;
-        }
         await signUp(email, password, name);
       } else {
         await signIn(email, password);
       }
       router.replace("/dashboard");
     } catch (err: any) {
-      const msg = err?.message ?? "";
-      if (msg.includes("Invalid login")) setError("Invalid email or password.");
-      else if (msg.includes("Email not confirmed")) setError("Please confirm your email before signing in.");
-      else if (msg.includes("rate limit") || msg.includes("429")) setError("Too many attempts. Please wait a moment.");
-      else setError(isRegister ? "Registration failed. Please try again." : "Sign-in failed. Please check your credentials.");
+      setError(err?.message ?? "Authentication failed");
     } finally {
       setLoading(false);
     }
@@ -100,7 +67,7 @@ function LoginContent() {
       if (provider === "google") await signInWithGoogle();
       else await signInWithGitHub();
     } catch (err: any) {
-      setError("OAuth sign-in failed. Please try again.");
+      setError(err?.message ?? "OAuth sign-in failed");
       setOauthLoading(null);
     }
   }
@@ -264,28 +231,11 @@ function LoginContent() {
                 type="password"
                 placeholder="••••••••"
                 required
-                minLength={8}
+                minLength={6}
                 className="rounded-xl h-11"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
-              {isRegister && password.length > 0 && (
-                <div className="space-y-1.5 pt-1">
-                  <div className="flex gap-1">
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <div
-                        key={i}
-                        className={`h-1 flex-1 rounded-full transition-colors ${
-                          i <= strength.score ? strength.color : "bg-muted"
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    {strength.label}{strength.feedback ? ` — ${strength.feedback}` : ""}
-                  </p>
-                </div>
-              )}
             </div>
 
             {error && (

@@ -1,175 +1,168 @@
 """
 Interview Simulator Service
-Manages interview practice sessions, question generation, and answer evaluation (Supabase)
+Handles interview session management and AI-powered question generation
 """
-from typing import Optional, Dict, Any, List
-import json
+from typing import Dict, Any, List, Optional
+from datetime import datetime, timezone, timedelta
 import structlog
 
-from app.core.database import get_db, TABLES, SupabaseDB
-from ai_engine.client import get_ai_client
+from app.core.database import get_firestore_db, COLLECTIONS, FirestoreDB
+from ai_engine.client import AIClient
 from ai_engine.chains.interview_simulator import InterviewSimulatorChain
 
 logger = structlog.get_logger()
 
+SESSION_TIMEOUT_HOURS = 2
+
 
 class InterviewService:
-    """Service for interview simulation sessions."""
+    """Service for interview simulation using Firestore."""
 
-    def __init__(self, db: Optional[SupabaseDB] = None):
-        self.db = db or get_db()
-        self.ai_client = get_ai_client()
+    def __init__(self, db: Optional[FirestoreDB] = None):
+        self.db = db or get_firestore_db()
+        self.ai_client = AIClient()
 
-    async def start_session(
+    async def create_session(
         self,
         user_id: str,
         job_title: str,
         company: str = "",
         jd_text: str = "",
-        interview_type: str = "mixed",
-        difficulty: str = "medium",
-        question_count: int = 8,
-        application_id: Optional[str] = None,
         profile_summary: str = "",
-        gap_summary: str = "",
+        interview_type: str = "mixed",
+        question_count: int = 10,
     ) -> Dict[str, Any]:
-        """Start a new interview session with generated questions."""
+        """Create a new interview session with generated questions."""
         chain = InterviewSimulatorChain(self.ai_client)
-        result = await chain.generate_questions(
+        questions_data = await chain.generate_questions(
             job_title=job_title,
             company=company,
-            jd_text=jd_text,
-            interview_type=interview_type,
-            difficulty=difficulty,
-            count=question_count,
+            jd_summary=jd_text[:3000],
             profile_summary=profile_summary,
-            gap_summary=gap_summary,
+            interview_type=interview_type,
+            question_count=question_count,
         )
 
-        questions = result.get("questions", [])
+        now = datetime.now(timezone.utc)
         record = {
             "user_id": user_id,
-            "application_id": application_id,
             "job_title": job_title,
             "company": company,
             "interview_type": interview_type,
-            "difficulty": difficulty,
-            "questions": questions,
-            "status": "in_progress",
+            "questions": questions_data.get("questions", []),
+            "interview_focus": questions_data.get("interview_focus", ""),
+            "preparation_tips": questions_data.get("preparation_tips", []),
+            "answers": [],
+            "scores": [],
+            "status": "active",
+            "created_at": now.isoformat(),
+            "expires_at": (now + timedelta(hours=SESSION_TIMEOUT_HOURS)).isoformat(),
         }
 
-        doc_id = await self.db.create(TABLES["interview_sessions"], record)
-        logger.info("interview_session_started", session_id=doc_id, questions=len(questions))
-        return await self.db.get(TABLES["interview_sessions"], doc_id)
+        doc_id = await self.db.create(COLLECTIONS.get("interview_sessions", "interview_sessions"), record)
+        logger.info("interview_session_created", session_id=doc_id)
+        return await self.db.get(COLLECTIONS.get("interview_sessions", "interview_sessions"), doc_id)
 
     async def submit_answer(
         self,
-        user_id: str,
         session_id: str,
-        question_index: int,
-        answer_text: str,
-        duration_seconds: int = 0,
+        user_id: str,
+        question_id: str,
+        answer: str,
     ) -> Dict[str, Any]:
-        """Submit and evaluate an answer for a question."""
-        session = await self.db.get(TABLES["interview_sessions"], session_id)
-        if not session or session.get("user_id") != user_id:
-            raise ValueError("Session not found")
+        """Submit an answer and get feedback."""
+        session = await self._get_active_session(session_id, user_id)
 
-        questions = session.get("questions", [])
-        if question_index >= len(questions):
-            raise ValueError("Invalid question index")
+        # Find the question
+        question_obj = next(
+            (q for q in session.get("questions", []) if q.get("id") == question_id),
+            None,
+        )
+        if not question_obj:
+            raise ValueError(f"Question {question_id} not found in session")
 
-        question = questions[question_index]
         chain = InterviewSimulatorChain(self.ai_client)
         evaluation = await chain.evaluate_answer(
-            question=question.get("text", ""),
-            question_type=question.get("type", "behavioral"),
-            skill_tested=question.get("skill_tested", ""),
-            answer=answer_text,
-            ideal_points=question.get("ideal_answer_points", []),
+            question=question_obj.get("question", ""),
+            answer=answer,
+            role_context=f"{session.get('job_title', '')} at {session.get('company', '')}",
         )
 
-        record = {
-            "user_id": user_id,
-            "session_id": session_id,
-            "question_index": question_index,
-            "question_text": question.get("text", ""),
-            "question_type": question.get("type", ""),
-            "answer_text": answer_text,
-            "score": evaluation.get("score", 0),
-            "star_scores": evaluation.get("star_scores", {}),
-            "feedback": evaluation.get("feedback", ""),
-            "strengths": evaluation.get("strengths", []),
-            "improvements": evaluation.get("improvements", []),
-            "model_answer": evaluation.get("model_answer", ""),
-            "duration_seconds": duration_seconds,
-        }
-
-        doc_id = await self.db.create(TABLES["interview_answers"], record)
-        logger.info("answer_evaluated", answer_id=doc_id, score=record["score"])
-        return {**record, "id": doc_id}
-
-    async def complete_session(self, user_id: str, session_id: str) -> Dict[str, Any]:
-        """Complete a session and generate overall feedback."""
-        session = await self.db.get(TABLES["interview_sessions"], session_id)
-        if not session or session.get("user_id") != user_id:
-            raise ValueError("Session not found")
-
-        answers = await self.db.query(
-            TABLES["interview_answers"],
-            filters=[("session_id", "==", session_id)],
-            order_by="question_index",
-        )
-
-        # Build Q&A summary for AI
-        qa_lines = []
-        total_score = 0
-        for a in answers:
-            qa_lines.append(f"Q{a['question_index']+1}: {a['question_text']}")
-            qa_lines.append(f"Score: {a.get('score', 0)}/100")
-            qa_lines.append(f"Answer excerpt: {a['answer_text'][:200]}")
-            qa_lines.append("---")
-            total_score += a.get("score", 0)
-
-        chain = InterviewSimulatorChain(self.ai_client)
-        summary = await chain.summarize_session(
-            job_title=session.get("job_title", ""),
-            company=session.get("company", ""),
-            interview_type=session.get("interview_type", "mixed"),
-            qa_summary="\n".join(qa_lines),
-        )
-
-        avg_score = total_score / len(answers) if answers else 0
-        await self.db.update(TABLES["interview_sessions"], session_id, {
-            "overall_score": summary.get("overall_score", avg_score),
-            "overall_feedback": summary.get("overall_feedback", ""),
-            "strengths": summary.get("strengths", []),
-            "improvements": summary.get("improvements", []),
-            "status": "completed",
-            "duration_seconds": sum(a.get("duration_seconds", 0) for a in answers),
+        # Append to session answers
+        answers = session.get("answers", [])
+        answers.append({
+            "question_id": question_id,
+            "answer": answer,
+            "evaluation": evaluation,
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
         })
+        scores = session.get("scores", [])
+        scores.append(evaluation.get("score", 0))
 
-        return await self.db.get(TABLES["interview_sessions"], session_id)
-
-    async def get_session(self, session_id: str, user_id: str) -> Optional[Dict[str, Any]]:
-        """Get a session with its answers."""
-        session = await self.db.get(TABLES["interview_sessions"], session_id)
-        if not session or session.get("user_id") != user_id:
-            return None
-        answers = await self.db.query(
-            TABLES["interview_answers"],
-            filters=[("session_id", "==", session_id)],
-            order_by="question_index",
+        await self.db.update(
+            COLLECTIONS.get("interview_sessions", "interview_sessions"),
+            session_id,
+            {"answers": answers, "scores": scores},
         )
-        session["answers"] = answers
-        return session
+        return evaluation
 
-    async def get_user_sessions(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Get recent sessions for user."""
+    async def complete_session(self, session_id: str, user_id: str) -> Dict[str, Any]:
+        """Mark a session as completed."""
+        session = await self._get_active_session(session_id, user_id)
+        scores = session.get("scores", [])
+        avg_score = int(sum(scores) / len(scores)) if scores else 0
+        await self.db.update(
+            COLLECTIONS.get("interview_sessions", "interview_sessions"),
+            session_id,
+            {"status": "completed", "average_score": avg_score},
+        )
+        return await self.db.get(
+            COLLECTIONS.get("interview_sessions", "interview_sessions"), session_id
+        )
+
+    async def get_user_sessions(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         return await self.db.query(
-            TABLES["interview_sessions"],
+            COLLECTIONS.get("interview_sessions", "interview_sessions"),
             filters=[("user_id", "==", user_id)],
             order_by="created_at",
             order_direction="DESCENDING",
             limit=limit,
         )
+
+    async def get_session(self, session_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        session = await self.db.get(
+            COLLECTIONS.get("interview_sessions", "interview_sessions"), session_id
+        )
+        if session and session.get("user_id") == user_id:
+            return session
+        return None
+
+    async def _get_active_session(self, session_id: str, user_id: str) -> Dict[str, Any]:
+        """Get a session and validate it's active and not expired."""
+        session = await self.get_session(session_id, user_id)
+        if not session:
+            raise ValueError("Session not found")
+
+        if session.get("status") != "active":
+            raise ValueError(f"Session is {session.get('status')}, not active")
+
+        # Check expiry
+        expires_at_str = session.get("expires_at")
+        if expires_at_str:
+            try:
+                expires_at = datetime.fromisoformat(expires_at_str)
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) > expires_at:
+                    await self.db.update(
+                        COLLECTIONS.get("interview_sessions", "interview_sessions"),
+                        session_id,
+                        {"status": "expired"},
+                    )
+                    raise ValueError("Session has expired")
+            except (ValueError, TypeError) as exc:
+                if "expired" in str(exc):
+                    raise
+                logger.warning("invalid_expires_at", session_id=session_id)
+
+        return session

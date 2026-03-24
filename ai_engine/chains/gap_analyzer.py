@@ -295,6 +295,10 @@ class GapAnalyzerChain:
 
         # Sort recommendations by priority
         if result.get("recommendations"):
+            # Handle case where LLM returns strings instead of dicts
+            result["recommendations"] = [
+                r for r in result["recommendations"] if isinstance(r, dict)
+            ]
             result["recommendations"] = sorted(
                 result["recommendations"],
                 key=lambda x: x.get("priority", 99)

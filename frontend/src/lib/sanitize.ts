@@ -56,6 +56,18 @@ export function isAllowedFileExtension(filename: string): boolean {
   return ALLOWED_FILE_EXTENSIONS.has(ext);
 }
 
+/**
+ * Sanitize HTML for safe rendering. Strips script tags and event handlers
+ * while preserving formatting tags used in generated documents.
+ */
+export function sanitizeHtml(html: string): string {
+  if (!html) return "";
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/javascript\s*:/gi, "");
+}
+
 /** Maximum file size for uploads (25 MB). */
 export const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 

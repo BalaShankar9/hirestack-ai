@@ -17,9 +17,12 @@ import { supabase } from "@/lib/supabase";
 
 export interface AuthUser {
   uid: string;
+  id: string;
   email: string | null;
   displayName: string | null;
+  full_name: string | null;
   photoURL: string | null;
+  user_metadata?: Record<string, any>;
 }
 
 interface AuthContextValue {
@@ -52,9 +55,12 @@ function mapUser(u: User | null): AuthUser | null {
   if (!u) return null;
   return {
     uid: u.id,
+    id: u.id,
     email: u.email ?? null,
     displayName: u.user_metadata?.full_name ?? u.user_metadata?.name ?? null,
+    full_name: u.user_metadata?.full_name ?? null,
     photoURL: u.user_metadata?.avatar_url ?? null,
+    user_metadata: u.user_metadata,
   };
 }
 

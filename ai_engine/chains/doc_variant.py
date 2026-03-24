@@ -1,149 +1,126 @@
 """
 Document Variant Chain
-Generates multiple tone variants of the same document for A/B comparison
+Generates tone-varied document variants for A/B testing
 """
 from typing import Dict, Any
 
 from ai_engine.client import AIClient
 
 
-VARIANT_SYSTEM = """You are an elite document strategist who creates multiple versions of the same document,
-each with a distinctly different tone and approach. All variants must be factually identical
-(same experience, same achievements) but presented with different energy levels."""
+DOC_VARIANT_SYSTEM = """You are an expert document writer specializing in creating
+tone-varied versions of professional documents (CVs, cover letters, portfolios).
 
-VARIANT_PROMPT = """Create a {tone} variant of this {document_type}.
+You understand how different tones affect reader perception:
+- Conservative: Formal, structured, traditional — preferred by finance, legal, government
+- Balanced: Professional yet approachable — works across most industries
+- Creative: Bold, storytelling, personality-forward — ideal for creative/startup roles
 
-TONE: {tone}
-{tone_instructions}
+Preserve all factual content while adjusting style, voice, and framing."""
+
+
+VARIANT_PROMPT = """Create a {tone} tone variant of this document.
 
 ORIGINAL DOCUMENT:
-{original_content}
+{document_content}
+
+TONE INSTRUCTIONS: {tone_instructions}
 
 TARGET ROLE: {job_title} at {company}
 
-REQUIREMENTS:
-- Keep ALL factual information identical (dates, companies, achievements, metrics)
-- Change ONLY the tone, word choice, sentence structure, and presentation style
-- Maintain ATS compatibility (semantic HTML, clear sections)
-- The variant should feel distinctly different when read side-by-side with other variants
+Return ONLY the rewritten document HTML. Do not include JSON or commentary."""
 
-Return the complete document as clean HTML. No explanations, no markdown fences."""
 
-TONE_INSTRUCTIONS = {
-    "conservative": """CONSERVATIVE TONE:
-- Formal, traditional corporate language
-- Short, declarative sentences
-- Focus on stability, reliability, proven track record
-- Minimal adjectives, let metrics speak
-- Professional and understated
-- Think: Fortune 500 executive resume""",
+VARIANT_METADATA_PROMPT = """Analyze the differences between these two document variants and return metadata.
 
-    "balanced": """BALANCED TONE:
-- Professional but approachable
-- Mix of formal and conversational
-- Balanced emphasis on achievements and personality
-- Moderate use of action verbs and power words
-- Confident without being aggressive
-- Think: Well-polished LinkedIn profile""",
+VARIANT A (original):
+{original}
 
-    "creative": """CREATIVE TONE:
-- Dynamic, energetic language
-- Storytelling approach — narrative flow
-- Bold action verbs and vivid descriptions
-- Personality shines through
-- Emphasizes innovation, creativity, impact
-- Think: Startup pitch meets professional resume""",
+VARIANT B ({tone}):
+{variant}
+
+Return ONLY valid MINIFIED JSON (no markdown, no code fences).
+"""
+
+VARIANT_METADATA_SCHEMA: Dict[str, Any] = {
+    "type": "OBJECT",
+    "properties": {
+        "tone": {"type": "STRING"},
+        "key_differences": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "target_audience": {"type": "STRING"},
+        "best_for_roles": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "predicted_ats_impact": {"type": "STRING"},
+        "predicted_human_impact": {"type": "STRING"},
+    },
+    "required": ["tone", "key_differences"],
 }
-
-VARIANT_ANALYSIS_PROMPT = """Analyze and compare these document variants.
-
-VARIANT 1 ({tone1}):
-{variant1}
-
-VARIANT 2 ({tone2}):
-{variant2}
-
-VARIANT 3 ({tone3}):
-{variant3}
-
-TARGET ROLE: {job_title} at {company}
-
-Return ONLY valid JSON:
-```json
-{{
-    "comparison": [
-        {{
-            "variant": "conservative",
-            "ats_score": 0-100,
-            "readability_score": 0-100,
-            "keyword_density": 0-100,
-            "word_count": 500,
-            "best_for": "When to use this variant",
-            "strengths": ["Strength 1"],
-            "weaknesses": ["Weakness 1"]
-        }}
-    ],
-    "recommendation": {{
-        "best_variant": "conservative|balanced|creative",
-        "reasoning": "Why this variant is best for this specific role",
-        "suggested_hybrid": "Optional: suggest combining elements from multiple variants"
-    }}
-}}
-```"""
 
 
 class DocumentVariantChain:
-    """Generates multiple tone variants of documents."""
+    """Chain for generating document tone variants."""
+
+    VERSION = "1.0.0"
+
+    TONE_INSTRUCTIONS = {
+        "conservative": (
+            "Use formal language, traditional structure, quantified achievements, no personality flair"
+        ),
+        "balanced": (
+            "Professional but approachable, mix of quantified and narrative, moderate personality"
+        ),
+        "creative": (
+            "Bold opening, storytelling elements, unique framing, personality-forward"
+        ),
+    }
 
     def __init__(self, ai_client: AIClient):
-        self.ai = ai_client
+        self.ai_client = ai_client
 
     async def generate_variant(
         self,
-        original_content: str,
-        document_type: str,
-        tone: str,
+        document_content: str,
+        tone: str = "balanced",
         job_title: str = "",
         company: str = "",
+        **kwargs: Any,
     ) -> str:
-        """Generate a single tone variant of a document."""
-        tone_inst = TONE_INSTRUCTIONS.get(tone, TONE_INSTRUCTIONS["balanced"])
+        """Generate a tone variant of a document."""
+        tone_instructions = self.TONE_INSTRUCTIONS.get(tone, self.TONE_INSTRUCTIONS["balanced"])
+
         prompt = VARIANT_PROMPT.format(
             tone=tone,
-            tone_instructions=tone_inst,
-            document_type=document_type,
-            original_content=original_content,
-            job_title=job_title or "Target Role",
-            company=company or "Target Company",
-        )
-        return await self.ai.complete(
-            prompt=prompt,
-            system=VARIANT_SYSTEM,
-            max_tokens=8192,
-            temperature=0.6,
+            document_content=document_content[:8000],
+            tone_instructions=tone_instructions,
+            job_title=job_title or "the target role",
+            company=company or "the company",
         )
 
-    async def compare_variants(
-        self,
-        variants: dict,
-        job_title: str = "",
-        company: str = "",
-    ) -> Dict[str, Any]:
-        """Compare multiple variants and recommend the best one."""
-        tones = list(variants.keys())
-        prompt = VARIANT_ANALYSIS_PROMPT.format(
-            tone1=tones[0] if len(tones) > 0 else "variant1",
-            variant1=variants.get(tones[0], "") if len(tones) > 0 else "",
-            tone2=tones[1] if len(tones) > 1 else "variant2",
-            variant2=variants.get(tones[1], "") if len(tones) > 1 else "",
-            tone3=tones[2] if len(tones) > 2 else "variant3",
-            variant3=variants.get(tones[2], "") if len(tones) > 2 else "",
-            job_title=job_title or "Target Role",
-            company=company or "Target Company",
-        )
-        return await self.ai.complete_json(
+        result = await self.ai_client.complete(
             prompt=prompt,
-            system=VARIANT_SYSTEM,
-            max_tokens=2048,
-            temperature=0.3,
+            system=DOC_VARIANT_SYSTEM,
+            temperature=0.4,
+            max_tokens=4000,
+        )
+
+        return result
+
+    async def generate_variant_metadata(
+        self,
+        original: str,
+        variant: str,
+        tone: str,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Generate metadata comparing two document variants."""
+        prompt = VARIANT_METADATA_PROMPT.format(
+            original=original[:4000],
+            tone=tone,
+            variant=variant[:4000],
+        )
+
+        return await self.ai_client.complete_json(
+            prompt=prompt,
+            system=DOC_VARIANT_SYSTEM,
+            temperature=0.0,
+            max_tokens=1000,
+            schema=VARIANT_METADATA_SCHEMA,
         )

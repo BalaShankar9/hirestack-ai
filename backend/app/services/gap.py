@@ -1,23 +1,23 @@
 """
 Gap Service
-Handles gap analysis operations with Supabase
+Handles gap analysis operations with Firestore
 """
 from typing import List, Optional, Dict, Any
 import structlog
 
-from app.core.database import get_db, TABLES, SupabaseDB
-from ai_engine.client import get_ai_client
+from app.core.database import get_firestore_db, COLLECTIONS, FirestoreDB
+from ai_engine.client import AIClient
 from ai_engine.chains.gap_analyzer import GapAnalyzerChain
 
 logger = structlog.get_logger()
 
 
 class GapService:
-    """Service for gap analysis operations using Supabase."""
+    """Service for gap analysis operations using Firestore."""
 
-    def __init__(self, db: Optional[SupabaseDB] = None):
-        self.db = db or get_db()
-        self.ai_client = get_ai_client()
+    def __init__(self, db: Optional[FirestoreDB] = None):
+        self.db = db or get_firestore_db()
+        self.ai_client = AIClient()
 
     async def analyze_gaps(
         self,
@@ -27,20 +27,18 @@ class GapService:
     ) -> Dict[str, Any]:
         """Perform comprehensive gap analysis."""
         # Fetch profile
-        profile = await self.db.get(TABLES["profiles"], profile_id)
+        profile = await self.db.get(COLLECTIONS["profiles"], profile_id)
         if not profile or profile.get("user_id") != user_id:
             raise ValueError("Profile not found")
 
-        # Fetch benchmark and verify ownership via linked job
-        benchmark = await self.db.get(TABLES["benchmarks"], benchmark_id)
+        # Fetch benchmark
+        benchmark = await self.db.get(COLLECTIONS["benchmarks"], benchmark_id)
         if not benchmark:
             raise ValueError("Benchmark not found")
 
-        # Verify benchmark ownership through linked job
+        # Fetch linked job for title/company
         job_id = benchmark.get("job_description_id")
-        job = await self.db.get(TABLES["jobs"], job_id) if job_id else None
-        if job and job.get("user_id") != user_id:
-            raise ValueError("Benchmark not found")
+        job = await self.db.get(COLLECTIONS["jobs"], job_id) if job_id else None
 
         # Build data dicts for AI
         profile_data = {
@@ -94,13 +92,13 @@ class GapService:
             "status": "completed",
         }
 
-        doc_id = await self.db.create(TABLES["gap_reports"], record)
+        doc_id = await self.db.create(COLLECTIONS["gap_reports"], record)
         logger.info("gap_analysis_completed", report_id=doc_id, score=record["compatibility_score"])
-        return await self.db.get(TABLES["gap_reports"], doc_id)
+        return await self.db.get(COLLECTIONS["gap_reports"], doc_id)
 
     async def get_user_reports(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         return await self.db.query(
-            TABLES["gap_reports"],
+            COLLECTIONS["gap_reports"],
             filters=[("user_id", "==", user_id)],
             order_by="created_at",
             order_direction="DESCENDING",
@@ -108,7 +106,7 @@ class GapService:
         )
 
     async def get_report(self, report_id: str, user_id: str) -> Optional[Dict[str, Any]]:
-        report = await self.db.get(TABLES["gap_reports"], report_id)
+        report = await self.db.get(COLLECTIONS["gap_reports"], report_id)
         if report and report.get("user_id") == user_id:
             return report
         return None
@@ -134,12 +132,12 @@ class GapService:
         old = await self.get_report(report_id, user_id)
         if not old:
             return None
-        await self.db.delete(TABLES["gap_reports"], report_id)
+        await self.db.delete(COLLECTIONS["gap_reports"], report_id)
         return await self.analyze_gaps(user_id, old["profile_id"], old["benchmark_id"])
 
     async def delete_report(self, report_id: str, user_id: str) -> bool:
         report = await self.get_report(report_id, user_id)
         if not report:
             return False
-        await self.db.delete(TABLES["gap_reports"], report_id)
+        await self.db.delete(COLLECTIONS["gap_reports"], report_id)
         return True
