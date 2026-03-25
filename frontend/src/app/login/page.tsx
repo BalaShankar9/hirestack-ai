@@ -52,7 +52,10 @@ function LoginContent() {
       } else {
         await signIn(email, password);
       }
-      router.replace("/dashboard");
+      // Small delay to let auth state propagate before redirect
+      const redirect = searchParams.get("redirect") || "/dashboard";
+      await new Promise((r) => setTimeout(r, 500));
+      window.location.href = redirect;
     } catch (err: any) {
       setError(err?.message ?? "Authentication failed");
     } finally {
@@ -150,14 +153,8 @@ function LoginContent() {
             </p>
           </div>
 
-          {/* OAuth */}
-          <div className="grid grid-cols-2 gap-3">
-            <Button
-              variant="outline"
-              className="rounded-xl h-11"
-              onClick={() => handleOAuth("google")}
-              disabled={loading || oauthLoading !== null}
-            >
+          {/* OAuth — only show if configured (check env or hide for now) */}
+          <div className="grid grid-cols-2 gap-3 hidden">
               {oauthLoading === "google" ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -187,14 +184,7 @@ function LoginContent() {
             </Button>
           </div>
 
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-3 text-muted-foreground">or continue with email</span>
-            </div>
-          </div>
+          {/* Divider - hidden when OAuth is hidden */}
 
           {/* Email form */}
           <form onSubmit={handleSubmit} className="space-y-4">
