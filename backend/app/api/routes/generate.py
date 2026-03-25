@@ -15,14 +15,38 @@ import json
 import math
 import re
 import traceback
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.api.deps import get_current_user, get_current_user_or_guest
+from app.core.security import limiter
+
+# ── Guest abuse prevention ─────────────────────────────────────────────
+# In-memory tracker: IP → list of timestamps (resets on server restart)
+_guest_usage: Dict[str, list] = defaultdict(list)
+GUEST_MAX_GENERATIONS_PER_DAY = 2
+GUEST_MAX_RESUMES_PER_DAY = 5
+
+
+def _check_guest_limit(request: Request, current_user: Dict[str, Any], limit: int) -> None:
+    """Raise 429 if guest user exceeds daily limit."""
+    if not current_user.get("is_guest"):
+        return  # Authenticated users are not limited here
+    ip = request.client.host if request.client else "unknown"
+    now = datetime.now(timezone.utc)
+    # Clean old entries (older than 24h)
+    _guest_usage[ip] = [t for t in _guest_usage[ip] if (now - t).total_seconds() < 86400]
+    if len(_guest_usage[ip]) >= limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Free trial limit reached ({limit} per day). Create a free account to continue.",
+        )
+    _guest_usage[ip].append(now)
 
 try:
     import openai as _openai_module
@@ -121,6 +145,10 @@ router = APIRouter()
 
 
 # ── Request schema ────────────────────────────────────────────────────
+MAX_JD_SIZE = 50_000       # 50KB — no JD is this long
+MAX_RESUME_SIZE = 100_000  # 100KB — generous for parsed text
+
+
 class PipelineRequest(BaseModel):
     job_title: str
     company: str = ""
@@ -128,10 +156,25 @@ class PipelineRequest(BaseModel):
     resume_text: str = ""
 
 
+def _validate_pipeline_input(req: PipelineRequest) -> None:
+    """Reject oversized or empty inputs."""
+    if not req.job_title.strip():
+        raise HTTPException(status_code=400, detail="Job title is required")
+    if not req.jd_text.strip():
+        raise HTTPException(status_code=400, detail="Job description is required")
+    if len(req.jd_text) > MAX_JD_SIZE:
+        raise HTTPException(status_code=413, detail="Job description too large (max 50KB)")
+    if len(req.resume_text) > MAX_RESUME_SIZE:
+        raise HTTPException(status_code=413, detail="Resume text too large (max 100KB)")
+
+
 # ── Main pipeline endpoint ────────────────────────────────────────────
 @router.post("/pipeline")
-async def generate_pipeline(req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user_or_guest)):
+@limiter.limit("3/minute")
+async def generate_pipeline(request: Request, req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user_or_guest)):
     """Run the complete AI generation pipeline and return all modules. Allows guest access."""
+    _check_guest_limit(request, current_user, GUEST_MAX_GENERATIONS_PER_DAY)
+    _validate_pipeline_input(req)
     try:
         from ai_engine.client import AIClient
         from ai_engine.chains.role_profiler import RoleProfilerChain
@@ -826,7 +869,8 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
 
 
 @router.post("/pipeline/stream")
-async def generate_pipeline_stream(req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user_or_guest)):
+@limiter.limit("3/minute")
+async def generate_pipeline_stream(request: Request, req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user_or_guest)):
     """
     SSE streaming version of the pipeline.
     Uses the agent pipeline (Researcher → Drafter → Critic → Optimizer →
@@ -834,6 +878,8 @@ async def generate_pipeline_stream(req: PipelineRequest, current_user: Dict[str,
     alongside regular progress events.
     Falls back to the legacy direct-chain path if agents are unavailable.
     """
+    _check_guest_limit(request, current_user, GUEST_MAX_GENERATIONS_PER_DAY)
+    _validate_pipeline_input(req)
     user_id = current_user.get("id") or current_user.get("uid") or current_user.get("sub") or "anonymous"
 
     if _AGENT_PIPELINES_AVAILABLE:

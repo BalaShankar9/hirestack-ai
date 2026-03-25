@@ -402,24 +402,28 @@ export async function generateApplicationModules(
   const company = confirmedFacts.company;
 
   // Set modules to "generating" (single DB update; preserves other module states)
-  const { data: modRow, error: modFetchErr } = await supabase
-    .from(TABLES.applications)
-    .select("modules")
-    .eq("id", appId)
-    .maybeSingle();
-  if (modFetchErr) throw modFetchErr;
+  // For guest users this may fail due to RLS — that's OK, we proceed anyway.
+  let moduleStates: Record<ModuleKey, ModuleStatus> = { ...DEFAULT_MODULES } as any;
+  try {
+    const { data: modRow } = await supabase
+      .from(TABLES.applications)
+      .select("modules")
+      .eq("id", appId)
+      .maybeSingle();
 
-  const moduleStates: Record<ModuleKey, ModuleStatus> = (modRow?.modules ?? { ...DEFAULT_MODULES }) as any;
-  const generatingAt = Date.now();
-  for (const mod of modules) {
-    moduleStates[mod] = { state: "generating", updatedAt: generatingAt };
+    moduleStates = (modRow?.modules ?? moduleStates) as any;
+    const generatingAt = Date.now();
+    for (const mod of modules) {
+      moduleStates[mod] = { state: "generating", updatedAt: generatingAt };
+    }
+
+    await supabase
+      .from(TABLES.applications)
+      .update({ modules: moduleStates })
+      .eq("id", appId);
+  } catch {
+    // Guest mode — no DB writes, proceed to generation
   }
-
-  const { error: modSetErr } = await supabase
-    .from(TABLES.applications)
-    .update({ modules: moduleStates })
-    .eq("id", appId);
-  if (modSetErr) throw modSetErr;
 
   const MAX_RETRIES = 3;
   let lastError: Error | null = null;
@@ -444,21 +448,16 @@ export async function generateApplicationModules(
 
       // getUser() validates the token with Supabase and triggers a refresh if
       // the access token is expired — ensures we always send a fresh token.
-      const { error: userErr } = await supabase.auth.getUser();
-      if (userErr) {
-        throw Object.assign(
-          new Error("Not authenticated. Please sign in again."),
-          { nonRetryable: true }
-        );
-      }
-      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
-      if (sessionErr) throw sessionErr;
-      const accessToken = sessionData.session?.access_token;
-      if (!accessToken) {
-        throw Object.assign(
-          new Error("Not authenticated. Please sign in again."),
-          { nonRetryable: true }
-        );
+      // For guest users (no session), we proceed without a token.
+      let accessToken: string | null = null;
+      try {
+        const { error: userErr } = await supabase.auth.getUser();
+        if (!userErr) {
+          const { data: sessionData } = await supabase.auth.getSession();
+          accessToken = sessionData.session?.access_token ?? null;
+        }
+      } catch {
+        // Guest mode — no auth token needed
       }
 
       // Prefer DB-backed generation jobs (resilient to refresh/disconnect).
@@ -483,7 +482,7 @@ export async function generateApplicationModules(
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
           },
           body: JSON.stringify({
             application_id: appId,
@@ -501,7 +500,7 @@ export async function generateApplicationModules(
           response = await fetch(`${AI_API_URL}/api/generate/jobs/${jobId}/stream`, {
             method: "GET",
             headers: {
-              Authorization: `Bearer ${accessToken}`,
+              ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
             },
             signal: controller.signal,
           });
@@ -544,7 +543,7 @@ export async function generateApplicationModules(
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${accessToken}`,
+              ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
             },
             body: JSON.stringify({
               job_title: jobTitle,

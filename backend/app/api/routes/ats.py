@@ -3,12 +3,13 @@ ATS Scanner routes
 """
 from typing import Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from app.services.ats import ATSService
 from app.api.deps import get_current_user
 from app.api.response import success_response
+from app.core.security import limiter
 import structlog
 
 logger = structlog.get_logger()
@@ -26,7 +27,9 @@ class ATSScanRequest(BaseModel):
 
 
 @router.post("/scan")
+@limiter.limit("5/minute")
 async def scan_document(
+    request: Request,
     req: ATSScanRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):

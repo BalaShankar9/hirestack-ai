@@ -276,9 +276,14 @@ export default function NewApplicationPage() {
         router.push(`/applications/${appId}`);
       }, 1000);
     } catch (err: any) {
-      const message = err?.name === "AbortError"
-        ? "Generation timed out. The AI took too long — please try again."
-        : err?.message ?? "Generation failed — please try again.";
+      let message: string;
+      if (err?.name === "AbortError") {
+        message = "Generation timed out. The AI took too long — please try again.";
+      } else if (err?.code === 429 || err?.message?.includes("trial limit")) {
+        message = err?.message || "Free trial limit reached. Create a free account to continue.";
+      } else {
+        message = err?.message ?? "Generation failed — please try again.";
+      }
       setGenError(message);
       setGenerating(false);
     } finally {
