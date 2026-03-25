@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Sparkles, ArrowRight, Loader2 } from "lucide-react";
 import { useAuth } from "@/components/providers";
+import { supabase } from "@/lib/supabase";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,12 +53,23 @@ function LoginContent() {
       } else {
         await signIn(email, password);
       }
-      // Small delay to let auth state propagate before redirect
+      // Wait for session to propagate (cookie needs to be set)
       const redirect = searchParams.get("redirect") || "/dashboard";
-      await new Promise((r) => setTimeout(r, 500));
-      window.location.href = redirect;
+      await new Promise((r) => setTimeout(r, 800));
+      // Verify session exists before redirecting
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (currentSession) {
+        window.location.href = redirect;
+      } else {
+        setError("Session not established. Please try again.");
+      }
     } catch (err: any) {
-      setError(err?.message ?? "Authentication failed");
+      const msg = err?.message ?? "Authentication failed";
+      if (msg.toLowerCase().includes("invalid") && !isRegister) {
+        setError("Invalid credentials. Don't have an account yet? Click 'Create Account' below.");
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }

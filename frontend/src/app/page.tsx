@@ -23,10 +23,10 @@ export default function HomePage() {
               Sign In
             </Link>
             <Link
-              href="/login?mode=register"
+              href="/new"
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-glow-sm hover:shadow-glow-md transition-all hover:brightness-110"
             >
-              Get Started
+              Try Free
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
@@ -62,10 +62,10 @@ export default function HomePage() {
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row animate-fade-up" style={{ animationDelay: "200ms" }}>
             <Link
-              href="/login?mode=register"
+              href="/new"
               className="inline-flex items-center gap-2 rounded-2xl bg-primary px-8 py-4 text-base font-semibold text-primary-foreground shadow-glow-md hover:shadow-glow-lg transition-all hover:brightness-110"
             >
-              Start Free Analysis
+              Build Your First Application — Free
               <ArrowRight className="h-4 w-4" />
             </Link>
             <Link
@@ -201,10 +201,10 @@ export default function HomePage() {
                 ATS filters and impress recruiters.
               </p>
               <Link
-                href="/login?mode=register"
+                href="/new"
                 className="mt-8 inline-flex items-center gap-2 rounded-2xl bg-white px-8 py-4 text-base font-semibold text-primary shadow-soft-lg hover:shadow-soft-xl transition-all hover:scale-[1.02]"
               >
-                Get Started for Free
+                Try It Now — No Signup Required
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
