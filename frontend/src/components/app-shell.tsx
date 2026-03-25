@@ -25,6 +25,7 @@ import {
   FlaskConical,
   Fingerprint,
   Settings,
+  Users,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ const NAV = [
   { href: "/learning", label: "Daily Learn", icon: BookOpen, description: "Skill challenges" },
   { href: "/ab-lab", label: "A/B Lab", icon: FlaskConical, description: "Compare variants" },
   // Enterprise
+  { href: "/candidates", label: "Pipeline", icon: Users, description: "Candidate tracking" },
   { href: "/settings", label: "Settings", icon: Settings, description: "Organization & billing" },
 ] as const;
 
