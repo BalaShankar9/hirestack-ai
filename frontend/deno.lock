@@ -54,6 +54,7 @@
         "npm:eslint-config-next@14.1.0",
         "npm:eslint@^8.56.0",
         "npm:file-saver@^2.0.5",
+        "npm:framer-motion@^12.38.0",
         "npm:html2canvas@^1.4.1",
         "npm:html2pdf.js@0.14",
         "npm:jsdom@^24.1.3",

@@ -1,0 +1,27 @@
+{
+  "enabledPlugins": {
+    "frontend-design@awesome-claude-plugins": true,
+    "canvas-design@awesome-claude-plugins": true,
+    "frontend-developer@awesome-claude-plugins": true,
+    "backend-architect@awesome-claude-plugins": true,
+    "artifacts-builder@awesome-claude-plugins": true,
+    "senior-frontend@awesome-claude-plugins": true,
+    "theme-factory@awesome-claude-plugins": true,
+    "perf@awesome-claude-plugins": true,
+    "security-guidance@awesome-claude-plugins": true,
+    "mcp-builder@awesome-claude-plugins": true,
+    "engineering-skills@claude-code-skills": true,
+    "engineering-advanced-skills@claude-code-skills": true,
+    "product-skills@claude-code-skills": true,
+    "fullstack-engineer@claude-code-skills": true,
+    "marketing-skills@claude-code-skills": true,
+    "self-improving-agent@claude-code-skills": true,
+    "autoresearch-agent@claude-code-skills": true,
+    "content-creator@claude-code-skills": true,
+    "demand-gen@claude-code-skills": true,
+    "product-manager@claude-code-skills": true,
+    "pw@claude-code-skills": true,
+    "c-level-skills@claude-code-skills": true,
+    "business-growth-skills@claude-code-skills": true
+  }
+}
