@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers";
 import { AppShell } from "@/components/app-shell";
+import { QuotaProvider } from "@/contexts/quota-context";
 import api from "@/lib/api";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
@@ -27,6 +28,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  // Auth disabled — render shell for all users
-  return <AppShell>{children}</AppShell>;
+  return (
+    <QuotaProvider>
+      <AppShell>{children}</AppShell>
+    </QuotaProvider>
+  );
 }

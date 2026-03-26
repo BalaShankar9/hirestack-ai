@@ -95,3 +95,36 @@ async def stripe_webhook(request: Request):
 
     await billing.handle_webhook(event["type"], event["data"]["object"])
     return {"status": "processed"}
+
+
+class RecordUsageRequest(BaseModel):
+    feature: str = "exports"
+
+
+@router.post("/record-export")
+async def record_export(req: RecordUsageRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Record a feature usage (export, application, etc.)."""
+    from app.services.org import OrgService
+    org_service = OrgService()
+    orgs = await org_service.get_user_orgs(current_user["id"])
+    org_id = orgs[0]["id"] if orgs else current_user["id"]
+
+    billing = BillingService()
+    await billing.record_usage(org_id, current_user["id"], req.feature)
+    plan_info = await billing.get_plan_info(org_id) if orgs else {"usage": {req.feature: 1}}
+    return {"recorded": True, "usage": plan_info.get("usage", {})}
+
+
+@router.get("/quota-check")
+async def quota_check(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Lightweight quota check for the download gate."""
+    from app.services.org import OrgService
+    org_service = OrgService()
+    orgs = await org_service.get_user_orgs(current_user["id"])
+    org_id = orgs[0]["id"] if orgs else current_user["id"]
+
+    billing = BillingService()
+    info = await billing.get_plan_info(org_id) if orgs else {
+        "plan": "free", "usage": {}, "limits": {"exports": 5, "applications": 5}
+    }
+    return info

@@ -90,7 +90,18 @@ class BillingService:
         """Check if the org can use a feature (within plan limits)."""
         sub = await self.get_subscription(org_id)
         if not sub:
-            return True  # No subscription = no limits
+            # No subscription = free plan limits
+            free_limits = PLANS["free"]["limits"]
+            limit = free_limits.get(feature, -1)
+            if limit == -1:
+                return True
+            period = datetime.now(timezone.utc).strftime("%Y-%m-01")
+            records = await self.db.query(
+                TABLES["usage_records"],
+                filters=[("org_id", "==", org_id), ("feature", "==", feature), ("period_start", "==", period)],
+            )
+            current = sum(r.get("quantity", 1) for r in records)
+            return current < limit
         limits = sub.get("usage_limits", {})
         limit = limits.get(feature, -1)
         if limit == -1:

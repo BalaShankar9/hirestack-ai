@@ -1,24 +1,46 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { supabase } from "@/lib/supabase";
 
-/**
- * OAuth callback route — Supabase redirects here after social sign-in.
- * Exchanges the URL hash/params for a session, then redirects to dashboard.
- */
 export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={<CallbackSpinner />}>
+      <CallbackContent />
+    </Suspense>
+  );
+}
+
+function CallbackContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN") {
-        router.replace("/dashboard");
+        // Check for returnTo param or sessionStorage
+        const returnTo =
+          searchParams.get("returnTo") ||
+          (typeof sessionStorage !== "undefined"
+            ? sessionStorage.getItem("hirestack_return_to")
+            : null) ||
+          "/dashboard";
+
+        if (typeof sessionStorage !== "undefined") {
+          sessionStorage.removeItem("hirestack_return_to");
+        }
+
+        router.replace(returnTo);
       }
     });
-  }, [router]);
+  }, [router, searchParams]);
 
+  return <CallbackSpinner />;
+}
+
+function CallbackSpinner() {
   return (
     <div className="flex min-h-screen items-center justify-center">
       <div className="flex flex-col items-center gap-3">

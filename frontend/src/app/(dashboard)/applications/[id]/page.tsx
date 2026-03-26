@@ -75,6 +75,9 @@ import { sanitizeHtml } from "@/lib/sanitize";
 import { AgentProgress } from "@/components/workspace/agent-progress";
 import { QualityReport } from "@/components/workspace/quality-report";
 import { useAgentStatus } from "@/hooks/use-agent-status";
+import { useDownloadGate } from "@/hooks/use-download-gate";
+import { SignupModal } from "@/components/auth/signup-modal";
+import { UpgradeModal } from "@/components/billing/upgrade-modal";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -119,6 +122,7 @@ export default function ApplicationWorkspacePage() {
   const params = useParams<{ id: string }>();
   const appId = params.id;
   const searchParams = useSearchParams();
+  const { gatedDownload, showSignup, setShowSignup, showUpgrade, setShowUpgrade, onSignupSuccess } = useDownloadGate();
 
   const { user } = useAuth();
   const userId = user?.uid || user?.id || null;
@@ -1149,6 +1153,7 @@ export default function ApplicationWorkspacePage() {
                     title="Tailored CV"
                     description="ATS-optimized, keyword-rich, strategically enhanced."
                     hasContent={!!cvLocal}
+                    gate={gatedDownload}
                     onDownloadPdf={async () => {
                       if (!user) return;
                       await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "cv_pdf" } });
@@ -1170,6 +1175,7 @@ export default function ApplicationWorkspacePage() {
                     title="Cover Letter"
                     description="Compelling, evidence-backed narrative."
                     hasContent={!!clLocal}
+                    gate={gatedDownload}
                     onDownloadPdf={async () => {
                       if (!user) return;
                       await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "cl_pdf" } });
@@ -1191,6 +1197,7 @@ export default function ApplicationWorkspacePage() {
                     title="Personal Statement"
                     description="Authentic motivation narrative."
                     hasContent={!!psLocal}
+                    gate={gatedDownload}
                     onDownloadPdf={async () => {
                       if (!user) return;
                       await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "ps_pdf" } });
@@ -1212,6 +1219,7 @@ export default function ApplicationWorkspacePage() {
                     title="Portfolio & Evidence"
                     description="Project showcase with impact metrics."
                     hasContent={!!portfolioLocal}
+                    gate={gatedDownload}
                     onDownloadPdf={async () => {
                       if (!user) return;
                       await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "portfolio_pdf" } });
@@ -1233,6 +1241,7 @@ export default function ApplicationWorkspacePage() {
                     title="Learning Plan"
                     description="Sprint-based skill development roadmap."
                     hasContent={!!app.learningPlan}
+                    gate={gatedDownload}
                     onDownloadPdf={async () => {
                       if (!user) return;
                       await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "learning_pdf" } });
@@ -1260,6 +1269,7 @@ export default function ApplicationWorkspacePage() {
                     title="Gap Analysis"
                     description="Skills gap assessment with recommendations."
                     hasContent={!!app.gaps}
+                    gate={gatedDownload}
                     onDownloadPdf={async () => {
                       if (!user) return;
                       await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "gaps_pdf" } });
@@ -1366,6 +1376,10 @@ export default function ApplicationWorkspacePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Download gate modals */}
+      <SignupModal open={showSignup} onOpenChange={setShowSignup} onSuccess={onSignupSuccess} />
+      <UpgradeModal open={showUpgrade} onOpenChange={setShowUpgrade} feature="exports" />
     </div>
   );
 }

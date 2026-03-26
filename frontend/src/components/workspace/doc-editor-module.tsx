@@ -266,6 +266,7 @@ export function ExportCard({
   onDownloadDocx,
   onDownloadImage,
   onCopyText,
+  gate,
 }: {
   title: string;
   description: string;
@@ -274,6 +275,7 @@ export function ExportCard({
   onDownloadDocx: () => Promise<void>;
   onDownloadImage: () => Promise<void>;
   onCopyText: () => void;
+  gate?: (fn: () => void | Promise<void>) => Promise<void>;
 }) {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -285,13 +287,25 @@ export function ExportCard({
   };
 
   const handleDownload = async (format: string, fn: () => Promise<void>) => {
-    setDownloading(format);
-    try {
-      await fn();
-    } catch (err) {
-      console.error(`${format} export failed:`, err);
-    } finally {
-      setDownloading(null);
+    if (gate) {
+      // Gate wraps the download — handles auth + quota checks
+      await gate(async () => {
+        setDownloading(format);
+        try {
+          await fn();
+        } finally {
+          setDownloading(null);
+        }
+      });
+    } else {
+      setDownloading(format);
+      try {
+        await fn();
+      } catch (err) {
+        console.error(`${format} export failed:`, err);
+      } finally {
+        setDownloading(null);
+      }
     }
   };
 
