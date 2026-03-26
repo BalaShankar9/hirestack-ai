@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 import {
   ArrowRight, Sparkles, Clock, Target, ShieldCheck, ScanEye, Award,
   Plus, Briefcase, TrendingUp, Trash2, Zap, FileSearch, MessageSquare,
@@ -146,7 +147,12 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* ── Hero Command Center ──────────────────────────────── */}
-      <div className="rounded-3xl border bg-gradient-to-br from-primary via-violet-600 to-indigo-700 p-6 text-white shadow-glow-md overflow-hidden relative">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="rounded-3xl border bg-gradient-to-br from-primary via-violet-600 to-indigo-700 p-6 text-white shadow-glow-md overflow-hidden relative"
+      >
         {/* Decorative grid */}
         <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
 
@@ -205,17 +211,24 @@ export default function DashboardPage() {
             </div>
           ))}
         </div>
-      </div>
+      </motion.div>
 
       {/* ── Quick Actions ─────────────────────────────────────── */}
       <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-        {QUICK_ACTIONS.map((a) => (
-          <Link key={a.href} href={a.href} className="group flex flex-col items-center gap-2 rounded-xl border bg-card p-3 hover:border-primary/20 hover:shadow-soft-sm transition-all">
-            <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg transition-transform group-hover:scale-110", a.color)}>
-              <a.icon className="h-4 w-4" />
-            </div>
-            <span className="text-[11px] font-medium text-muted-foreground group-hover:text-foreground transition-colors text-center leading-tight">{a.label}</span>
-          </Link>
+        {QUICK_ACTIONS.map((a, i) => (
+          <motion.div
+            key={a.href}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 + i * 0.05 }}
+          >
+            <Link href={a.href} className="group flex flex-col items-center gap-2 rounded-xl border bg-card p-3 hover:border-primary/20 hover:shadow-soft-sm transition-all">
+              <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg transition-transform group-hover:scale-110", a.color)}>
+                <a.icon className="h-4 w-4" />
+              </div>
+              <span className="text-[11px] font-medium text-muted-foreground group-hover:text-foreground transition-colors text-center leading-tight">{a.label}</span>
+            </Link>
+          </motion.div>
         ))}
       </div>
 
