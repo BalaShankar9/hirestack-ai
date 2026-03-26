@@ -25,6 +25,20 @@ from app.core.config import settings
 from app.core.database import init_supabase, get_supabase
 from app.api.routes import router as api_router
 
+# ── Sentry Error Monitoring ────────────────────────────────────────────
+if settings.sentry_dsn:
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            environment=settings.environment,
+            traces_sample_rate=0.1 if settings.environment == "production" else 1.0,
+            profiles_sample_rate=0.1,
+            send_default_pii=False,
+        )
+    except ImportError:
+        pass
+
 # Configure structured logging
 structlog.configure(
     processors=[
@@ -187,6 +201,19 @@ async def health_check():
     except Exception as e:
         supabase_status = {"ok": False, "error": str(e)}
 
+    # Check AI provider
+    ai_status = {"provider": getattr(settings, "ai_provider", "unknown"), "ok": False}
+    try:
+        if getattr(settings, "ai_provider", "") == "ollama":
+            import httpx
+            r = httpx.get("http://localhost:11434/api/tags", timeout=2)
+            ai_status["ok"] = r.status_code == 200
+        elif getattr(settings, "gemini_api_key", ""):
+            ai_status["ok"] = True
+            ai_status["provider"] = "gemini"
+    except Exception:
+        pass
+
     return {
         "status": "healthy",
         "version": settings.app_version,
@@ -195,6 +222,8 @@ async def health_check():
             "url": settings.supabase_url,
             "database": supabase_status,
         },
+        "ai": ai_status,
+        "sentry": bool(settings.sentry_dsn),
     }
 
 

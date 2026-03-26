@@ -11,13 +11,23 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+import os
+
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 # ---------------------------------------------------------------------------
 # Rate limiter (import this in route modules instead of creating a new one)
+# Uses Redis for persistence when REDIS_URL is available, in-memory otherwise.
 # ---------------------------------------------------------------------------
-limiter = Limiter(key_func=get_remote_address)
+_redis_url = os.getenv("REDIS_URL", "")
+_storage_uri = _redis_url if _redis_url and not _redis_url.startswith("redis://localhost") else None
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    storage_uri=_storage_uri,
+    default_limits=["100/minute"],
+)
 
 # ---------------------------------------------------------------------------
 # Constants
