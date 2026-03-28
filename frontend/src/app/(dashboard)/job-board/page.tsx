@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers";
 import api from "@/lib/api";

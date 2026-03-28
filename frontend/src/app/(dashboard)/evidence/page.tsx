@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useRef } from "react";
+import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -217,7 +218,7 @@ export default function EvidenceVaultPage() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
@@ -454,6 +455,6 @@ export default function EvidenceVaultPage() {
           })}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

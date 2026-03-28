@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/components/providers";
 import { toast } from "@/hooks/use-toast";
 import api from "@/lib/api";
@@ -16,6 +17,28 @@ import {
   Timer, Brain, Target, Zap, AlertTriangle, Trophy,
   MessageSquare, Code, Users, Briefcase, ChevronDown,
 } from "lucide-react";
+
+/* ── Animation variants ───────────────────────────────────────── */
+
+const fadeUp: any = {
+  hidden: { opacity: 0, y: 20 },
+  visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.1, duration: 0.5, ease: "easeOut" } }),
+};
+
+const staggerContainer: any = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { staggerChildren: 0.08, delayChildren: 0.1 } },
+};
+
+const staggerItem: any = {
+  hidden: { opacity: 0, y: 12 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } },
+};
+
+const cardHover: any = {
+  rest: { scale: 1, y: 0 },
+  hover: { scale: 1.02, y: -2, transition: { duration: 0.2, ease: "easeOut" } },
+};
 
 type Phase = "setup" | "active" | "review";
 type InterviewMode = "practice" | "timed" | "mock";
@@ -38,18 +61,53 @@ function ScoreRing({ value, size = 80, label }: { value: number; size?: number; 
   const r = (size - 8) / 2, circ = 2 * Math.PI * r, offset = circ - (value / 100) * circ;
   const color = value >= 80 ? "stroke-emerald-500" : value >= 60 ? "stroke-amber-500" : "stroke-rose-500";
   return (
-    <div className="flex flex-col items-center gap-1">
+    <motion.div
+      className="flex flex-col items-center gap-1"
+      initial={{ scale: 0.8, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+    >
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
           <circle cx={size/2} cy={size/2} r={r} strokeWidth={6} fill="none" className="stroke-muted/20" />
-          <circle cx={size/2} cy={size/2} r={r} strokeWidth={6} fill="none" strokeLinecap="round"
-            strokeDasharray={circ} strokeDashoffset={offset} className={cn("transition-all duration-1000", color)} />
+          <motion.circle cx={size/2} cy={size/2} r={r} strokeWidth={6} fill="none" strokeLinecap="round"
+            strokeDasharray={circ}
+            initial={{ strokeDashoffset: circ }}
+            animate={{ strokeDashoffset: offset }}
+            transition={{ duration: 1.2, ease: "easeOut", delay: 0.3 }}
+            className={color} />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className={cn("text-lg font-bold tabular-nums", value >= 80 ? "text-emerald-500" : value >= 60 ? "text-amber-500" : "text-rose-500")}>{value}</span>
         </div>
       </div>
       {label && <span className="text-2xs text-muted-foreground">{label}</span>}
+    </motion.div>
+  );
+}
+
+/* ── Timer ring for timed mode ─────────────────────────────────── */
+
+function TimerRing({ timeLeft, total = 90, size = 48 }: { timeLeft: number; total?: number; size?: number }) {
+  const r = (size - 6) / 2, circ = 2 * Math.PI * r;
+  const progress = timeLeft / total;
+  const offset = circ - progress * circ;
+  const color = timeLeft <= 15 ? "stroke-rose-500" : timeLeft <= 30 ? "stroke-amber-500" : "stroke-primary";
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size/2} cy={size/2} r={r} strokeWidth={4} fill="none" className="stroke-muted/20" />
+        <motion.circle cx={size/2} cy={size/2} r={r} strokeWidth={4} fill="none" strokeLinecap="round"
+          strokeDasharray={circ}
+          animate={{ strokeDashoffset: offset }}
+          transition={{ duration: 0.5, ease: "linear" }}
+          className={color} />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className={cn("text-[10px] font-bold tabular-nums", timeLeft <= 15 ? "text-rose-500" : timeLeft <= 30 ? "text-amber-500" : "text-foreground")}>
+          {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, "0")}
+        </span>
+      </div>
     </div>
   );
 }
@@ -196,7 +254,7 @@ export default function InterviewSimulatorPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
+      <motion.div className="flex items-center gap-4" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-500 to-pink-600 shadow-glow-sm">
           <Mic className="h-6 w-6 text-white" />
         </div>
@@ -204,20 +262,23 @@ export default function InterviewSimulatorPage() {
           <h1 className="text-xl font-bold">Interview Simulator</h1>
           <p className="text-sm text-muted-foreground">AI-powered mock interviews with STAR feedback and real-time coaching</p>
         </div>
-      </div>
+      </motion.div>
 
-      {error && <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
+      {error && <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</motion.div>}
 
       {/* ── Setup Phase ─────────────────────────────────────── */}
+      <AnimatePresence mode="wait">
       {phase === "setup" && (
-        <div className="space-y-6">
+        <motion.div key="setup" className="space-y-6" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.4 }}>
           {/* Interview Mode Selection */}
           <div>
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Interview Mode</h2>
             <div className="grid grid-cols-3 gap-3">
-              {MODES.map((m) => (
-                <button key={m.value} onClick={() => setMode(m.value)}
-                  className={cn("rounded-xl border p-4 text-left transition-all hover:shadow-soft-sm",
+              {MODES.map((m, idx) => (
+                <motion.button key={m.value} onClick={() => setMode(m.value)}
+                  variants={cardHover} initial="rest" whileHover="hover"
+                  custom={idx}
+                  className={cn("rounded-xl border p-4 text-left transition-colors",
                     mode === m.value ? "border-primary bg-primary/5 shadow-soft-sm" : "border-border hover:border-primary/30"
                   )}>
                   <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg border mb-2", m.color)}>
@@ -225,13 +286,13 @@ export default function InterviewSimulatorPage() {
                   </div>
                   <p className="font-semibold text-sm">{m.label}</p>
                   <p className="text-2xs text-muted-foreground mt-0.5">{m.desc}</p>
-                </button>
+                </motion.button>
               ))}
             </div>
           </div>
 
           {/* Configuration */}
-          <div className="rounded-2xl border bg-card p-6 shadow-soft-sm space-y-4">
+          <motion.div className="rounded-2xl border bg-card p-6 shadow-soft-sm space-y-4" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
             <h2 className="font-semibold">Configure Your Interview</h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -282,33 +343,39 @@ export default function InterviewSimulatorPage() {
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
               {loading ? "Generating Questions..." : `Start ${mode === "timed" ? "Timed " : mode === "mock" ? "Mock " : ""}Interview`}
             </Button>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
 
       {/* ── Active Phase ────────────────────────────────────── */}
       {phase === "active" && questions.length > 0 && (
-        <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+        <motion.div key="active" className="grid gap-6 lg:grid-cols-[1fr_300px]" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.4 }}>
           {/* Main question area */}
           <div className="space-y-4">
             {/* Progress bar */}
             <div className="flex items-center gap-3">
               <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                <div className="h-full rounded-full bg-gradient-to-r from-primary to-violet-500 transition-all" style={{ width: `${((currentIdx + 1) / questions.length) * 100}%` }} />
+                <motion.div
+                  className="h-full rounded-full bg-gradient-to-r from-primary to-violet-500"
+                  animate={{ width: `${((currentIdx + 1) / questions.length) * 100}%` }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
+                />
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
-                {mode === "timed" && (
-                  <span className={cn("flex items-center gap-1 font-bold tabular-nums", timeLeft <= 15 ? "text-rose-500 animate-pulse" : timeLeft <= 30 ? "text-amber-500" : "text-foreground")}>
-                    <Timer className="h-3 w-3" /> {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, "0")}
-                  </span>
-                )}
+                {mode === "timed" && <TimerRing timeLeft={timeLeft} />}
                 <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span>
                 <span>{currentIdx + 1}/{questions.length}</span>
               </div>
             </div>
 
             {/* Question card */}
-            <div className="rounded-2xl border bg-card p-6 shadow-soft-sm space-y-4">
+            <motion.div
+              key={currentIdx}
+              className="rounded-2xl border bg-card p-6 shadow-soft-sm space-y-4"
+              initial={{ opacity: 0, x: 30 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+            >
               <div className="flex items-start gap-3">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground text-sm font-bold">
                   Q{currentIdx + 1}
@@ -336,13 +403,14 @@ export default function InterviewSimulatorPage() {
                   {currentIdx < questions.length - 1 ? "Submit & Next" : "Submit & Finish"}
                 </Button>
               </div>
-            </div>
+            </motion.div>
           </div>
 
           {/* Side panel — Last answer feedback */}
           <div className="space-y-3">
+            <AnimatePresence mode="wait">
             {lastAnswer ? (
-              <div className="rounded-2xl border bg-card p-4 shadow-soft-sm space-y-3 animate-fade-in">
+              <motion.div key={answers.length} className="rounded-2xl border bg-card p-4 shadow-soft-sm space-y-3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4 }}>
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Previous Answer</h3>
                   <ScoreRing value={lastAnswer.score} size={48} />
@@ -355,24 +423,29 @@ export default function InterviewSimulatorPage() {
                       <div key={key} className="flex items-center gap-2">
                         <span className="text-2xs text-muted-foreground w-16 capitalize">{key}</span>
                         <div className="flex-1 h-1.5 bg-muted/20 rounded-full overflow-hidden">
-                          <div className={cn("h-full rounded-full", (val as number) >= 20 ? "bg-emerald-500" : (val as number) >= 15 ? "bg-amber-500" : "bg-rose-500")}
-                            style={{ width: `${((val as number) / 25) * 100}%` }} />
+                          <motion.div
+                            className={cn("h-full rounded-full", (val as number) >= 20 ? "bg-emerald-500" : (val as number) >= 15 ? "bg-amber-500" : "bg-rose-500")}
+                            initial={{ width: 0 }}
+                            animate={{ width: `${((val as number) / 25) * 100}%` }}
+                            transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
+                          />
                         </div>
                         <span className="text-2xs font-mono tabular-nums w-8 text-right">{val as number}/25</span>
                       </div>
                     ))}
                   </div>
                 )}
-              </div>
+              </motion.div>
             ) : (
-              <div className="rounded-2xl border border-dashed bg-card/50 p-4 text-center">
+              <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-2xl border border-dashed bg-card/50 p-4 text-center">
                 <Brain className="h-8 w-8 text-muted-foreground/20 mx-auto mb-2" />
                 <p className="text-xs text-muted-foreground">AI feedback will appear here after your first answer</p>
-              </div>
+              </motion.div>
             )}
+            </AnimatePresence>
 
             {/* Quick tips */}
-            <div className="rounded-xl border bg-muted/30 p-3 space-y-1.5">
+            <motion.div className="rounded-xl border bg-muted/30 p-3 space-y-1.5" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
               <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">STAR Tips</p>
               <div className="space-y-1 text-2xs text-muted-foreground">
                 <p><strong className="text-foreground">S</strong>ituation — Set the scene</p>
@@ -380,16 +453,16 @@ export default function InterviewSimulatorPage() {
                 <p><strong className="text-foreground">A</strong>ction — What YOU did</p>
                 <p><strong className="text-foreground">R</strong>esult — Quantified outcome</p>
               </div>
-            </div>
+            </motion.div>
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* ── Review Phase ────────────────────────────────────── */}
       {phase === "review" && session && (
-        <div className="space-y-6">
+        <motion.div key="review" className="space-y-6" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.4 }}>
           {/* Score summary */}
-          <div className="rounded-2xl border bg-gradient-to-br from-primary/5 via-violet-500/5 to-transparent p-8 shadow-soft-sm">
+          <motion.div className="rounded-2xl border bg-gradient-to-br from-primary/5 via-violet-500/5 to-transparent p-8 shadow-soft-sm" initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.5 }}>
             <div className="flex flex-col md:flex-row items-center gap-8">
               <ScoreRing value={session.overall_score ?? 0} size={130} label="Overall Score" />
               <div className="flex-1 text-center md:text-left">
@@ -410,12 +483,12 @@ export default function InterviewSimulatorPage() {
                 <RotateCcw className="h-4 w-4" /> New Interview
               </Button>
             </div>
-          </div>
+          </motion.div>
 
           {/* Answer reviews */}
-          <div className="space-y-3">
+          <motion.div className="space-y-3" variants={staggerContainer} initial="hidden" animate="visible">
             {answers.map((a, i) => (
-              <details key={i} className="rounded-2xl border bg-card shadow-soft-sm overflow-hidden group">
+              <motion.details key={i} variants={staggerItem} className="rounded-2xl border bg-card shadow-soft-sm overflow-hidden group">
                 <summary className="flex items-center gap-3 p-4 cursor-pointer list-none select-none hover:bg-muted/30 transition-colors">
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-bold">Q{i + 1}</span>
                   <span className="flex-1 text-sm font-medium truncate">{questions[i]?.text?.slice(0, 80)}...</span>
@@ -444,11 +517,12 @@ export default function InterviewSimulatorPage() {
                     </details>
                   )}
                 </div>
-              </details>
+              </motion.details>
             ))}
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }

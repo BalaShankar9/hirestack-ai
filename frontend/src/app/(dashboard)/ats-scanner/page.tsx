@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/components/providers";
 import { parseResumeText } from "@/lib/firestore/ops";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,48 @@ import {
   Code, BarChart3, ArrowRight, RefreshCw, Brain,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+
+/* ── Animation variants ───────────────────────────────────────── */
+
+const fadeUp: any = {
+  hidden: { opacity: 0, y: 20 },
+  visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.1, duration: 0.5, ease: "easeOut" } }),
+};
+
+const staggerContainer: any = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { staggerChildren: 0.08, delayChildren: 0.1 } },
+};
+
+const staggerItem: any = {
+  hidden: { opacity: 0, y: 12 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } },
+};
+
+/* ── Animated progress bar ─────────────────────────────────────── */
+
+function AnimatedBar({ value, label, icon: Icon }: { value: number; label: string; icon?: React.ElementType }) {
+  const color = value >= 80 ? "bg-emerald-500" : value >= 60 ? "bg-amber-500" : "bg-rose-500";
+  const textColor = value >= 80 ? "text-emerald-500" : value >= 60 ? "text-amber-500" : "text-rose-500";
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium flex items-center gap-1.5">
+          {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground" />} {label}
+        </span>
+        <span className={cn("text-xs font-bold tabular-nums", textColor)}>{value}/100</span>
+      </div>
+      <div className="h-2 rounded-full bg-muted/30 overflow-hidden">
+        <motion.div
+          className={cn("h-full rounded-full", color)}
+          initial={{ width: 0 }}
+          animate={{ width: `${value}%` }}
+          transition={{ duration: 1, ease: "easeOut", delay: 0.3 }}
+        />
+      </div>
+    </div>
+  );
+}
 
 /* ── Score helpers ──────────────────────────────────────────────── */
 
@@ -43,13 +86,21 @@ function Gauge({ value, size = 100, label }: { value: number; size?: number; lab
   const circ = 2 * Math.PI * r;
   const offset = circ - (value / 100) * circ;
   return (
-    <div className="flex flex-col items-center gap-1">
+    <motion.div
+      className="flex flex-col items-center gap-1"
+      initial={{ scale: 0.8, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+    >
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
           <circle cx={size / 2} cy={size / 2} r={r} strokeWidth={8} fill="none" className="stroke-muted/20" />
-          <circle cx={size / 2} cy={size / 2} r={r} strokeWidth={8} fill="none"
-            strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset}
-            className={cn("transition-all duration-1000", scoreRing(value))}
+          <motion.circle cx={size / 2} cy={size / 2} r={r} strokeWidth={8} fill="none"
+            strokeLinecap="round" strokeDasharray={circ}
+            initial={{ strokeDashoffset: circ }}
+            animate={{ strokeDashoffset: offset }}
+            transition={{ duration: 1.2, ease: "easeOut", delay: 0.3 }}
+            className={scoreRing(value)}
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -57,7 +108,7 @@ function Gauge({ value, size = 100, label }: { value: number; size?: number; lab
         </div>
       </div>
       <span className="text-2xs text-muted-foreground uppercase tracking-wider font-medium">{label}</span>
-    </div>
+    </motion.div>
   );
 }
 
@@ -118,7 +169,7 @@ export default function ATSScannerPage() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
+      <motion.div className="flex items-center gap-4" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-glow-sm">
           <ScanSearch className="h-6 w-6 text-white" />
         </div>
@@ -126,10 +177,10 @@ export default function ATSScannerPage() {
           <h1 className="text-xl font-bold">ATS Scanner</h1>
           <p className="text-sm text-muted-foreground">3-pass deep analysis — keyword matching, structure parsing, strategic assessment</p>
         </div>
-      </div>
+      </motion.div>
 
       {/* Input Section */}
-      <div className="rounded-2xl border bg-card shadow-soft-sm overflow-hidden">
+      <motion.div className="rounded-2xl border bg-card shadow-soft-sm overflow-hidden" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
         <div className="grid lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-border">
           {/* Left: Resume */}
           <div className="p-5 space-y-3">
@@ -196,15 +247,16 @@ export default function ATSScannerPage() {
             {loading ? "Analyzing (3 passes)..." : "Run ATS Scan"}
           </Button>
         </div>
-      </div>
+      </motion.div>
 
-      {error && <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4"><p className="text-sm text-destructive">{error}</p></div>}
+      {error && <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="rounded-xl border border-destructive/30 bg-destructive/5 p-4"><p className="text-sm text-destructive">{error}</p></motion.div>}
 
       {/* ── Results ─────────────────────────────────────────────── */}
+      <AnimatePresence>
       {scan && (
-        <div className="space-y-4 animate-fade-in">
+        <motion.div className="space-y-4" variants={staggerContainer} initial="hidden" animate="visible" exit={{ opacity: 0, y: 20 }}>
           {/* Score Decomposition */}
-          <div className="rounded-2xl border bg-card p-6 shadow-soft-sm">
+          <motion.div variants={staggerItem} className="rounded-2xl border bg-card p-6 shadow-soft-sm">
             <div className="flex flex-col md:flex-row items-center gap-6">
               <Gauge value={scan.ats_score ?? 0} size={130} label="Overall ATS" />
               <div className="h-16 w-px bg-border hidden md:block" />
@@ -214,21 +266,30 @@ export default function ATSScannerPage() {
                 <Gauge value={breakdown.strategy_score ?? 0} size={90} label="Strategy" />
               </div>
               <div className="ml-auto text-center md:text-right">
-                <div className={cn("text-2xl font-bold uppercase", scan.pass_probability === "high" ? "text-emerald-500" : scan.pass_probability === "medium" ? "text-amber-500" : "text-rose-500")}>
+                <motion.div
+                  className={cn("text-2xl font-bold uppercase", scan.pass_probability === "high" ? "text-emerald-500" : scan.pass_probability === "medium" ? "text-amber-500" : "text-rose-500")}
+                  initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 200, delay: 0.5 }}
+                >
                   {scan.pass_probability || "unknown"}
-                </div>
+                </motion.div>
                 <p className="text-2xs text-muted-foreground">Pass Likelihood</p>
                 {strategy.competitive_position && <p className="text-xs text-muted-foreground mt-1">{strategy.competitive_position}</p>}
               </div>
             </div>
+            {/* Animated sub-score bars */}
+            <div className="grid md:grid-cols-3 gap-4 mt-4 border-t pt-4">
+              <AnimatedBar value={breakdown.keyword_score ?? 0} label="Keyword Match" icon={Target} />
+              <AnimatedBar value={breakdown.structure_score ?? 0} label="Structure & Format" icon={Code} />
+              <AnimatedBar value={breakdown.strategy_score ?? 0} label="Strategic Fit" icon={Brain} />
+            </div>
             {strategy.overall_assessment && (
               <p className="text-sm text-muted-foreground mt-4 border-t pt-4">{strategy.overall_assessment}</p>
             )}
-          </div>
+          </motion.div>
 
           {/* Quick Wins + Deal Breakers */}
           {(strategy.quick_wins?.length > 0 || strategy.deal_breakers?.length > 0) && (
-            <div className="grid md:grid-cols-2 gap-4">
+            <motion.div variants={staggerItem} className="grid md:grid-cols-2 gap-4">
               {strategy.quick_wins?.length > 0 && (
                 <div className="rounded-2xl border bg-emerald-500/5 border-emerald-500/20 p-4">
                   <h3 className="font-semibold text-sm flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-3"><Zap className="h-4 w-4" /> Quick Wins</h3>
@@ -249,11 +310,11 @@ export default function ATSScannerPage() {
                   </ul>
                 </div>
               )}
-            </div>
+            </motion.div>
           )}
 
           {/* Keyword Heat Map */}
-          <div className="rounded-2xl border bg-card p-5">
+          <motion.div variants={staggerItem} className="rounded-2xl border bg-card p-5">
             <h3 className="font-semibold text-sm flex items-center gap-2 mb-3"><Target className="h-4 w-4 text-cyan-500" /> Keyword Analysis</h3>
             <div className="grid md:grid-cols-3 gap-4">
               <div>
@@ -275,11 +336,11 @@ export default function ATSScannerPage() {
                 <div className="flex flex-wrap gap-1">{keywords.critical_missing.map((k: string, i: number) => <Badge key={i} variant="destructive" className="text-[10px]">{k}</Badge>)}</div>
               </div>
             )}
-          </div>
+          </motion.div>
 
           {/* Rewrite Suggestions */}
           {strategy.rewrite_suggestions?.length > 0 && (
-            <div className="rounded-2xl border bg-card p-5">
+            <motion.div variants={staggerItem} className="rounded-2xl border bg-card p-5">
               <h3 className="font-semibold text-sm flex items-center gap-2 mb-4"><Lightbulb className="h-4 w-4 text-primary" /> Rewrite Suggestions</h3>
               <div className="space-y-3">
                 {strategy.rewrite_suggestions.map((r: any, i: number) => (
@@ -313,12 +374,12 @@ export default function ATSScannerPage() {
                   </details>
                 ))}
               </div>
-            </div>
+            </motion.div>
           )}
 
           {/* Structure Analysis */}
           {structure.sections_found && (
-            <div className="rounded-2xl border bg-card p-5">
+            <motion.div variants={staggerItem} className="rounded-2xl border bg-card p-5">
               <h3 className="font-semibold text-sm flex items-center gap-2 mb-3"><Code className="h-4 w-4 text-violet-500" /> Structure Analysis</h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
                 {Object.entries(structure.sections_found).map(([section, found]) => (
@@ -347,14 +408,15 @@ export default function ATSScannerPage() {
                   ))}
                 </div>
               )}
-            </div>
+            </motion.div>
           )}
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* Empty state */}
       {!scan && !loading && (
-        <div className="rounded-2xl border border-dashed bg-card/50 p-8">
+        <motion.div className="rounded-2xl border border-dashed bg-card/50 p-8" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
           <div className="flex flex-col md:flex-row items-center gap-6 text-center md:text-left">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500/10 to-blue-500/10 shrink-0">
               <Brain className="h-7 w-7 text-cyan-500" />
@@ -368,7 +430,7 @@ export default function ATSScannerPage() {
               </p>
             </div>
           </div>
-        </div>
+        </motion.div>
       )}
     </div>
   );

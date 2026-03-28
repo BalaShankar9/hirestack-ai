@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { ArrowRight, BookOpen, GraduationCap, Sparkles } from "lucide-react";
 

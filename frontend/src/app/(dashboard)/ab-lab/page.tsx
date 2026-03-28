@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { motion } from "framer-motion";
 import { useAuth } from "@/components/providers";
 import api from "@/lib/api";
 import type { DocVariant } from "@/types";

@@ -116,6 +116,10 @@ const config: Config = {
           from: { opacity: "0", transform: "translateX(-12px)" },
           to: { opacity: "1", transform: "translateX(0)" },
         },
+        "drawer-in-left": {
+          from: { transform: "translateX(-100%)" },
+          to: { transform: "translateX(0)" },
+        },
         shimmer: {
           from: { backgroundPosition: "200% 0" },
           to: { backgroundPosition: "-200% 0" },
@@ -149,6 +153,7 @@ const config: Config = {
         "fade-up": "fade-up 0.4s ease-out",
         "scale-in": "scale-in 0.3s ease-out",
         "slide-in-left": "slide-in-left 0.3s ease-out",
+        "drawer-in-left": "drawer-in-left 0.25s ease-out",
         shimmer: "shimmer 3s ease-in-out infinite",
         float: "float 3s ease-in-out infinite",
         "glow-pulse": "glow-pulse 2s ease-in-out infinite",

@@ -26,6 +26,8 @@ import {
   Fingerprint,
   Settings,
   Users,
+  Search,
+  ArrowRight,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import { Button } from "@/components/ui/button";
@@ -40,25 +42,40 @@ import {
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "@/components/command-palette/command-palette";
 
-const NAV = [
-  // Core
-  { href: "/dashboard", label: "Dashboard", icon: Home, description: "Overview & stats" },
-  { href: "/nexus", label: "Career Nexus", icon: Fingerprint, description: "Your career identity" },
-  { href: "/new", label: "New Application", icon: Plus, description: "Start a workspace" },
-  { href: "/career", label: "Career Lab", icon: GraduationCap, description: "Skill sprints" },
-  { href: "/evidence", label: "Evidence Vault", icon: ShieldCheck, description: "Proof library" },
-  // Features
-  { href: "/ats-scanner", label: "ATS Scanner", icon: FileSearch, description: "Scan documents" },
-  { href: "/interview", label: "Interview Prep", icon: MessageSquare, description: "Practice questions" },
-  { href: "/salary", label: "Salary Coach", icon: DollarSign, description: "Negotiate better" },
-  { href: "/career-analytics", label: "Analytics", icon: BarChart3, description: "Track progress" },
-  { href: "/job-board", label: "Job Board", icon: Briefcase, description: "Find opportunities" },
-  { href: "/learning", label: "Daily Learn", icon: BookOpen, description: "Skill challenges" },
-  { href: "/ab-lab", label: "A/B Lab", icon: FlaskConical, description: "Compare variants" },
-  // Enterprise
-  { href: "/candidates", label: "Pipeline", icon: Users, description: "Candidate tracking" },
-  { href: "/settings", label: "Settings", icon: Settings, description: "Organization & billing" },
-] as const;
+type NavItem = { href: string; label: string; icon: typeof Home; description: string };
+type NavGroup = { title: string; items: NavItem[] };
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    title: "Core",
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: Home, description: "Overview & stats" },
+      { href: "/nexus", label: "Career Nexus", icon: Fingerprint, description: "Your career identity" },
+      { href: "/new", label: "New Application", icon: Plus, description: "Start a workspace" },
+      { href: "/career", label: "Career Lab", icon: GraduationCap, description: "Skill sprints" },
+      { href: "/evidence", label: "Evidence Vault", icon: ShieldCheck, description: "Proof library" },
+    ],
+  },
+  {
+    title: "Features",
+    items: [
+      { href: "/ats-scanner", label: "ATS Scanner", icon: FileSearch, description: "Scan documents" },
+      { href: "/interview", label: "Interview Prep", icon: MessageSquare, description: "Practice questions" },
+      { href: "/salary", label: "Salary Coach", icon: DollarSign, description: "Negotiate better" },
+      { href: "/career-analytics", label: "Analytics", icon: BarChart3, description: "Track progress" },
+      { href: "/job-board", label: "Job Board", icon: Briefcase, description: "Find opportunities" },
+      { href: "/learning", label: "Daily Learn", icon: BookOpen, description: "Skill challenges" },
+      { href: "/ab-lab", label: "A/B Lab", icon: FlaskConical, description: "Compare variants" },
+    ],
+  },
+  {
+    title: "Enterprise",
+    items: [
+      { href: "/candidates", label: "Pipeline", icon: Users, description: "Candidate tracking" },
+      { href: "/settings", label: "Settings", icon: Settings, description: "Organization & billing" },
+    ],
+  },
+];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth();
@@ -68,6 +85,20 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = React.useState(false);
   const [signingOut, setSigningOut] = React.useState(false);
   const [theme, setTheme] = React.useState<"light" | "dark">("light");
+  const [navSearch, setNavSearch] = React.useState("");
+
+  const filteredGroups = React.useMemo(() => {
+    if (!navSearch.trim()) return NAV_GROUPS;
+    const q = navSearch.toLowerCase();
+    return NAV_GROUPS.map((g) => ({
+      ...g,
+      items: g.items.filter(
+        (item) =>
+          item.label.toLowerCase().includes(q) ||
+          item.description.toLowerCase().includes(q)
+      ),
+    })).filter((g) => g.items.length > 0);
+  }, [navSearch]);
 
   React.useEffect(() => {
     const stored =
@@ -142,42 +173,76 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
         </div>
 
-        {/* Nav links */}
-        <nav className="flex-1 space-y-1.5 px-3 py-4">
-          {NAV.map(({ href, label, icon: Icon, description }) => {
-            const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
-            const isExact = pathname === href;
-            const isDashboard = href === "/dashboard";
-            const show = isDashboard ? isExact : active;
+        {/* Search */}
+        {!collapsed && (
+          <div className="px-3 pt-3">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
+              <input
+                type="text"
+                placeholder="Search…"
+                value={navSearch}
+                onChange={(e) => setNavSearch(e.target.value)}
+                className="flex h-8 w-full rounded-lg border border-border/60 bg-muted/40 pl-8 pr-14 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40 transition-colors"
+              />
+              <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 hidden sm:inline-flex items-center gap-0.5 rounded border bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/70">
+                ⌘K
+              </kbd>
+            </div>
+          </div>
+        )}
 
-            return (
-              <Link key={href} href={href} onClick={() => setSidebarOpen(false)}>
-                <div
-                  className={cn(
-                    "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                    show
-                      ? "bg-gradient-to-r from-primary/14 to-primary/8 text-primary shadow-soft-sm"
-                      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                  )}
-                >
-                  {show && (
-                    <div className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary shadow-glow-sm" />
-                  )}
-                  <Icon className={cn("h-[18px] w-[18px] shrink-0", show && "text-primary")} />
-                  {!collapsed && (
-                    <div className="min-w-0">
-                      <div className="truncate">{label}</div>
-                      {!show && (
-                        <div className="truncate text-[11px] text-muted-foreground/70 group-hover:text-muted-foreground">
-                          {description}
-                        </div>
-                      )}
-                    </div>
-                  )}
+        {/* Nav links */}
+        <nav className="flex-1 overflow-y-auto px-3 py-3">
+          {filteredGroups.map((group, gi) => (
+            <div key={group.title}>
+              {gi > 0 && <div className="my-2 border-t border-border/50" />}
+              {!collapsed && (
+                <div className="mb-1 px-3 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+                  {group.title}
                 </div>
-              </Link>
-            );
-          })}
+              )}
+              <div className="space-y-0.5">
+                {group.items.map(({ href, label, icon: Icon, description }) => {
+                  const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
+                  const isExact = pathname === href;
+                  const isDashboard = href === "/dashboard";
+                  const show = isDashboard ? isExact : active;
+
+                  return (
+                    <Link key={href} href={href} onClick={() => setSidebarOpen(false)}>
+                      <div
+                        className={cn(
+                          "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                          show
+                            ? "bg-gradient-to-r from-primary/14 to-primary/8 text-primary shadow-soft-sm"
+                            : "text-muted-foreground hover:bg-muted/70 hover:text-foreground hover:translate-x-0.5"
+                        )}
+                      >
+                        {show && (
+                          <div className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary shadow-glow-sm" />
+                        )}
+                        <Icon className={cn("h-[18px] w-[18px] shrink-0 transition-colors", show && "text-primary")} />
+                        {!collapsed && (
+                          <div className="min-w-0">
+                            <div className="truncate">{label}</div>
+                            {!show && (
+                              <div className="truncate text-[11px] text-muted-foreground/70 group-hover:text-muted-foreground transition-colors">
+                                {description}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {filteredGroups.length === 0 && !collapsed && (
+            <p className="px-3 py-6 text-center text-xs text-muted-foreground/60">No results</p>
+          )}
         </nav>
 
         {/* Collapse toggle */}
@@ -192,45 +257,62 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         {/* User section */}
         <div className="border-t border-border/70 p-3">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className={cn(
-                "flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-muted/60 transition-colors",
-                collapsed && "justify-center"
-              )}>
-                <Avatar className="h-8 w-8 ring-2 ring-primary/10 ring-offset-2 ring-offset-background">
-                  <AvatarImage src={user?.photoURL ?? undefined} />
-                  <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
-                </Avatar>
-                {!collapsed && (
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{user?.displayName ?? "User"}</p>
-                    <p className="truncate text-[11px] text-muted-foreground">{user?.email}</p>
-                  </div>
-                )}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" side="top" className="w-56">
-              <div className="px-3 py-2">
-                <p className="text-sm font-medium">{user?.displayName ?? "User"}</p>
-                <p className="text-xs text-muted-foreground">{user?.email}</p>
-              </div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleSignOut} disabled={signingOut} className="text-destructive focus:text-destructive">
-                {signingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
-                {signingOut ? "Signing out…" : "Sign Out"}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {user ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={cn(
+                  "flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-muted/60 transition-colors",
+                  collapsed && "justify-center"
+                )}>
+                  <Avatar className="h-8 w-8 ring-2 ring-primary/10 ring-offset-2 ring-offset-background">
+                    <AvatarImage src={user?.photoURL ?? undefined} />
+                    <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
+                  </Avatar>
+                  {!collapsed && (
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{user?.displayName ?? "User"}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">{user?.email}</p>
+                    </div>
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="top" className="w-56">
+                <div className="px-3 py-2">
+                  <p className="text-sm font-medium">{user?.displayName ?? "User"}</p>
+                  <p className="text-xs text-muted-foreground">{user?.email}</p>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleSignOut} disabled={signingOut} className="text-destructive focus:text-destructive">
+                  {signingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
+                  {signingOut ? "Signing out…" : "Sign Out"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <div className={cn("flex flex-col gap-2", collapsed && "items-center")}>
+              <Link href="/login" className="w-full">
+                <Button variant="outline" size="sm" className={cn("w-full rounded-xl text-xs", collapsed && "w-9 p-0")}>
+                  {collapsed ? <LogOut className="h-4 w-4 rotate-180" /> : "Sign In"}
+                </Button>
+              </Link>
+              {!collapsed && (
+                <Link href="/login?mode=register" className="w-full">
+                  <Button size="sm" className="w-full rounded-xl text-xs gap-1.5 bg-primary shadow-glow-sm hover:shadow-glow-md transition-shadow">
+                    Get Started <ArrowRight className="h-3 w-3" />
+                  </Button>
+                </Link>
+              )}
+            </div>
+          )}
         </div>
       </aside>
 
       {/* ── Mobile Overlay ────────────────────────── */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden" onClick={() => setSidebarOpen(false)}>
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" />
           <aside
-            className="surface-premium absolute left-0 top-0 h-full w-[286px] border-r shadow-soft-xl animate-slide-in-left"
+            className="surface-premium absolute left-0 top-0 h-full w-[286px] border-r shadow-soft-xl flex flex-col animate-drawer-in-left"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex h-16 items-center justify-between border-b px-4">
@@ -246,28 +328,83 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <X className="h-5 w-5" />
               </Button>
             </div>
-            <nav className="space-y-1 p-3">
-              {NAV.map(({ href, label, icon: Icon }) => {
-                const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
-                const isDashboard = href === "/dashboard";
-                const show = isDashboard ? pathname === href : active;
-                return (
-                  <Link key={href} href={href} onClick={() => setSidebarOpen(false)}>
-                    <div
-                      className={cn(
-                        "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
-                        show
-                          ? "bg-primary/10 text-primary"
-                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                      )}
-                    >
-                      <Icon className="h-[18px] w-[18px]" />
-                      {label}
-                    </div>
-                  </Link>
-                );
-              })}
+
+            {/* Mobile search */}
+            <div className="px-3 pt-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
+                <input
+                  type="text"
+                  placeholder="Search…"
+                  value={navSearch}
+                  onChange={(e) => setNavSearch(e.target.value)}
+                  className="flex h-8 w-full rounded-lg border border-border/60 bg-muted/40 pl-8 pr-3 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40 transition-colors"
+                />
+              </div>
+            </div>
+
+            <nav className="flex-1 overflow-y-auto p-3">
+              {filteredGroups.map((group, gi) => (
+                <div key={group.title}>
+                  {gi > 0 && <div className="my-2 border-t border-border/50" />}
+                  <div className="mb-1 px-3 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+                    {group.title}
+                  </div>
+                  <div className="space-y-0.5">
+                    {group.items.map(({ href, label, icon: Icon }) => {
+                      const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
+                      const isDashboard = href === "/dashboard";
+                      const show = isDashboard ? pathname === href : active;
+                      return (
+                        <Link key={href} href={href} onClick={() => setSidebarOpen(false)}>
+                          <div
+                            className={cn(
+                              "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                              show
+                                ? "bg-primary/10 text-primary"
+                                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground hover:translate-x-0.5"
+                            )}
+                          >
+                            <Icon className="h-[18px] w-[18px]" />
+                            {label}
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              {filteredGroups.length === 0 && (
+                <p className="px-3 py-6 text-center text-xs text-muted-foreground/60">No results</p>
+              )}
             </nav>
+
+            {/* Mobile sidebar footer */}
+            <div className="border-t border-border/70 p-3">
+              {user ? (
+                <div className="flex items-center gap-3 px-2">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={user?.photoURL ?? undefined} />
+                    <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{user?.displayName ?? "User"}</p>
+                    <p className="truncate text-[11px] text-muted-foreground">{user?.email}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <Link href="/login" onClick={() => setSidebarOpen(false)}>
+                    <Button variant="outline" size="sm" className="w-full rounded-xl text-xs">Sign In</Button>
+                  </Link>
+                  <Link href="/login?mode=register" onClick={() => setSidebarOpen(false)}>
+                    <Button size="sm" className="w-full rounded-xl text-xs gap-1.5 bg-primary shadow-glow-sm">
+                      Get Started <ArrowRight className="h-3 w-3" />
+                    </Button>
+                  </Link>
+                </div>
+              )}
+            </div>
           </aside>
         </div>
       )}
@@ -309,27 +446,35 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Button>
 
           {/* Mobile user menu */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-full lg:hidden">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={user?.photoURL ?? undefined} />
-                  <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
-                </Avatar>
+          {user ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-full lg:hidden">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={user?.photoURL ?? undefined} />
+                    <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <div className="px-3 py-2">
+                  <p className="text-sm font-medium">{user?.displayName ?? "User"}</p>
+                  <p className="text-xs text-muted-foreground">{user?.email}</p>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleSignOut} disabled={signingOut} className="text-destructive focus:text-destructive">
+                  {signingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
+                  {signingOut ? "Signing out…" : "Sign Out"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Link href="/login" className="lg:hidden">
+              <Button size="sm" className="rounded-xl text-xs gap-1.5">
+                Sign In
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <div className="px-3 py-2">
-                <p className="text-sm font-medium">{user?.displayName ?? "User"}</p>
-                <p className="text-xs text-muted-foreground">{user?.email}</p>
-              </div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleSignOut} disabled={signingOut} className="text-destructive focus:text-destructive">
-                {signingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
-                {signingOut ? "Signing out…" : "Sign Out"}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            </Link>
+          )}
         </header>
 
         {/* Page content */}

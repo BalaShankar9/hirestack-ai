@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers";
 import { AppShell } from "@/components/app-shell";
+import { PageTransition } from "@/components/page-transition";
 import { QuotaProvider } from "@/contexts/quota-context";
 import api from "@/lib/api";
 
@@ -30,7 +31,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   return (
     <QuotaProvider>
-      <AppShell>{children}</AppShell>
+      <AppShell>
+        <PageTransition>{children}</PageTransition>
+      </AppShell>
     </QuotaProvider>
   );
 }
