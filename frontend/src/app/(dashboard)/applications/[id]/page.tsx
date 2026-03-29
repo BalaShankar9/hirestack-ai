@@ -36,6 +36,14 @@ import {
   LayoutGrid,
   BarChart3,
   Package,
+  Search,
+  Building2,
+  Globe,
+  Newspaper,
+  Users,
+  Lightbulb,
+  Shield,
+  TrendingUp,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import {
@@ -459,6 +467,7 @@ export default function ApplicationWorkspacePage() {
           >
             <TabsList className="w-full justify-start overflow-x-auto h-auto flex-wrap gap-1 bg-muted/50 p-1.5 rounded-xl">
               <TabsTrigger value="overview" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><LayoutGrid className="h-3.5 w-3.5" />Overview</TabsTrigger>
+              <TabsTrigger value="intel" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><Search className="h-3.5 w-3.5" />Intel</TabsTrigger>
               <TabsTrigger value="benchmark" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><Target className="h-3.5 w-3.5" />Benchmark</TabsTrigger>
               <TabsTrigger value="gaps" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><BarChart3 className="h-3.5 w-3.5" />Gaps</TabsTrigger>
               <TabsTrigger value="learning" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><GraduationCap className="h-3.5 w-3.5" />Learning</TabsTrigger>
@@ -582,6 +591,231 @@ export default function ApplicationWorkspacePage() {
               <div className="mt-6">
                 <TaskQueue tasks={tasks} onToggle={onToggleTask} />
               </div>
+            </TabsContent>
+
+            {/* ── Intel Tab ── */}
+            <TabsContent value="intel" className="mt-4">
+              {(() => {
+                const intel = (app as any)?.company_intel;
+                if (!intel || Object.keys(intel).length === 0) {
+                  return (
+                    <div className="rounded-2xl border border-dashed bg-card/50 p-10 text-center">
+                      <Search className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
+                      <h3 className="font-semibold text-sm">No company intelligence yet</h3>
+                      <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                        Company intel is gathered during application generation. Enter a company name and generate to see results.
+                      </p>
+                    </div>
+                  );
+                }
+
+                const overview = intel.company_overview || {};
+                const culture = intel.culture_and_values || {};
+                const tech = intel.tech_and_tools || {};
+                const news = intel.recent_news || {};
+                const strategy = intel.application_strategy || {};
+                const competitive = intel.competitive_position || {};
+                const confidence = intel.confidence || "unknown";
+
+                return (
+                  <div className="space-y-4">
+                    {/* Confidence badge */}
+                    <div className="flex items-center gap-2">
+                      <div className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-wider ${
+                        confidence === "high" ? "bg-emerald-500/10 text-emerald-600" :
+                        confidence === "medium" ? "bg-amber-500/10 text-amber-600" :
+                        "bg-zinc-500/10 text-zinc-500"
+                      }`}>
+                        <Shield className="h-3 w-3" />
+                        {confidence} confidence intel
+                      </div>
+                      {intel.data_sources?.length > 0 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          Sources: {intel.data_sources.join(", ")}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Company Overview */}
+                    <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
+                      <h3 className="flex items-center gap-2 font-semibold text-sm mb-3">
+                        <Building2 className="h-4 w-4 text-primary" /> Company Overview
+                      </h3>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {overview.industry && <div><span className="text-[10px] text-muted-foreground block">Industry</span><span className="text-sm font-medium">{overview.industry}</span></div>}
+                        {overview.size && <div><span className="text-[10px] text-muted-foreground block">Size</span><span className="text-sm font-medium">{overview.size}</span></div>}
+                        {overview.founded && <div><span className="text-[10px] text-muted-foreground block">Founded</span><span className="text-sm font-medium">{overview.founded}</span></div>}
+                        {overview.headquarters && <div><span className="text-[10px] text-muted-foreground block">HQ</span><span className="text-sm font-medium">{overview.headquarters}</span></div>}
+                      </div>
+                      {overview.description && <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{overview.description}</p>}
+                    </div>
+
+                    {/* Culture & Values */}
+                    {(culture.core_values?.length > 0 || culture.work_culture || culture.mission_statement) && (
+                      <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
+                        <h3 className="flex items-center gap-2 font-semibold text-sm mb-3">
+                          <Users className="h-4 w-4 text-violet-500" /> Culture & Values
+                        </h3>
+                        {culture.mission_statement && <p className="text-sm italic text-muted-foreground mb-3">&ldquo;{culture.mission_statement}&rdquo;</p>}
+                        {culture.work_culture && <p className="text-sm text-muted-foreground mb-2"><strong>Work culture:</strong> {culture.work_culture}</p>}
+                        {culture.core_values?.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {culture.core_values.map((v: string, i: number) => (
+                              <span key={i} className="rounded-full bg-violet-500/10 px-2.5 py-0.5 text-[10px] font-medium text-violet-600">{v}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Tech & Tools */}
+                    {(tech.tech_stack?.length > 0 || tech.products?.length > 0) && (
+                      <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
+                        <h3 className="flex items-center gap-2 font-semibold text-sm mb-3">
+                          <Globe className="h-4 w-4 text-cyan-500" /> Tech Stack & Products
+                        </h3>
+                        {tech.tech_stack?.length > 0 && (
+                          <div className="mb-3">
+                            <span className="text-[10px] text-muted-foreground block mb-1.5">Technologies</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {tech.tech_stack.map((t: string, i: number) => (
+                                <span key={i} className="rounded-lg bg-cyan-500/10 px-2 py-0.5 text-[10px] font-mono text-cyan-600">{t}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {tech.products?.length > 0 && (
+                          <div>
+                            <span className="text-[10px] text-muted-foreground block mb-1.5">Products</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {tech.products.map((p: string, i: number) => (
+                                <span key={i} className="rounded-lg bg-muted px-2 py-0.5 text-[10px] font-medium">{p}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Recent News */}
+                    {(news.highlights?.length > 0 || news.growth_signals?.length > 0) && (
+                      <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
+                        <h3 className="flex items-center gap-2 font-semibold text-sm mb-3">
+                          <Newspaper className="h-4 w-4 text-amber-500" /> Recent News & Growth
+                        </h3>
+                        {news.highlights?.map((h: string, i: number) => (
+                          <div key={i} className="flex items-start gap-2 mb-2">
+                            <TrendingUp className="h-3 w-3 text-amber-500 mt-1 shrink-0" />
+                            <p className="text-sm text-muted-foreground">{h}</p>
+                          </div>
+                        ))}
+                        {news.growth_signals?.map((g: string, i: number) => (
+                          <div key={`g${i}`} className="flex items-start gap-2 mb-2">
+                            <Sparkles className="h-3 w-3 text-emerald-500 mt-1 shrink-0" />
+                            <p className="text-sm text-muted-foreground">{g}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Application Strategy — the golden section */}
+                    {(strategy.keywords_to_use?.length > 0 || strategy.things_to_mention?.length > 0) && (
+                      <div className="rounded-2xl border-2 border-primary/20 bg-primary/[0.02] p-5 shadow-soft-sm">
+                        <h3 className="flex items-center gap-2 font-semibold text-sm mb-3">
+                          <Lightbulb className="h-4 w-4 text-primary" /> Application Strategy
+                        </h3>
+                        <div className="grid md:grid-cols-2 gap-4">
+                          {strategy.keywords_to_use?.length > 0 && (
+                            <div>
+                              <span className="text-[10px] text-muted-foreground block mb-1.5 uppercase font-semibold">Keywords to include</span>
+                              <div className="flex flex-wrap gap-1">
+                                {strategy.keywords_to_use.map((k: string, i: number) => (
+                                  <span key={i} className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">{k}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {strategy.values_to_emphasize?.length > 0 && (
+                            <div>
+                              <span className="text-[10px] text-muted-foreground block mb-1.5 uppercase font-semibold">Values to emphasize</span>
+                              <div className="flex flex-wrap gap-1">
+                                {strategy.values_to_emphasize.map((v: string, i: number) => (
+                                  <span key={i} className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600">{v}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {strategy.things_to_mention?.length > 0 && (
+                            <div>
+                              <span className="text-[10px] text-muted-foreground block mb-1.5 uppercase font-semibold">Mention in cover letter</span>
+                              <ul className="space-y-1">
+                                {strategy.things_to_mention.map((t: string, i: number) => (
+                                  <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                                    <Sparkles className="h-2.5 w-2.5 text-primary mt-1 shrink-0" />{t}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {strategy.interview_topics?.length > 0 && (
+                            <div>
+                              <span className="text-[10px] text-muted-foreground block mb-1.5 uppercase font-semibold">Interview preparation</span>
+                              <ul className="space-y-1">
+                                {strategy.interview_topics.map((t: string, i: number) => (
+                                  <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                                    <Target className="h-2.5 w-2.5 text-amber-500 mt-1 shrink-0" />{t}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                        {strategy.things_to_avoid?.length > 0 && (
+                          <div className="mt-3 pt-3 border-t">
+                            <span className="text-[10px] text-destructive/80 block mb-1 uppercase font-semibold">Avoid</span>
+                            <div className="flex flex-wrap gap-1">
+                              {strategy.things_to_avoid.map((a: string, i: number) => (
+                                <span key={i} className="rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive">{a}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Competitive Position */}
+                    {(competitive.competitors?.length > 0 || competitive.differentiators?.length > 0) && (
+                      <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
+                        <h3 className="flex items-center gap-2 font-semibold text-sm mb-3">
+                          <BarChart3 className="h-4 w-4 text-blue-500" /> Competitive Landscape
+                        </h3>
+                        <div className="grid md:grid-cols-2 gap-4">
+                          {competitive.competitors?.length > 0 && (
+                            <div>
+                              <span className="text-[10px] text-muted-foreground block mb-1.5">Competitors</span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {competitive.competitors.map((c: string, i: number) => (
+                                  <span key={i} className="rounded-lg bg-muted px-2 py-0.5 text-[10px] font-medium">{c}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {competitive.differentiators?.length > 0 && (
+                            <div>
+                              <span className="text-[10px] text-muted-foreground block mb-1.5">What makes them unique</span>
+                              <ul className="space-y-1">
+                                {competitive.differentiators.map((d: string, i: number) => (
+                                  <li key={i} className="text-xs text-muted-foreground">{d}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </TabsContent>
 
             <TabsContent value="benchmark" className="mt-4">
