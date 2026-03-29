@@ -53,6 +53,33 @@ class AnalyticsService:
                 latest_score = scores["overall"]
                 break
 
+        # Additional feature stats (non-blocking)
+        ats_count = 0
+        salary_count = 0
+        interview_count = 0
+        learning_streak = 0
+        try:
+            ats_scans = await self.db.query(TABLES["ats_scans"], filters=[("user_id", "==", user_id)], limit=100)
+            ats_count = len(ats_scans)
+        except Exception:
+            pass
+        try:
+            salary_items = await self.db.query(TABLES["salary_analyses"], filters=[("user_id", "==", user_id)], limit=100)
+            salary_count = len(salary_items)
+        except Exception:
+            pass
+        try:
+            sessions = await self.db.query(TABLES["interview_sessions"], filters=[("user_id", "==", user_id)], limit=100)
+            interview_count = len(sessions)
+        except Exception:
+            pass
+        try:
+            streaks = await self.db.query(TABLES["learning_streaks"], filters=[("user_id", "==", user_id)], limit=1)
+            if streaks:
+                learning_streak = streaks[0].get("current_streak", 0)
+        except Exception:
+            pass
+
         return {
             "applications": len(applications),
             "active_applications": len(active_apps),
@@ -62,6 +89,10 @@ class AnalyticsService:
             "total_tasks": len(tasks),
             "completed_tasks": len(completed_tasks),
             "latest_score": latest_score,
+            "ats_scans": ats_count,
+            "salary_analyses": salary_count,
+            "interview_sessions": interview_count,
+            "learning_streak": learning_streak,
             "summary": {
                 "has_profile": len(profiles) > 0,
                 "has_application": len(applications) > 0,

@@ -195,12 +195,13 @@ export default function DashboardPage() {
         </div>
 
         {/* Stats row */}
-        <div className="relative mt-5 grid gap-2 grid-cols-2 md:grid-cols-5">
+        <div className="relative mt-5 grid gap-2 grid-cols-3 md:grid-cols-6">
           {[
-            { icon: Briefcase, label: "Workspaces", value: stats.apps },
+            { icon: Briefcase, label: "Applications", value: stats.apps },
             { icon: Target, label: "Avg Match", value: `${stats.avgMatch}%` },
             { icon: Zap, label: "Open Tasks", value: stats.openTasks, accent: stats.openTasks > 0 },
             { icon: ShieldCheck, label: "Evidence", value: stats.evidence },
+            { icon: ScanEye, label: "Completed", value: tasks.filter(t => t.status === "done").length },
             { icon: Activity, label: "Career Pulse", value: `${stats.pulse}%` },
           ].map((s) => (
             <div key={s.label} className={cn("rounded-xl border border-white/10 bg-white/10 p-3 backdrop-blur-sm", s.accent && "border-white/20 bg-white/15")}>
