@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers";
 import { AppShell } from "@/components/app-shell";
@@ -11,6 +11,7 @@ import api from "@/lib/api";
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { user, session, loading } = useAuth();
   const router = useRouter();
+  const hasRendered = useRef(false);
 
   /* Keep the API client token in sync with the session */
   useEffect(() => {
@@ -21,13 +22,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     }
   }, [session]);
 
-  if (loading) {
+  // Only show loading spinner on first mount, never re-show it
+  // (re-showing unmounts children and destroys form state)
+  if (loading && !hasRendered.current) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
       </div>
     );
   }
+
+  hasRendered.current = true;
 
   return (
     <QuotaProvider>

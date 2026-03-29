@@ -179,7 +179,6 @@ export default function NewApplicationPage() {
 
   /* ---- Generate (SSE-streamed) ---- */
   const handleGenerate = useCallback(async () => {
-    if (!user) return;
     // If a previous run is still in-flight, cancel it before starting a new one.
     abortRef.current?.abort();
     setGenerating(true);
@@ -199,17 +198,25 @@ export default function NewApplicationPage() {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    const guestId = "guest-" + Math.random().toString(36).slice(2, 10);
+    const uid = user?.uid || user?.id || guestId;
+
     let appId = draftAppId;
     try {
       if (!appId) {
-        appId = await createApplication(
-          user.uid,
-          jobTitle || "New Application",
-          confirmedFacts
-        );
+        try {
+          appId = await createApplication(
+            uid,
+            jobTitle || "New Application",
+            confirmedFacts
+          );
+        } catch {
+          // Guest may not have DB write access — use a temp ID
+          appId = "temp-" + Date.now().toString(36);
+        }
         setDraftAppId(appId);
 
-        await trackEvent(user.uid, "app_created", appId, {
+        if (user) await trackEvent(uid, "app_created", appId, {
           jobTitle,
           company,
           jdLength: jdText.length,
@@ -258,7 +265,7 @@ export default function NewApplicationPage() {
         }
       };
 
-      await generateApplicationModules(appId, user.uid, confirmedFacts, undefined, handleProgress, {
+      await generateApplicationModules(appId, uid, confirmedFacts, undefined, handleProgress, {
         signal: controller.signal,
       });
 
@@ -268,7 +275,7 @@ export default function NewApplicationPage() {
       setCompletedPhases(new Set([0, 1, 2, 3, 4, 5]));
       setActivePhaseIdx(-1);
 
-      await trackEvent(user.uid, "app_generated", appId);
+      if (user) await trackEvent(uid, "app_generated", appId);
       setDraftAppId(null);
 
       setTimeout(() => {
@@ -379,7 +386,7 @@ export default function NewApplicationPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="company">Company (optional)</Label>
+                <Label htmlFor="company">Company</Label>
                 <Input
                   id="company"
                   className="rounded-xl h-11"
