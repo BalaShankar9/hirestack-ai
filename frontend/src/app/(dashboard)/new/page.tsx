@@ -128,19 +128,18 @@ export default function NewApplicationPage() {
   /* ---- Resume upload ---- */
   const handleResumeUpload = useCallback(
     async (file: File) => {
-      if (!user) return;
       setUploading(true);
       setResumeFile(file);
 
       try {
         // Server-side text extraction (more reliable than client-side pdf.js across browsers)
-        const [text, url] = await Promise.all([
-          parseResumeText(file).catch((err) => {
-            console.warn("[HireStack] Resume parsing failed:", err);
-            return "";
-          }),
-          uploadResume(user.uid, file),
-        ]);
+        const textPromise = parseResumeText(file).catch((err) => {
+          console.warn("[HireStack] Resume parsing failed:", err);
+          return "";
+        });
+        // Only upload to storage if authenticated
+        const urlPromise = user ? uploadResume(user.uid, file) : Promise.resolve("");
+        const [text, url] = await Promise.all([textPromise, urlPromise]);
 
         // Warn if parsing returned empty or very short text (likely parse failure)
         if (!text || text.trim().length < 50) {
