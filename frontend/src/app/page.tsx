@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -67,6 +68,102 @@ const STATS = [
 ];
 
 const LOGOS_TEXT = ["TechCrunch", "Product Hunt", "Hacker News", "Forbes"];
+
+/* ── Interactive Demo Component ── */
+
+const DEMO_AGENTS = [
+  { name: "Recon", role: "Intel Gatherer", color: "text-cyan-500", bg: "bg-cyan-500/10", logs: ["Researching company culture...", "Analyzing tech stack: React, Node.js, AWS", "Found 3 recent news articles", "Intel report ready"] },
+  { name: "Atlas", role: "Resume Analyst", color: "text-blue-500", bg: "bg-blue-500/10", logs: ["Parsing resume sections...", "Detected 12 skills, 4 roles", "Building candidate benchmark", "Profile analysis complete"] },
+  { name: "Cipher", role: "Gap Detector", color: "text-amber-500", bg: "bg-amber-500/10", logs: ["Comparing against JD requirements...", "Found 3 skill gaps, 2 keyword misses", "Generating improvement priorities", "Gap analysis ready"] },
+  { name: "Quill", role: "Document Architect", color: "text-violet-500", bg: "bg-violet-500/10", logs: ["Generating ATS-optimized CV...", "Tailoring cover letter narrative...", "Building personal statement", "Documents crafted"] },
+  { name: "Sentinel", role: "Quality Inspector", color: "text-emerald-500", bg: "bg-emerald-500/10", logs: ["Validating keyword coverage: 94%", "ATS format check: PASS", "Readability score: 92/100", "All quality checks passed"] },
+];
+
+function DemoAgentTimeline() {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [logIdx, setLogIdx] = useState(0);
+  const [completed, setCompleted] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLogIdx((prev) => {
+        const agent = DEMO_AGENTS[activeIdx];
+        if (!agent) return prev;
+        if (prev < agent.logs.length - 1) return prev + 1;
+        // Agent complete, move to next
+        setCompleted((c) => { const n = new Set(c); n.add(activeIdx); return n; });
+        setActiveIdx((a) => {
+          if (a < DEMO_AGENTS.length - 1) return a + 1;
+          // Loop back
+          setTimeout(() => { setCompleted(new Set()); setActiveIdx(0); setLogIdx(0); }, 2000);
+          return a;
+        });
+        return 0;
+      });
+    }, 800);
+    return () => clearInterval(interval);
+  }, [activeIdx]);
+
+  return (
+    <div className="space-y-1">
+      {DEMO_AGENTS.map((agent, i) => {
+        const isDone = completed.has(i);
+        const isActive = i === activeIdx && !isDone;
+        return (
+          <motion.div
+            key={agent.name}
+            initial={{ opacity: 0, x: -10 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: i * 0.05 }}
+            className="flex gap-3"
+          >
+            {/* Timeline dot */}
+            <div className="flex flex-col items-center shrink-0 w-5">
+              <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
+                isDone ? "border-emerald-500 bg-emerald-500/10" : isActive ? "border-primary bg-primary/10" : "border-border bg-muted/50"
+              }`}>
+                {isDone ? (
+                  <motion.svg initial={{ scale: 0 }} animate={{ scale: 1 }} className="h-3 w-3 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </motion.svg>
+                ) : isActive ? (
+                  <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                ) : (
+                  <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
+                )}
+              </div>
+              {i < DEMO_AGENTS.length - 1 && <div className={`w-0.5 flex-1 min-h-[4px] ${isDone ? "bg-emerald-500/30" : "bg-border"}`} />}
+            </div>
+
+            {/* Card */}
+            <div className={`flex-1 rounded-lg px-3 py-2 mb-1 transition-all duration-300 ${
+              isActive ? "bg-primary/[0.03] border border-primary/20" : isDone ? "opacity-70" : "opacity-40"
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-bold ${isActive ? agent.color : isDone ? "text-emerald-500" : "text-muted-foreground/50"}`}>
+                  {agent.name}
+                </span>
+                <span className="text-[10px] text-muted-foreground">{agent.role}</span>
+              </div>
+              {isActive && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="mt-1.5">
+                  <div className="rounded bg-zinc-950/80 p-2">
+                    {DEMO_AGENTS[activeIdx].logs.slice(0, logIdx + 1).map((log, j) => (
+                      <motion.p key={j} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-[10px] font-mono text-zinc-400">
+                        <span className="text-zinc-600 mr-1.5">{String(j + 1).padStart(2, "0")}</span>{log}
+                      </motion.p>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </div>
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function HomePage() {
   return (
@@ -170,6 +267,46 @@ export default function HomePage() {
                 <div className="mt-1 text-xs text-muted-foreground">{s.label}</div>
               </div>
             ))}
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ── Live Demo Preview ── */}
+      <section className="border-t py-20 bg-gradient-to-b from-background to-card/30">
+        <div className="mx-auto max-w-5xl px-4">
+          <div className="text-center mb-12">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border bg-primary/5 px-3 py-1 text-xs font-medium text-primary">
+              <Sparkles className="h-3.5 w-3.5" /> See it in action
+            </div>
+            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              Watch AI agents build your application
+            </h2>
+          </div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="rounded-2xl border bg-card shadow-soft-lg overflow-hidden"
+          >
+            {/* Simulated browser chrome */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/30">
+              <div className="flex gap-1.5">
+                <div className="h-3 w-3 rounded-full bg-rose-400" />
+                <div className="h-3 w-3 rounded-full bg-amber-400" />
+                <div className="h-3 w-3 rounded-full bg-emerald-400" />
+              </div>
+              <div className="flex-1 flex justify-center">
+                <div className="rounded-lg bg-muted/60 px-4 py-1 text-[10px] text-muted-foreground font-mono">
+                  hirestack.tech/new
+                </div>
+              </div>
+            </div>
+
+            {/* Simulated pipeline */}
+            <div className="p-6">
+              <DemoAgentTimeline />
+            </div>
           </motion.div>
         </div>
       </section>
