@@ -3,7 +3,8 @@ Profile routes - Resume upload, parsing, career intelligence, and universal docu
 """
 from typing import Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from app.core.security import limiter
+from fastapi import APIRouter, Request, Depends, HTTPException, status, UploadFile, File, Form
 from pydantic import BaseModel
 
 from app.services.profile import ProfileService
@@ -26,6 +27,7 @@ class SocialLinksUpdate(BaseModel):
 # ── Upload & CRUD ──────────────────────────────────────────────────────
 
 
+@limiter.limit("5/minute")
 @router.post("/upload")
 async def upload_resume(
     file: UploadFile = File(...),
@@ -77,6 +79,7 @@ async def upload_resume(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail)
 
 
+@limiter.limit("30/minute")
 @router.get("")
 async def list_profiles(current_user: Dict[str, Any] = Depends(get_current_user)):
     """List all user's profiles."""
@@ -84,6 +87,7 @@ async def list_profiles(current_user: Dict[str, Any] = Depends(get_current_user)
     return await service.get_user_profiles(current_user["id"])
 
 
+@limiter.limit("30/minute")
 @router.get("/primary")
 async def get_primary_profile(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get user's primary profile."""
@@ -94,6 +98,7 @@ async def get_primary_profile(current_user: Dict[str, Any] = Depends(get_current
     return profile
 
 
+@limiter.limit("30/minute")
 @router.get("/{profile_id}")
 async def get_profile(profile_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get a specific profile."""
@@ -104,6 +109,7 @@ async def get_profile(profile_id: str, current_user: Dict[str, Any] = Depends(ge
     return profile
 
 
+@limiter.limit("30/minute")
 @router.put("/{profile_id}")
 async def update_profile(profile_id: str, profile_data: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)):
     """Update a profile."""
@@ -114,6 +120,7 @@ async def update_profile(profile_id: str, profile_data: Dict[str, Any], current_
     return profile
 
 
+@limiter.limit("30/minute")
 @router.delete("/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_profile(profile_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Delete a profile."""
@@ -123,6 +130,7 @@ async def delete_profile(profile_id: str, current_user: Dict[str, Any] = Depends
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
 
 
+@limiter.limit("30/minute")
 @router.post("/{profile_id}/set-primary")
 async def set_primary_profile(profile_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Set a profile as the primary profile."""
@@ -133,6 +141,7 @@ async def set_primary_profile(profile_id: str, current_user: Dict[str, Any] = De
     return profile
 
 
+@limiter.limit("5/minute")
 @router.post("/{profile_id}/reparse")
 async def reparse_profile(profile_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Re-parse a profile's resume with AI."""
@@ -146,6 +155,7 @@ async def reparse_profile(profile_id: str, current_user: Dict[str, Any] = Depend
 # ── Career Intelligence ────────────────────────────────────────────────
 
 
+@limiter.limit("30/minute")
 @router.get("/intelligence/completeness")
 async def get_completeness(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get profile completeness score."""
@@ -156,6 +166,7 @@ async def get_completeness(current_user: Dict[str, Any] = Depends(get_current_us
     return service.compute_completeness(profile)
 
 
+@limiter.limit("5/minute")
 @router.get("/intelligence/resume-worth")
 async def get_resume_worth(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get resume worth score."""
@@ -163,6 +174,7 @@ async def get_resume_worth(current_user: Dict[str, Any] = Depends(get_current_us
     return await service.compute_resume_worth(current_user["id"])
 
 
+@limiter.limit("30/minute")
 @router.get("/intelligence/aggregate-gaps")
 async def get_aggregate_gaps(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get aggregate gap analysis across all applications."""
@@ -170,6 +182,7 @@ async def get_aggregate_gaps(current_user: Dict[str, Any] = Depends(get_current_
     return await service.aggregate_gap_analysis(current_user["id"])
 
 
+@limiter.limit("5/minute")
 @router.get("/intelligence/market")
 async def get_market_intelligence(
     force_refresh: bool = False,
@@ -187,6 +200,7 @@ async def get_market_intelligence(
 # ── Universal Documents ────────────────────────────────────────────────
 
 
+@limiter.limit("5/minute")
 @router.post("/{profile_id}/augment-skills")
 async def augment_skills(profile_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Augment profile skills from connected platforms (GitHub, etc.)."""
@@ -195,6 +209,7 @@ async def augment_skills(profile_id: str, current_user: Dict[str, Any] = Depends
     return result
 
 
+@limiter.limit("5/minute")
 @router.post("/{profile_id}/universal-documents")
 async def generate_universal_documents(profile_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Generate universal documents (resume, CV, personal statement, portfolio) from profile."""
@@ -212,6 +227,7 @@ async def generate_universal_documents(profile_id: str, current_user: Dict[str, 
 # ── Social Links ───────────────────────────────────────────────────────
 
 
+@limiter.limit("30/minute")
 @router.put("/{profile_id}/social-links")
 async def update_social_links(profile_id: str, links: SocialLinksUpdate, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Update social links for a profile."""
@@ -249,6 +265,7 @@ class ConnectSocialRequest(BaseModel):
     url: str
 
 
+@limiter.limit("5/minute")
 @router.post("/{profile_id}/connect-social")
 async def connect_social(
     profile_id: str,
@@ -330,6 +347,7 @@ async def connect_social(
 # ── Evidence Sync ──────────────────────────────────────────────────────
 
 
+@limiter.limit("30/minute")
 @router.get("/evidence/synced")
 async def get_synced_evidence(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get evidence vault items synced to profile."""

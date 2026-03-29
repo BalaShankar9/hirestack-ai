@@ -3,7 +3,8 @@ Benchmark routes - Generate ideal candidate benchmarks (Firestore)
 """
 from typing import Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from app.core.security import limiter
+from fastapi import APIRouter, Request, Depends, HTTPException, status
 
 from app.services.benchmark import BenchmarkService
 from app.api.deps import get_current_user
@@ -15,6 +16,7 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+@limiter.limit("3/minute")
 @router.post("/generate")
 async def generate_benchmark(
     request: Dict[str, Any],
@@ -35,6 +37,7 @@ async def generate_benchmark(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
+@limiter.limit("30/minute")
 @router.get("/{benchmark_id}")
 async def get_benchmark(
     benchmark_id: str,
@@ -48,6 +51,7 @@ async def get_benchmark(
     return benchmark
 
 
+@limiter.limit("30/minute")
 @router.get("/job/{job_id}")
 async def get_benchmark_for_job(
     job_id: str,
@@ -61,6 +65,7 @@ async def get_benchmark_for_job(
     return benchmark
 
 
+@limiter.limit("3/minute")
 @router.post("/{benchmark_id}/regenerate")
 async def regenerate_benchmark(
     benchmark_id: str,
@@ -74,6 +79,7 @@ async def regenerate_benchmark(
     return benchmark
 
 
+@limiter.limit("30/minute")
 @router.delete("/{benchmark_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_benchmark(
     benchmark_id: str,

@@ -44,6 +44,8 @@ import {
   Lightbulb,
   Shield,
   TrendingUp,
+  FileSearch,
+  CheckCircle2,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import {
@@ -84,6 +86,7 @@ import { AgentProgress } from "@/components/workspace/agent-progress";
 import { QualityReport } from "@/components/workspace/quality-report";
 import { useAgentStatus } from "@/hooks/use-agent-status";
 import { useDownloadGate } from "@/hooks/use-download-gate";
+import { ATSScorePanel } from "@/components/workspace/ats-score-panel";
 import { SignupModal } from "@/components/auth/signup-modal";
 import { UpgradeModal } from "@/components/billing/upgrade-modal";
 
@@ -490,6 +493,7 @@ export default function ApplicationWorkspacePage() {
                   );
                 })
               )}
+              <TabsTrigger value="ats" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><FileSearch className="h-3.5 w-3.5" />ATS Score</TabsTrigger>
               <TabsTrigger value="export" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><Package className="h-3.5 w-3.5" />Export</TabsTrigger>
             </TabsList>
 
@@ -1337,6 +1341,11 @@ export default function ApplicationWorkspacePage() {
                 </TabsContent>
               );
             })}
+
+            {/* ── ATS Score Tab ── */}
+            <TabsContent value="ats" className="mt-4">
+              <ATSScorePanel cvHtml={cvLocal} jdText={app.confirmedFacts?.jdText || ""} />
+            </TabsContent>
 
             <TabsContent value="export" className="mt-4">
               <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">

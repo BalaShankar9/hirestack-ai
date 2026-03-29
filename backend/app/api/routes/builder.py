@@ -3,7 +3,8 @@ Document Builder routes (Firestore)
 """
 from typing import Dict, Any, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from app.core.security import limiter
+from fastapi import APIRouter, Request, Depends, HTTPException, status, Query
 
 from app.services.document import DocumentService
 from app.api.deps import get_current_user
@@ -14,6 +15,7 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+@limiter.limit("3/minute")
 @router.post("/generate")
 async def generate_document(
     request: Dict[str, Any],
@@ -37,6 +39,7 @@ async def generate_document(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
+@limiter.limit("3/minute")
 @router.post("/generate-all")
 async def generate_all_documents(
     request: Dict[str, Any],
@@ -58,6 +61,7 @@ async def generate_all_documents(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
+@limiter.limit("30/minute")
 @router.get("/documents")
 async def list_documents(
     document_type: Optional[str] = Query(None),
@@ -68,6 +72,7 @@ async def list_documents(
     return await service.get_user_documents(current_user["id"], document_type=document_type)
 
 
+@limiter.limit("30/minute")
 @router.get("/documents/{document_id}")
 async def get_document(
     document_id: str,
@@ -81,6 +86,7 @@ async def get_document(
     return document
 
 
+@limiter.limit("30/minute")
 @router.put("/documents/{document_id}")
 async def update_document(
     document_id: str,
@@ -95,6 +101,7 @@ async def update_document(
     return document
 
 
+@limiter.limit("30/minute")
 @router.post("/documents/{document_id}/version")
 async def create_document_version(
     document_id: str,
@@ -108,6 +115,7 @@ async def create_document_version(
     return document
 
 
+@limiter.limit("30/minute")
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(
     document_id: str,

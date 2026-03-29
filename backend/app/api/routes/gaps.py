@@ -3,7 +3,8 @@ Gap Analysis routes (Firestore)
 """
 from typing import Dict, Any, List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from app.core.security import limiter
+from fastapi import APIRouter, Request, Depends, HTTPException, status
 
 from app.services.gap import GapService
 from app.api.deps import get_current_user
@@ -15,6 +16,7 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+@limiter.limit("3/minute")
 @router.post("/analyze")
 async def analyze_gaps(
     request: Dict[str, Any],
@@ -36,6 +38,7 @@ async def analyze_gaps(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
+@limiter.limit("30/minute")
 @router.get("")
 async def list_gap_reports(
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -45,6 +48,7 @@ async def list_gap_reports(
     return await service.get_user_reports(current_user["id"])
 
 
+@limiter.limit("30/minute")
 @router.get("/{report_id}")
 async def get_gap_report(
     report_id: str,
@@ -58,6 +62,7 @@ async def get_gap_report(
     return report
 
 
+@limiter.limit("30/minute")
 @router.get("/{report_id}/summary")
 async def get_gap_summary(
     report_id: str,
@@ -71,6 +76,7 @@ async def get_gap_summary(
     return summary
 
 
+@limiter.limit("30/minute")
 @router.post("/{report_id}/refresh")
 async def refresh_gap_analysis(
     report_id: str,
@@ -84,6 +90,7 @@ async def refresh_gap_analysis(
     return report
 
 
+@limiter.limit("30/minute")
 @router.delete("/{report_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_gap_report(
     report_id: str,

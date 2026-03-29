@@ -5,7 +5,8 @@ The backend verifies Supabase JWTs.
 """
 from typing import Optional, Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from app.core.security import limiter
+from fastapi import APIRouter, Request, Depends, HTTPException, status, Header
 
 from app.core.database import verify_token_async, AuthServiceUnavailable, get_db, SupabaseDB, TABLES
 from app.api.deps import get_current_user
@@ -13,6 +14,7 @@ from app.api.deps import get_current_user
 router = APIRouter()
 
 
+@limiter.limit("10/minute")
 @router.get("/verify")
 async def verify_token_endpoint(
     authorization: str = Header(...),
@@ -49,6 +51,7 @@ async def verify_token_endpoint(
     }
 
 
+@limiter.limit("10/minute")
 @router.get("/me")
 async def get_current_user_info(
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -57,6 +60,7 @@ async def get_current_user_info(
     return current_user
 
 
+@limiter.limit("10/minute")
 @router.put("/me")
 async def update_current_user(
     full_name: Optional[str] = None,
@@ -79,6 +83,7 @@ async def update_current_user(
     return current_user
 
 
+@limiter.limit("10/minute")
 @router.post("/sync")
 async def sync_user(
     current_user: Dict[str, Any] = Depends(get_current_user),

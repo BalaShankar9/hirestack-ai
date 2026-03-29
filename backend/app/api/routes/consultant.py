@@ -3,7 +3,8 @@ Career Consultant routes - Roadmaps and recommendations (Firestore)
 """
 from typing import Dict, Any, List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from app.core.security import limiter
+from fastapi import APIRouter, Request, Depends, HTTPException, status
 
 from app.services.roadmap import RoadmapService
 from app.api.deps import get_current_user
@@ -14,6 +15,7 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+@limiter.limit("5/minute")
 @router.post("/roadmap")
 async def generate_roadmap(
     request: Dict[str, Any],
@@ -34,6 +36,7 @@ async def generate_roadmap(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
+@limiter.limit("5/minute")
 @router.get("/roadmaps")
 async def list_roadmaps(
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -43,6 +46,7 @@ async def list_roadmaps(
     return await service.get_user_roadmaps(current_user["id"])
 
 
+@limiter.limit("5/minute")
 @router.get("/roadmap/{roadmap_id}")
 async def get_roadmap(
     roadmap_id: str,
@@ -56,6 +60,7 @@ async def get_roadmap(
     return roadmap
 
 
+@limiter.limit("5/minute")
 @router.put("/roadmap/{roadmap_id}/progress")
 async def update_progress(
     roadmap_id: str,
@@ -72,6 +77,7 @@ async def update_progress(
     return {"message": "Progress updated"}
 
 
+@limiter.limit("5/minute")
 @router.delete("/roadmap/{roadmap_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_roadmap(
     roadmap_id: str,
@@ -92,6 +98,7 @@ class CoachQuestionRequest(BaseModel):
     app_id: str
 
 
+@limiter.limit("5/minute")
 @router.post("/coach")
 async def ask_coach(
     req: CoachQuestionRequest,

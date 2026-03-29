@@ -3,6 +3,7 @@ Billing routes — Stripe checkout, portal, webhooks, plan info
 """
 from typing import Dict, Any
 
+from app.core.security import limiter
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
@@ -20,6 +21,7 @@ class CheckoutRequest(BaseModel):
     cancel_url: str = "http://localhost:3002/settings/billing?canceled=true"
 
 
+@limiter.limit("20/minute")
 @router.get("/status")
 async def get_billing_status(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get current plan, usage, and limits."""
@@ -33,6 +35,7 @@ async def get_billing_status(current_user: Dict[str, Any] = Depends(get_current_
     return await billing.get_plan_info(orgs[0]["id"])
 
 
+@limiter.limit("20/minute")
 @router.post("/checkout")
 async def create_checkout(req: CheckoutRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Create a Stripe checkout session for upgrading."""
@@ -57,6 +60,7 @@ async def create_checkout(req: CheckoutRequest, current_user: Dict[str, Any] = D
     return {"url": url}
 
 
+@limiter.limit("20/minute")
 @router.post("/portal")
 async def create_portal(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Open Stripe billing portal for managing subscription."""
@@ -73,6 +77,7 @@ async def create_portal(current_user: Dict[str, Any] = Depends(get_current_user)
     return {"url": url}
 
 
+@limiter.limit("20/minute")
 @router.post("/webhook")
 async def stripe_webhook(request: Request):
     """Handle Stripe webhook events."""
@@ -101,6 +106,7 @@ class RecordUsageRequest(BaseModel):
     feature: str = "exports"
 
 
+@limiter.limit("20/minute")
 @router.post("/record-export")
 async def record_export(req: RecordUsageRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Record a feature usage (export, application, etc.)."""
@@ -115,6 +121,7 @@ async def record_export(req: RecordUsageRequest, current_user: Dict[str, Any] = 
     return {"recorded": True, "usage": plan_info.get("usage", {})}
 
 
+@limiter.limit("20/minute")
 @router.get("/quota-check")
 async def quota_check(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Lightweight quota check for the download gate."""

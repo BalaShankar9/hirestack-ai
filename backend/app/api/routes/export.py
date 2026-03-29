@@ -3,7 +3,8 @@ Export routes - PDF/DOCX generation (Firestore)
 """
 from typing import Dict, Any, List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from app.core.security import limiter
+from fastapi import APIRouter, Request, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse, Response
 
 from app.services.export import ExportService
@@ -15,6 +16,7 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+@limiter.limit("20/minute")
 @router.post("")
 async def create_export(
     request: Dict[str, Any],
@@ -37,6 +39,7 @@ async def create_export(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
+@limiter.limit("20/minute")
 @router.get("")
 async def list_exports(
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -46,6 +49,7 @@ async def list_exports(
     return await service.get_user_exports(current_user["id"])
 
 
+@limiter.limit("20/minute")
 @router.get("/{export_id}")
 async def get_export(
     export_id: str,
@@ -59,6 +63,7 @@ async def get_export(
     return export
 
 
+@limiter.limit("20/minute")
 @router.get("/{export_id}/download")
 async def download_export(
     export_id: str,
@@ -80,6 +85,7 @@ async def download_export(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
+@limiter.limit("20/minute")
 @router.delete("/{export_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_export(
     export_id: str,
@@ -92,6 +98,7 @@ async def delete_export(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Export not found")
 
 
+@limiter.limit("20/minute")
 @router.post("/docx")
 async def export_docx(
     request: Dict[str, Any],

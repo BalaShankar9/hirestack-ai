@@ -280,10 +280,8 @@ class SupabaseDB:
             return await self._run(_ins)
         except Exception as e:
             if self._is_table_missing_error(e):
-                logger.warning("table_missing_on_create: %s", table)
-                # Return a fake ID so callers don't crash — data won't persist
-                import uuid
-                return str(uuid.uuid4())
+                logger.error("table_missing_on_create", table=table, error=str(e)[:200])
+                return None  # Callers must handle None — no more fake IDs
             raise
 
     async def get(self, table: str, doc_id: str) -> Optional[Dict[str, Any]]:

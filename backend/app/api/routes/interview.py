@@ -3,7 +3,8 @@ Interview Simulator routes
 """
 from typing import Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from app.core.security import limiter
+from fastapi import APIRouter, Request, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.services.interview import InterviewService
@@ -30,6 +31,7 @@ class SubmitAnswerRequest(BaseModel):
     answer: str
 
 
+@limiter.limit("30/minute")
 @router.post("/sessions")
 async def create_session(
     req: CreateSessionRequest,
@@ -63,6 +65,7 @@ async def create_session(
         )
 
 
+@limiter.limit("30/minute")
 @router.post("/sessions/{session_id}/answers")
 async def submit_answer(
     session_id: str,
@@ -94,6 +97,7 @@ async def submit_answer(
         )
 
 
+@limiter.limit("30/minute")
 @router.post("/sessions/{session_id}/complete")
 async def complete_session(
     session_id: str,
@@ -114,6 +118,7 @@ async def complete_session(
         )
 
 
+@limiter.limit("30/minute")
 @router.get("/sessions")
 async def list_sessions(
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -123,6 +128,7 @@ async def list_sessions(
     return await service.get_user_sessions(current_user["id"])
 
 
+@limiter.limit("30/minute")
 @router.get("/sessions/{session_id}")
 async def get_session(
     session_id: str,

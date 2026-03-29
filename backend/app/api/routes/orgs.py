@@ -4,7 +4,8 @@ Organization routes — CRUD, members, invitations, audit, usage
 import re
 from typing import Dict, Any, List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from app.core.security import limiter
+from fastapi import APIRouter, Request, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.services.org import OrgService
@@ -32,6 +33,7 @@ class ChangeRoleRequest(BaseModel):
 
 # ── Org CRUD ──────────────────────────────────────────────────────
 
+@limiter.limit("30/minute")
 @router.post("")
 async def create_org(req: CreateOrgRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Create a new organization."""
@@ -46,6 +48,7 @@ async def create_org(req: CreateOrgRequest, current_user: Dict[str, Any] = Depen
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)[:200])
 
 
+@limiter.limit("30/minute")
 @router.get("")
 async def list_orgs(current_user: Dict[str, Any] = Depends(get_current_user)):
     """List all organizations the user belongs to."""
@@ -53,6 +56,7 @@ async def list_orgs(current_user: Dict[str, Any] = Depends(get_current_user)):
     return await service.get_user_orgs(current_user["id"])
 
 
+@limiter.limit("30/minute")
 @router.get("/{org_id}")
 async def get_org(org_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get org details (must be a member)."""
@@ -67,6 +71,7 @@ async def get_org(org_id: str, current_user: Dict[str, Any] = Depends(get_curren
     return org
 
 
+@limiter.limit("30/minute")
 @router.put("/{org_id}")
 async def update_org(org_id: str, data: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)):
     """Update org settings (admin+ only)."""
@@ -77,6 +82,7 @@ async def update_org(org_id: str, data: Dict[str, Any], current_user: Dict[str, 
     return await service.update_org(org_id, data)
 
 
+@limiter.limit("30/minute")
 @router.delete("/{org_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_org(org_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Delete org (owner only)."""
@@ -89,6 +95,7 @@ async def delete_org(org_id: str, current_user: Dict[str, Any] = Depends(get_cur
 
 # ── Members ───────────────────────────────────────────────────────
 
+@limiter.limit("30/minute")
 @router.get("/{org_id}/members")
 async def list_members(org_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     service = OrgService()
@@ -98,6 +105,7 @@ async def list_members(org_id: str, current_user: Dict[str, Any] = Depends(get_c
     return await service.get_members(org_id)
 
 
+@limiter.limit("30/minute")
 @router.post("/{org_id}/members")
 async def invite_member(org_id: str, req: InviteMemberRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Invite a new member to the org."""
@@ -109,6 +117,7 @@ async def invite_member(org_id: str, req: InviteMemberRequest, current_user: Dic
     return invitation
 
 
+@limiter.limit("30/minute")
 @router.put("/{org_id}/members/{user_id}")
 async def change_member_role(org_id: str, user_id: str, req: ChangeRoleRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     service = OrgService()
@@ -123,6 +132,7 @@ async def change_member_role(org_id: str, user_id: str, req: ChangeRoleRequest, 
     return {"status": "updated"}
 
 
+@limiter.limit("30/minute")
 @router.delete("/{org_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_member(org_id: str, user_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     service = OrgService()
@@ -136,6 +146,7 @@ async def remove_member(org_id: str, user_id: str, current_user: Dict[str, Any] 
 
 # ── Invitations ───────────────────────────────────────────────────
 
+@limiter.limit("30/minute")
 @router.post("/invitations/accept")
 async def accept_invitation(token: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Accept an org invitation."""
@@ -148,6 +159,7 @@ async def accept_invitation(token: str, current_user: Dict[str, Any] = Depends(g
 
 # ── Audit & Usage ─────────────────────────────────────────────────
 
+@limiter.limit("30/minute")
 @router.get("/{org_id}/audit")
 async def get_audit_logs(org_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     service = OrgService()
@@ -157,6 +169,7 @@ async def get_audit_logs(org_id: str, current_user: Dict[str, Any] = Depends(get
     return await service.get_audit_logs(org_id)
 
 
+@limiter.limit("30/minute")
 @router.get("/{org_id}/usage")
 async def get_usage(org_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     service = OrgService()
