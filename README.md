@@ -1,154 +1,399 @@
-# HireStack AI
+<p align="center">
+  <img src="https://img.shields.io/badge/HireStack-AI-6366f1?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTEyIDJMMiA3bDEwIDUgMTAtNS0xMC01eiIvPjxwYXRoIGQ9Ik0yIDE3bDEwIDUgMTAtNSIvPjxwYXRoIGQ9Ik0yIDEybDEwIDUgMTAtNSIvPjwvc3ZnPg==&logoColor=white" alt="HireStack AI" height="40"/>
+</p>
 
-A career intelligence + job application workspace that helps candidates build compelling application packages by analyzing their profile against an ideal benchmark.
+<h1 align="center">HireStack AI</h1>
+
+<p align="center">
+  <strong>AI-Powered Career Intelligence Platform</strong><br/>
+  The world's most comprehensive application builder — from resume parsing to interview prep, powered by multi-model AI agents.
+</p>
+
+<p align="center">
+  <a href="https://hirestack.tech">Live Demo</a> &bull;
+  <a href="#features">Features</a> &bull;
+  <a href="#architecture">Architecture</a> &bull;
+  <a href="#getting-started">Getting Started</a> &bull;
+  <a href="#deployment">Deployment</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Next.js-14-black?style=flat-square&logo=next.js" alt="Next.js"/>
+  <img src="https://img.shields.io/badge/FastAPI-0.100+-009688?style=flat-square&logo=fastapi" alt="FastAPI"/>
+  <img src="https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat-square&logo=typescript" alt="TypeScript"/>
+  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python" alt="Python"/>
+  <img src="https://img.shields.io/badge/Supabase-PostgreSQL-3FCF8E?style=flat-square&logo=supabase" alt="Supabase"/>
+  <img src="https://img.shields.io/badge/Ollama-Local_AI-000?style=flat-square" alt="Ollama"/>
+  <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"/>
+</p>
+
+---
+
+## What is HireStack AI?
+
+HireStack AI is a full-stack career intelligence platform that transforms how professionals build job applications. Instead of manually crafting resumes and cover letters, HireStack deploys a swarm of specialized AI agents that analyze your profile, research the target company, identify skill gaps, and generate a complete, tailored application package — all in real-time with a streaming mission-control interface.
+
+**For job seekers:** Upload your resume, paste a job description, and watch 6 AI agents build a world-class application with CV, cover letter, portfolio, learning plan, and more.
+
+**For recruitment agencies (Enterprise):** Manage candidates at scale with organization workspaces, team roles, candidate pipelines, and bulk operations.
+
+---
 
 ## Features
 
-- **Evidence Vault**: Store links/files proving skills (reusable across applications)
-- **AI Pipeline**: Benchmark → gaps → roadmap → tailored CV/cover letter/portfolio
-- **Workspace**: Module cards, regeneration, version history, exports (PDF/DOCX/PNG/ZIP)
-- **Realtime**: Instant updates via Supabase Realtime (with polling fallback)
+### Core Platform
+
+| Feature | Description |
+|---------|-------------|
+| **Application Builder** | 6-agent AI pipeline: Atlas (Resume Analyst), Cipher (Gap Detector), Quill (Document Architect), Forge (Portfolio Builder), Sentinel (Quality Inspector), Nova (Final Assembler) |
+| **Career Nexus** | Career identity hub — upload resume, connect LinkedIn/GitHub/Twitter, auto-import skills, AI profile analysis |
+| **ATS Scanner** | Multi-pass ATS analysis with keyword matching, readability scoring, format analysis, and actionable rewrite suggestions |
+| **Interview Prep** | AI interview simulator with behavioral, technical, and case modes. Real-time feedback, STAR scoring, timer |
+| **Salary Coach** | Market-data-driven salary negotiation with regional benchmarks, counter-offer scripts, and negotiation strategies |
+| **Evidence Vault** | Proof library for storing certifications, projects, awards — reusable across all applications |
+| **Career Lab** | Skill sprints and learning paths tailored to your career gaps |
+| **Job Board** | AI-curated job discovery with match scoring |
+| **Daily Learn** | Gamified daily skill challenges with streaks and XP |
+| **A/B Lab** | Compare document variants side-by-side to optimize application quality |
+| **Analytics** | Track application success rates, skill growth, and career trajectory |
+
+### AI Agent Pipeline (Mission Control)
+
+The application builder uses a streaming mission-control interface inspired by Replit/Cursor, showing 6 named AI agents working in real-time:
+
+```
+Atlas (Resume Analyst)     → Parses resume, builds candidate benchmark
+Cipher (Gap Detector)      → Analyzes skill gaps against job requirements
+Quill (Document Architect) → Generates CV, cover letter, learning plan
+Forge (Portfolio Builder)  → Builds personal statement and portfolio
+Sentinel (Quality Inspector) → Validates document quality and ATS compliance
+Nova (Final Assembler)     → Packages complete application
+```
+
+Each agent streams its progress with collapsible log panels, timing badges, and a real-time progress bar.
+
+### Company Intelligence
+
+Before building documents, the platform gathers company intel:
+- Company overview, culture, and values
+- Tech stack and engineering practices
+- Recent news and funding
+- Glassdoor-style interview insights
+- Competitor landscape
+- Hiring patterns and team structure
+
+This intelligence is woven into every generated document for maximum relevance.
+
+### Adaptive Document Discovery
+
+The platform doesn't just generate fixed documents — it analyzes the job type and discovers additional required documents:
+
+- **Standard set:** CV, Cover Letter, Portfolio, Personal Statement, Learning Plan
+- **Discovered extras:** Research Statement (academic), Case Study (consulting), Teaching Philosophy (education), Security Clearance forms, Writing Samples, etc.
+
+### Enterprise Features
+
+| Feature | Description |
+|---------|-------------|
+| **Multi-tenant Organizations** | Create org accounts, invite team members, assign roles (owner/admin/recruiter/member) |
+| **Candidate Pipeline** | Kanban-style candidate tracking (New → Screening → Interview → Offer → Placed) |
+| **Team Analytics** | Organization-wide stats, member activity, placement rates |
+| **API Platform** | RESTful API with rate limiting for third-party integrations |
+| **Audit Logs** | Track all actions for compliance |
+| **Billing & Quotas** | Free/Pro/Enterprise tiers with usage-based limits |
+
+### Freemium Business Model
+
+```
+Guest (no signup)  → Try 1 application, download requires signup
+Free (signed up)   → 5 exports, basic features
+Pro ($19/mo)       → Unlimited exports, all AI agents, priority processing
+Enterprise ($49/mo) → Team workspaces, candidate pipeline, API access, audit logs
+```
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        FRONTEND (Next.js 14 + TypeScript)                │
+│                                                                          │
+│  Landing ─── Auth ─── Dashboard ─── New Application ─── Workspace       │
+│  Career Nexus ─── ATS Scanner ─── Interview ─── Salary Coach            │
+│  Evidence Vault ─── Career Lab ─── Job Board ─── Daily Learn            │
+│  A/B Lab ─── Analytics ─── Settings (Org/Members/Billing/Audit)         │
+│  Pricing ─── 404                                                         │
+│                                                                          │
+│  UI: shadcn/ui + Tailwind CSS + Framer Motion                           │
+│  State: React hooks + Supabase Realtime                                  │
+│  Auth: Supabase Auth (email/password + Google OAuth + guest mode)        │
+└──────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         BACKEND (FastAPI + Python)                        │
+│                                                                          │
+│  Routes: auth, profile, generate, ats-scan, interview, salary,          │
+│          evidence, career-lab, job-board, daily-learn, ab-lab,           │
+│          analytics, candidates, organizations                            │
+│                                                                          │
+│  Services: ProfileService, InterviewService, SalaryService,             │
+│            EvidenceService, CandidateService, OrgService                │
+│                                                                          │
+│  Middleware: CORS, rate limiting, JWT verification, org context          │
+└──────────────────────────────────────────────────────────────────────────┘
+                    │                           │
+          ┌─────────┴──────────┐                │
+          ▼                    ▼                ▼
+┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
+│   AI ENGINE      │  │   DATABASE       │  │   WORKERS        │
+│                  │  │                  │  │                  │
+│  Multi-Model:    │  │  Supabase        │  │  Celery/Redis    │
+│  ├─ Gemini 2.0   │  │  PostgreSQL      │  │  (background     │
+│  ├─ Ollama       │  │  35+ tables      │  │   processing)    │
+│  │  (local LLMs) │  │  + Auth          │  │                  │
+│  └─ OpenAI       │  │  + Storage       │  │                  │
+│                  │  │  + Realtime      │  │                  │
+│  Chains:         │  │                  │  │                  │
+│  ├─ RoleProfiler │  │  RLS policies    │  │                  │
+│  ├─ GapAnalyzer  │  │  for multi-      │  │                  │
+│  ├─ DocGenerator │  │  tenant          │  │                  │
+│  ├─ ATSScanner   │  │  isolation       │  │                  │
+│  ├─ CompanyIntel │  │                  │  │                  │
+│  ├─ Discovery    │  │                  │  │                  │
+│  └─ Benchmark    │  │                  │  │                  │
+└──────────────────┘  └──────────────────┘  └──────────────────┘
+```
+
+### Multi-Model AI Routing
+
+HireStack uses intelligent model routing with automatic fallback:
+
+```python
+# Primary: Gemini 2.0 Flash (fast, cost-effective)
+# Fallback: Ollama (local, private) → OpenAI (cloud backup)
+
+AIClient → Gemini → Ollama → OpenAI
+              ↓        ↓        ↓
+          Fast/Free  Private  Reliable
+```
+
+Each AI chain is specialized:
+- **RoleProfilerChain** — Resume parsing with 60+ skill normalizations
+- **GapAnalyzerChain** — Skill gap detection against job requirements
+- **DocGeneratorChain** — Tailored document generation (CV, cover letter, etc.)
+- **ATSScannerChain** — Multi-pass ATS compliance analysis
+- **CompanyIntelChain** — Web scraping + AI analysis of target companies
+- **DiscoveryChain** — Job-type-aware document requirement discovery
+- **BenchmarkChain** — Ideal application benchmark generation
+
+---
 
 ## Tech Stack
 
-### Frontend
-- Next.js 14 (App Router)
-- TypeScript
-- Tailwind CSS
-- shadcn/ui + Radix UI
-- TipTap editor
-- Supabase Auth + Storage + Realtime
+| Layer | Technology |
+|-------|-----------|
+| **Frontend** | Next.js 14, TypeScript, Tailwind CSS, shadcn/ui, Framer Motion, Lucide Icons |
+| **Backend** | FastAPI, Python 3.11+, Pydantic, structlog |
+| **Database** | Supabase (PostgreSQL + Auth + Storage + Realtime) |
+| **AI Models** | Google Gemini 2.0, Ollama (local LLMs), OpenAI GPT-4 |
+| **Hosting** | Netlify (frontend), Railway (backend) |
+| **CI/CD** | GitHub Actions |
+| **Containerization** | Docker (multi-stage builds) |
 
-### Backend
-- FastAPI
-- Supabase JWT verification + PostgREST access (via `SUPABASE_SERVICE_ROLE_KEY`)
-- Structured logging (structlog)
-- Redis + Celery (optional background jobs; scaffolding present)
-
-### AI Engine
-- Gemini (Google AI Studio) via `google-genai`
-- Optional OpenAI fallback (provider switch via `AI_PROVIDER`)
-- Chained prompt architecture under `ai_engine/`
+---
 
 ## Project Structure
 
 ```
 HireStack AI/
-├── frontend/           # Next.js 14 application
-├── backend/            # FastAPI application
-├── ai_engine/          # AI prompt chains
-├── workers/            # Celery workers
-├── supabase/           # Local Supabase project (migrations + seed)
-├── infra/              # Docker configs
-└── docs/               # Documentation
+├── frontend/                # Next.js 14 application
+│   ├── src/
+│   │   ├── app/            # App Router pages
+│   │   │   ├── (dashboard)/ # Authenticated pages
+│   │   │   ├── auth/       # Auth callbacks
+│   │   │   ├── login/      # Login page
+│   │   │   ├── pricing/    # Pricing page
+│   │   │   └── page.tsx    # Landing page
+│   │   ├── components/     # Shared components
+│   │   └── lib/            # Utilities, API client, auth
+│   └── public/             # Static assets
+│
+├── backend/                 # FastAPI application
+│   └── app/
+│       ├── api/routes/     # API route handlers
+│       ├── core/           # Database, config, middleware
+│       └── services/       # Business logic services
+│
+├── ai_engine/               # AI prompt chains
+│   ├── client.py           # Multi-model AIClient
+│   └── chains/             # Specialized AI chains
+│
+├── supabase/                # Database
+│   └── migrations/         # SQL migrations (35+ tables)
+│
+├── infra/                   # Docker configs
+│   ├── Dockerfile.frontend
+│   └── Dockerfile.backend
+│
+├── .github/workflows/       # CI/CD
+│   └── ci.yml
+│
+└── scripts/                 # Development utilities
 ```
+
+---
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 20+
-- Python 3.11+ (recommended)
-- Docker (required for `supabase start`)
-- Supabase CLI (`supabase`) installed and on PATH
+- **Node.js 20+** and **npm**
+- **Python 3.11+**
+- **Supabase account** ([supabase.com](https://supabase.com))
+- **Gemini API key** ([aistudio.google.com](https://aistudio.google.com))
+- **Ollama** (optional, for local AI models) — [ollama.com](https://ollama.com)
 
-### Environment Setup
+### 1. Clone and Install
 
-1. Start Supabase locally (runs Postgres, Auth, Storage, Realtime, Studio):
-   ```bash
-   cd supabase
-   supabase start
-   ```
+```bash
+git clone https://github.com/BalaShankar9/hirestack-ai.git
+cd hirestack-ai
 
-2. Sync Supabase local credentials into `backend/.env` and `frontend/.env.local`:
-   ```bash
-   ./scripts/dev/sync_supabase_env.sh
-   ```
-   - By default this uses `http://127.0.0.1:54321` (avoids IPv6 `localhost` quirks in some browsers).
-   - To force localhost instead: `HIRESTACK_SUPABASE_HOST=localhost ./scripts/dev/sync_supabase_env.sh`
+# Frontend
+cd frontend && npm install && cd ..
 
-3. Set your Gemini API key securely (input is hidden; updates `backend/.env`):
-   ```bash
-   ./scripts/dev/set_gemini_key.sh
-   ```
+# Backend
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cd ..
+```
 
-4. Install deps:
-   ```bash
-   cd backend
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
+### 2. Configure Environment
 
-   cd ../frontend
-   npm install
-   ```
+**Backend** (`backend/.env`):
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+GEMINI_API_KEY=your-gemini-api-key
+OLLAMA_BASE_URL=http://localhost:11434  # optional
+```
 
-### Running the Application
+**Frontend** (`frontend/.env.local`):
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
 
-**Development Mode:**
+### 3. Run Database Migrations
 
-1. Start the backend:
-   ```bash
-   cd backend
-   python3 -m uvicorn main:app --reload --port 8000
-   ```
+Apply all migrations via the Supabase Dashboard SQL editor, or use the CLI:
+```bash
+supabase db push
+```
 
-2. Start the frontend:
-   ```bash
-   cd frontend
-   npm run dev:3002
-   ```
+### 4. Start Development Servers
 
-3. (Optional) Start Celery worker (if you enable background processing):
-   ```bash
-   cd backend
-   celery -A workers.celery_app worker --loglevel=info
-   ```
+```bash
+# Terminal 1: Backend
+cd backend && source .venv/bin/activate
+uvicorn main:app --reload --port 8000
 
-### Helpful flags
+# Terminal 2: Frontend
+cd frontend && npm run dev
+```
 
-- Realtime debug logging (client):
-  - `NEXT_PUBLIC_REALTIME_DEBUG=1`
+Visit **http://localhost:3000** to start using HireStack AI.
 
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/api/generate/pipeline` | POST | Run the full AI pipeline (non-streaming) |
-| `/api/generate/pipeline/stream` | POST | Run the full AI pipeline (SSE streaming) |
+---
 
 ## Deployment
 
-This repo currently assumes a self-hosted setup where secrets are provided via environment variables.
-Recommended production approach:
-- Frontend on a modern platform (e.g. Vercel/Netlify)
-- Backend on a container platform (e.g. Render/Fly/Railway)
-- Supabase hosted for Postgres/Auth/Storage/Realtime
+### Production Stack
 
-## Architecture
+| Service | Platform | Purpose |
+|---------|----------|---------|
+| Frontend | **Netlify** | Static + SSR hosting |
+| Backend | **Railway** | Container hosting |
+| Database | **Supabase** | Managed PostgreSQL |
+| AI | **Google AI Studio** + **Ollama** | Multi-model inference |
 
+### Deploy with Docker
+
+```bash
+# Build frontend
+docker build -f infra/Dockerfile.frontend -t hirestack-frontend .
+
+# Build backend
+docker build -f infra/Dockerfile.backend -t hirestack-backend .
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        FRONTEND (Next.js 14)                        │
-│  /login → /dashboard → /new → /applications/:id → /evidence        │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        BACKEND (FastAPI)                            │
-│  Auth │ Generate (SSE) │ Export │ Analytics (WIP)                  │
-└─────────────────────────────────────────────────────────────────────┘
-                    │                           │
-          ┌─────────┴─────────┐                 │
-          ▼                   ▼                 ▼
-┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-│   AI ENGINE      │ │   DATABASE       │ │   WORKERS        │
-│ Gemini/OpenAI    │ │ Supabase Postgres│ │ Celery/Redis     │
-│ Prompt Chains    │ │ + Realtime/Store │ │ Async Tasks      │
-└──────────────────┘ └──────────────────┘ └──────────────────┘
-```
+
+### Environment Variables for Production
+
+See `backend/.env.example` and `frontend/.env.local.example` for all required variables.
+
+---
+
+## API Endpoints
+
+### Core
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check with uptime and version |
+| `/api/generate/pipeline/stream` | POST | Full AI pipeline (SSE streaming) |
+| `/api/generate/pipeline` | POST | Full AI pipeline (non-streaming) |
+
+### Profile & Career
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/profile/upload` | POST | Upload and parse resume |
+| `/api/profile/me` | GET | Get current user profile |
+| `/api/profile/connect/{platform}` | POST | Connect social profiles |
+
+### Features
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/ats/scan` | POST | ATS compliance scan |
+| `/api/interview/start` | POST | Start interview session |
+| `/api/interview/answer` | POST | Submit answer for AI feedback |
+| `/api/salary/analyze` | POST | Salary analysis |
+| `/api/career-lab/sprints` | GET | Get available skill sprints |
+| `/api/job-board/search` | GET | Search job listings |
+| `/api/daily-learn/challenge` | GET | Get daily challenge |
+
+### Enterprise
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/organizations` | POST | Create organization |
+| `/api/organizations/{id}/members` | GET/POST | Manage team members |
+| `/api/candidates` | GET/POST | Candidate pipeline CRUD |
+| `/api/analytics/dashboard` | GET | Dashboard statistics |
+
+---
+
+## Contributing
+
+We welcome contributions! Please read our contributing guidelines before submitting PRs.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
 
 ## License
 
-MIT License - see LICENSE file for details
+MIT License — see [LICENSE](LICENSE) for details.
+
+---
+
+<p align="center">
+  Built with AI, for ambitious professionals.<br/>
+  <a href="https://hirestack.tech">hirestack.tech</a>
+</p>
