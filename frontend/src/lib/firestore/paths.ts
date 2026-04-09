@@ -18,6 +18,8 @@ export const TABLES = {
   learningPlans: "learning_plans",
   documents: "documents",
   docVersions: "doc_versions",
+  generationJobs: "generation_jobs",
+  generationJobEvents: "generation_job_events",
 } as const;
 
 export type TableName = (typeof TABLES)[keyof typeof TABLES];

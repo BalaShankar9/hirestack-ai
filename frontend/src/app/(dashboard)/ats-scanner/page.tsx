@@ -471,7 +471,7 @@ export default function ATSScannerPage() {
             <div>
               <h3 className="text-sm font-semibold">What to expect</h3>
               <p className="mt-1 text-xs text-muted-foreground leading-relaxed max-w-lg">
-                Paste your resume and a job description, then hit "Run ATS Scan". The analysis runs 3 specialized passes and takes roughly 10–15 seconds.
+                Paste your resume and a job description, then hit &ldquo;Run ATS Scan&rdquo;. The analysis runs 3 specialized passes and takes roughly 10–15 seconds.
               </p>
             </div>
           </div>

@@ -10,11 +10,14 @@ Returns a structured intel report used by document generation agents.
 """
 import re
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable, Awaitable
 import httpx
 import structlog
 
 logger = structlog.get_logger()
+
+
+IntelEventCallback = Callable[[Dict[str, Any]], Awaitable[None] | None]
 
 
 INTEL_SYSTEM = """You are an elite corporate intelligence analyst. Given raw data from multiple sources
@@ -157,6 +160,7 @@ class CompanyIntelChain:
 
     def __init__(self, ai_client):
         self.ai_client = ai_client
+        self._event_callback: Optional[IntelEventCallback] = None
 
     async def gather_intel(
         self,
@@ -164,99 +168,140 @@ class CompanyIntelChain:
         job_title: str,
         jd_text: str,
         company_url: Optional[str] = None,
+        on_event: Optional[IntelEventCallback] = None,
     ) -> Dict[str, Any]:
         """Gather comprehensive multi-source company intelligence."""
         data_sources = []
-
-        # Run all data gathering in parallel
-        web_task = self._gather_website_data(company, company_url)
-        github_task = self._gather_github_data(company)
-        careers_task = self._gather_careers_data(company, company_url)
-        jd_signals = self._extract_jd_signals(jd_text)
-
-        web_data, github_data, careers_data = await asyncio.gather(
-            web_task, github_task, careers_task,
-            return_exceptions=True,
-        )
-
-        # Handle exceptions
-        if isinstance(web_data, Exception):
-            web_data = ""
-        if isinstance(github_data, Exception):
-            github_data = ""
-        if isinstance(careers_data, Exception):
-            careers_data = ""
-
-        if web_data:
-            data_sources.append("Company website")
-        if github_data:
-            data_sources.append("GitHub organization")
-        if careers_data:
-            data_sources.append("Careers page")
-        if jd_signals:
-            data_sources.append("Job description analysis")
-
-        # Build the prompt with all available data
-        if web_data or github_data or careers_data:
-            prompt = INTEL_PROMPT.format(
-                company=company,
-                job_title=job_title,
-                web_data=web_data[:5000] if web_data else "Not available",
-                jd_excerpt=jd_text[:3000],
-                github_data=github_data[:2000] if github_data else "Not available",
-                careers_data=careers_data[:2000] if careers_data else "Not available",
-            )
-        else:
-            prompt = INTEL_FROM_JD_PROMPT.format(
-                company=company,
-                job_title=job_title,
-                jd_text=jd_text[:5000],
-            )
+        self._event_callback = on_event
 
         try:
-            result = await self.ai_client.complete_json(
-                prompt=prompt,
-                system=INTEL_SYSTEM,
-                max_tokens=4000,
-                temperature=0.2,
-                task_type="reasoning",
+            await self._emit_event(
+                status="running",
+                message=f"Starting Recon for {company or 'target company'}.",
+                source="recon",
             )
-        except Exception as e:
-            logger.warning("company_intel_ai_failed", error=str(e)[:200])
-            result = self._fallback_intel(company, jd_text)
 
-        # Enrich with metadata
-        result["data_sources"] = data_sources or ["Job description inference only"]
-        result.setdefault("company_overview", {"name": company})
-        result.setdefault("culture_and_values", {})
-        result.setdefault("tech_and_engineering", {})
-        result.setdefault("products_and_services", {})
-        result.setdefault("market_position", {})
-        result.setdefault("recent_developments", {})
-        result.setdefault("hiring_intelligence", {})
-        result.setdefault("application_strategy", {})
+            # Run all data gathering in parallel
+            web_task = self._gather_website_data(company, company_url)
+            github_task = self._gather_github_data(company)
+            careers_task = self._gather_careers_data(company, company_url)
+            jd_signals = self._extract_jd_signals(jd_text)
 
-        # Set confidence based on data completeness
-        has_web = bool(web_data)
-        has_github = bool(github_data)
-        has_careers = bool(careers_data)
-        source_count = sum([has_web, has_github, has_careers, bool(jd_signals)])
+            if jd_signals:
+                await self._emit_event(
+                    status="completed",
+                    message="Extracted company and role signals from the job description.",
+                    source="job_description",
+                    metadata={"signals": jd_signals},
+                )
 
-        if source_count >= 3:
-            result["confidence"] = "high"
-        elif source_count >= 2:
-            result["confidence"] = "medium"
-        else:
-            result["confidence"] = "low"
+            web_data, github_data, careers_data = await asyncio.gather(
+                web_task, github_task, careers_task,
+                return_exceptions=True,
+            )
 
-        result["data_completeness"] = {
-            "website_data": has_web,
-            "jd_analysis": True,
-            "github_data": has_github,
-            "careers_page": has_careers,
-        }
+            # Handle exceptions
+            if isinstance(web_data, Exception):
+                web_data = ""
+            if isinstance(github_data, Exception):
+                github_data = ""
+            if isinstance(careers_data, Exception):
+                careers_data = ""
 
-        return result
+            if web_data:
+                data_sources.append("Company website")
+            if github_data:
+                data_sources.append("GitHub organization")
+            if careers_data:
+                data_sources.append("Careers page")
+            if jd_signals:
+                data_sources.append("Job description analysis")
+
+            await self._emit_event(
+                status="running",
+                message="Synthesizing findings into a company intelligence report.",
+                source="analysis",
+            )
+
+            # Build the prompt with all available data
+            if web_data or github_data or careers_data:
+                prompt = INTEL_PROMPT.format(
+                    company=company,
+                    job_title=job_title,
+                    web_data=web_data[:5000] if web_data else "Not available",
+                    jd_excerpt=jd_text[:3000],
+                    github_data=github_data[:2000] if github_data else "Not available",
+                    careers_data=careers_data[:2000] if careers_data else "Not available",
+                )
+            else:
+                prompt = INTEL_FROM_JD_PROMPT.format(
+                    company=company,
+                    job_title=job_title,
+                    jd_text=jd_text[:5000],
+                )
+
+            try:
+                result = await self.ai_client.complete_json(
+                    prompt=prompt,
+                    system=INTEL_SYSTEM,
+                    max_tokens=4000,
+                    temperature=0.2,
+                    task_type="reasoning",
+                )
+            except Exception as e:
+                logger.warning("company_intel_ai_failed", error=str(e)[:200])
+                await self._emit_event(
+                    status="warning",
+                    message="Intel synthesis fell back to JD-only inference after the model call failed.",
+                    source="analysis",
+                    metadata={"error": str(e)[:200]},
+                )
+                result = self._fallback_intel(company, jd_text)
+
+            # Enrich with metadata
+            result["data_sources"] = data_sources or ["Job description inference only"]
+            result.setdefault("company_overview", {"name": company})
+            result.setdefault("culture_and_values", {})
+            result.setdefault("tech_and_engineering", {})
+            result.setdefault("products_and_services", {})
+            result.setdefault("market_position", {})
+            result.setdefault("recent_developments", {})
+            result.setdefault("hiring_intelligence", {})
+            result.setdefault("application_strategy", {})
+
+            # Set confidence based on data completeness
+            has_web = bool(web_data)
+            has_github = bool(github_data)
+            has_careers = bool(careers_data)
+            source_count = sum([has_web, has_github, has_careers, bool(jd_signals)])
+
+            if source_count >= 3:
+                result["confidence"] = "high"
+            elif source_count >= 2:
+                result["confidence"] = "medium"
+            else:
+                result["confidence"] = "low"
+
+            result["data_completeness"] = {
+                "website_data": has_web,
+                "jd_analysis": True,
+                "github_data": has_github,
+                "careers_page": has_careers,
+            }
+
+            await self._emit_event(
+                status="completed",
+                message=f"Recon complete with {len(result['data_sources'])} usable signal source(s).",
+                source="recon",
+                metadata={
+                    "confidence": result["confidence"],
+                    "data_sources": result["data_sources"],
+                },
+            )
+
+            return result
+        finally:
+            self._event_callback = None
 
     # ── Website Data ──────────────────────────────────────────────
 
@@ -272,23 +317,61 @@ class CompanyIntelChain:
             urls_to_try.append(guessed)
 
         for url in urls_to_try:
+            await self._emit_event(
+                status="running",
+                message=f"Checking company website: {url}",
+                source="website",
+                url=url,
+            )
             homepage = await self._fetch_page(url)
             if not homepage:
+                await self._emit_event(
+                    status="warning",
+                    message=f"No readable content found at {url}.",
+                    source="website",
+                    url=url,
+                )
                 continue
 
             # Also try to fetch /about page
             about_data = ""
             base = url.rstrip("/")
             for about_path in ["/about", "/about-us", "/company"]:
-                about_data = await self._fetch_page(base + about_path)
+                about_url = base + about_path
+                await self._emit_event(
+                    status="running",
+                    message=f"Checking company about page: {about_url}",
+                    source="website",
+                    url=about_url,
+                )
+                about_data = await self._fetch_page(about_url)
                 if about_data:
+                    await self._emit_event(
+                        status="completed",
+                        message=f"Found about/company content at {about_url}.",
+                        source="website",
+                        url=about_url,
+                    )
                     break
 
             combined = homepage
             if about_data:
                 combined += "\n\n=== ABOUT PAGE ===\n" + about_data
 
+            await self._emit_event(
+                status="completed",
+                message=f"Company website content captured from {url}.",
+                source="website",
+                url=url,
+            )
+
             return combined
+
+        await self._emit_event(
+            status="warning",
+            message="No usable company website content was found.",
+            source="website",
+        )
 
         return ""
 
@@ -298,9 +381,20 @@ class CompanyIntelChain:
         """Fetch public GitHub org data."""
         org_name = self._guess_github_org(company)
         if not org_name:
+            await self._emit_event(
+                status="warning",
+                message="Could not infer a GitHub organization name from the company name.",
+                source="github",
+            )
             return ""
 
         try:
+            await self._emit_event(
+                status="running",
+                message=f"Checking GitHub organization: {org_name}",
+                source="github",
+                url=f"https://github.com/{org_name}",
+            )
             async with httpx.AsyncClient(timeout=8) as client:
                 # Fetch org info
                 resp = await client.get(
@@ -308,6 +402,12 @@ class CompanyIntelChain:
                     headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "HireStack-AI/1.0"},
                 )
                 if resp.status_code != 200:
+                    await self._emit_event(
+                        status="warning",
+                        message=f"GitHub organization lookup returned {resp.status_code} for {org_name}.",
+                        source="github",
+                        url=f"https://github.com/{org_name}",
+                    )
                     return ""
 
                 org = resp.json()
@@ -339,10 +439,25 @@ class CompanyIntelChain:
                         if languages:
                             info_parts.append(f"\nLanguages used: {', '.join(sorted(languages))}")
 
+                await self._emit_event(
+                    status="completed",
+                    message=f"GitHub intel collected for {org_name}.",
+                    source="github",
+                    url=f"https://github.com/{org_name}",
+                    metadata={"public_repos": org.get("public_repos", 0)},
+                )
+
                 return "\n".join(info_parts)
 
         except Exception as e:
             logger.info("github_intel_failed", org=org_name, error=str(e)[:100])
+            await self._emit_event(
+                status="warning",
+                message=f"GitHub lookup failed for {org_name}.",
+                source="github",
+                url=f"https://github.com/{org_name}",
+                metadata={"error": str(e)[:100]},
+            )
             return ""
 
     # ── Careers Page ──────────────────────────────────────────────
@@ -367,13 +482,61 @@ class CompanyIntelChain:
             urls_to_try.extend([base + "/careers", base + "/jobs"])
 
         for url in urls_to_try:
+            await self._emit_event(
+                status="running",
+                message=f"Checking careers page: {url}",
+                source="careers",
+                url=url,
+            )
             data = await self._fetch_page(url)
             if data and len(data) > 100:
+                await self._emit_event(
+                    status="completed",
+                    message=f"Careers content found at {url}.",
+                    source="careers",
+                    url=url,
+                )
                 return data
+
+        await self._emit_event(
+            status="warning",
+            message="No usable careers page content was found.",
+            source="careers",
+        )
 
         return ""
 
     # ── Utilities ─────────────────────────────────────────────────
+
+    async def _emit_event(
+        self,
+        *,
+        status: str,
+        message: str,
+        source: str,
+        url: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not self._event_callback:
+            return
+
+        payload: Dict[str, Any] = {
+            "stage": "recon",
+            "status": status,
+            "message": message,
+            "source": source,
+        }
+        if url:
+            payload["url"] = url
+        if metadata:
+            payload["metadata"] = metadata
+
+        try:
+            maybe = self._event_callback(payload)
+            if asyncio.iscoroutine(maybe):
+                await maybe
+        except Exception as e:
+            logger.debug("company_intel_event_emit_failed", error=str(e)[:100])
 
     async def _fetch_page(self, url: str) -> str:
         """Fetch and extract text from a web page."""

@@ -1,6 +1,6 @@
 """
 HireStack AI - AI Engine
-OpenAI API integration and prompt chain system
+Google Gemini API integration and prompt chain system
 """
 from ai_engine.client import AIClient
 

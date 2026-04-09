@@ -42,7 +42,7 @@ export function useDownloadGate() {
         console.error("Download failed:", err);
       }
     },
-    [user, checkQuota, recordUsage]
+    [user, recordUsage]
   );
 
   // Called after successful signup — retries the stashed download

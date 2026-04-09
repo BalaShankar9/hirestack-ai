@@ -146,7 +146,7 @@ export default function CareerLabPage() {
           <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
             <div className="text-sm font-semibold text-primary">Coach principle</div>
             <div className="mt-1 text-xs text-muted-foreground leading-snug">
-              Your goal is not "learning". Your goal is shipping proof. Every sprint should end with an artifact you can attach as evidence.
+              Your goal is not &ldquo;learning&rdquo;. Your goal is shipping proof. Every sprint should end with an artifact you can attach as evidence.
             </div>
           </div>
         </div>

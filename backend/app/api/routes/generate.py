@@ -506,6 +506,30 @@ def _agent_sse(pipeline_name: str, stage: str, status: str, latency_ms: int = 0,
     return f"event: agent_status\ndata: {json.dumps(data)}\n\n"
 
 
+def _detail_sse(
+    agent: str,
+    message: str,
+    status: str = "info",
+    source: str | None = None,
+    url: str | None = None,
+    metadata: dict | None = None,
+) -> str:
+    """Emit a structured detail event for terminal-like live logs."""
+    data: Dict[str, Any] = {
+        "agent": agent,
+        "message": message,
+        "status": status,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if source:
+        data["source"] = source
+    if url:
+        data["url"] = url
+    if metadata:
+        data["metadata"] = metadata
+    return f"event: detail\ndata: {json.dumps(data)}\n\n"
+
+
 async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncGenerator[str, None]:
     """
     Agent-powered SSE pipeline.
@@ -891,6 +915,7 @@ async def generate_pipeline_stream(request: Request, req: PipelineRequest, curre
     async def event_stream() -> AsyncGenerator[str, None]:
         try:
             from ai_engine.client import AIClient
+            from ai_engine.chains.company_intel import CompanyIntelChain
             from ai_engine.chains.role_profiler import RoleProfilerChain
             from ai_engine.chains.benchmark_builder import BenchmarkBuilderChain
             from ai_engine.chains.gap_analyzer import GapAnalyzerChain
@@ -1405,6 +1430,990 @@ def _extract_keywords_from_jd(jd_text: str) -> List[str]:
 # ── DB-backed Generation Jobs API ─────────────────────────────────────────────
 
 
+_ACTIVE_GENERATION_TASKS: Dict[str, asyncio.Task] = {}
+_JOB_TOTAL_STEPS = 7
+_DEFAULT_REQUESTED_MODULES = [
+    "benchmark",
+    "gaps",
+    "learningPlan",
+    "cv",
+    "coverLetter",
+    "personalStatement",
+    "portfolio",
+    "scorecard",
+]
+
+
+def _now_ms() -> int:
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+def _default_module_states() -> Dict[str, Dict[str, Any]]:
+    return {
+        "benchmark": {"state": "idle"},
+        "gaps": {"state": "idle"},
+        "learningPlan": {"state": "idle"},
+        "cv": {"state": "idle"},
+        "coverLetter": {"state": "idle"},
+        "personalStatement": {"state": "idle"},
+        "portfolio": {"state": "idle"},
+        "scorecard": {"state": "idle"},
+    }
+
+
+def _merge_module_states(existing_modules: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    modules: Dict[str, Any] = _default_module_states()
+    if isinstance(existing_modules, dict):
+        modules.update(existing_modules)
+    return modules
+
+
+def _normalize_requested_modules(requested_modules: Optional[List[str]]) -> List[str]:
+    normalized = [
+        module
+        for module in (requested_modules or [])
+        if module in _DEFAULT_REQUESTED_MODULES
+    ]
+    return normalized or list(_DEFAULT_REQUESTED_MODULES)
+
+
+def _module_has_content(application_row: Dict[str, Any], module_key: str) -> bool:
+    if module_key == "benchmark":
+        return bool(application_row.get("benchmark"))
+    if module_key == "gaps":
+        return bool(application_row.get("gaps"))
+    if module_key == "learningPlan":
+        return bool(application_row.get("learning_plan"))
+    if module_key == "cv":
+        return bool(str(application_row.get("cv_html") or "").strip())
+    if module_key == "coverLetter":
+        return bool(str(application_row.get("cover_letter_html") or "").strip())
+    if module_key == "personalStatement":
+        return bool(str(application_row.get("personal_statement_html") or "").strip())
+    if module_key == "portfolio":
+        return bool(str(application_row.get("portfolio_html") or "").strip())
+    if module_key == "scorecard":
+        return bool(application_row.get("scorecard") or application_row.get("scores"))
+    return False
+
+
+async def _persist_application_patch(sb: Any, tables: Dict[str, str], application_id: str, patch: Dict[str, Any]) -> None:
+    if not patch:
+        return
+    await asyncio.to_thread(
+        lambda: sb.table(tables["applications"])
+        .update(patch)
+        .eq("id", application_id)
+        .execute()
+    )
+
+
+async def _ensure_generation_job_schema_ready(sb: Any, tables: Dict[str, str]) -> None:
+    try:
+        await asyncio.to_thread(
+            lambda: sb.table(tables["generation_jobs"])
+            .select("id,current_agent,completed_steps,total_steps,active_sources_count")
+            .limit(1)
+            .execute()
+        )
+        await asyncio.to_thread(
+            lambda: sb.table(tables["generation_job_events"])
+            .select("id")
+            .limit(1)
+            .execute()
+        )
+        await asyncio.to_thread(
+            lambda: sb.table(tables["applications"])
+            .select("id,discovered_documents,generated_documents,benchmark_documents,document_strategy,company_intel")
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        logger.warning("generation_job_schema_not_ready", error=str(exc))
+        raise HTTPException(
+            status_code=503,
+            detail="Generation jobs schema not ready. Apply the latest database migrations and retry.",
+        ) from exc
+
+
+async def _set_application_modules_generating(
+    sb: Any,
+    tables: Dict[str, str],
+    application_id: str,
+    existing_modules: Optional[Dict[str, Any]],
+    requested_modules: List[str],
+) -> None:
+    timestamp = _now_ms()
+    modules = _merge_module_states(existing_modules)
+    for module_key in requested_modules:
+        modules[module_key] = {"state": "generating", "updatedAt": timestamp}
+
+    await _persist_application_patch(
+        sb,
+        tables,
+        application_id,
+        {"modules": modules},
+    )
+
+
+async def _mark_application_generation_finished(
+    sb: Any,
+    tables: Dict[str, str],
+    application_id: str,
+    application_row: Dict[str, Any],
+    requested_modules: List[str],
+    *,
+    status: str,
+    error_message: Optional[str] = None,
+) -> None:
+    timestamp = _now_ms()
+    modules = _merge_module_states(application_row.get("modules"))
+
+    for module_key in requested_modules:
+        if status == "cancelled":
+            next_state = "ready" if _module_has_content(application_row, module_key) else "idle"
+            modules[module_key] = {"state": next_state, "updatedAt": timestamp}
+        elif status == "failed":
+            modules[module_key] = {
+                "state": "error",
+                "updatedAt": timestamp,
+                "error": error_message or "Generation failed.",
+            }
+        else:
+            modules[module_key] = {"state": "ready", "updatedAt": timestamp}
+
+    await _persist_application_patch(
+        sb,
+        tables,
+        application_id,
+        {"modules": modules},
+    )
+
+
+async def _sync_generation_tasks(
+    sb: Any,
+    tables: Dict[str, str],
+    *,
+    user_id: str,
+    application_id: str,
+    gaps: Optional[Dict[str, Any]],
+    learning_plan: Optional[Dict[str, Any]],
+) -> None:
+    task_resp = await asyncio.to_thread(
+        lambda: sb.table(tables["tasks"])
+        .select("id,source,title,status")
+        .eq("user_id", user_id)
+        .eq("application_id", application_id)
+        .limit(500)
+        .execute()
+    )
+
+    existing_by_key: Dict[str, Dict[str, Any]] = {}
+    for row in task_resp.data or []:
+        source = str(row.get("source") or "")
+        title = str(row.get("title") or "")
+        if source not in {"gaps", "learningPlan"} or not title:
+            continue
+        existing_by_key[f"{source}:{title}"] = row
+
+    candidates: List[Dict[str, Any]] = []
+
+    missing_keywords = [
+        str(keyword).strip()
+        for keyword in (gaps or {}).get("missingKeywords", [])
+        if str(keyword).strip()
+    ]
+    for index, keyword in enumerate(missing_keywords[:8]):
+        candidates.append(
+            {
+                "source": "gaps",
+                "title": f"Add proof for {keyword}",
+                "description": (
+                    f"Create one concrete artifact (project, certification, or link) that demonstrates {keyword}, "
+                    "then attach it in Evidence."
+                ),
+                "detail": f"Missing keyword: {keyword}",
+                "why": (
+                    "This keyword appears in the JD signal. Proof-backed keywords improve match and credibility."
+                ),
+                "status": "todo",
+                "priority": "high" if index < 3 else "medium",
+            }
+        )
+
+    for week in (learning_plan or {}).get("plan", [])[:3]:
+        if not isinstance(week, dict):
+            continue
+        week_num = week.get("week") if isinstance(week.get("week"), int) else None
+        theme = str(week.get("theme") or "Learning sprint")
+        for task_text in week.get("tasks", [])[:2]:
+            text = str(task_text).strip()
+            if not text:
+                continue
+            title_core = f"{text[:77]}…" if len(text) > 80 else text
+            candidates.append(
+                {
+                    "source": "learningPlan",
+                    "title": f"Week {week_num}: {title_core}" if week_num else title_core,
+                    "description": text,
+                    "detail": theme,
+                    "why": "Each learning sprint should produce a proof artifact you can attach to your application.",
+                    "status": "todo",
+                    "priority": "medium",
+                }
+            )
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = f"{candidate['source']}:{candidate['title']}"
+        if key in seen:
+            continue
+        seen.add(key)
+
+        existing = existing_by_key.get(key)
+        if existing:
+            existing_status = str(existing.get("status") or "todo")
+            if existing_status in {"done", "skipped"}:
+                continue
+            await asyncio.to_thread(
+                lambda existing_id=str(existing.get("id") or ""): sb.table(tables["tasks"])
+                .update(
+                    {
+                        "description": candidate["description"],
+                        "detail": candidate["detail"],
+                        "why": candidate["why"],
+                        "status": existing_status,
+                        "priority": candidate["priority"],
+                    }
+                )
+                .eq("id", existing_id)
+                .execute()
+            )
+            continue
+
+        await asyncio.to_thread(
+            lambda row={
+                "user_id": user_id,
+                "application_id": application_id,
+                "source": candidate["source"],
+                "title": candidate["title"],
+                "description": candidate["description"],
+                "detail": candidate["detail"],
+                "why": candidate["why"],
+                "status": candidate["status"],
+                "priority": candidate["priority"],
+            }: sb.table(tables["tasks"])
+            .insert(row)
+            .execute()
+        )
+
+
+async def _persist_generation_result_to_application(
+    sb: Any,
+    tables: Dict[str, str],
+    *,
+    application_row: Dict[str, Any],
+    requested_modules: List[str],
+    result: Dict[str, Any],
+    user_id: str,
+) -> None:
+    application_id = str(application_row["id"])
+    timestamp = _now_ms()
+    modules = _merge_module_states(application_row.get("modules"))
+    patch: Dict[str, Any] = {}
+    requested = set(requested_modules)
+
+    if "benchmark" in requested and result.get("benchmark"):
+        benchmark = dict(result["benchmark"])
+        benchmark["createdAt"] = timestamp
+        patch["benchmark"] = benchmark
+
+    if "gaps" in requested and result.get("gaps"):
+        patch["gaps"] = result["gaps"]
+
+    if "learningPlan" in requested and result.get("learningPlan"):
+        patch["learning_plan"] = result["learningPlan"]
+
+    if "cv" in requested and result.get("cvHtml"):
+        patch["cv_html"] = result["cvHtml"]
+
+    if "coverLetter" in requested and result.get("coverLetterHtml"):
+        patch["cover_letter_html"] = result["coverLetterHtml"]
+
+    if "personalStatement" in requested and result.get("personalStatementHtml"):
+        patch["personal_statement_html"] = result["personalStatementHtml"]
+
+    if "portfolio" in requested and result.get("portfolioHtml"):
+        patch["portfolio_html"] = result["portfolioHtml"]
+
+    if "scorecard" in requested:
+        if result.get("validation"):
+            patch["validation"] = result["validation"]
+        if result.get("scorecard"):
+            scorecard = dict(result["scorecard"])
+            scorecard["updatedAt"] = timestamp
+            patch["scorecard"] = scorecard
+        if result.get("scores"):
+            patch["scores"] = result["scores"]
+
+    if result.get("discoveredDocuments") is not None:
+        patch["discovered_documents"] = result["discoveredDocuments"]
+    if result.get("generatedDocuments") is not None:
+        patch["generated_documents"] = result["generatedDocuments"]
+    if result.get("benchmarkDocuments") is not None:
+        patch["benchmark_documents"] = result["benchmarkDocuments"]
+    if result.get("documentStrategy") is not None:
+        patch["document_strategy"] = result["documentStrategy"]
+
+    company_intel = result.get("companyIntel")
+    if company_intel is None:
+        company_intel = ((result.get("meta") or {}).get("company_intel"))
+    if company_intel is not None:
+        patch["company_intel"] = company_intel
+
+    for module_key in requested_modules:
+        modules[module_key] = {"state": "ready", "updatedAt": timestamp}
+    patch["modules"] = modules
+
+    await _persist_application_patch(sb, tables, application_id, patch)
+
+    if "gaps" in requested or "learningPlan" in requested:
+        try:
+            await _sync_generation_tasks(
+                sb,
+                tables,
+                user_id=user_id,
+                application_id=application_id,
+                gaps=result.get("gaps") if "gaps" in requested else None,
+                learning_plan=result.get("learningPlan") if "learningPlan" in requested else None,
+            )
+        except Exception as task_err:
+            logger.warning("job_runner.task_sync_failed", application_id=application_id, error=str(task_err))
+
+
+def _phase_to_agent_name(phase: str) -> str:
+    mapping = {
+        "initializing": "recon",
+        "recon": "recon",
+        "recon_done": "recon",
+        "profiling": "atlas",
+        "profiling_done": "atlas",
+        "gap_analysis": "cipher",
+        "gap_analysis_done": "cipher",
+        "documents": "quill",
+        "documents_done": "quill",
+        "portfolio": "forge",
+        "portfolio_done": "forge",
+        "validation": "sentinel",
+        "validation_done": "sentinel",
+        "formatting": "nova",
+        "complete": "nova",
+    }
+    return mapping.get(phase, phase or "pipeline")
+
+
+async def _persist_generation_job_update(sb: Any, tables: Dict[str, str], job_id: str, patch: Dict[str, Any]) -> None:
+    if not patch:
+        return
+    await asyncio.to_thread(
+        lambda: sb.table(tables["generation_jobs"])
+        .update(patch)
+        .eq("id", job_id)
+        .execute()
+    )
+
+
+async def _persist_generation_job_event(
+    sb: Any,
+    tables: Dict[str, str],
+    *,
+    job_id: str,
+    user_id: str,
+    application_id: str,
+    sequence_no: int,
+    event_name: str,
+    payload: Dict[str, Any],
+) -> None:
+    stage = payload.get("stage") or payload.get("phase")
+    row = {
+        "job_id": job_id,
+        "user_id": user_id,
+        "application_id": application_id,
+        "sequence_no": sequence_no,
+        "event_name": event_name,
+        "agent_name": payload.get("agent") or payload.get("pipeline_name") or _phase_to_agent_name(str(stage or "")),
+        "stage": stage,
+        "status": payload.get("status"),
+        "message": payload.get("message") or "",
+        "source": payload.get("source"),
+        "url": payload.get("url"),
+        "latency_ms": payload.get("latency_ms"),
+        "payload": payload,
+    }
+    await asyncio.to_thread(
+        lambda: sb.table(tables["generation_job_events"])
+        .insert(row)
+        .execute()
+    )
+
+
+async def _run_generation_job(job_id: str, user_id: str) -> None:  # noqa: C901
+    from app.core.database import get_supabase, TABLES
+
+    sb = get_supabase()
+    job_resp = await asyncio.to_thread(
+        lambda: sb.table(TABLES["generation_jobs"])
+        .select("*")
+        .eq("id", job_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if not job_resp.data:
+        return
+
+    job = job_resp.data
+    app_id = job["application_id"]
+    requested_modules = _normalize_requested_modules(job.get("requested_modules"))
+
+    app_resp = await asyncio.to_thread(
+        lambda: sb.table(TABLES["applications"])
+        .select("*")
+        .eq("id", app_id)
+        .maybe_single()
+        .execute()
+    )
+    if not app_resp.data:
+        await _persist_generation_job_update(
+            sb,
+            TABLES,
+            job_id,
+            {
+                "status": "failed",
+                "error_message": "Application not found",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        return
+
+    application_row = app_resp.data
+    confirmed_facts = application_row.get("confirmed_facts") or {}
+    job_title = confirmed_facts.get("jobTitle") or confirmed_facts.get("job_title") or ""
+    company_name = confirmed_facts.get("company") or ""
+    jd_text_val = confirmed_facts.get("jdText") or confirmed_facts.get("jd_text") or ""
+    resume_text_val = (confirmed_facts.get("resume") or {}).get("text") or ""
+
+    if not job_title or not jd_text_val:
+        await _persist_generation_job_update(
+            sb,
+            TABLES,
+            job_id,
+            {
+                "status": "failed",
+                "error_message": "Application is missing job title or job description — please complete the application first",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        await _persist_generation_job_event(
+            sb,
+            TABLES,
+            job_id=job_id,
+            user_id=user_id,
+            application_id=app_id,
+            sequence_no=1,
+            event_name="error",
+            payload={
+                "message": "Application is missing job title or job description — please complete the application first",
+                "code": 400,
+            },
+        )
+        return
+
+    event_sequence = 0
+    completed_steps = 0
+    active_sources: set[str] = set()
+    company_intel: Dict[str, Any] = {}
+
+    async def check_cancel() -> bool:
+        try:
+            r = await asyncio.to_thread(
+                lambda: sb.table(TABLES["generation_jobs"])
+                .select("cancel_requested")
+                .eq("id", job_id)
+                .maybe_single()
+                .execute()
+            )
+            return bool((r.data or {}).get("cancel_requested"))
+        except Exception:
+            return False
+
+    async def emit(event_name: str, payload: Dict[str, Any]) -> None:
+        nonlocal event_sequence, completed_steps
+        payload = {**payload}
+        payload.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+
+        stage = str(payload.get("stage") or payload.get("phase") or "")
+        agent_name = str(payload.get("agent") or payload.get("pipeline_name") or _phase_to_agent_name(stage))
+        status = str(payload.get("status") or "")
+        source = payload.get("source")
+
+        if event_name == "detail" and agent_name == "recon" and isinstance(source, str):
+            if status == "running":
+                active_sources.add(source)
+            elif status in {"completed", "warning", "failed"}:
+                active_sources.discard(source)
+
+        if event_name == "progress":
+            phase = str(payload.get("phase") or "")
+            progress = int(payload.get("progress") or 0)
+            step = int(payload.get("step") or 0)
+            if phase.endswith("_done") or phase == "complete":
+                completed_steps = max(completed_steps, step)
+
+            await _persist_generation_job_update(
+                sb,
+                TABLES,
+                job_id,
+                {
+                    "phase": phase,
+                    "progress": progress,
+                    "message": payload.get("message") or "",
+                    "current_agent": agent_name,
+                    "completed_steps": completed_steps,
+                    "total_steps": int(payload.get("totalSteps") or _JOB_TOTAL_STEPS),
+                    "active_sources_count": len(active_sources),
+                },
+            )
+        elif event_name == "detail":
+            await _persist_generation_job_update(
+                sb,
+                TABLES,
+                job_id,
+                {
+                    "current_agent": agent_name,
+                    "message": payload.get("message") or "",
+                    "active_sources_count": len(active_sources),
+                },
+            )
+        elif event_name == "agent_status":
+            await _persist_generation_job_update(
+                sb,
+                TABLES,
+                job_id,
+                {
+                    "current_agent": agent_name,
+                    "message": payload.get("message") or f"{agent_name} {payload.get('status') or 'updated'}",
+                },
+            )
+
+        event_sequence += 1
+        await _persist_generation_job_event(
+            sb,
+            TABLES,
+            job_id=job_id,
+            user_id=user_id,
+            application_id=app_id,
+            sequence_no=event_sequence,
+            event_name=event_name,
+            payload=payload,
+        )
+
+    async def emit_progress(phase: str, step: int, progress: int, message: str) -> None:
+        await emit(
+            "progress",
+            {
+                "phase": phase,
+                "step": step,
+                "totalSteps": _JOB_TOTAL_STEPS,
+                "progress": progress,
+                "message": message,
+            },
+        )
+
+    async def emit_detail(
+        agent: str,
+        message: str,
+        status: str = "info",
+        source: Optional[str] = None,
+        url: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        payload: Dict[str, Any] = {
+            "agent": agent,
+            "message": message,
+            "status": status,
+        }
+        if source:
+            payload["source"] = source
+        if url:
+            payload["url"] = url
+        if metadata:
+            payload["metadata"] = metadata
+        await emit("detail", payload)
+
+    async def emit_error(message: str, code: int, retry_after_seconds: Optional[int] = None) -> None:
+        payload: Dict[str, Any] = {"message": message, "code": code}
+        if retry_after_seconds:
+            payload["retryAfterSeconds"] = retry_after_seconds
+        try:
+            await _mark_application_generation_finished(
+                sb,
+                TABLES,
+                app_id,
+                application_row,
+                requested_modules,
+                status="cancelled" if code == 499 else "failed",
+                error_message=message,
+            )
+        except Exception as app_err:
+            logger.error("job_runner.application_state_error", job_id=job_id, error=str(app_err))
+        await _persist_generation_job_update(
+            sb,
+            TABLES,
+            job_id,
+            {
+                "status": "failed" if code != 499 else "cancelled",
+                "error_message": message,
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        await emit("error", payload)
+
+    async def emit_complete(result: Dict[str, Any]) -> None:
+        await _persist_generation_result_to_application(
+            sb,
+            TABLES,
+            application_row=application_row,
+            requested_modules=requested_modules,
+            result=result,
+            user_id=user_id,
+        )
+        await _persist_generation_job_update(
+            sb,
+            TABLES,
+            job_id,
+            {
+                "status": "succeeded",
+                "progress": 100,
+                "phase": "complete",
+                "message": "Generation complete.",
+                "current_agent": "nova",
+                "completed_steps": _JOB_TOTAL_STEPS,
+                "total_steps": _JOB_TOTAL_STEPS,
+                "active_sources_count": 0,
+                "result": result,
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        await emit("complete", {"progress": 100, "result": result})
+
+    try:
+        await _persist_generation_job_update(
+            sb,
+            TABLES,
+            job_id,
+            {
+                "status": "running",
+                "progress": 5,
+                "phase": "initializing",
+                "message": "Initializing AI engine…",
+                "current_agent": "recon",
+                "completed_steps": 0,
+                "total_steps": _JOB_TOTAL_STEPS,
+                "active_sources_count": 0,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "error_message": None,
+            },
+        )
+        await _set_application_modules_generating(
+            sb,
+            TABLES,
+            app_id,
+            application_row.get("modules"),
+            requested_modules,
+        )
+
+        from ai_engine.client import AIClient
+        from ai_engine.chains.company_intel import CompanyIntelChain
+        from ai_engine.chains.role_profiler import RoleProfilerChain
+        from ai_engine.chains.benchmark_builder import BenchmarkBuilderChain
+        from ai_engine.chains.gap_analyzer import GapAnalyzerChain
+        from ai_engine.chains.document_generator import DocumentGeneratorChain
+        from ai_engine.chains.career_consultant import CareerConsultantChain
+        from ai_engine.chains.validator import ValidatorChain
+
+        ai = AIClient()
+        company_str = company_name or "the company"
+
+        await emit_progress("initializing", 0, 5, "Initializing AI engine…")
+        if await check_cancel():
+            await emit_error("Generation cancelled.", 499)
+            return
+
+        await emit_progress("recon", 1, 8, "Recon is gathering company intelligence…")
+
+        if company_name.strip():
+            recon_chain = CompanyIntelChain(ai)
+
+            async def on_recon_event(event: Dict[str, Any]) -> None:
+                await emit_detail(
+                    agent="recon",
+                    message=str(event.get("message", "Recon update.")),
+                    status=str(event.get("status", "info")),
+                    source=event.get("source"),
+                    url=event.get("url"),
+                    metadata=event.get("metadata") if isinstance(event.get("metadata"), dict) else None,
+                )
+
+            company_intel = await recon_chain.gather_intel(
+                company=company_name,
+                job_title=job_title,
+                jd_text=jd_text_val,
+                on_event=on_recon_event,
+            )
+        else:
+            await emit_detail(
+                agent="recon",
+                message="No company name provided, so Recon will use job-description-only signals.",
+                status="warning",
+                source="job_description",
+            )
+            company_intel = {
+                "data_sources": ["Job description analysis"],
+                "confidence": "low",
+                "data_completeness": {
+                    "website_data": False,
+                    "jd_analysis": True,
+                    "github_data": False,
+                    "careers_page": False,
+                },
+            }
+
+        await emit_progress("recon_done", 1, 14, "Recon finished gathering public intel ✓")
+        if await check_cancel():
+            await emit_error("Generation cancelled.", 499)
+            return
+
+        profiler = RoleProfilerChain(ai)
+        benchmark_chain = BenchmarkBuilderChain(ai)
+
+        await emit_progress("profiling", 2, 18, "Atlas is parsing your resume and building the target benchmark…")
+        await emit_detail("atlas", "Parsing resume text and role requirements.", "running", "resume")
+
+        if resume_text_val.strip():
+            user_profile, benchmark_data = await asyncio.gather(
+                profiler.parse_resume(resume_text_val),
+                benchmark_chain.create_ideal_profile(job_title, company_str, jd_text_val),
+            )
+        else:
+            user_profile = {}
+            benchmark_data = await benchmark_chain.create_ideal_profile(job_title, company_str, jd_text_val)
+
+        ideal_skills = benchmark_data.get("ideal_skills", [])
+        keywords = [s.get("name", "") for s in ideal_skills if isinstance(s, dict) and s.get("name")]
+        if not keywords:
+            keywords = _extract_keywords_from_jd(jd_text_val)
+
+        await emit_detail(
+            "atlas",
+            f"Benchmark built with {len(keywords)} target keyword(s).",
+            "completed",
+            "benchmark",
+            metadata={"keywords": keywords[:12]},
+        )
+
+        benchmark_cv_html = ""
+        try:
+            benchmark_cv_html = await benchmark_chain.create_benchmark_cv_html(
+                user_profile=user_profile,
+                benchmark_data=benchmark_data,
+                job_title=job_title,
+                company=company_str,
+                jd_text=jd_text_val,
+            )
+        except Exception as bcv_err:
+            logger.warning("job_stream.benchmark_cv_failed", error=str(bcv_err))
+
+        await emit_progress("profiling_done", 2, 28, "Atlas finished the resume and benchmark analysis ✓")
+        if await check_cancel():
+            await emit_error("Generation cancelled.", 499)
+            return
+
+        await emit_progress("gap_analysis", 3, 38, "Cipher is analyzing skill gaps and keyword misses…")
+        await emit_detail("cipher", "Comparing your profile against the benchmark and job requirements.", "running", "gap_analysis")
+
+        gap_chain = GapAnalyzerChain(ai)
+        gap_analysis = await gap_chain.analyze_gaps(user_profile, benchmark_data, job_title, company_str)
+
+        missing_keywords = gap_analysis.get("missing_keywords", []) or gap_analysis.get("missingKeywords", []) or []
+        await emit_detail(
+            "cipher",
+            f"Gap analysis found {len(missing_keywords)} primary missing keyword(s).",
+            "completed",
+            "gap_analysis",
+        )
+        await emit_progress("gap_analysis_done", 3, 50, "Cipher finished the gap analysis ✓")
+        if await check_cancel():
+            await emit_error("Generation cancelled.", 499)
+            return
+
+        await emit_progress("documents", 4, 58, "Quill is generating the CV, cover letter, and learning plan…")
+        await emit_detail("quill", "Drafting the tailored CV, cover letter, and roadmap in parallel.", "running", "documents")
+
+        doc_chain = DocumentGeneratorChain(ai)
+        consultant = CareerConsultantChain(ai)
+
+        cv_html, cl_html, roadmap = await asyncio.gather(
+            doc_chain.generate_tailored_cv(
+                user_profile=user_profile,
+                job_title=job_title,
+                company=company_str,
+                jd_text=jd_text_val,
+                gap_analysis=gap_analysis,
+                resume_text=resume_text_val,
+            ),
+            doc_chain.generate_tailored_cover_letter(
+                user_profile=user_profile,
+                job_title=job_title,
+                company=company_str,
+                jd_text=jd_text_val,
+                gap_analysis=gap_analysis,
+            ),
+            consultant.generate_roadmap(gap_analysis, user_profile, job_title, company_str),
+            return_exceptions=True,
+        )
+
+        if isinstance(cv_html, Exception):
+            logger.error("job_stream.cv_failed", error=str(cv_html))
+            cv_html = ""
+        if isinstance(cl_html, Exception):
+            logger.error("job_stream.cl_failed", error=str(cl_html))
+            cl_html = ""
+        if isinstance(roadmap, Exception):
+            logger.error("job_stream.roadmap_failed", error=str(roadmap))
+            roadmap = {}
+
+        await emit_detail("quill", "Document architecture complete for the CV, cover letter, and learning plan.", "completed", "documents")
+        await emit_progress("documents_done", 4, 72, "Quill finished the core application documents ✓")
+        if await check_cancel():
+            await emit_error("Generation cancelled.", 499)
+            return
+
+        await emit_progress("portfolio", 5, 78, "Forge is building the personal statement and portfolio artifacts…")
+        await emit_detail("forge", "Building the personal statement and portfolio outputs.", "running", "portfolio")
+
+        ps_html = ""
+        portfolio_html = ""
+        try:
+            ps_result, portfolio_result = await asyncio.gather(
+                doc_chain.generate_tailored_personal_statement(
+                    user_profile=user_profile,
+                    job_title=job_title,
+                    company=company_str,
+                    jd_text=jd_text_val,
+                    gap_analysis=gap_analysis,
+                    resume_text=resume_text_val,
+                ),
+                doc_chain.generate_tailored_portfolio(
+                    user_profile=user_profile,
+                    job_title=job_title,
+                    company=company_str,
+                    jd_text=jd_text_val,
+                    gap_analysis=gap_analysis,
+                    resume_text=resume_text_val,
+                ),
+                return_exceptions=True,
+            )
+            if not isinstance(ps_result, Exception):
+                ps_html = ps_result if isinstance(ps_result, str) else ""
+            if not isinstance(portfolio_result, Exception):
+                portfolio_html = portfolio_result if isinstance(portfolio_result, str) else ""
+        except Exception as phase4_err:
+            logger.error("job_stream.phase4_error", error=str(phase4_err))
+
+        await emit_detail("forge", "Portfolio-related artifacts are ready.", "completed", "portfolio")
+        await emit_progress("portfolio_done", 5, 86, "Forge finished the portfolio artifacts ✓")
+        if await check_cancel():
+            await emit_error("Generation cancelled.", 499)
+            return
+
+        await emit_progress("validation", 6, 92, "Sentinel is validating document quality and ATS readiness…")
+        await emit_detail("sentinel", "Running final document quality checks.", "running", "validation")
+
+        validation: Dict[str, Any] = {}
+        try:
+            validator = ValidatorChain(ai)
+            cv_valid, cv_validation = await validator.validate_document(
+                document_type="Tailored CV",
+                content=cv_html[:3000] if isinstance(cv_html, str) and cv_html else "",
+                profile_data=user_profile,
+            )
+            validation["cv"] = {
+                "valid": cv_valid,
+                "qualityScore": cv_validation.get("quality_score", 0),
+                "issues": len(cv_validation.get("issues", [])),
+            }
+        except Exception as val_err:
+            logger.warning("job_stream.validation_skipped", error=str(val_err))
+
+        await emit_detail("sentinel", "Validation and ATS checks completed.", "completed", "validation")
+        await emit_progress("validation_done", 6, 96, "Sentinel finished the quality checks ✓")
+        await emit_progress("formatting", 7, 98, "Nova is packaging your final application bundle…")
+        await emit_detail("nova", "Packaging the final application bundle and scorecard.", "running", "formatting")
+
+        response = _format_response(
+            benchmark_data=benchmark_data,
+            gap_analysis=gap_analysis,
+            roadmap=roadmap if isinstance(roadmap, dict) else {},
+            cv_html=cv_html if isinstance(cv_html, str) else "",
+            cl_html=cl_html if isinstance(cl_html, str) else "",
+            ps_html=ps_html,
+            portfolio_html=portfolio_html,
+            validation=validation,
+            keywords=keywords,
+            job_title=job_title,
+            benchmark_cv_html=benchmark_cv_html,
+        )
+        response["meta"] = {
+            **(response.get("meta") or {}),
+            "company_intel": company_intel,
+        }
+
+        await emit_detail("nova", "Final application bundle ready.", "completed", "formatting")
+        await emit_complete(response)
+        logger.info("job_runner.complete", job_id=job_id, overall_score=response["scores"]["overall"])
+    except Exception as e:
+        classified = _classify_ai_error(e)
+        if classified:
+            code = int(classified["code"])
+            msg = str(classified["message"])
+            retry_after = classified.get("retry_after_seconds")
+            logger.error("job_runner.ai_error", job_id=job_id, code=code, message=msg)
+            await emit_error(msg, code, retry_after)
+        else:
+            logger.error("job_runner.error", job_id=job_id, error=str(e), traceback=traceback.format_exc())
+            await emit_error("AI generation failed due to an unexpected error. Please try again.", 500)
+    finally:
+        _ACTIVE_GENERATION_TASKS.pop(job_id, None)
+
+
+def _start_generation_job(job_id: str, user_id: str) -> None:
+    if job_id in _ACTIVE_GENERATION_TASKS:
+        return
+
+    task = asyncio.create_task(_run_generation_job(job_id, user_id))
+    _ACTIVE_GENERATION_TASKS[job_id] = task
+
+    def _cleanup(completed_task: asyncio.Task) -> None:
+        _ACTIVE_GENERATION_TASKS.pop(job_id, None)
+        try:
+            completed_task.result()
+        except Exception as e:
+            logger.error("generation_task_failed", job_id=job_id, error=str(e))
+
+    task.add_done_callback(_cleanup)
+
+
 class GenerationJobRequest(BaseModel):
     application_id: str
     requested_modules: List[str] = []
@@ -1420,11 +2429,12 @@ async def create_generation_job(
 
     sb = get_supabase()
     user_id = current_user.get("id") or current_user.get("uid") or current_user.get("sub")
+    await _ensure_generation_job_schema_ready(sb, TABLES)
 
     # Verify the application belongs to this user
     app_resp = await asyncio.to_thread(
         lambda: sb.table(TABLES["applications"])
-        .select("id,confirmed_facts")
+        .select("id,confirmed_facts,modules")
         .eq("id", req.application_id)
         .eq("user_id", user_id)
         .maybe_single()
@@ -1433,10 +2443,19 @@ async def create_generation_job(
     if not app_resp.data:
         raise HTTPException(status_code=404, detail="Application not found")
 
+    requested_modules = _normalize_requested_modules(req.requested_modules)
+    await _set_application_modules_generating(
+        sb,
+        TABLES,
+        req.application_id,
+        app_resp.data.get("modules"),
+        requested_modules,
+    )
+
     job_row = {
         "user_id": user_id,
         "application_id": req.application_id,
-        "requested_modules": req.requested_modules,
+        "requested_modules": requested_modules,
         "status": "queued",
         "progress": 0,
     }
@@ -1445,7 +2464,9 @@ async def create_generation_job(
         .insert(job_row)
         .execute()
     )
-    return {"job_id": job_resp.data[0]["id"]}
+    job_id = job_resp.data[0]["id"]
+    _start_generation_job(job_id, user_id)
+    return {"job_id": job_id}
 
 
 @router.get("/jobs/{job_id}/stream")
@@ -1453,7 +2474,7 @@ async def stream_generation_job(
     job_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """Run the AI pipeline for a queued job and stream SSE progress events."""
+    """Tail a generation job's persisted SSE events and current status."""
     from app.core.database import get_supabase, TABLES
 
     sb = get_supabase()
@@ -1472,288 +2493,65 @@ async def stream_generation_job(
         raise HTTPException(status_code=404, detail="Generation job not found")
 
     job = job_resp.data
-    app_id = job["application_id"]
 
-    # Fetch application confirmed_facts
-    app_resp = await asyncio.to_thread(
-        lambda: sb.table(TABLES["applications"])
-        .select("confirmed_facts")
-        .eq("id", app_id)
-        .maybe_single()
-        .execute()
-    )
-    if not app_resp.data:
-        raise HTTPException(status_code=404, detail="Application not found")
+    if job.get("status") in {"queued", "running"} and job_id not in _ACTIVE_GENERATION_TASKS:
+        _start_generation_job(job_id, user_id)
 
-    confirmed_facts = app_resp.data.get("confirmed_facts") or {}
-    job_title = confirmed_facts.get("jobTitle") or confirmed_facts.get("job_title") or ""
-    company_name = confirmed_facts.get("company") or ""
-    jd_text_val = confirmed_facts.get("jdText") or confirmed_facts.get("jd_text") or ""
-    resume_text_val = (confirmed_facts.get("resume") or {}).get("text") or ""
+    async def event_stream() -> AsyncGenerator[str, None]:
+        last_sequence = 0
+        idle_polls = 0
 
-    if not job_title or not jd_text_val:
-        raise HTTPException(
-            status_code=400,
-            detail="Application is missing job title or job description — please complete the application first",
-        )
-
-    async def event_stream() -> AsyncGenerator[str, None]:  # noqa: C901
-        try:
-            # Mark job as running
-            await asyncio.to_thread(
-                lambda: sb.table(TABLES["generation_jobs"])
-                .update({"status": "running", "progress": 5, "phase": "initializing"})
-                .eq("id", job_id)
+        while True:
+            events_resp = await asyncio.to_thread(
+                lambda: sb.table(TABLES["generation_job_events"])
+                .select("*")
+                .eq("job_id", job_id)
+                .gt("sequence_no", last_sequence)
+                .order("sequence_no")
+                .limit(200)
                 .execute()
             )
-
-            async def check_cancel() -> bool:
-                try:
-                    r = await asyncio.to_thread(
-                        lambda: sb.table(TABLES["generation_jobs"])
-                        .select("cancel_requested")
-                        .eq("id", job_id)
-                        .maybe_single()
-                        .execute()
-                    )
-                    return bool((r.data or {}).get("cancel_requested"))
-                except Exception:
-                    return False
-
-            async def update_progress(phase: str, progress: int, message: str) -> None:
-                try:
-                    await asyncio.to_thread(
-                        lambda: sb.table(TABLES["generation_jobs"])
-                        .update({"phase": phase, "progress": progress, "message": message})
-                        .eq("id", job_id)
-                        .execute()
-                    )
-                except Exception:
-                    pass
-
-            from ai_engine.client import AIClient
-            from ai_engine.chains.role_profiler import RoleProfilerChain
-            from ai_engine.chains.benchmark_builder import BenchmarkBuilderChain
-            from ai_engine.chains.gap_analyzer import GapAnalyzerChain
-            from ai_engine.chains.document_generator import DocumentGeneratorChain
-            from ai_engine.chains.career_consultant import CareerConsultantChain
-            from ai_engine.chains.validator import ValidatorChain
-
-            ai = AIClient()
-            company_str = company_name or "the company"
-
-            yield _sse("progress", {"phase": "initializing", "step": 0, "totalSteps": 6, "progress": 5, "message": "Initializing AI engine…"})
-            await update_progress("initializing", 5, "Initializing AI engine…")
-
-            if await check_cancel():
-                yield _sse("error", {"message": "Generation cancelled.", "code": 499})
-                await asyncio.to_thread(lambda: sb.table(TABLES["generation_jobs"]).update({"status": "cancelled", "finished_at": "now()"}).eq("id", job_id).execute())
-                return
-
-            # ── Phase 1: Parse resume + benchmark ────────────────────
-            profiler = RoleProfilerChain(ai)
-            benchmark_chain = BenchmarkBuilderChain(ai)
-
-            yield _sse("progress", {"phase": "profiling", "step": 1, "totalSteps": 6, "progress": 10, "message": "Parsing resume & building candidate benchmark…"})
-            await update_progress("profiling", 10, "Parsing resume & building candidate benchmark…")
-
-            if resume_text_val.strip():
-                user_profile, benchmark_data = await asyncio.gather(
-                    profiler.parse_resume(resume_text_val),
-                    benchmark_chain.create_ideal_profile(job_title, company_str, jd_text_val),
-                )
+            rows = events_resp.data or []
+            if rows:
+                idle_polls = 0
+                for row in rows:
+                    last_sequence = max(last_sequence, int(row.get("sequence_no") or 0))
+                    payload = row.get("payload") or {}
+                    yield _sse(str(row.get("event_name") or "progress"), payload)
             else:
-                user_profile = {}
-                benchmark_data = await benchmark_chain.create_ideal_profile(job_title, company_str, jd_text_val)
+                idle_polls += 1
 
-            ideal_skills = benchmark_data.get("ideal_skills", [])
-            keywords = [s.get("name", "") for s in ideal_skills if isinstance(s, dict) and s.get("name")]
-            if not keywords:
-                keywords = _extract_keywords_from_jd(jd_text_val)
-
-            benchmark_cv_html = ""
-            try:
-                benchmark_cv_html = await benchmark_chain.create_benchmark_cv_html(
-                    user_profile=user_profile, benchmark_data=benchmark_data,
-                    job_title=job_title, company=company_str, jd_text=jd_text_val,
-                )
-            except Exception as bcv_err:
-                logger.warning("job_stream.benchmark_cv_failed", error=str(bcv_err))
-
-            yield _sse("progress", {"phase": "profiling_done", "step": 1, "totalSteps": 6, "progress": 25, "message": "Resume parsed & benchmark built ✓"})
-            await update_progress("profiling_done", 25, "Resume parsed & benchmark built ✓")
-
-            if await check_cancel():
-                yield _sse("error", {"message": "Generation cancelled.", "code": 499})
-                await asyncio.to_thread(lambda: sb.table(TABLES["generation_jobs"]).update({"status": "cancelled", "finished_at": "now()"}).eq("id", job_id).execute())
-                return
-
-            # ── Phase 2: Gap Analysis ─────────────────────────────────
-            yield _sse("progress", {"phase": "gap_analysis", "step": 2, "totalSteps": 6, "progress": 30, "message": "Analyzing skill gaps…"})
-            await update_progress("gap_analysis", 30, "Analyzing skill gaps…")
-
-            gap_chain = GapAnalyzerChain(ai)
-            gap_analysis = await gap_chain.analyze_gaps(user_profile, benchmark_data, job_title, company_str)
-
-            yield _sse("progress", {"phase": "gap_analysis_done", "step": 2, "totalSteps": 6, "progress": 45, "message": "Gap analysis complete ✓"})
-            await update_progress("gap_analysis_done", 45, "Gap analysis complete ✓")
-
-            if await check_cancel():
-                yield _sse("error", {"message": "Generation cancelled.", "code": 499})
-                await asyncio.to_thread(lambda: sb.table(TABLES["generation_jobs"]).update({"status": "cancelled", "finished_at": "now()"}).eq("id", job_id).execute())
-                return
-
-            # ── Phase 3: Generate CV, Cover Letter, Roadmap ───────────
-            yield _sse("progress", {"phase": "documents", "step": 3, "totalSteps": 6, "progress": 50, "message": "Generating CV, cover letter & learning plan…"})
-            await update_progress("documents", 50, "Generating CV, cover letter & learning plan…")
-
-            doc_chain = DocumentGeneratorChain(ai)
-            consultant = CareerConsultantChain(ai)
-
-            cv_html, cl_html, roadmap = await asyncio.gather(
-                doc_chain.generate_tailored_cv(
-                    user_profile=user_profile, job_title=job_title,
-                    company=company_str, jd_text=jd_text_val,
-                    gap_analysis=gap_analysis, resume_text=resume_text_val,
-                ),
-                doc_chain.generate_tailored_cover_letter(
-                    user_profile=user_profile, job_title=job_title,
-                    company=company_str, jd_text=jd_text_val, gap_analysis=gap_analysis,
-                ),
-                consultant.generate_roadmap(gap_analysis, user_profile, job_title, company_str),
-                return_exceptions=True,
-            )
-
-            if isinstance(cv_html, Exception):
-                logger.error("job_stream.cv_failed", error=str(cv_html))
-                cv_html = ""
-            if isinstance(cl_html, Exception):
-                logger.error("job_stream.cl_failed", error=str(cl_html))
-                cl_html = ""
-            if isinstance(roadmap, Exception):
-                logger.error("job_stream.roadmap_failed", error=str(roadmap))
-                roadmap = {}
-
-            yield _sse("progress", {"phase": "documents_done", "step": 3, "totalSteps": 6, "progress": 70, "message": "CV, cover letter & learning plan ready ✓"})
-            await update_progress("documents_done", 70, "CV, cover letter & learning plan ready ✓")
-
-            if await check_cancel():
-                yield _sse("error", {"message": "Generation cancelled.", "code": 499})
-                await asyncio.to_thread(lambda: sb.table(TABLES["generation_jobs"]).update({"status": "cancelled", "finished_at": "now()"}).eq("id", job_id).execute())
-                return
-
-            # ── Phase 4: Personal statement + Portfolio ───────────────
-            yield _sse("progress", {"phase": "portfolio", "step": 4, "totalSteps": 6, "progress": 75, "message": "Building personal statement & portfolio…"})
-            await update_progress("portfolio", 75, "Building personal statement & portfolio…")
-
-            ps_html = ""
-            portfolio_html = ""
-            try:
-                ps_result, portfolio_result = await asyncio.gather(
-                    doc_chain.generate_tailored_personal_statement(
-                        user_profile=user_profile, job_title=job_title,
-                        company=company_str, jd_text=jd_text_val,
-                        gap_analysis=gap_analysis, resume_text=resume_text_val,
-                    ),
-                    doc_chain.generate_tailored_portfolio(
-                        user_profile=user_profile, job_title=job_title,
-                        company=company_str, jd_text=jd_text_val,
-                        gap_analysis=gap_analysis, resume_text=resume_text_val,
-                    ),
-                    return_exceptions=True,
-                )
-                if not isinstance(ps_result, Exception):
-                    ps_html = ps_result if isinstance(ps_result, str) else ""
-                if not isinstance(portfolio_result, Exception):
-                    portfolio_html = portfolio_result if isinstance(portfolio_result, str) else ""
-            except Exception as phase4_err:
-                logger.error("job_stream.phase4_error", error=str(phase4_err))
-
-            yield _sse("progress", {"phase": "portfolio_done", "step": 4, "totalSteps": 6, "progress": 88, "message": "Personal statement & portfolio ready ✓"})
-            await update_progress("portfolio_done", 88, "Personal statement & portfolio ready ✓")
-
-            # ── Phase 5: Validation ───────────────────────────────────
-            yield _sse("progress", {"phase": "validation", "step": 5, "totalSteps": 6, "progress": 90, "message": "Validating document quality…"})
-
-            validation: Dict[str, Any] = {}
-            try:
-                validator = ValidatorChain(ai)
-                cv_valid, cv_validation = await validator.validate_document(
-                    document_type="Tailored CV",
-                    content=cv_html[:3000] if cv_html else "",
-                    profile_data=user_profile,
-                )
-                validation["cv"] = {
-                    "valid": cv_valid,
-                    "qualityScore": cv_validation.get("quality_score", 0),
-                    "issues": len(cv_validation.get("issues", [])),
-                }
-            except Exception as val_err:
-                logger.warning("job_stream.validation_skipped", error=str(val_err))
-
-            yield _sse("progress", {"phase": "validation_done", "step": 5, "totalSteps": 6, "progress": 95, "message": "Quality checks passed ✓"})
-            yield _sse("progress", {"phase": "formatting", "step": 6, "totalSteps": 6, "progress": 98, "message": "Packaging your application…"})
-            await update_progress("formatting", 98, "Packaging your application…")
-
-            response = _format_response(
-                benchmark_data=benchmark_data,
-                gap_analysis=gap_analysis,
-                roadmap=roadmap if isinstance(roadmap, dict) else {},
-                cv_html=cv_html if isinstance(cv_html, str) else "",
-                cl_html=cl_html if isinstance(cl_html, str) else "",
-                ps_html=ps_html,
-                portfolio_html=portfolio_html,
-                validation=validation,
-                keywords=keywords,
-                job_title=job_title,
-                benchmark_cv_html=benchmark_cv_html,
-            )
-
-            # Persist final result
-            await asyncio.to_thread(
+            latest_job_resp = await asyncio.to_thread(
                 lambda: sb.table(TABLES["generation_jobs"])
-                .update({"status": "succeeded", "progress": 100, "result": response, "finished_at": "now()"})
+                .select("status")
                 .eq("id", job_id)
+                .eq("user_id", user_id)
+                .maybe_single()
                 .execute()
             )
+            latest_job = latest_job_resp.data or {}
+            status = latest_job.get("status")
+            if status in {"succeeded", "failed", "cancelled"}:
+                final_events = await asyncio.to_thread(
+                    lambda: sb.table(TABLES["generation_job_events"])
+                    .select("*")
+                    .eq("job_id", job_id)
+                    .gt("sequence_no", last_sequence)
+                    .order("sequence_no")
+                    .limit(200)
+                    .execute()
+                )
+                for row in final_events.data or []:
+                    last_sequence = max(last_sequence, int(row.get("sequence_no") or 0))
+                    payload = row.get("payload") or {}
+                    yield _sse(str(row.get("event_name") or "progress"), payload)
+                break
 
-            logger.info("job_stream.complete", job_id=job_id, overall_score=response["scores"]["overall"])
-            yield _sse("complete", {"progress": 100, "result": response})
+            if idle_polls >= 2:
+                yield ": keepalive\n\n"
+                idle_polls = 0
 
-        except Exception as e:
-            classified = _classify_ai_error(e)
-            if classified:
-                code = int(classified["code"])
-                msg = str(classified["message"])
-                retry_after = classified.get("retry_after_seconds")
-                logger.error("job_stream.ai_error", job_id=job_id, code=code, message=msg)
-                try:
-                    await asyncio.to_thread(
-                        lambda: sb.table(TABLES["generation_jobs"])
-                        .update({"status": "failed", "error_message": msg, "finished_at": "now()"})
-                        .eq("id", job_id)
-                        .execute()
-                    )
-                except Exception:
-                    pass
-                payload: Dict[str, Any] = {"message": msg, "code": code}
-                if retry_after:
-                    payload["retryAfterSeconds"] = retry_after
-                yield _sse("error", payload)
-            else:
-                logger.error("job_stream.error", job_id=job_id, error=str(e), traceback=traceback.format_exc())
-                err_msg = "AI generation failed due to an unexpected error. Please try again."
-                err_str = str(e)[:500]
-                try:
-                    await asyncio.to_thread(
-                        lambda: sb.table(TABLES["generation_jobs"])
-                        .update({"status": "failed", "error_message": err_str, "finished_at": "now()"})
-                        .eq("id", job_id)
-                        .execute()
-                    )
-                except Exception:
-                    pass
-                yield _sse("error", {"message": err_msg, "code": 500})
+            await asyncio.sleep(0.5)
 
     return StreamingResponse(
         event_stream(),
@@ -1801,11 +2599,12 @@ async def recover_inflight_generation_jobs() -> int:
             .update({
                 "status": "failed",
                 "error_message": "Server restarted — please click Regenerate to try again",
-                "finished_at": "now()",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
             })
             .in_("status", ["running", "queued"])
             .execute()
         )
+        _ACTIVE_GENERATION_TASKS.clear()
         return len(resp.data) if resp.data else 0
     except Exception as e:
         logger.warning("recover_inflight_jobs_failed", error=str(e))

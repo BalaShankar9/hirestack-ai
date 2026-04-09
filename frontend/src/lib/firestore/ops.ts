@@ -26,6 +26,8 @@ import type {
   ScorecardDimension,
   TaskDoc,
   EventDoc,
+  GenerationJobDoc,
+  GenerationJobEventDoc,
 } from "./models";
 
 /* ================================================================== */
@@ -88,6 +90,7 @@ export function mapApplicationRow(row: any): ApplicationDoc {
     generatedDocuments: row.generated_documents ?? undefined,
     benchmarkDocuments: row.benchmark_documents ?? undefined,
     documentStrategy: row.document_strategy ?? undefined,
+    companyIntel: row.company_intel ?? undefined,
   };
 }
 
@@ -128,6 +131,50 @@ export function mapTaskRow(row: any): TaskDoc {
     dueDate: row.due_date ? ts(row.due_date) : undefined,
     createdAt: ts(row.created_at),
     updatedAt: ts(row.updated_at),
+  };
+}
+
+export function mapGenerationJobRow(row: any): GenerationJobDoc {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    applicationId: row.application_id,
+    requestedModules: Array.isArray(row.requested_modules) ? row.requested_modules : [],
+    status: row.status ?? "queued",
+    progress: typeof row.progress === "number" ? row.progress : 0,
+    phase: row.phase ?? undefined,
+    message: row.message ?? undefined,
+    cancelRequested: row.cancel_requested ?? false,
+    currentAgent: row.current_agent ?? undefined,
+    completedSteps: typeof row.completed_steps === "number" ? row.completed_steps : 0,
+    totalSteps: typeof row.total_steps === "number" ? row.total_steps : 0,
+    activeSourcesCount: typeof row.active_sources_count === "number" ? row.active_sources_count : 0,
+    result: row.result ?? undefined,
+    errorMessage: row.error_message ?? undefined,
+    createdAt: ts(row.created_at),
+    startedAt: row.started_at ? ts(row.started_at) : undefined,
+    finishedAt: row.finished_at ? ts(row.finished_at) : undefined,
+    updatedAt: ts(row.updated_at),
+  };
+}
+
+export function mapGenerationJobEventRow(row: any): GenerationJobEventDoc {
+  return {
+    id: String(row.id),
+    jobId: row.job_id,
+    userId: row.user_id,
+    applicationId: row.application_id,
+    sequenceNo: typeof row.sequence_no === "number" ? row.sequence_no : 0,
+    eventName: row.event_name ?? "progress",
+    agentName: row.agent_name ?? undefined,
+    stage: row.stage ?? undefined,
+    status: row.status ?? undefined,
+    message: row.message ?? "",
+    source: row.source ?? undefined,
+    url: row.url ?? undefined,
+    latencyMs: typeof row.latency_ms === "number" ? row.latency_ms : undefined,
+    payload: row.payload ?? undefined,
+    createdAt: ts(row.created_at),
   };
 }
 
@@ -269,6 +316,50 @@ export interface PipelineProgress {
   message: string;
 }
 
+export interface PipelineAgentEvent {
+  pipeline_name: string;
+  stage: string;
+  status: string;
+  latency_ms: number;
+  message: string;
+  timestamp?: string;
+}
+
+export interface PipelineDetailEvent {
+  agent: string;
+  message: string;
+  status: string;
+  source?: string;
+  url?: string;
+  metadata?: Record<string, unknown>;
+  timestamp?: string;
+}
+
+export async function cancelGenerationJob(jobId: string): Promise<void> {
+  let accessToken: string | null = null;
+  try {
+    const { error: userErr } = await supabase.auth.getUser();
+    if (!userErr) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      accessToken = sessionData.session?.access_token ?? null;
+    }
+  } catch {
+    accessToken = null;
+  }
+
+  const response = await fetch(`${AI_API_URL}/api/generate/jobs/${jobId}/cancel`, {
+    method: "POST",
+    headers: {
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => "");
+    throw new Error(errBody || `Failed to cancel generation job (${response.status})`);
+  }
+}
+
 function uuidv4(): string {
   const c: any = typeof globalThis !== "undefined" ? (globalThis as any).crypto : undefined;
   if (c && typeof c.randomUUID === "function") return c.randomUUID();
@@ -394,7 +485,12 @@ export async function generateApplicationModules(
   confirmedFacts: ConfirmedFacts,
   modules: ModuleKey[] = ["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "personalStatement", "portfolio", "scorecard"],
   onProgress?: (p: PipelineProgress) => void,
-  opts?: { signal?: AbortSignal },
+  opts?: {
+    signal?: AbortSignal;
+    onAgentEvent?: (event: PipelineAgentEvent) => void;
+    onDetailEvent?: (event: PipelineDetailEvent) => void;
+    onJobCreated?: (jobId: string) => void;
+  },
 ): Promise<void> {
   const jdText = confirmedFacts.jdText ?? "";
   const resumeText = confirmedFacts.resume?.text ?? "";
@@ -428,10 +524,12 @@ export async function generateApplicationModules(
   const MAX_RETRIES = 3;
   let lastError: Error | null = null;
   let cancelledByUserViaJob = false;
+  let persistedJobId: string | null = null;
+  let serverOwnsPersistence = false;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     let abortedBy: "user" | "hard_timeout" | "inactivity" | null = null;
-    let jobId: string | null = null;
+    let jobId: string | null = persistedJobId;
     let usedJobApi = false;
     try {
       const controller = new AbortController();
@@ -478,25 +576,8 @@ export async function generateApplicationModules(
       let useLegacyStream = false;
 
       try {
-        const jobResp = await fetch(`${AI_API_URL}/api/generate/jobs`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-          },
-          body: JSON.stringify({
-            application_id: appId,
-            requested_modules: modules,
-          }),
-          signal: controller.signal,
-        });
-
-        if (jobResp.ok) {
-          const jobJson = await jobResp.json().catch(() => ({}));
-          jobId = String(jobJson.job_id || jobJson.jobId || "");
-          if (!jobId) throw new Error("Job API returned no job_id");
+        if (jobId) {
           usedJobApi = true;
-
           response = await fetch(`${AI_API_URL}/api/generate/jobs/${jobId}/stream`, {
             method: "GET",
             headers: {
@@ -504,38 +585,74 @@ export async function generateApplicationModules(
             },
             signal: controller.signal,
           });
-        } else if (jobResp.status === 404) {
-          const errBody = await jobResp.text().catch(() => "");
-          try {
-            const parsed = JSON.parse(errBody);
-            if (parsed?.detail === "Not Found") {
-              useLegacyStream = true;
-            }
-          } catch {
-            // ignore
-          }
-          if (!useLegacyStream) {
-            throw Object.assign(new Error(errBody || "Job creation failed"), {
-              code: jobResp.status,
-              nonRetryable: true,
-            });
-          }
-          // Jobs endpoint not deployed yet — trigger catch block to use legacy /pipeline/stream
-          throw new Error("jobs-api-unavailable");
         } else {
-          const errBody = await jobResp.text().catch(() => "");
-          let userMessage: string;
-          try {
-            const parsed = JSON.parse(errBody);
-            userMessage = parsed.detail ?? errBody;
-          } catch {
-            userMessage = errBody || `HTTP ${jobResp.status}`;
+          const jobResp = await fetch(`${AI_API_URL}/api/generate/jobs`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+            },
+            body: JSON.stringify({
+              application_id: appId,
+              requested_modules: modules,
+            }),
+            signal: controller.signal,
+          });
+
+          if (jobResp.ok) {
+            const jobJson = await jobResp.json().catch(() => ({}));
+            jobId = String(jobJson.job_id || jobJson.jobId || "");
+            if (!jobId) throw new Error("Job API returned no job_id");
+            persistedJobId = jobId;
+            serverOwnsPersistence = true;
+            usedJobApi = true;
+            opts?.onJobCreated?.(jobId);
+
+            response = await fetch(`${AI_API_URL}/api/generate/jobs/${jobId}/stream`, {
+              method: "GET",
+              headers: {
+                ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+              },
+              signal: controller.signal,
+            });
+          } else if (jobResp.status === 404 || jobResp.status === 503) {
+            const errBody = await jobResp.text().catch(() => "");
+            try {
+              const parsed = JSON.parse(errBody);
+              const detail = String(parsed?.detail ?? "");
+              if (
+                detail === "Not Found"
+                || (jobResp.status === 503 && /schema not ready|database migrations/i.test(detail))
+              ) {
+                useLegacyStream = true;
+              }
+            } catch {
+              if (jobResp.status === 503 && /schema not ready|database migrations/i.test(errBody)) {
+                useLegacyStream = true;
+              }
+            }
+            if (!useLegacyStream) {
+              throw Object.assign(new Error(errBody || "Job creation failed"), {
+                code: jobResp.status,
+                nonRetryable: true,
+              });
+            }
+            throw new Error("jobs-api-unavailable");
+          } else {
+            const errBody = await jobResp.text().catch(() => "");
+            let userMessage: string;
+            try {
+              const parsed = JSON.parse(errBody);
+              userMessage = parsed.detail ?? errBody;
+            } catch {
+              userMessage = errBody || `HTTP ${jobResp.status}`;
+            }
+            const NON_RETRYABLE = [400, 401, 402, 403, 404];
+            if (NON_RETRYABLE.includes(jobResp.status)) {
+              throw Object.assign(new Error(userMessage), { nonRetryable: true, code: jobResp.status });
+            }
+            throw Object.assign(new Error(userMessage), { code: jobResp.status });
           }
-          const NON_RETRYABLE = [400, 401, 402, 403, 404];
-          if (NON_RETRYABLE.includes(jobResp.status)) {
-            throw Object.assign(new Error(userMessage), { nonRetryable: true, code: jobResp.status });
-          }
-          throw Object.assign(new Error(userMessage), { code: jobResp.status });
         }
       } catch (jobErr: any) {
         if (useLegacyStream) {
@@ -648,6 +765,10 @@ export async function generateApplicationModules(
 
                 if (currentEvent === "progress") {
                   onProgress?.(data as PipelineProgress);
+                } else if (currentEvent === "agent_status") {
+                  opts?.onAgentEvent?.(data as PipelineAgentEvent);
+                } else if (currentEvent === "detail") {
+                  opts?.onDetailEvent?.(data as PipelineDetailEvent);
                 } else if (currentEvent === "complete") {
                   result = data.result;
                   onProgress?.({
@@ -768,59 +889,59 @@ export async function generateApplicationModules(
         throw new Error("AI pipeline returned empty results");
       }
 
-      // ── Save all AI-generated results to Supabase ────────────────
-      const patch: Record<string, any> = {};
-      const requested = new Set(modules);
+      if (!serverOwnsPersistence) {
+        const patch: Record<string, any> = {};
+        const requested = new Set(modules);
 
-      if (requested.has("benchmark") && result.benchmark) {
-        patch.benchmark = { ...result.benchmark, createdAt: Date.now() };
-      }
-      if (requested.has("gaps") && result.gaps) patch.gaps = result.gaps;
-      if (requested.has("learningPlan") && result.learningPlan) patch.learningPlan = result.learningPlan;
-      if (requested.has("cv") && result.cvHtml) patch.cvHtml = result.cvHtml;
-      if (requested.has("coverLetter") && result.coverLetterHtml) patch.coverLetterHtml = result.coverLetterHtml;
-      if (requested.has("personalStatement") && result.personalStatementHtml) patch.personalStatementHtml = result.personalStatementHtml;
-      if (requested.has("portfolio") && result.portfolioHtml) patch.portfolioHtml = result.portfolioHtml;
-      if (requested.has("scorecard")) {
-        if (result.validation) patch.validation = result.validation;
-        if (result.scorecard) patch.scorecard = { ...result.scorecard, updatedAt: Date.now() };
-        if (result.scores) patch.scores = result.scores;
-      }
+        if (requested.has("benchmark") && result.benchmark) {
+          patch.benchmark = { ...result.benchmark, createdAt: Date.now() };
+        }
+        if (requested.has("gaps") && result.gaps) patch.gaps = result.gaps;
+        if (requested.has("learningPlan") && result.learningPlan) patch.learningPlan = result.learningPlan;
+        if (requested.has("cv") && result.cvHtml) patch.cvHtml = result.cvHtml;
+        if (requested.has("coverLetter") && result.coverLetterHtml) patch.coverLetterHtml = result.coverLetterHtml;
+        if (requested.has("personalStatement") && result.personalStatementHtml) patch.personalStatementHtml = result.personalStatementHtml;
+        if (requested.has("portfolio") && result.portfolioHtml) patch.portfolioHtml = result.portfolioHtml;
+        if (requested.has("scorecard")) {
+          if (result.validation) patch.validation = result.validation;
+          if (result.scorecard) patch.scorecard = { ...result.scorecard, updatedAt: Date.now() };
+          if (result.scores) patch.scores = result.scores;
+        }
 
-      // Store adaptive document data (new pipeline features)
-      if (result.discoveredDocuments) {
-        (patch as any).discovered_documents = result.discoveredDocuments;
-      }
-      if (result.generatedDocuments) {
-        (patch as any).generated_documents = result.generatedDocuments;
-      }
-      if (result.benchmarkDocuments) {
-        (patch as any).benchmark_documents = result.benchmarkDocuments;
-      }
-      if (result.documentStrategy) {
-        (patch as any).document_strategy = result.documentStrategy;
-      }
-      if (result.companyIntel) {
-        (patch as any).company_intel = result.companyIntel;
-      }
+        if (result.discoveredDocuments) {
+          (patch as any).discovered_documents = result.discoveredDocuments;
+        }
+        if (result.generatedDocuments) {
+          (patch as any).generated_documents = result.generatedDocuments;
+        }
+        if (result.benchmarkDocuments) {
+          (patch as any).benchmark_documents = result.benchmarkDocuments;
+        }
+        if (result.documentStrategy) {
+          (patch as any).document_strategy = result.documentStrategy;
+        }
+        if (result.companyIntel) {
+          (patch as any).company_intel = result.companyIntel;
+        }
 
-      const readyAt = Date.now();
-      for (const mod of modules) {
-        moduleStates[mod] = { state: "ready", updatedAt: readyAt };
-      }
-      patch.modules = moduleStates;
+        const readyAt = Date.now();
+        for (const mod of modules) {
+          moduleStates[mod] = { state: "ready", updatedAt: readyAt };
+        }
+        patch.modules = moduleStates;
 
-      await patchApplication(appId, patch);
-      if (requested.has("gaps") || requested.has("learningPlan")) {
-        try {
-          await syncAutoTasks(
-            appId,
-            userId,
-            requested.has("gaps") ? result.gaps : undefined,
-            requested.has("learningPlan") ? result.learningPlan : undefined
-          );
-        } catch (taskErr) {
-          console.warn("[HireStack] Task sync failed:", (taskErr as any)?.message ?? taskErr);
+        await patchApplication(appId, patch);
+        if (requested.has("gaps") || requested.has("learningPlan")) {
+          try {
+            await syncAutoTasks(
+              appId,
+              userId,
+              requested.has("gaps") ? result.gaps : undefined,
+              requested.has("learningPlan") ? result.learningPlan : undefined
+            );
+          } catch (taskErr) {
+            console.warn("[HireStack] Task sync failed:", (taskErr as any)?.message ?? taskErr);
+          }
         }
       }
       console.log("[HireStack] AI pipeline succeeded on attempt", attempt);
@@ -869,6 +990,9 @@ export async function generateApplicationModules(
   if (cancelledByUserViaJob && baseErrorMessage.toLowerCase().includes("cancel")) {
     // Job-based cancellation restores module states server-side; don't overwrite.
     throw new Error("Generation cancelled.");
+  }
+  if (serverOwnsPersistence) {
+    throw new Error(lastError?.message ?? "AI generation failed. Please try again.");
   }
   const needsPunctuation = !/[.!?]$/.test(baseErrorMessage);
   const moduleErrorMessage = `${baseErrorMessage}${needsPunctuation ? "." : ""} Click Regenerate to retry.`;

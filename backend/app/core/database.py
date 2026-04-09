@@ -156,6 +156,7 @@ TABLES = {
     "learning_plans": "learning_plans",
     "doc_versions": "doc_versions",
     "generation_jobs": "generation_jobs",
+    "generation_job_events": "generation_job_events",
     "ats_scans": "ats_scans",
     "career_snapshots": "career_snapshots",
     "interview_sessions": "interview_sessions",

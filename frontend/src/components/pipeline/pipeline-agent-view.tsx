@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ScanSearch,
   SearchCode,
@@ -46,6 +46,7 @@ interface PipelineAgentViewProps {
   elapsedMs: number;
   completedPhases: Set<number>;
   activePhaseIdx: number;
+  logsByPhase?: Record<number, string[]>;
   generating: boolean;
   genError: string | null;
   onCancel: () => void;
@@ -69,25 +70,14 @@ export function PipelineAgentView({
   elapsedMs,
   completedPhases,
   activePhaseIdx,
+  logsByPhase,
   generating,
   genError,
   onCancel,
   onRetry,
   draftAppId,
 }: PipelineAgentViewProps) {
-  // Accumulate log messages per phase
-  const [logsByPhase, setLogsByPhase] = useState<Record<number, string[]>>({});
-  const prevMessageRef = useRef("");
-
-  useEffect(() => {
-    if (genMessage && genMessage !== prevMessageRef.current && activePhaseIdx >= 0) {
-      setLogsByPhase((prev) => ({
-        ...prev,
-        [activePhaseIdx]: [...(prev[activePhaseIdx] || []), genMessage],
-      }));
-      prevMessageRef.current = genMessage;
-    }
-  }, [genMessage, activePhaseIdx]);
+  const phaseLogs = logsByPhase ?? {};
 
   // Track per-phase latencies
   const [phaseStartTimes, setPhaseStartTimes] = useState<Record<number, number>>({});
@@ -232,7 +222,7 @@ export function PipelineAgentView({
                 accentColor={agent.accentColor}
                 status={status}
                 latencyMs={phaseLatencies[i]}
-                logs={logsByPhase[i] || []}
+                logs={phaseLogs[i] || []}
                 isLast={i === AGENT_PERSONAS.length - 1}
               />
             );

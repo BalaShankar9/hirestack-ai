@@ -210,6 +210,7 @@ export interface ApplicationDoc {
   generatedDocuments?: Record<string, string>;
   benchmarkDocuments?: Record<string, string>;
   documentStrategy?: string;
+  companyIntel?: Record<string, any>;
 
   /** Scores snapshot for list views */
   scores?: {
@@ -282,6 +283,48 @@ export interface EventDoc {
   userId: string;
   applicationId?: string;
   event: string;
+  payload?: Record<string, any>;
+  createdAt: number;
+}
+
+export type GenerationJobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+
+export interface GenerationJobDoc {
+  id: string;
+  userId: string;
+  applicationId: string;
+  requestedModules: string[];
+  status: GenerationJobStatus;
+  progress: number;
+  phase?: string;
+  message?: string;
+  cancelRequested: boolean;
+  currentAgent?: string;
+  completedSteps: number;
+  totalSteps: number;
+  activeSourcesCount: number;
+  result?: Record<string, any>;
+  errorMessage?: string;
+  createdAt: number;
+  startedAt?: number;
+  finishedAt?: number;
+  updatedAt: number;
+}
+
+export interface GenerationJobEventDoc {
+  id: string;
+  jobId: string;
+  userId: string;
+  applicationId: string;
+  sequenceNo: number;
+  eventName: string;
+  agentName?: string;
+  stage?: string;
+  status?: string;
+  message: string;
+  source?: string;
+  url?: string;
+  latencyMs?: number;
   payload?: Record<string, any>;
   createdAt: number;
 }

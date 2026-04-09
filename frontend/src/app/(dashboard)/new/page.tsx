@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useCallback, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -18,6 +18,7 @@ import { PipelineAgentView } from "@/components/pipeline/pipeline-agent-view";
 
 import { useAuth } from "@/components/providers";
 import {
+  cancelGenerationJob,
   createApplication,
   generateApplicationModules,
   patchApplication,
@@ -27,8 +28,9 @@ import {
   extractKeywords,
   trackEvent,
 } from "@/lib/firestore/ops";
-import type { PipelineProgress } from "@/lib/firestore/ops";
-import type { ConfirmedFacts, JDQuality, ResumeArtifact } from "@/lib/firestore/models";
+import { useGenerationJob, useGenerationJobEvents } from "@/lib/firestore/hooks";
+import type { PipelineAgentEvent, PipelineDetailEvent, PipelineProgress } from "@/lib/firestore/ops";
+import type { ConfirmedFacts, GenerationJobEventDoc, JDQuality, ResumeArtifact } from "@/lib/firestore/models";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,18 +55,154 @@ const STEPS: { key: Step; label: string; icon: any }[] = [
   { key: "generate", label: "Generate", icon: Sparkles },
 ];
 
+const PROGRESS_PHASE_TO_INDEX: Record<string, number> = {
+  initializing: 0,
+  recon: 0,
+  recon_done: 0,
+  profiling: 1,
+  profiling_done: 1,
+  gap_analysis: 2,
+  gap_analysis_done: 2,
+  documents: 3,
+  documents_done: 3,
+  portfolio: 4,
+  portfolio_done: 4,
+  validation: 5,
+  validation_done: 5,
+  formatting: 6,
+  complete: 6,
+};
+
+const PIPELINE_TO_INDEX: Record<string, number> = {
+  recon: 0,
+  resume_parse: 1,
+  benchmark: 1,
+  gap_analysis: 2,
+  cv_generation: 3,
+  cover_letter: 3,
+  career_roadmap: 3,
+  personal_statement: 4,
+  portfolio: 4,
+  validation: 5,
+  pipeline: 6,
+};
+
+function getPhaseIndexFromProgress(phase: string): number {
+  return PROGRESS_PHASE_TO_INDEX[phase] ?? -1;
+}
+
+function getPhaseIndexFromDetail(event: PipelineDetailEvent): number {
+  return PIPELINE_TO_INDEX[event.agent] ?? -1;
+}
+
+function getPhaseIndexFromAgentEvent(event: PipelineAgentEvent): number {
+  return PIPELINE_TO_INDEX[event.pipeline_name] ?? PIPELINE_TO_INDEX[event.stage] ?? -1;
+}
+
+function formatDetailLine(event: PipelineDetailEvent): string {
+  const source = event.source ? `[${event.source}] ` : "";
+  return `${source}${event.message}`;
+}
+
+function formatAgentLine(event: PipelineAgentEvent): string {
+  if (event.message?.trim()) return event.message.trim();
+  const stage = event.stage.replace(/_/g, " ");
+  return `${stage} ${event.status}`;
+}
+
+const GENERATION_SESSION_KEY = "hirestack_active_generation";
+const TOTAL_PHASES = 7;
+
+function resolveStepParam(value: string | null): Step | null {
+  if (!value) return null;
+  if (value === "1" || value === "job") return "job";
+  if (value === "2" || value === "resume") return "resume";
+  if (value === "3" || value === "review") return "review";
+  if (value === "4" || value === "generate") return "generate";
+  return null;
+}
+
+function buildCompletedPhases(completedSteps: number, status?: string | null): Set<number> {
+  const completedCount = status === "succeeded"
+    ? TOTAL_PHASES
+    : Math.max(0, Math.min(TOTAL_PHASES, completedSteps));
+
+  return new Set(Array.from({ length: completedCount }, (_, index) => index));
+}
+
+function buildPhaseLogsFromEvents(events: GenerationJobEventDoc[]): Record<number, string[]> {
+  const logs: Record<number, string[]> = {};
+
+  const append = (phaseIdx: number, line: string) => {
+    if (phaseIdx < 0) return;
+    const cleaned = line.trim();
+    if (!cleaned) return;
+    const existing = logs[phaseIdx] || [];
+    if (existing[existing.length - 1] === cleaned) return;
+    logs[phaseIdx] = [...existing, cleaned].slice(-60);
+  };
+
+  for (const event of events) {
+    const payload = event.payload ?? {};
+
+    if (event.eventName === "progress") {
+      const phase = String(payload.phase ?? event.stage ?? "");
+      const message = String(payload.message ?? event.message ?? "");
+      append(getPhaseIndexFromProgress(phase), message);
+      continue;
+    }
+
+    if (event.eventName === "detail") {
+      const detailEvent: PipelineDetailEvent = {
+        agent: String(payload.agent ?? event.agentName ?? event.stage ?? ""),
+        message: String(payload.message ?? event.message ?? ""),
+        status: String(payload.status ?? event.status ?? "info"),
+        source: typeof payload.source === "string" ? payload.source : event.source,
+        url: typeof payload.url === "string" ? payload.url : event.url,
+        metadata: payload.metadata && typeof payload.metadata === "object"
+          ? (payload.metadata as Record<string, unknown>)
+          : undefined,
+      };
+      append(getPhaseIndexFromDetail(detailEvent), formatDetailLine(detailEvent));
+      continue;
+    }
+
+    if (event.eventName === "agent_status") {
+      const agentEvent: PipelineAgentEvent = {
+        pipeline_name: String(payload.pipeline_name ?? event.agentName ?? ""),
+        stage: String(payload.stage ?? event.stage ?? "pipeline"),
+        status: String(payload.status ?? event.status ?? "updated"),
+        latency_ms: Number(payload.latency_ms ?? event.latencyMs ?? 0),
+        message: String(payload.message ?? event.message ?? ""),
+        timestamp: typeof payload.timestamp === "string" ? payload.timestamp : undefined,
+      };
+      append(getPhaseIndexFromAgentEvent(agentEvent), formatAgentLine(agentEvent));
+      continue;
+    }
+
+    if (event.eventName === "error") {
+      const agent = String(payload.agent ?? event.agentName ?? event.stage ?? "recon");
+      append(PIPELINE_TO_INDEX[agent] ?? getPhaseIndexFromProgress(String(event.stage ?? "")), event.message);
+    }
+  }
+
+  return logs;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Page Component                                                      */
 /* ------------------------------------------------------------------ */
 
 export default function NewApplicationPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const userId = user?.uid || user?.id || null;
 
   const [step, setStep] = useState<Step>("job");
   const stepIndex = STEPS.findIndex((s) => s.key === step);
   const [draftAppId, setDraftAppId] = useState<string | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
 
   // Step 1: Job
   const [jobTitle, setJobTitle] = useState("");
@@ -116,9 +254,189 @@ export default function NewApplicationPage() {
   const abortRef = useRef<AbortController | null>(null);
   const [completedPhases, setCompletedPhases] = useState<Set<number>>(new Set());
   const [activePhaseIdx, setActivePhaseIdx] = useState(-1);
+  const [phaseLogs, setPhaseLogs] = useState<Record<number, string[]>>({});
+  const restoreRef = useRef(false);
+  const redirectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { data: generationJob } = useGenerationJob(activeJobId);
+  const { data: generationEvents = [] } = useGenerationJobEvents(activeJobId, 600);
+  const generationJobStatus = generationJob?.status ?? null;
+  const generationJobApplicationId = generationJob?.applicationId ?? null;
+  const generationJobCreatedAt = generationJob?.createdAt;
+  const generationJobStartedAt = generationJob?.startedAt;
+  const generationJobFinishedAt = generationJob?.finishedAt;
 
   // Derived
   const keywords = useMemo(() => extractKeywords(jdText), [jdText]);
+
+  const appendPhaseLog = useCallback((phaseIdx: number, line: string) => {
+    if (phaseIdx < 0) return;
+    const cleaned = line.trim();
+    if (!cleaned) return;
+
+    setPhaseLogs((prev) => {
+      const existing = prev[phaseIdx] || [];
+      if (existing[existing.length - 1] === cleaned) return prev;
+      return {
+        ...prev,
+        [phaseIdx]: [...existing, cleaned].slice(-60),
+      };
+    });
+  }, []);
+
+  const persistGenerationSession = useCallback((appId: string | null, jobId: string | null, nextStep: Step) => {
+    if (typeof window === "undefined") return;
+    if (!appId && !jobId) {
+      window.sessionStorage.removeItem(GENERATION_SESSION_KEY);
+      return;
+    }
+    window.sessionStorage.setItem(
+      GENERATION_SESSION_KEY,
+      JSON.stringify({ appId, jobId, step: nextStep, savedAt: Date.now() })
+    );
+  }, []);
+
+  const clearGenerationSession = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.sessionStorage.removeItem(GENERATION_SESSION_KEY);
+  }, []);
+
+  useEffect(() => {
+    if (restoreRef.current) return;
+    restoreRef.current = true;
+
+    const paramJobTitle = searchParams.get("jobTitle");
+    const paramCompany = searchParams.get("company");
+    const paramJdText = searchParams.get("jdText");
+    const paramStep = resolveStepParam(searchParams.get("step"));
+    const paramAppId = searchParams.get("appId");
+    const paramJobId = searchParams.get("jobId");
+
+    if (paramJobTitle && !jobTitle) setJobTitle(paramJobTitle);
+    if (paramCompany && !company) setCompany(paramCompany);
+    if (paramJdText && !jdText) setJdText(paramJdText);
+
+    let stored: { appId?: string; jobId?: string; step?: Step } | null = null;
+    if (typeof window !== "undefined") {
+      try {
+        const raw = window.sessionStorage.getItem(GENERATION_SESSION_KEY);
+        stored = raw ? JSON.parse(raw) : null;
+      } catch {
+        stored = null;
+      }
+    }
+
+    const restoredAppId = paramAppId || stored?.appId || null;
+    const restoredJobId = paramJobId || stored?.jobId || null;
+    const restoredStep = paramStep || stored?.step || (restoredJobId ? "generate" : null);
+
+    if (restoredAppId) setDraftAppId(restoredAppId);
+    if (restoredJobId) setActiveJobId(restoredJobId);
+    if (restoredStep) setStep(restoredStep);
+  }, [searchParams, jobTitle, company, jdText]);
+
+  useEffect(() => {
+    if (step === "generate" && (draftAppId || activeJobId)) {
+      persistGenerationSession(draftAppId, activeJobId, step);
+    }
+  }, [step, draftAppId, activeJobId, persistGenerationSession]);
+
+  useEffect(() => {
+    if (!generationJob) return;
+
+    if (!draftAppId) setDraftAppId(generationJob.applicationId);
+    if (step !== "generate") setStep("generate");
+
+    setProgress(generationJob.progress);
+    setGenMessage(
+      generationJob.message
+        || (generationJob.status === "succeeded"
+          ? "Your application is ready! 🎉"
+          : generationJob.status === "cancelled"
+          ? "Generation cancelled."
+          : "Resuming generation…")
+    );
+    setCompletedPhases(buildCompletedPhases(generationJob.completedSteps, generationJob.status));
+    setActivePhaseIdx(generationJob.status === "succeeded" ? -1 : getPhaseIndexFromProgress(generationJob.phase ?? ""));
+
+    if (generationJob.status === "queued" || generationJob.status === "running") {
+      setGenerating(true);
+      setGenError(null);
+    } else if (generationJob.status === "succeeded") {
+      setGenerating(false);
+      setGenError(null);
+      appendPhaseLog(6, "Final application bundle ready.");
+    } else {
+      setGenerating(false);
+      setGenError(
+        generationJob.errorMessage
+          || (generationJob.status === "cancelled"
+            ? "Generation cancelled."
+            : "Generation failed — please try again.")
+      );
+    }
+
+    persistGenerationSession(generationJob.applicationId, generationJob.id, "generate");
+  }, [generationJob, draftAppId, step, appendPhaseLog, persistGenerationSession]);
+
+  useEffect(() => {
+    if (!activeJobId) return;
+    setPhaseLogs(buildPhaseLogsFromEvents(generationEvents));
+  }, [activeJobId, generationEvents]);
+
+  useEffect(() => {
+    if (elapsedRef.current) {
+      clearInterval(elapsedRef.current);
+      elapsedRef.current = null;
+    }
+
+    if (!generationJob) return;
+
+    const startedAt = generationJobStartedAt ?? generationJobCreatedAt;
+    if (!startedAt) {
+      setElapsedMs(0);
+      return;
+    }
+
+    const updateElapsed = () => {
+      const endAt = generationJobFinishedAt ?? Date.now();
+      setElapsedMs(Math.max(0, endAt - startedAt));
+    };
+
+    updateElapsed();
+
+    if (generationJobStatus === "queued" || generationJobStatus === "running") {
+      elapsedRef.current = setInterval(updateElapsed, 500);
+      return () => {
+        if (elapsedRef.current) {
+          clearInterval(elapsedRef.current);
+          elapsedRef.current = null;
+        }
+      };
+    }
+  }, [generationJob, generationJobStatus, generationJobCreatedAt, generationJobStartedAt, generationJobFinishedAt]);
+
+  useEffect(() => {
+    if (redirectRef.current) {
+      clearTimeout(redirectRef.current);
+      redirectRef.current = null;
+    }
+
+    if (step !== "generate" || generationJobStatus !== "succeeded" || !generationJobApplicationId) return;
+
+    redirectRef.current = setTimeout(() => {
+      clearGenerationSession();
+      setActiveJobId(null);
+      router.push(`/applications/${generationJobApplicationId}`);
+    }, 1000);
+
+    return () => {
+      if (redirectRef.current) {
+        clearTimeout(redirectRef.current);
+        redirectRef.current = null;
+      }
+    };
+  }, [generationJobStatus, generationJobApplicationId, step, clearGenerationSession, router]);
 
   /* ---- JD analysis ---- */
   const analyzeJD = useCallback(() => {
@@ -183,6 +501,8 @@ export default function NewApplicationPage() {
   const handleGenerate = useCallback(async () => {
     // If a previous run is still in-flight, cancel it before starting a new one.
     abortRef.current?.abort();
+    clearGenerationSession();
+    setActiveJobId(null);
     setGenerating(true);
     setGenError(null);
     setProgress(0);
@@ -190,6 +510,7 @@ export default function NewApplicationPage() {
     setElapsedMs(0);
     setCompletedPhases(new Set());
     setActivePhaseIdx(0); // Start with Recon (intel agent) as active
+    setPhaseLogs({});
 
     // Start elapsed timer
     const startTime = Date.now();
@@ -222,6 +543,7 @@ export default function NewApplicationPage() {
           return;
         }
         setDraftAppId(appId);
+        persistGenerationSession(appId, null, "generate");
 
         if (user) await trackEvent(uid, "app_created", appId, {
           jobTitle,
@@ -237,57 +559,60 @@ export default function NewApplicationPage() {
         });
       }
 
-      // SSE progress callback — drives the entire UI
-      // Agent 0 = Recon (intel gatherer) — runs before SSE events start
-      // Agents 1-6 = Atlas, Cipher, Quill, Forge, Sentinel, Nova — mapped from SSE steps 1-6
       const handleProgress = (p: PipelineProgress) => {
         setProgress(p.progress);
         setGenMessage(p.message);
 
-        // Map SSE step (1-based) to phase index (0-based), offset by 1 for Recon
-        const phaseIdx = Math.max(0, p.step); // step 1 → phase 1 (Atlas), etc.
-
-        // Mark Recon as done when first SSE arrives (intel gathering is complete)
-        setCompletedPhases((prev) => {
-          if (!prev.has(0)) {
-            const next = new Set(prev);
-            next.add(0); // Recon done
-            return next;
-          }
-          return prev;
-        });
-
-        setActivePhaseIdx(phaseIdx);
+        const phaseIdx = getPhaseIndexFromProgress(p.phase);
+        if (phaseIdx >= 0) {
+          setActivePhaseIdx(phaseIdx);
+          appendPhaseLog(phaseIdx, p.message);
+        }
 
         // Mark phases that are done
         if (p.phase.endsWith("_done") || p.phase === "complete") {
           setCompletedPhases((prev) => {
             const next = new Set(prev);
-            next.add(phaseIdx);
+            if (phaseIdx >= 0) next.add(phaseIdx);
             return next;
           });
-          if (p.phase !== "complete") {
-            setActivePhaseIdx(phaseIdx + 1);
-          }
         }
+      };
+
+      const handleDetail = (event: PipelineDetailEvent) => {
+        const phaseIdx = getPhaseIndexFromDetail(event);
+        if (phaseIdx >= 0 && (event.status === "running" || event.status === "completed")) {
+          setActivePhaseIdx(phaseIdx);
+        }
+        appendPhaseLog(phaseIdx, formatDetailLine(event));
+      };
+
+      const handleAgentEvent = (event: PipelineAgentEvent) => {
+        const phaseIdx = getPhaseIndexFromAgentEvent(event);
+        if (phaseIdx >= 0 && event.status === "running") {
+          setActivePhaseIdx(phaseIdx);
+        }
+        appendPhaseLog(phaseIdx, formatAgentLine(event));
       };
 
       await generateApplicationModules(appId, uid, confirmedFacts, undefined, handleProgress, {
         signal: controller.signal,
+        onDetailEvent: handleDetail,
+        onAgentEvent: handleAgentEvent,
+        onJobCreated: (jobId) => {
+          setActiveJobId(jobId);
+          persistGenerationSession(appId!, jobId, "generate");
+        },
       });
 
       // Done!
       setProgress(100);
       setGenMessage("Your application is ready! 🎉");
-      setCompletedPhases(new Set([0, 1, 2, 3, 4, 5]));
+      setCompletedPhases(new Set([0, 1, 2, 3, 4, 5, 6]));
       setActivePhaseIdx(-1);
+      appendPhaseLog(6, "Final application bundle ready.");
 
       if (user) await trackEvent(uid, "app_generated", appId);
-      setDraftAppId(null);
-
-      setTimeout(() => {
-        router.push(`/applications/${appId}`);
-      }, 1000);
     } catch (err: any) {
       let message: string;
       if (err?.name === "AbortError") {
@@ -297,8 +622,8 @@ export default function NewApplicationPage() {
       } else {
         message = err?.message ?? "Generation failed — please try again.";
       }
+      appendPhaseLog(activePhaseIdx >= 0 ? activePhaseIdx : 0, message);
       setGenError(message);
-      setGenerating(false);
     } finally {
       // Clear timer in all exit paths (success, error, abort)
       if (elapsedRef.current) {
@@ -307,7 +632,7 @@ export default function NewApplicationPage() {
       }
       abortRef.current = null;
     }
-  }, [user, draftAppId, jobTitle, company, jdText, resumeText, confirmedFacts, router]);
+  }, [activePhaseIdx, appendPhaseLog, user, draftAppId, jobTitle, company, jdText, resumeText, confirmedFacts, clearGenerationSession, persistGenerationSession]);
 
   /* ---- Navigation ---- */
   function canAdvance(): boolean {
@@ -620,13 +945,33 @@ export default function NewApplicationPage() {
           elapsedMs={elapsedMs}
           completedPhases={completedPhases}
           activePhaseIdx={activePhaseIdx}
+          logsByPhase={phaseLogs}
           generating={generating}
           genError={genError}
           onCancel={() => {
             setGenMessage("Cancelling...");
-            abortRef.current?.abort();
+            if (abortRef.current) {
+              abortRef.current.abort();
+              return;
+            }
+            if (activeJobId) {
+              void cancelGenerationJob(activeJobId).catch((err) => {
+                setGenError(err?.message ?? "Failed to cancel generation.");
+              });
+            }
           }}
-          onRetry={() => { setStep("review"); setGenError(null); }}
+          onRetry={() => {
+            setStep("review");
+            setGenError(null);
+            setGenerating(false);
+            setProgress(0);
+            setGenMessage("");
+            setPhaseLogs({});
+            setCompletedPhases(new Set());
+            setActivePhaseIdx(-1);
+            setActiveJobId(null);
+            clearGenerationSession();
+          }}
           draftAppId={draftAppId}
         />
       )}

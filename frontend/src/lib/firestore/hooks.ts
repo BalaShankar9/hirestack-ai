@@ -12,11 +12,15 @@ import { TABLES } from "./paths";
 import type {
   ApplicationDoc,
   EvidenceDoc,
+  GenerationJobDoc,
+  GenerationJobEventDoc,
   TaskDoc,
 } from "./models";
 import {
   mapApplicationRow,
   mapEvidenceRow,
+  mapGenerationJobEventRow,
+  mapGenerationJobRow,
   mapTaskRow,
 } from "./ops";
 
@@ -607,4 +611,225 @@ export function useTasks(
   };
 
   return { data, loading, error, stats, addItem, removeItem, updateItem };
+}
+
+export function useGenerationJob(
+  jobId: string | null
+): { data: GenerationJobDoc | null; loading: boolean; error: Error | null } {
+  const [data, setData] = useState<GenerationJobDoc | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    if (!jobId) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    let poll: ReturnType<typeof setInterval> | null = null;
+
+    function startPolling() {
+      if (poll) return;
+      poll = setInterval(fetchOne, 2_000);
+    }
+
+    function stopPolling() {
+      if (!poll) return;
+      clearInterval(poll);
+      poll = null;
+    }
+
+    async function fetchOne() {
+      try {
+        const { data: row, error: err } = await supabase
+          .from(TABLES.generationJobs)
+          .select("*")
+          .eq("id", jobId)
+          .maybeSingle();
+
+        if (err) throw err;
+        if (!cancelled) {
+          setData(row ? mapGenerationJobRow(row) : null);
+          setLoading(false);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(e);
+          setLoading(false);
+        }
+      }
+    }
+
+    fetchOne();
+
+    if (!shouldUseRealtime()) {
+      startPolling();
+      return () => {
+        cancelled = true;
+        stopPolling();
+      };
+    }
+
+    const channel = supabase
+      .channel(`generation-job:${jobId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: TABLES.generationJobs,
+          filter: `id=eq.${jobId}`,
+        },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            setData(null);
+          } else {
+            setData(mapGenerationJobRow(payload.new));
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        if (cancelled) return;
+        if (status === "SUBSCRIBED") {
+          stopPolling();
+          return;
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setError(err ?? new Error(`Realtime subscription error: ${status}`));
+          startPolling();
+          disableRealtimeOnce(status, err);
+          supabase.removeChannel(channel);
+          realtimeWarn("[HireStack][realtime][generationJob]", status, err);
+        } else if (status === "CLOSED") {
+          startPolling();
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      stopPolling();
+      supabase.removeChannel(channel);
+    };
+  }, [jobId]);
+
+  return { data, loading, error };
+}
+
+export function useGenerationJobEvents(
+  jobId: string | null,
+  limit = 500
+): { data: GenerationJobEventDoc[]; loading: boolean; error: Error | null } {
+  const [data, setData] = useState<GenerationJobEventDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    if (!jobId) {
+      setData([]);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    let poll: ReturnType<typeof setInterval> | null = null;
+
+    function startPolling() {
+      if (poll) return;
+      poll = setInterval(fetchEvents, 2_000);
+    }
+
+    function stopPolling() {
+      if (!poll) return;
+      clearInterval(poll);
+      poll = null;
+    }
+
+    async function fetchEvents() {
+      try {
+        const { data: rows, error: err } = await supabase
+          .from(TABLES.generationJobEvents)
+          .select("*")
+          .eq("job_id", jobId)
+          .order("sequence_no", { ascending: true })
+          .limit(limit);
+
+        if (err) throw err;
+        if (!cancelled) {
+          setData((rows ?? []).map(mapGenerationJobEventRow));
+          setLoading(false);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(e);
+          setLoading(false);
+        }
+      }
+    }
+
+    fetchEvents();
+
+    if (!shouldUseRealtime()) {
+      startPolling();
+      return () => {
+        cancelled = true;
+        stopPolling();
+      };
+    }
+
+    const channel = supabase
+      .channel(`generation-job-events:${jobId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: TABLES.generationJobEvents,
+          filter: `job_id=eq.${jobId}`,
+        },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            const next = mapGenerationJobEventRow(payload.new);
+            setData((prev) => {
+              const filtered = prev.filter((row) => row.id !== next.id);
+              return [...filtered, next]
+                .sort((a, b) => a.sequenceNo - b.sequenceNo)
+                .slice(-limit);
+            });
+          } else if (payload.eventType === "UPDATE") {
+            const next = mapGenerationJobEventRow(payload.new);
+            setData((prev) =>
+              prev.map((row) => (row.id === next.id ? next : row))
+            );
+          } else if (payload.eventType === "DELETE") {
+            setData((prev) => prev.filter((row) => row.id !== String(payload.old.id)));
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        if (cancelled) return;
+        if (status === "SUBSCRIBED") {
+          stopPolling();
+          return;
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setError(err ?? new Error(`Realtime subscription error: ${status}`));
+          startPolling();
+          disableRealtimeOnce(status, err);
+          supabase.removeChannel(channel);
+          realtimeWarn("[HireStack][realtime][generationJobEvents]", status, err);
+        } else if (status === "CLOSED") {
+          startPolling();
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      stopPolling();
+      supabase.removeChannel(channel);
+    };
+  }, [jobId, limit]);
+
+  return { data, loading, error };
 }
