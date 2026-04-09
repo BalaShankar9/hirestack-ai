@@ -4,7 +4,7 @@ Interview Simulator routes
 from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field
 
 from app.services.interview import InterviewService
@@ -34,8 +34,10 @@ class SubmitAnswerRequest(BaseModel):
 @limiter.limit("30/minute")
 @router.post("/sessions")
 async def create_session(
+    request: Request,
     req: CreateSessionRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(get_current_user
+),
 ):
     """Create a new interview session."""
     if not req.job_title.strip():
@@ -68,9 +70,11 @@ async def create_session(
 @limiter.limit("30/minute")
 @router.post("/sessions/{session_id}/answers")
 async def submit_answer(
+    request: Request,
     session_id: str,
     req: SubmitAnswerRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(get_current_user
+),
 ):
     """Submit an answer for evaluation."""
     if not req.answer.strip():
@@ -100,6 +104,7 @@ async def submit_answer(
 @limiter.limit("30/minute")
 @router.post("/sessions/{session_id}/complete")
 async def complete_session(
+    request: Request,
     session_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -121,6 +126,7 @@ async def complete_session(
 @limiter.limit("30/minute")
 @router.get("/sessions")
 async def list_sessions(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """List all user's interview sessions."""
@@ -131,6 +137,7 @@ async def list_sessions(
 @limiter.limit("30/minute")
 @router.get("/sessions/{session_id}")
 async def get_session(
+    request: Request,
     session_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):

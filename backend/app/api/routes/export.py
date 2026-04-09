@@ -4,7 +4,7 @@ Export routes - PDF/DOCX generation (Firestore)
 from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import StreamingResponse, Response
 
 from app.services.export import ExportService
@@ -42,6 +42,7 @@ async def create_export(
 @limiter.limit("20/minute")
 @router.get("")
 async def list_exports(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """List all user's exports."""
@@ -52,6 +53,7 @@ async def list_exports(
 @limiter.limit("20/minute")
 @router.get("/{export_id}")
 async def get_export(
+    request: Request,
     export_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -66,6 +68,7 @@ async def get_export(
 @limiter.limit("20/minute")
 @router.get("/{export_id}/download")
 async def download_export(
+    request: Request,
     export_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -88,6 +91,7 @@ async def download_export(
 @limiter.limit("20/minute")
 @router.delete("/{export_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_export(
+    request: Request,
     export_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):

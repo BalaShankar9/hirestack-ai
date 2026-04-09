@@ -4,7 +4,7 @@ Benchmark routes - Generate ideal candidate benchmarks (Firestore)
 from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 
 from app.services.benchmark import BenchmarkService
 from app.api.deps import get_current_user
@@ -40,6 +40,7 @@ async def generate_benchmark(
 @limiter.limit("30/minute")
 @router.get("/{benchmark_id}")
 async def get_benchmark(
+    request: Request,
     benchmark_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -54,6 +55,7 @@ async def get_benchmark(
 @limiter.limit("30/minute")
 @router.get("/job/{job_id}")
 async def get_benchmark_for_job(
+    request: Request,
     job_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -68,6 +70,7 @@ async def get_benchmark_for_job(
 @limiter.limit("3/minute")
 @router.post("/{benchmark_id}/regenerate")
 async def regenerate_benchmark(
+    request: Request,
     benchmark_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -82,6 +85,7 @@ async def regenerate_benchmark(
 @limiter.limit("30/minute")
 @router.delete("/{benchmark_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_benchmark(
+    request: Request,
     benchmark_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):

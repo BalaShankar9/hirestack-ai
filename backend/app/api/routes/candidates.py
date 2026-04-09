@@ -4,7 +4,7 @@ Candidate routes — CRUD, pipeline stage management
 from typing import Dict, Any, Optional
 
 from app.core.security import limiter
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from pydantic import BaseModel
 
 from app.services.candidate import CandidateService
@@ -44,6 +44,7 @@ async def _get_user_org(current_user: Dict[str, Any]) -> Dict[str, Any]:
 @limiter.limit("30/minute")
 @router.get("")
 async def list_candidates(
+    request: Request,
     stage: Optional[str] = Query(None),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -55,8 +56,10 @@ async def list_candidates(
 @limiter.limit("30/minute")
 @router.post("")
 async def create_candidate(
+    request: Request,
     req: CreateCandidateRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(get_current_user
+),
 ):
     org = await _get_user_org(current_user)
     service = CandidateService()
@@ -65,7 +68,9 @@ async def create_candidate(
 
 @limiter.limit("30/minute")
 @router.get("/stats")
-async def pipeline_stats(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def pipeline_stats(
+    request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user)):
     org = await _get_user_org(current_user)
     service = CandidateService()
     return await service.get_pipeline_stats(org["id"])
@@ -73,7 +78,9 @@ async def pipeline_stats(current_user: Dict[str, Any] = Depends(get_current_user
 
 @limiter.limit("30/minute")
 @router.get("/{candidate_id}")
-async def get_candidate(candidate_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_candidate(
+    request: Request,
+    candidate_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     org = await _get_user_org(current_user)
     service = CandidateService()
     c = await service.get(candidate_id, org["id"])
@@ -84,7 +91,9 @@ async def get_candidate(candidate_id: str, current_user: Dict[str, Any] = Depend
 
 @limiter.limit("30/minute")
 @router.put("/{candidate_id}")
-async def update_candidate(candidate_id: str, data: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)):
+async def update_candidate(
+    request: Request,
+    candidate_id: str, data: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)):
     org = await _get_user_org(current_user)
     service = CandidateService()
     updated = await service.update(candidate_id, org["id"], data)
@@ -95,7 +104,10 @@ async def update_candidate(candidate_id: str, data: Dict[str, Any], current_user
 
 @limiter.limit("30/minute")
 @router.post("/{candidate_id}/move")
-async def move_candidate(candidate_id: str, req: MoveStageRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def move_candidate(
+    request: Request,
+    candidate_id: str, req: MoveStageRequest, current_user: Dict[str, Any] = Depends(get_current_user
+)):
     org = await _get_user_org(current_user)
     service = CandidateService()
     try:
@@ -109,7 +121,9 @@ async def move_candidate(candidate_id: str, req: MoveStageRequest, current_user:
 
 @limiter.limit("30/minute")
 @router.delete("/{candidate_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_candidate(candidate_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def delete_candidate(
+    request: Request,
+    candidate_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     org = await _get_user_org(current_user)
     service = CandidateService()
     if not await service.delete(candidate_id, org["id"]):

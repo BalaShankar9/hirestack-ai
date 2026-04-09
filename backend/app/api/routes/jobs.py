@@ -4,7 +4,7 @@ Job Description routes (Firestore)
 from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 
 from app.services.job import JobService
 from app.api.deps import get_current_user
@@ -15,6 +15,7 @@ router = APIRouter()
 @limiter.limit("30/minute")
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_job(
+    request: Request,
     job_data: Dict[str, Any],
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -26,6 +27,7 @@ async def create_job(
 @limiter.limit("30/minute")
 @router.get("")
 async def list_jobs(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """List all user's job descriptions."""
@@ -36,6 +38,7 @@ async def list_jobs(
 @limiter.limit("30/minute")
 @router.get("/{job_id}")
 async def get_job(
+    request: Request,
     job_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -50,6 +53,7 @@ async def get_job(
 @limiter.limit("30/minute")
 @router.put("/{job_id}")
 async def update_job(
+    request: Request,
     job_id: str,
     job_data: Dict[str, Any],
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -65,6 +69,7 @@ async def update_job(
 @limiter.limit("30/minute")
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_job(
+    request: Request,
     job_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -78,6 +83,7 @@ async def delete_job(
 @limiter.limit("30/minute")
 @router.post("/{job_id}/parse")
 async def parse_job(
+    request: Request,
     job_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):

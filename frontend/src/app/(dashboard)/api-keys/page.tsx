@@ -6,6 +6,7 @@ import api from "@/lib/api";
 import type { APIKey } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Key, Loader2, Plus, Trash2, Copy, Check, Eye, EyeOff, BarChart3 } from "lucide-react";
+import { RoleGate } from "@/components/role-gate";
 
 export default function APIKeysPage() {
   const { user } = useAuth();
@@ -81,6 +82,7 @@ export default function APIKeysPage() {
   };
 
   return (
+    <RoleGate feature="api_keys" title="API Keys" features={["Create & manage API keys", "Track usage & rate limits", "Developer integrations"]}>
     <div className="space-y-8 p-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -202,5 +204,6 @@ export default function APIKeysPage() {
         )}
       </div>
     </div>
+    </RoleGate>
   );
 }

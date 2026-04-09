@@ -4,7 +4,7 @@ Career Consultant routes - Roadmaps and recommendations (Firestore)
 from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 
 from app.services.roadmap import RoadmapService
 from app.api.deps import get_current_user
@@ -40,6 +40,7 @@ async def generate_roadmap(
 @limiter.limit("5/minute")
 @router.get("/roadmaps")
 async def list_roadmaps(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """List all user's roadmaps."""
@@ -50,6 +51,7 @@ async def list_roadmaps(
 @limiter.limit("5/minute")
 @router.get("/roadmap/{roadmap_id}")
 async def get_roadmap(
+    request: Request,
     roadmap_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -81,6 +83,7 @@ async def update_progress(
 @limiter.limit("5/minute")
 @router.delete("/roadmap/{roadmap_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_roadmap(
+    request: Request,
     roadmap_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -101,8 +104,10 @@ class CoachQuestionRequest(BaseModel):
 @limiter.limit("5/minute")
 @router.post("/coach")
 async def ask_coach(
+    request: Request,
     req: CoachQuestionRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(get_current_user
+),
 ):
     """Ask the AI coach a question about an application."""
     from app.core.database import get_db, TABLES

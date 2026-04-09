@@ -4,7 +4,7 @@ Gap Analysis routes (Firestore)
 from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 
 from app.services.gap import GapService
 from app.api.deps import get_current_user
@@ -41,6 +41,7 @@ async def analyze_gaps(
 @limiter.limit("30/minute")
 @router.get("")
 async def list_gap_reports(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """List all user's gap reports."""
@@ -51,6 +52,7 @@ async def list_gap_reports(
 @limiter.limit("30/minute")
 @router.get("/{report_id}")
 async def get_gap_report(
+    request: Request,
     report_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -65,6 +67,7 @@ async def get_gap_report(
 @limiter.limit("30/minute")
 @router.get("/{report_id}/summary")
 async def get_gap_summary(
+    request: Request,
     report_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -79,6 +82,7 @@ async def get_gap_summary(
 @limiter.limit("30/minute")
 @router.post("/{report_id}/refresh")
 async def refresh_gap_analysis(
+    request: Request,
     report_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -93,6 +97,7 @@ async def refresh_gap_analysis(
 @limiter.limit("30/minute")
 @router.delete("/{report_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_gap_report(
+    request: Request,
     report_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):

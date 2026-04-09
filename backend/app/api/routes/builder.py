@@ -4,7 +4,7 @@ Document Builder routes (Firestore)
 from typing import Dict, Any, Optional
 
 from app.core.security import limiter
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 
 from app.services.document import DocumentService
 from app.api.deps import get_current_user
@@ -64,6 +64,7 @@ async def generate_all_documents(
 @limiter.limit("30/minute")
 @router.get("/documents")
 async def list_documents(
+    request: Request,
     document_type: Optional[str] = Query(None),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -75,6 +76,7 @@ async def list_documents(
 @limiter.limit("30/minute")
 @router.get("/documents/{document_id}")
 async def get_document(
+    request: Request,
     document_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -89,6 +91,7 @@ async def get_document(
 @limiter.limit("30/minute")
 @router.put("/documents/{document_id}")
 async def update_document(
+    request: Request,
     document_id: str,
     update_data: Dict[str, Any],
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -104,6 +107,7 @@ async def update_document(
 @limiter.limit("30/minute")
 @router.post("/documents/{document_id}/version")
 async def create_document_version(
+    request: Request,
     document_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -118,6 +122,7 @@ async def create_document_version(
 @limiter.limit("30/minute")
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(
+    request: Request,
     document_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):

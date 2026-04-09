@@ -4,7 +4,7 @@ Analytics routes (Firestore)
 from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.services.analytics import AnalyticsService
 from app.api.deps import get_current_user
@@ -15,6 +15,7 @@ router = APIRouter()
 @limiter.limit("30/minute")
 @router.get("/dashboard")
 async def get_dashboard(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get analytics dashboard data."""
@@ -25,6 +26,7 @@ async def get_dashboard(
 @limiter.limit("30/minute")
 @router.get("/activity")
 async def get_activity(
+    request: Request,
     days: int = Query(30),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -37,6 +39,7 @@ async def get_activity(
 @limiter.limit("30/minute")
 @router.get("/progress")
 async def get_progress(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get user's overall progress."""
@@ -47,6 +50,7 @@ async def get_progress(
 @limiter.limit("30/minute")
 @router.post("/track")
 async def track_event(
+    request: Request,
     body: Dict[str, Any],
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -63,6 +67,7 @@ async def track_event(
 @limiter.limit("30/minute")
 @router.get("/stats/applications")
 async def get_application_stats(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get application-related statistics."""
@@ -73,6 +78,7 @@ async def get_application_stats(
 @limiter.limit("5/minute")
 @router.get("/daily-briefing")
 async def get_daily_briefing(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get AI-generated daily career insight."""

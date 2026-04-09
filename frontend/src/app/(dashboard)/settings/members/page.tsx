@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { Users, Plus, Loader2, Mail, Shield, Crown, UserX, ArrowLeft } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import Link from "next/link";
+import { RoleGate } from "@/components/role-gate";
 
 const ROLE_COLORS: Record<string, string> = {
   owner: "bg-violet-500/10 text-violet-500 border-violet-500/20",
@@ -73,6 +74,7 @@ export default function MembersPage() {
   };
 
   return (
+    <RoleGate feature="members" title="Team Members" features={["Invite & manage team members", "Assign roles & permissions", "Organization management"]}>
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
         <Link href="/settings" className="text-muted-foreground hover:text-foreground"><ArrowLeft className="h-5 w-5" /></Link>
@@ -139,5 +141,6 @@ export default function MembersPage() {
         </div>
       )}
     </div>
+    </RoleGate>
   );
 }

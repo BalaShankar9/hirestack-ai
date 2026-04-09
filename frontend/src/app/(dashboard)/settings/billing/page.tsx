@@ -12,6 +12,7 @@ import {
   Zap, Users, FileText, ScanSearch, Bot, ArrowRight,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { RoleGate } from "@/components/role-gate";
 
 const PLANS = [
   {
@@ -64,6 +65,7 @@ export default function BillingPage() {
   const limits = billing?.limits || {};
 
   return (
+    <RoleGate feature="billing" title="Billing & Plans" features={["Manage subscription plans", "View usage & invoices", "Upgrade or downgrade plans"]}>
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
         <Link href="/settings" className="text-muted-foreground hover:text-foreground"><ArrowLeft className="h-5 w-5" /></Link>
@@ -150,5 +152,6 @@ export default function BillingPage() {
         </>
       )}
     </div>
+    </RoleGate>
   );
 }

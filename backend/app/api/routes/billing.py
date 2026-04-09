@@ -23,7 +23,9 @@ class CheckoutRequest(BaseModel):
 
 @limiter.limit("20/minute")
 @router.get("/status")
-async def get_billing_status(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_billing_status(
+    request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get current plan, usage, and limits."""
     from app.services.org import OrgService
     org_service = OrgService()
@@ -37,7 +39,10 @@ async def get_billing_status(current_user: Dict[str, Any] = Depends(get_current_
 
 @limiter.limit("20/minute")
 @router.post("/checkout")
-async def create_checkout(req: CheckoutRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def create_checkout(
+    request: Request,
+    req: CheckoutRequest, current_user: Dict[str, Any] = Depends(get_current_user
+)):
     """Create a Stripe checkout session for upgrading."""
     if req.plan not in ("pro", "enterprise"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid plan")
@@ -62,7 +67,9 @@ async def create_checkout(req: CheckoutRequest, current_user: Dict[str, Any] = D
 
 @limiter.limit("20/minute")
 @router.post("/portal")
-async def create_portal(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def create_portal(
+    request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user)):
     """Open Stripe billing portal for managing subscription."""
     from app.services.org import OrgService
     org_service = OrgService()
@@ -108,7 +115,10 @@ class RecordUsageRequest(BaseModel):
 
 @limiter.limit("20/minute")
 @router.post("/record-export")
-async def record_export(req: RecordUsageRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+async def record_export(
+    request: Request,
+    req: RecordUsageRequest, current_user: Dict[str, Any] = Depends(get_current_user
+)):
     """Record a feature usage (export, application, etc.)."""
     from app.services.org import OrgService
     org_service = OrgService()
@@ -123,7 +133,9 @@ async def record_export(req: RecordUsageRequest, current_user: Dict[str, Any] = 
 
 @limiter.limit("20/minute")
 @router.get("/quota-check")
-async def quota_check(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def quota_check(
+    request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user)):
     """Lightweight quota check for the download gate."""
     from app.services.org import OrgService
     org_service = OrgService()

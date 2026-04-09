@@ -13,6 +13,7 @@ import {
   Building2, ChevronRight, ArrowRight, Briefcase, X,
   UserPlus, Filter,
 } from "lucide-react";
+import { RoleGate } from "@/components/role-gate";
 import { toast } from "@/hooks/use-toast";
 
 const STAGES = [
@@ -92,6 +93,7 @@ export default function CandidatesPage() {
   });
 
   return (
+    <RoleGate feature="pipeline" title="Candidate Pipeline" features={["Track candidates across stages", "Manage hiring pipeline", "Team collaboration on candidates"]}>
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -213,5 +215,6 @@ export default function CandidatesPage() {
         </div>
       )}
     </div>
+    </RoleGate>
   );
 }

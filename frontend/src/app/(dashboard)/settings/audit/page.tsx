@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { Shield, ArrowLeft, Loader2, Clock, User, FileText } from "lucide-react";
+import { RoleGate } from "@/components/role-gate";
 
 const ACTION_COLORS: Record<string, string> = {
   "org.created": "text-emerald-500",
@@ -34,6 +35,7 @@ export default function AuditLogPage() {
   }, [session?.access_token]);
 
   return (
+    <RoleGate feature="audit" title="Audit Log" features={["View organization activity", "Track member actions", "Security & compliance monitoring"]}>
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
         <Link href="/settings" className="text-muted-foreground hover:text-foreground"><ArrowLeft className="h-5 w-5" /></Link>
@@ -79,5 +81,6 @@ export default function AuditLogPage() {
         </div>
       )}
     </div>
+    </RoleGate>
   );
 }
