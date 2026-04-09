@@ -200,8 +200,12 @@ export default function NewApplicationPage() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const guestId = "guest-" + Math.random().toString(36).slice(2, 10);
-    const uid = user?.uid || user?.id || guestId;
+    const uid = user?.uid || user?.id;
+    if (!uid) {
+      setGenError("You must be logged in to create an application.");
+      setGenerating(false);
+      return;
+    }
 
     let appId = draftAppId;
     try {
@@ -213,13 +217,9 @@ export default function NewApplicationPage() {
             confirmedFacts
           );
         } catch (createErr) {
-          if (user) {
-            setGenError("Failed to create application workspace. Please try again.");
-            setGenerating(false);
-            return;
-          }
-          // Guest may not have DB write access — use a temp ID for preview
-          appId = "temp-" + Date.now().toString(36);
+          setGenError("Failed to create application workspace. Please try again.");
+          setGenerating(false);
+          return;
         }
         setDraftAppId(appId);
 

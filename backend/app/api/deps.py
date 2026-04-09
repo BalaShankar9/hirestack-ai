@@ -131,10 +131,7 @@ async def get_current_user_optional(
 async def require_premium_user(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """Require premium subscription."""
-    if not current_user.get("is_premium", False):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Premium subscription required",
-        )
+    """Require premium subscription.
+    TESTING MODE: all users treated as premium — re-enable for production.
+    """
     return current_user

@@ -117,7 +117,7 @@ function Gauge({ value, size = 100, label }: { value: number; size?: number; lab
 /* ── Page ───────────────────────────────────────────────────────── */
 
 export default function ATSScannerPage() {
-  const { user } = useAuth();
+  const { user, session: authSession } = useAuth();
   const [inputMode, setInputMode] = useState<"paste" | "upload">("paste");
   const [documentContent, setDocumentContent] = useState("");
   const [jdText, setJdText] = useState("");
@@ -154,9 +154,13 @@ export default function ATSScannerPage() {
     setScan(null);
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const token = authSession?.access_token;
       const res = await fetch(`${API_URL}/api/ats/scan`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ document_content: documentContent, jd_text: jdText }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);

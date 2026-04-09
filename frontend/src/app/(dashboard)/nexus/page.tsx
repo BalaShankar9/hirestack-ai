@@ -242,6 +242,11 @@ export default function CareerNexusPage() {
       if (gaps.status === "fulfilled") setAggregateGaps(gaps.value);
       if (ev.status === "fulfilled") setEvidence(ev.value);
       if (market.status === "fulfilled" && !market.value?.error) setMarketIntel(market.value);
+
+      const failed = [comp, worth, gaps, ev, market].filter(r => r.status === "rejected").length;
+      if (failed > 0) {
+        setErrorMessage(`Some intelligence data couldn't load (${failed} of 5). This may resolve on retry.`);
+      }
     } catch { /* non-critical */ }
   }, [token]);
 

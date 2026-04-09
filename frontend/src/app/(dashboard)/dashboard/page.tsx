@@ -94,7 +94,7 @@ const QUICK_ACTIONS = [
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, session: authSession } = useAuth();
   const userId = user?.uid || user?.id || null;
 
   const { data: apps = [], loading: appsLoading, removeItem: removeApp } = useApplications(userId, 50);
@@ -124,14 +124,18 @@ export default function DashboardPage() {
   // Load AI briefing
   useEffect(() => {
     if (!userId || briefing) return;
+    const token = authSession?.access_token;
+    if (!token) return;
     setBriefingLoading(true);
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-    fetch(`${API_URL}/api/analytics/daily-briefing`)
-      .then(r => r.json())
+    fetch(`${API_URL}/api/analytics/daily-briefing`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(d => setBriefing(d))
       .catch(() => { setBriefing(null); })
       .finally(() => setBriefingLoading(false));
-  }, [userId, briefing]);
+  }, [userId, briefing, authSession?.access_token]);
 
   const handleDelete = async () => {
     if (!deleteTarget || !userId) return;
@@ -159,8 +163,21 @@ export default function DashboardPage() {
 
   const isNewUser = !appsLoading && apps.length === 0;
 
+  // Show loading skeleton while initial data loads to prevent flicker between new/existing user views
+  if (appsLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-40 rounded-3xl" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}
+        </div>
+        <Skeleton className="h-64 rounded-2xl" />
+      </div>
+    );
+  }
+
   // ── New User: Onboarding-first experience ──
-  if (isNewUser && !appsLoading) {
+  if (isNewUser) {
     return (
       <div className="space-y-6">
         {/* Welcome + primary CTA */}

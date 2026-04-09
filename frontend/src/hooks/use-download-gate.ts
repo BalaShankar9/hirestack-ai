@@ -30,12 +30,9 @@ export function useDownloadGate() {
         return;
       }
 
-      // Gate 2: Must have quota
-      const { allowed } = checkQuota("exports");
-      if (!allowed) {
-        setShowUpgrade(true);
-        return;
-      }
+      // TESTING MODE: quota gate disabled — re-enable for production
+      // const { allowed } = checkQuota("exports");
+      // if (!allowed) { setShowUpgrade(true); return; }
 
       // All clear — execute download
       try {

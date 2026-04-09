@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.api.deps import get_current_user, get_current_user_or_guest
+from app.api.deps import get_current_user
 from app.core.security import limiter
 
 # ── Guest abuse prevention ─────────────────────────────────────────────
@@ -35,19 +35,10 @@ GUEST_MAX_RESUMES_PER_DAY = 5
 
 
 def _check_guest_limit(request: Request, current_user: Dict[str, Any], limit: int) -> None:
-    """Raise 429 if guest user exceeds daily limit."""
-    if not current_user.get("is_guest"):
-        return  # Authenticated users are not limited here
-    ip = request.client.host if request.client else "unknown"
-    now = datetime.now(timezone.utc)
-    # Clean old entries (older than 24h)
-    _guest_usage[ip] = [t for t in _guest_usage[ip] if (now - t).total_seconds() < 86400]
-    if len(_guest_usage[ip]) >= limit:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Free trial limit reached ({limit} per day). Create a free account to continue.",
-        )
-    _guest_usage[ip].append(now)
+    """Raise 429 if guest user exceeds daily limit.
+    TESTING MODE: guest limits disabled — re-enable for production.
+    """
+    return  # All users unlimited during testing
 
 
 try:
@@ -171,8 +162,8 @@ def _validate_pipeline_input(req: PipelineRequest) -> None:
 # ── Main pipeline endpoint ────────────────────────────────────────────
 @router.post("/pipeline")
 @limiter.limit("3/minute")
-async def generate_pipeline(request: Request, req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user_or_guest)):
-    """Run the complete AI generation pipeline and return all modules. Allows guest access."""
+async def generate_pipeline(request: Request, req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Run the complete AI generation pipeline and return all modules."""
     _check_guest_limit(request, current_user, GUEST_MAX_GENERATIONS_PER_DAY)
     _validate_pipeline_input(req)
     try:
@@ -873,7 +864,7 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
 
 @router.post("/pipeline/stream")
 @limiter.limit("3/minute")
-async def generate_pipeline_stream(request: Request, req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user_or_guest)):
+async def generate_pipeline_stream(request: Request, req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     SSE streaming version of the pipeline.
     Uses the agent pipeline (Researcher → Drafter → Critic → Optimizer →

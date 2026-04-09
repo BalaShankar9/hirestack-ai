@@ -30,15 +30,31 @@ class CheckoutRequest(BaseModel):
 async def get_billing_status(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
-    """Get current plan, usage, and limits."""
+    """Get current plan, usage, and limits.
+    TESTING MODE: returns pro plan with unlimited limits if no org/sub found."""
     from app.services.org import OrgService
     org_service = OrgService()
-    orgs = await org_service.get_user_orgs(current_user["id"])
+    try:
+        orgs = await org_service.get_user_orgs(current_user["id"])
+    except Exception:
+        orgs = []
     if not orgs:
-        return {"plan": "free", "plan_name": "Free", "usage": {}, "limits": {}, "status": "none"}
+        # TESTING MODE: return pro-like defaults so nothing is gated
+        return {
+            "plan": "pro", "plan_name": "Pro (Testing)",
+            "usage": {}, "limits": {"applications": -1, "exports": -1, "ats_scans": -1, "ai_calls": -1, "members": -1, "candidates": -1},
+            "status": "active",
+        }
 
     billing = BillingService()
-    return await billing.get_plan_info(orgs[0]["id"])
+    try:
+        return await billing.get_plan_info(orgs[0]["id"])
+    except Exception:
+        return {
+            "plan": "pro", "plan_name": "Pro (Testing)",
+            "usage": {}, "limits": {"applications": -1, "exports": -1, "ats_scans": -1, "ai_calls": -1, "members": -1, "candidates": -1},
+            "status": "active",
+        }
 
 
 @limiter.limit("20/minute")
