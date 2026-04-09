@@ -44,6 +44,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AITrace } from "@/components/ui/ai-trace";
+import { toast } from "@/hooks/use-toast";
 import {
   Dialog,
   DialogContent,
@@ -158,6 +159,18 @@ export default function EvidenceVaultPage() {
 
       if (kind === "file" && fileRef.current?.files?.[0]) {
         const file = fileRef.current.files[0];
+        const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+        const ALLOWED_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/webp", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
+        if (file.size > MAX_FILE_SIZE) {
+          toast({ title: "File too large", description: "Maximum file size is 50 MB.", variant: "error" });
+          setUploading(false);
+          return;
+        }
+        if (!ALLOWED_TYPES.includes(file.type)) {
+          toast({ title: "Unsupported file type", description: "Upload a PDF, Word doc, image, or text file.", variant: "error" });
+          setUploading(false);
+          return;
+        }
         fileName = file.name;
         storageUrl = await uploadEvidenceFile(userId, file);
       }
@@ -204,7 +217,7 @@ export default function EvidenceVaultPage() {
       resetForm();
       setDialogOpen(false);
     } catch (err) {
-      console.error("Failed to create evidence:", err);
+      toast({ title: "Failed to save evidence", description: "Please try again.", variant: "error" });
     } finally {
       setUploading(false);
     }
@@ -216,8 +229,9 @@ export default function EvidenceVaultPage() {
     try {
       await deleteEvidence(id);
       removeItem(id);
+      toast({ title: "Evidence deleted" });
     } catch (err) {
-      console.error("Failed to delete evidence:", err);
+      toast({ title: "Delete failed", description: "Please try again.", variant: "error" });
     } finally {
       setDeletingId(null);
     }

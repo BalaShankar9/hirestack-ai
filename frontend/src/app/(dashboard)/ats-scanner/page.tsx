@@ -145,6 +145,10 @@ export default function ATSScannerPage() {
 
   const runScan = async () => {
     if (!documentContent.trim()) return;
+    if (!jdText.trim() || jdText.trim().length < 20) {
+      toast({ title: "Job description required", description: "Paste at least a short job description for accurate keyword matching.", variant: "warning" });
+      return;
+    }
     setLoading(true);
     setError("");
     setScan(null);

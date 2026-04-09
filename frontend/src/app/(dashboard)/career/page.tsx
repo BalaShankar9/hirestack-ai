@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TaskQueue } from "@/components/workspace/task-queue";
+import { toast } from "@/hooks/use-toast";
 
 export default function CareerLabPage() {
   const router = useRouter();
@@ -89,7 +90,7 @@ export default function CareerLabPage() {
                   await trackEvent(user!.uid, { name: "task_completed", appId: task.appId ?? undefined, properties: { taskId: task.id } });
                 }
               } catch (err) {
-                console.error("Task toggle failed:", err);
+                toast({ title: "Couldn't update task", description: "Please try again.", variant: "error" });
               }
             }}
           />

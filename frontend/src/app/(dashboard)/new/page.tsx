@@ -36,6 +36,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { UploadZone } from "@/components/upload-zone";
+import { toast } from "@/hooks/use-toast";
 import api from "@/lib/api";
 import type { Profile } from "@/types";
 
@@ -141,11 +142,12 @@ export default function NewApplicationPage() {
         const urlPromise = user ? uploadResume(user.uid, file) : Promise.resolve("");
         const [text, url] = await Promise.all([textPromise, urlPromise]);
 
-        // Warn if parsing returned empty or very short text (likely parse failure)
+        // Warn user if parsing returned empty or very short text
         if (!text || text.trim().length < 50) {
-          console.warn("[HireStack] Resume text extraction resulted in very short content (possible parse failure)");
-          // In a production app with toast system, you might show:
-          // toast.warning("Resume extraction incomplete", "The text extraction may have failed. Please review the parsed content.");
+          toast({
+            title: "Resume extraction incomplete",
+            description: "Text extraction may have failed. You can paste your resume text manually below.",
+          });
         }
 
         setResumeText(text);
@@ -210,8 +212,13 @@ export default function NewApplicationPage() {
             jobTitle || "New Application",
             confirmedFacts
           );
-        } catch {
-          // Guest may not have DB write access — use a temp ID
+        } catch (createErr) {
+          if (user) {
+            setGenError("Failed to create application workspace. Please try again.");
+            setGenerating(false);
+            return;
+          }
+          // Guest may not have DB write access — use a temp ID for preview
           appId = "temp-" + Date.now().toString(36);
         }
         setDraftAppId(appId);

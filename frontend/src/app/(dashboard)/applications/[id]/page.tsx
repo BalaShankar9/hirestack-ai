@@ -172,9 +172,18 @@ export default function ApplicationWorkspacePage() {
   const [exporting, setExporting] = useState(false);
   const [regeneratingModule, setRegeneratingModule] = useState<string | null>(null);
   const [regeneratingAll, setRegeneratingAll] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const { state: agentState, subscribe: agentSubscribe, handleAgentEvent, handleComplete, handleError: handleAgentError, reset: agentReset } = useAgentStatus();
+
+  // Auto-clear save indicator
+  useEffect(() => {
+    if (saveStatus === "saved" || saveStatus === "error") {
+      const t = setTimeout(() => setSaveStatus("idle"), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [saveStatus]);
 
   // Track workspace views
   useEffect(() => {
@@ -206,7 +215,8 @@ export default function ApplicationWorkspacePage() {
     if (!appRef.current) return;
     const t = setTimeout(() => {
       if (cvLocal !== (appRef.current?.cvHtml || "")) {
-        patchApplication(appId, { cvHtml: cvLocal });
+        setSaveStatus("saving");
+        patchApplication(appId, { cvHtml: cvLocal }).then(() => setSaveStatus("saved")).catch(() => setSaveStatus("error"));
       }
     }, 900);
     return () => clearTimeout(t);
@@ -217,7 +227,8 @@ export default function ApplicationWorkspacePage() {
     if (!appRef.current) return;
     const t = setTimeout(() => {
       if (clLocal !== (appRef.current?.coverLetterHtml || "")) {
-        patchApplication(appId, { coverLetterHtml: clLocal });
+        setSaveStatus("saving");
+        patchApplication(appId, { coverLetterHtml: clLocal }).then(() => setSaveStatus("saved")).catch(() => setSaveStatus("error"));
       }
     }, 900);
     return () => clearTimeout(t);
@@ -228,7 +239,8 @@ export default function ApplicationWorkspacePage() {
     if (!appRef.current) return;
     const t = setTimeout(() => {
       if (psLocal !== (appRef.current?.personalStatementHtml || "")) {
-        patchApplication(appId, { personalStatementHtml: psLocal });
+        setSaveStatus("saving");
+        patchApplication(appId, { personalStatementHtml: psLocal }).then(() => setSaveStatus("saved")).catch(() => setSaveStatus("error"));
       }
     }, 900);
     return () => clearTimeout(t);
@@ -239,7 +251,8 @@ export default function ApplicationWorkspacePage() {
     if (!appRef.current) return;
     const t = setTimeout(() => {
       if (portfolioLocal !== (appRef.current?.portfolioHtml || "")) {
-        patchApplication(appId, { portfolioHtml: portfolioLocal });
+        setSaveStatus("saving");
+        patchApplication(appId, { portfolioHtml: portfolioLocal }).then(() => setSaveStatus("saved")).catch(() => setSaveStatus("error"));
       }
     }, 900);
     return () => clearTimeout(t);
@@ -297,7 +310,7 @@ export default function ApplicationWorkspacePage() {
         await trackEvent(user.uid, { name: "task_completed", appId: t.appId ?? undefined, properties: { taskId: t.id } });
       }
     } catch (err) {
-      console.error("Task toggle failed:", err);
+      toast({ title: "Couldn't update task", description: "Please try again.", variant: "error" });
     }
   };
 
@@ -446,15 +459,20 @@ export default function ApplicationWorkspacePage() {
         <div className="flex-1 min-w-0">
           <ScoreboardHeader title={title} subtitle={subtitle} scorecard={app.scores} />
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="shrink-0 gap-2 rounded-xl text-muted-foreground hover:text-destructive hover:border-destructive/30 hover:bg-destructive/5 transition-colors"
-          onClick={() => setDeleteOpen(true)}
-        >
-          <Trash2 className="h-4 w-4" />
-          Delete
-        </Button>
+        <div className="flex items-center gap-3 shrink-0">
+          {saveStatus === "saving" && <span className="text-xs text-muted-foreground animate-pulse">Saving…</span>}
+          {saveStatus === "saved" && <span className="text-xs text-emerald-500">Saved</span>}
+          {saveStatus === "error" && <span className="text-xs text-destructive">Save failed</span>}
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 rounded-xl text-muted-foreground hover:text-destructive hover:border-destructive/30 hover:bg-destructive/5 transition-colors"
+            onClick={() => setDeleteOpen(true)}
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
@@ -934,7 +952,7 @@ export default function ApplicationWorkspacePage() {
                                     documentType: "cv",
                                   });
                                 } catch (err) {
-                                  console.error("Benchmark CV export failed:", err);
+                                  toast({ title: "Export failed", description: "Could not generate PDF.", variant: "error" });
                                 }
                               }}
                             >
@@ -1390,7 +1408,7 @@ export default function ApplicationWorkspacePage() {
                           gapAnalysisHtml: app.gaps ? buildGapAnalysisHtml(app.gaps) : undefined,
                         });
                       } catch (err) {
-                        console.error("ZIP export failed:", err);
+                        toast({ title: "Export failed", description: "Could not generate ZIP.", variant: "error" });
                       } finally {
                         setExporting(false);
                       }

@@ -55,15 +55,18 @@ function LoginContent() {
       } else {
         await signIn(email, password);
       }
-      // Wait for session to propagate (cookie needs to be set)
+      // Poll for session with backoff instead of fixed 800ms wait
       const redirect = searchParams.get("redirect") || "/dashboard";
-      await new Promise((r) => setTimeout(r, 800));
-      // Verify session exists before redirecting
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      if (currentSession) {
+      let sessionFound = false;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const { data: { session: s } } = await supabase.auth.getSession();
+        if (s?.access_token) { sessionFound = true; break; }
+        await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+      }
+      if (sessionFound) {
         window.location.href = redirect;
       } else {
-        setError("Session not established. Please try again.");
+        setError("Session not established. Please refresh and try again.");
       }
     } catch (err: any) {
       const msg = err?.message ?? "Authentication failed";

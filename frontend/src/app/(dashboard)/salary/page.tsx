@@ -175,15 +175,15 @@ export default function SalaryCoachPage() {
               <div className="grid grid-cols-3 gap-3">
                 <div className="rounded-2xl border bg-rose-500/5 border-rose-500/20 p-5 text-center">
                   <p className="text-2xs text-muted-foreground uppercase tracking-wider">Low (P25)</p>
-                  <p className="text-2xl font-bold text-rose-500 tabular-nums mt-1">{fmt(market.low || market.percentile_25 || 0)}</p>
+                  <p className="text-2xl font-bold text-rose-500 tabular-nums mt-1">{(market.low || market.percentile_25) ? fmt(market.low || market.percentile_25) : "—"}</p>
                 </div>
                 <div className="rounded-2xl border-2 border-emerald-500 bg-emerald-500/5 p-5 text-center shadow-glow-sm">
                   <p className="text-2xs text-muted-foreground uppercase tracking-wider">Median</p>
-                  <p className="text-3xl font-bold text-emerald-500 tabular-nums mt-1">{fmt(market.median || 0)}</p>
+                  <p className="text-3xl font-bold text-emerald-500 tabular-nums mt-1">{market.median ? fmt(market.median) : "—"}</p>
                 </div>
                 <div className="rounded-2xl border bg-blue-500/5 border-blue-500/20 p-5 text-center">
                   <p className="text-2xs text-muted-foreground uppercase tracking-wider">High (P75)</p>
-                  <p className="text-2xl font-bold text-blue-500 tabular-nums mt-1">{fmt(market.high || market.percentile_75 || 0)}</p>
+                  <p className="text-2xl font-bold text-blue-500 tabular-nums mt-1">{(market.high || market.percentile_75) ? fmt(market.high || market.percentile_75) : "—"}</p>
                 </div>
               </div>
 
@@ -198,9 +198,9 @@ export default function SalaryCoachPage() {
                   )}
                 </div>
                 <div className="flex justify-between text-2xs text-muted-foreground font-mono">
-                  <span>{fmt(market.low || market.percentile_25 || 0)}</span>
-                  <span className="font-bold text-foreground">{fmt(market.median || 0)}</span>
-                  <span>{fmt(market.high || market.percentile_75 || 0)}</span>
+                  <span>{(market.low || market.percentile_25) ? fmt(market.low || market.percentile_25) : "—"}</span>
+                  <span className="font-bold text-foreground">{market.median ? fmt(market.median) : "—"}</span>
+                  <span>{(market.high || market.percentile_75) ? fmt(market.high || market.percentile_75) : "—"}</span>
                 </div>
               </div>
 
