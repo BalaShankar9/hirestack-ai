@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from app.services.ats import ATSService
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, validate_uuid
 from app.api.response import success_response
 from app.core.security import limiter
 import structlog
@@ -87,6 +87,7 @@ async def get_scan(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get a specific ATS scan."""
+    validate_uuid(scan_id, "scan_id")
     service = ATSService()
     scan = await service.get_scan(scan_id, current_user["id"])
     if not scan:

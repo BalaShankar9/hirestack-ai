@@ -474,10 +474,10 @@ export default function InterviewSimulatorPage() {
           <AITrace
             variant="banner"
             items={[
-              `${questions.length} questions generated`,
-              `${answers.length} answers evaluated`,
-              `${interviewType} · ${difficulty} level`,
-              `${mode} mode`,
+              { label: `${questions.length} questions generated`, done: true },
+              { label: `${answers.length} answers evaluated`, done: true },
+              { label: `${interviewType} · ${difficulty} level`, done: true },
+              { label: `${mode} mode`, done: true },
             ]}
           />
           {/* Score summary */}

@@ -7,7 +7,7 @@ from app.core.security import limiter
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 
 from app.services.roadmap import RoadmapService
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, validate_uuid
 from pydantic import BaseModel
 import structlog
 
@@ -56,6 +56,7 @@ async def get_roadmap(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get a specific roadmap."""
+    validate_uuid(roadmap_id, "roadmap_id")
     service = RoadmapService()
     roadmap = await service.get_roadmap(roadmap_id, current_user["id"])
     if not roadmap:
@@ -71,6 +72,7 @@ async def update_progress(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Update milestone progress in a roadmap."""
+    validate_uuid(roadmap_id, "roadmap_id")
     service = RoadmapService()
     updated = await service.update_milestone_progress(
         roadmap_id, current_user["id"], request.get("milestone_id", ""), request.get("status", "")
@@ -88,6 +90,7 @@ async def delete_roadmap(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Delete a roadmap."""
+    validate_uuid(roadmap_id, "roadmap_id")
     service = RoadmapService()
     deleted = await service.delete_roadmap(roadmap_id, current_user["id"])
     if not deleted:

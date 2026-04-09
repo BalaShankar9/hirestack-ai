@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import StreamingResponse, Response
 
 from app.services.export import ExportService
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, validate_uuid
 import structlog
 
 logger = structlog.get_logger()
@@ -58,6 +58,7 @@ async def get_export(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get export details."""
+    validate_uuid(export_id, "export_id")
     service = ExportService()
     export = await service.get_export(export_id, current_user["id"])
     if not export:
@@ -73,6 +74,7 @@ async def download_export(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Download an exported file."""
+    validate_uuid(export_id, "export_id")
     service = ExportService()
     try:
         file_content, filename, content_type = await service.download_export(export_id, current_user["id"])
@@ -96,6 +98,7 @@ async def delete_export(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Delete an export."""
+    validate_uuid(export_id, "export_id")
     service = ExportService()
     deleted = await service.delete_export(export_id, current_user["id"])
     if not deleted:

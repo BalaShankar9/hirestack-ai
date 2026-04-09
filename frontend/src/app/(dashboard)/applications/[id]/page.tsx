@@ -522,11 +522,11 @@ export default function ApplicationWorkspacePage() {
                 variant="inline"
                 className="mb-4"
                 items={[
-                  `${keywords.length} keywords extracted`,
-                  `${missing.length} gaps identified`,
-                  `${tasks.length} tasks generated`,
-                  `${evidence.length} evidence items available`,
-                ].filter(Boolean)}
+                  { label: `${keywords.length} keywords extracted`, done: true },
+                  { label: `${missing.length} gaps identified`, done: true },
+                  { label: `${tasks.length} tasks generated`, done: true },
+                  { label: `${evidence.length} evidence items available`, done: true },
+                ]}
               />
               {/* Module completion progress */}
               {(() => {

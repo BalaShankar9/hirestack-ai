@@ -7,7 +7,7 @@ from app.core.security import limiter
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 
 from app.services.benchmark import BenchmarkService
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, validate_uuid
 from app.api.response import success_response
 import structlog
 
@@ -45,6 +45,7 @@ async def get_benchmark(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get a specific benchmark."""
+    validate_uuid(benchmark_id, "benchmark_id")
     service = BenchmarkService()
     benchmark = await service.get_benchmark(benchmark_id, current_user["id"])
     if not benchmark:
@@ -60,6 +61,7 @@ async def get_benchmark_for_job(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get benchmark for a specific job."""
+    validate_uuid(job_id, "job_id")
     service = BenchmarkService()
     benchmark = await service.get_benchmark_for_job(job_id, current_user["id"])
     if not benchmark:
@@ -75,6 +77,7 @@ async def regenerate_benchmark(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Regenerate a benchmark."""
+    validate_uuid(benchmark_id, "benchmark_id")
     service = BenchmarkService()
     benchmark = await service.regenerate_benchmark(benchmark_id, current_user["id"])
     if not benchmark:
@@ -90,6 +93,7 @@ async def delete_benchmark(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Delete a benchmark."""
+    validate_uuid(benchmark_id, "benchmark_id")
     service = BenchmarkService()
     deleted = await service.delete_benchmark(benchmark_id, current_user["id"])
     if not deleted:

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from pydantic import BaseModel
 
 from app.services.profile import ProfileService
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, validate_uuid
 import structlog
 
 logger = structlog.get_logger()
@@ -109,6 +109,7 @@ async def get_profile(
     request: Request,
     profile_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get a specific profile."""
+    validate_uuid(profile_id, "profile_id")
     service = ProfileService()
     profile = await service.get_profile(profile_id, current_user["id"])
     if not profile:

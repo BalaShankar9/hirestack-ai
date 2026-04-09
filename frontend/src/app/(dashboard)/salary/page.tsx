@@ -145,10 +145,10 @@ export default function SalaryCoachPage() {
           <AITrace
             variant="banner"
             items={[
-              `Analyzed ${jobTitle}${company ? ` at ${company}` : ""}${location ? ` in ${location}` : ""}`,
-              `${scripts.length} negotiation scripts`,
-              `${counters.length} counter-offer scenarios`,
-              `${talkingPoints.length} talking points`,
+              { label: `Analyzed ${jobTitle}${company ? ` at ${company}` : ""}${location ? ` in ${location}` : ""}`, done: true },
+              { label: `${scripts.length} negotiation scripts`, done: true },
+              { label: `${counters.length} counter-offer scenarios`, done: true },
+              { label: `${talkingPoints.length} talking points`, done: true },
             ]}
           />
           {/* Tab navigation */}

@@ -269,10 +269,10 @@ export default function ATSScannerPage() {
           <AITrace
             variant="banner"
             items={[
-              `Analyzed ${wordCount} words`,
-              `${(keywords.present || []).length + (keywords.missing || []).length + (keywords.partial || []).length} keywords evaluated`,
-              `${(keywords.missing || []).length} gaps found`,
-              "3-pass deep analysis complete",
+              { label: `Analyzed ${wordCount} words`, done: true },
+              { label: `${(keywords.present || []).length + (keywords.missing || []).length + (keywords.partial || []).length} keywords evaluated`, done: true },
+              { label: `${(keywords.missing || []).length} gaps found`, done: true },
+              { label: "3-pass deep analysis complete", done: true },
             ]}
           />
 
@@ -307,12 +307,12 @@ export default function ATSScannerPage() {
             <div className="mt-4 border-t pt-4">
               <ScoreExplanation
                 score={scan.ats_score ?? 0}
-                maxScore={100}
+                label="ATS Score"
                 methodology="Weighted combination: 40% keyword match, 30% document structure & formatting, 30% strategic alignment with the target role."
                 factors={[
-                  { label: "Keyword Match", value: breakdown.keyword_score ?? 0, maxValue: 100, description: "How many JD keywords appear in your resume" },
-                  { label: "Structure & Format", value: breakdown.structure_score ?? 0, maxValue: 100, description: "Section completeness, action verbs, quantified results" },
-                  { label: "Strategic Fit", value: breakdown.strategy_score ?? 0, maxValue: 100, description: "Role alignment, seniority match, industry relevance" },
+                  { label: "Keyword Match", impact: (breakdown.keyword_score ?? 0) >= 60 ? "positive" : "negative", detail: `Score: ${breakdown.keyword_score ?? 0}/100 — How many JD keywords appear in your resume` },
+                  { label: "Structure & Format", impact: (breakdown.structure_score ?? 0) >= 60 ? "positive" : "negative", detail: `Score: ${breakdown.structure_score ?? 0}/100 — Section completeness, action verbs, quantified results` },
+                  { label: "Strategic Fit", impact: (breakdown.strategy_score ?? 0) >= 60 ? "positive" : "negative", detail: `Score: ${breakdown.strategy_score ?? 0}/100 — Role alignment, seniority match, industry relevance` },
                 ]}
                 improvements={strategy.quick_wins?.slice(0, 3) || []}
               />

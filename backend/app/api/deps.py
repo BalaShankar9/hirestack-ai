@@ -8,6 +8,16 @@ from fastapi import Depends, HTTPException, status, Header
 
 from app.core.database import verify_token_async, AuthServiceUnavailable, get_db, SupabaseDB
 from app.core.config import settings
+import uuid as _uuid
+
+
+def validate_uuid(value: str, field_name: str = "id") -> str:
+    """Validate that a string is a valid UUID. Raises 422 if not."""
+    try:
+        _uuid.UUID(value)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=422, detail=f"Invalid {field_name}: must be a valid UUID")
+    return value
 
 
 async def get_token_from_header(
