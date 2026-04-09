@@ -4,7 +4,7 @@ Profile routes - Resume upload, parsing, career intelligence, and universal docu
 from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Request, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from pydantic import BaseModel
 
 from app.services.profile import ProfileService

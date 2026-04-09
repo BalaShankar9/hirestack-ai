@@ -13,36 +13,36 @@ const FEATURES = [
     icon: <Brain className="h-5 w-5" />,
     gradient: "from-primary/10 to-violet-500/10",
     iconColor: "text-primary",
-    title: "AI Agent Swarm",
-    description: "6 specialized AI agents work in parallel — Atlas parses, Cipher finds gaps, Quill writes, Forge builds portfolios, Sentinel validates, Nova assembles.",
+    title: "AI-Powered Analysis",
+    description: "Multiple AI agents analyze the job description, research the company, and map your experience to every requirement — so nothing gets missed.",
   },
   {
     icon: <Target className="h-5 w-5" />,
     gradient: "from-emerald-500/10 to-teal-500/10",
     iconColor: "text-emerald-600",
     title: "Company Intelligence",
-    description: "Our Recon agent researches the company before writing a single word. Culture, tech stack, recent news — all woven into your application.",
+    description: "Before writing a single word, the system researches the company — culture, tech stack, recent news — and weaves it into your application.",
   },
   {
     icon: <BarChart3 className="h-5 w-5" />,
     gradient: "from-blue-500/10 to-cyan-500/10",
     iconColor: "text-blue-600",
-    title: "ATS Scanner",
-    description: "See your resume through the recruiter's ATS. Keyword match scoring, format analysis, and real-time optimization suggestions.",
+    title: "ATS Compatibility Check",
+    description: "See your resume through the recruiter's ATS. Keyword match scoring, format analysis, and concrete fix suggestions.",
   },
   {
     icon: <Shield className="h-5 w-5" />,
     gradient: "from-amber-500/10 to-orange-500/10",
     iconColor: "text-amber-600",
-    title: "Evidence Vault",
-    description: "Attach certifications, projects, and metrics directly to your claims. Every statement backed by verifiable proof.",
+    title: "Evidence-Backed Claims",
+    description: "Attach certifications, projects, and metrics to your claims. Most candidates submit claims — you submit proof.",
   },
   {
     icon: <TrendingUp className="h-5 w-5" />,
     gradient: "from-rose-500/10 to-pink-500/10",
     iconColor: "text-rose-600",
-    title: "Gap Analysis",
-    description: "See exactly what you're missing vs the ideal candidate. Get a sprint-based learning plan to close every gap.",
+    title: "Gap Analysis & Improvement",
+    description: "See exactly what you're missing vs the ideal candidate. Get actionable steps to close every gap before you apply.",
   },
   {
     icon: <FileText className="h-5 w-5" />,
@@ -62,12 +62,12 @@ const STEPS = [
 
 const STATS = [
   { value: "35+", label: "document types" },
-  { value: "6", label: "AI agents" },
-  { value: "94%", label: "ATS pass rate" },
+  { value: "6", label: "AI analysis steps" },
+  { value: "Complete", label: "ATS optimization" },
   { value: "<3 min", label: "per application" },
 ];
 
-const LOGOS_TEXT = ["TechCrunch", "Product Hunt", "Hacker News", "Forbes"];
+const FEATURES_SECTION_TITLE = "Not just a resume builder — a career intelligence system";
 
 /* ── Interactive Demo Component ── */
 
@@ -187,7 +187,7 @@ export default function HomePage() {
               Sign In
             </Link>
             <Link href="/new" className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-glow-sm hover:shadow-glow-md transition-all hover:brightness-110">
-              Try Free <ArrowRight className="h-3.5 w-3.5" />
+              Start Free <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
         </div>
@@ -202,57 +202,35 @@ export default function HomePage() {
         </div>
 
         <div className="relative mx-auto max-w-6xl px-4 text-center">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
-            <div className="mb-8 inline-flex items-center gap-2 rounded-full border bg-card/80 px-4 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur-sm">
-              <Zap className="h-3.5 w-3.5 text-primary" />
-              AI-powered career intelligence platform
-            </div>
-          </motion.div>
+          <div className="mb-8 inline-flex items-center gap-2 rounded-full border bg-card/80 px-4 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-700">
+            <Zap className="h-3.5 w-3.5 text-primary" />
+            Most candidates submit claims. The best submit proof.
+          </div>
 
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.1 }}
-            className="mx-auto max-w-4xl text-3xl font-bold tracking-tight sm:text-5xl md:text-6xl lg:text-7xl"
-          >
-            Stop applying.{" "}
-            <span className="gradient-text">Start landing.</span>
-          </motion.h1>
+          <h1 className="mx-auto max-w-4xl text-3xl font-bold tracking-tight sm:text-5xl md:text-6xl lg:text-7xl animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100 fill-mode-both">
+            Turn any job description into a{" "}
+            <span className="gradient-text">proof-backed application</span>
+          </h1>
 
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground leading-relaxed"
-          >
-            6 AI agents collaborate to build your perfect application package —
-            ATS-optimized CV, tailored cover letter, portfolio, and more. Powered by
-            company intelligence and gap analysis.
-          </motion.p>
+          <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground leading-relaxed animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200 fill-mode-both">
+            Paste a job description. Add your resume. Get a tailored application
+            with ATS-optimized documents, gap analysis, evidence mapping, and
+            interview preparation — in minutes, not hours.
+          </p>
 
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.3 }}
-            className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row"
-          >
+          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300 fill-mode-both">
             <Link href="/new" className="group inline-flex items-center gap-2 rounded-2xl bg-primary px-8 py-4 text-base font-semibold text-primary-foreground shadow-glow-md hover:shadow-glow-lg transition-all hover:brightness-110">
-              Build Your Application — Free
+              Start Your Application
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
-            <Link href="/pricing" className="inline-flex items-center gap-2 rounded-2xl border px-8 py-4 text-base font-medium text-foreground hover:bg-muted/50 transition-colors">
-              View Pricing
-            </Link>
-          </motion.div>
+            <a href="#how-it-works" className="inline-flex items-center gap-2 rounded-2xl border px-8 py-4 text-base font-medium text-foreground hover:bg-muted/50 transition-colors">
+              See How It Works
+            </a>
+          </div>
 
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="mt-4 text-xs text-muted-foreground/60"
-          >
-            No signup required. No credit card. Start building in 10 seconds.
-          </motion.p>
+          <p className="mt-4 text-xs text-muted-foreground/60 animate-in fade-in duration-1000 delay-500 fill-mode-both">
+            Free to start. Sign in to save and export your documents.
+          </p>
 
           {/* Stats */}
           <motion.div
@@ -311,8 +289,82 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ── What You Get (Real Product Preview) ── */}
+      <section className="border-t py-20">
+        <div className="mx-auto max-w-5xl px-4">
+          <div className="text-center mb-12">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border bg-emerald-500/5 px-3 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="h-3.5 w-3.5" /> What you get
+            </div>
+            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              A complete application workspace, not just a resume
+            </h2>
+            <p className="mx-auto mt-4 max-w-xl text-muted-foreground">
+              Every application generates a tailored workspace with analysis, documents, and improvement plan.
+            </p>
+          </div>
+
+          {/* Preview cards showing real output types */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {[
+              {
+                title: "Fit Analysis",
+                desc: "Match score with breakdown of which requirements you meet, partially meet, or miss entirely.",
+                sample: "87% match — 12 of 14 requirements met",
+                color: "text-emerald-600 bg-emerald-500/10",
+              },
+              {
+                title: "Missing Keywords",
+                desc: "Exact phrases the ATS is looking for that aren't in your resume yet.",
+                sample: "5 missing: CI/CD, Terraform, GraphQL, k8s, observability",
+                color: "text-blue-600 bg-blue-500/10",
+              },
+              {
+                title: "Evidence Suggestions",
+                desc: "Specific proof items you should attach to turn claims into verifiable facts.",
+                sample: "3 suggestions: link GitHub repo, add AWS cert, quantify team size",
+                color: "text-amber-600 bg-amber-500/10",
+              },
+              {
+                title: "Tailored Documents",
+                desc: "ATS-optimized CV, cover letter, and role-specific documents written to match this exact role.",
+                sample: "4 documents generated: CV, Cover Letter, Personal Statement, Portfolio Brief",
+                color: "text-violet-600 bg-violet-500/10",
+              },
+              {
+                title: "Gap Report",
+                desc: "What you're missing vs the ideal candidate, with actionable steps to close each gap.",
+                sample: "2 critical gaps: cloud architecture experience, team leadership examples",
+                color: "text-rose-600 bg-rose-500/10",
+              },
+              {
+                title: "Interview Readiness",
+                desc: "Likely questions based on the JD, with suggested answers using your actual experience.",
+                sample: "8 predicted questions with STAR-format answer outlines",
+                color: "text-primary bg-primary/10",
+              },
+            ].map((item, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.05 }}
+                className="rounded-2xl border bg-card p-5"
+              >
+                <h3 className="text-sm font-semibold">{item.title}</h3>
+                <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
+                <div className={`mt-3 rounded-lg px-3 py-2 text-[11px] font-medium ${item.color}`}>
+                  {item.sample}
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── How It Works ── */}
-      <section className="border-t bg-card/30 py-24">
+      <section id="how-it-works" className="border-t bg-card/30 py-24">
         <div className="mx-auto max-w-6xl px-4">
           <div className="text-center mb-16">
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border bg-primary/5 px-3 py-1 text-xs font-medium text-primary">
@@ -383,21 +435,35 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── Social Proof ── */}
+      {/* ── Trust & Methodology ── */}
       <section className="border-t bg-card/30 py-16">
         <div className="mx-auto max-w-4xl px-4">
-          <div className="flex items-center justify-center gap-8 opacity-30">
-            {LOGOS_TEXT.map((name, i) => (
-              <span key={i} className="text-sm font-bold tracking-wider uppercase">{name}</span>
-            ))}
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-bold tracking-tight">Why this works</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Built on proven hiring research and ATS analysis methodology.
+            </p>
           </div>
-          <div className="mt-8 flex items-center justify-center gap-1">
-            {[...Array(5)].map((_, i) => (
-              <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
+          <div className="grid gap-6 md:grid-cols-3">
+            {[
+              {
+                title: "Requirement extraction",
+                desc: "AI parses every explicit and implicit requirement from the job description, including keywords, responsibilities, and qualifications the ATS checks for.",
+              },
+              {
+                title: "Evidence mapping",
+                desc: "Instead of generic claims, we map your specific experience, certifications, and projects to each requirement — turning assertions into verifiable proof.",
+              },
+              {
+                title: "ATS optimization",
+                desc: "Documents are structured and formatted to pass automated screening systems, with keyword density, section headers, and formatting that ATS software expects.",
+              },
+            ].map((item, i) => (
+              <div key={i} className="rounded-xl border bg-card p-5">
+                <h3 className="text-sm font-semibold">{item.title}</h3>
+                <p className="mt-2 text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
+              </div>
             ))}
-            <span className="ml-2 text-sm text-muted-foreground">
-              Rated 4.9/5 by 2,000+ professionals
-            </span>
           </div>
         </div>
       </section>
@@ -418,15 +484,19 @@ export default function HomePage() {
 
             <div className="relative z-10">
               <h2 className="text-3xl font-bold text-white sm:text-4xl">
-                Your next interview starts here
+                Ready to build a stronger application?
               </h2>
               <p className="mx-auto mt-4 max-w-lg text-base text-white/80">
-                Join thousands of professionals who stopped guessing and started winning.
+                Paste a job description, add your resume, and let AI build a
+                tailored, proof-backed application package.
               </p>
               <Link href="/new" className="mt-8 inline-flex items-center gap-2 rounded-2xl bg-white px-8 py-4 text-base font-semibold text-primary shadow-soft-lg hover:shadow-soft-xl transition-all hover:scale-[1.02]">
-                Try It Now — No Signup Required
+                Start Your Application
                 <ArrowRight className="h-4 w-4" />
               </Link>
+              <p className="mt-3 text-xs text-white/50">
+                Free to start. Sign in to save and export.
+              </p>
             </div>
           </motion.div>
         </div>

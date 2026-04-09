@@ -196,7 +196,7 @@ async def health_check():
     supabase_status = {"ok": False}
     try:
         client = get_supabase()
-        result = client.table("users").select("id").limit(1).execute()
+        client.table("users").select("id").limit(1).execute()
         supabase_status = {"ok": True}
     except Exception as e:
         supabase_status = {"ok": False, "error": str(e)}

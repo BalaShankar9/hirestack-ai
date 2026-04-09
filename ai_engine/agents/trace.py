@@ -6,8 +6,7 @@ Persists to the agent_traces table for debugging and quality monitoring.
 """
 from __future__ import annotations
 
-import logging
-from typing import Any, Optional
+from typing import Any
 
 import structlog
 

@@ -15,9 +15,11 @@ import {
   ScanSearch, CheckCircle, XCircle, AlertTriangle, Loader2,
   Upload, FileText, ClipboardPaste, X, Target, ShieldCheck,
   Type, Sparkles, Lightbulb, Copy, ChevronDown, Zap,
-  Code, BarChart3, ArrowRight, RefreshCw, Brain,
+  Code, BarChart3, ArrowRight, RefreshCw, Brain, Info,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { AITrace } from "@/components/ui/ai-trace";
+import { ScoreExplanation } from "@/components/ui/score-explanation";
 
 /* ── Animation variants ───────────────────────────────────────── */
 
@@ -255,6 +257,17 @@ export default function ATSScannerPage() {
       <AnimatePresence>
       {scan && (
         <motion.div className="space-y-4" variants={staggerContainer} initial="hidden" animate="visible" exit={{ opacity: 0, y: 20 }}>
+          {/* AI Trace */}
+          <AITrace
+            variant="banner"
+            items={[
+              `Analyzed ${wordCount} words`,
+              `${(keywords.present || []).length + (keywords.missing || []).length + (keywords.partial || []).length} keywords evaluated`,
+              `${(keywords.missing || []).length} gaps found`,
+              "3-pass deep analysis complete",
+            ]}
+          />
+
           {/* Score Decomposition */}
           <motion.div variants={staggerItem} className="rounded-2xl border bg-card p-6 shadow-soft-sm">
             <div className="flex flex-col md:flex-row items-center gap-6">
@@ -281,6 +294,20 @@ export default function ATSScannerPage() {
               <AnimatedBar value={breakdown.keyword_score ?? 0} label="Keyword Match" icon={Target} />
               <AnimatedBar value={breakdown.structure_score ?? 0} label="Structure & Format" icon={Code} />
               <AnimatedBar value={breakdown.strategy_score ?? 0} label="Strategic Fit" icon={Brain} />
+            </div>
+            {/* Score methodology explanation */}
+            <div className="mt-4 border-t pt-4">
+              <ScoreExplanation
+                score={scan.ats_score ?? 0}
+                maxScore={100}
+                methodology="Weighted combination: 40% keyword match, 30% document structure & formatting, 30% strategic alignment with the target role."
+                factors={[
+                  { label: "Keyword Match", value: breakdown.keyword_score ?? 0, maxValue: 100, description: "How many JD keywords appear in your resume" },
+                  { label: "Structure & Format", value: breakdown.structure_score ?? 0, maxValue: 100, description: "Section completeness, action verbs, quantified results" },
+                  { label: "Strategic Fit", value: breakdown.strategy_score ?? 0, maxValue: 100, description: "Role alignment, seniority match, industry relevance" },
+                ]}
+                improvements={strategy.quick_wins?.slice(0, 3) || []}
+              />
             </div>
             {strategy.overall_assessment && (
               <p className="text-sm text-muted-foreground mt-4 border-t pt-4">{strategy.overall_assessment}</p>
@@ -319,15 +346,27 @@ export default function ATSScannerPage() {
             <div className="grid md:grid-cols-3 gap-4">
               <div>
                 <p className="text-2xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><CheckCircle className="h-3 w-3 text-emerald-500" /> Present ({(keywords.present || []).length})</p>
-                <div className="flex flex-wrap gap-1">{(keywords.present || []).map((k: any, i: number) => <Badge key={i} className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px]">{typeof k === "string" ? k : k.keyword || k}</Badge>)}</div>
+                {(keywords.present || []).length > 0 ? (
+                  <div className="flex flex-wrap gap-1">{(keywords.present || []).map((k: any, i: number) => <Badge key={i} className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px]">{typeof k === "string" ? k : k.keyword || k}</Badge>)}</div>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">No matching keywords found — paste a job description for better results</p>
+                )}
               </div>
               <div>
                 <p className="text-2xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><XCircle className="h-3 w-3 text-rose-500" /> Missing ({(keywords.missing || []).length})</p>
-                <div className="flex flex-wrap gap-1">{(keywords.missing || []).map((k: any, i: number) => <Badge key={i} className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20 text-[10px]">{typeof k === "string" ? k : k.keyword || k}</Badge>)}</div>
+                {(keywords.missing || []).length > 0 ? (
+                  <div className="flex flex-wrap gap-1">{(keywords.missing || []).map((k: any, i: number) => <Badge key={i} className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20 text-[10px]">{typeof k === "string" ? k : k.keyword || k}</Badge>)}</div>
+                ) : (
+                  <p className="text-xs text-emerald-500 font-medium">All keywords accounted for</p>
+                )}
               </div>
               <div>
                 <p className="text-2xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><AlertTriangle className="h-3 w-3 text-amber-500" /> Partial ({(keywords.partial || []).length})</p>
-                <div className="flex flex-wrap gap-1">{(keywords.partial || []).map((k: any, i: number) => <Badge key={i} className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 text-[10px]">{typeof k === "string" ? k : k.keyword || k}</Badge>)}</div>
+                {(keywords.partial || []).length > 0 ? (
+                  <div className="flex flex-wrap gap-1">{(keywords.partial || []).map((k: any, i: number) => <Badge key={i} className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 text-[10px]">{typeof k === "string" ? k : k.keyword || k}</Badge>)}</div>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">No partial matches</p>
+                )}
               </div>
             </div>
             {keywords.critical_missing?.length > 0 && (
@@ -414,20 +453,32 @@ export default function ATSScannerPage() {
       )}
       </AnimatePresence>
 
-      {/* Empty state */}
+      {/* Pre-scan guidance */}
       {!scan && !loading && (
-        <motion.div className="rounded-2xl border border-dashed bg-card/50 p-8" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
+        <motion.div className="rounded-2xl border border-dashed bg-card/50 p-8 space-y-6" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
           <div className="flex flex-col md:flex-row items-center gap-6 text-center md:text-left">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500/10 to-blue-500/10 shrink-0">
               <Brain className="h-7 w-7 text-cyan-500" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold">3-Pass Deep Analysis</h3>
+              <h3 className="text-sm font-semibold">What to expect</h3>
               <p className="mt-1 text-xs text-muted-foreground leading-relaxed max-w-lg">
-                Our ATS scanner runs 3 specialized AI passes: <strong>Keyword extraction</strong> matches every term in the JD against your resume.
-                <strong> Structure analysis</strong> parses your resume like Workday/Greenhouse would.
-                <strong> Strategy assessment</strong> provides exact rewrite suggestions with copy-paste text.
+                Paste your resume and a job description, then hit "Run ATS Scan". The analysis runs 3 specialized passes and takes roughly 10–15 seconds.
               </p>
+            </div>
+          </div>
+          <div className="grid md:grid-cols-3 gap-4">
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-1.5">
+              <div className="flex items-center gap-2"><Target className="h-4 w-4 text-cyan-500" /><span className="text-xs font-semibold">Pass 1 — Keywords</span></div>
+              <p className="text-xs text-muted-foreground">Extracts every requirement from the JD and checks your resume for exact and semantic matches.</p>
+            </div>
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-1.5">
+              <div className="flex items-center gap-2"><Code className="h-4 w-4 text-violet-500" /><span className="text-xs font-semibold">Pass 2 — Structure</span></div>
+              <p className="text-xs text-muted-foreground">Parses sections, bullet quality, and formatting the way ATS systems like Workday or Greenhouse would.</p>
+            </div>
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-1.5">
+              <div className="flex items-center gap-2"><Brain className="h-4 w-4 text-amber-500" /><span className="text-xs font-semibold">Pass 3 — Strategy</span></div>
+              <p className="text-xs text-muted-foreground">Evaluates role alignment, identifies deal breakers, and generates copy-paste rewrite suggestions.</p>
             </div>
           </div>
         </motion.div>

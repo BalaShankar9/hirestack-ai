@@ -48,10 +48,10 @@ describe("AppShell", () => {
       </AppShell>
     );
 
-    expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Overview").length).toBeGreaterThan(0);
     expect(screen.getAllByText("New Application").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Evidence Vault").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Career Lab").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Evidence").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Improvement").length).toBeGreaterThan(0);
     expect(screen.getByText("Content")).toBeInTheDocument();
   });
 });

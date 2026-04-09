@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Sparkles, ArrowRight, Loader2 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import { supabase } from "@/lib/supabase";
+import { useToast } from "@/hooks/use-toast";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,7 @@ function LoginContent() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<"google" | "github" | null>(null);
+  const { toast } = useToast();
 
   // Read ?mode=register from URL so "Get Started" links land on sign-up
   useEffect(() => {
@@ -45,6 +47,7 @@ function LoginContent() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    console.log("Form submission triggered with email:", email, "and password length:", password.length);
     setError(null);
     setLoading(true);
     try {
@@ -65,11 +68,15 @@ function LoginContent() {
       }
     } catch (err: any) {
       const msg = err?.message ?? "Authentication failed";
+      let finalMsg = msg;
       if (msg.toLowerCase().includes("invalid") && !isRegister) {
-        setError("Invalid credentials. Don't have an account yet? Click 'Create Account' below.");
-      } else {
-        setError(msg);
+        finalMsg = "Invalid credentials. Don't have an account yet? Click 'Create Account' below.";
       }
+      setError(finalMsg);
+      toast({
+        title: "Authentication Failed",
+        description: finalMsg,
+      });
     } finally {
       setLoading(false);
     }
@@ -82,7 +89,12 @@ function LoginContent() {
       if (provider === "google") await signInWithGoogle();
       else await signInWithGitHub();
     } catch (err: any) {
-      setError(err?.message ?? "OAuth sign-in failed");
+      const msg = err?.message ?? "OAuth sign-in failed";
+      setError(msg);
+      toast({
+        title: "Authentication Failed",
+        description: msg,
+      });
       setOauthLoading(null);
     }
   }
@@ -210,7 +222,7 @@ function LoginContent() {
           </div>
 
           {/* Email form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             {isRegister && (
               <div className="space-y-2">
                 <Label htmlFor="name" className="text-xs font-medium">Full Name</Label>
@@ -230,7 +242,6 @@ function LoginContent() {
                 id="email"
                 type="email"
                 placeholder="you@example.com"
-                required
                 className="rounded-xl h-11"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -263,8 +274,6 @@ function LoginContent() {
                 id="password"
                 type="password"
                 placeholder="••••••••"
-                required
-                minLength={6}
                 className="rounded-xl h-11"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

@@ -2,8 +2,7 @@
 LinkedIn Profile Advisor Chain
 Analyzes resume data and generates specific LinkedIn profile improvement suggestions.
 """
-import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 
 LINKEDIN_ADVISOR_SYSTEM = """You are a world-class LinkedIn optimization expert with 15 years of experience

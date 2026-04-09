@@ -68,7 +68,7 @@ export function QuotaProvider({ children }: { children: ReactNode }) {
         limit,
       };
     },
-    [state.plan, state.usage]
+    [state]
   );
 
   const recordUsage = useCallback(

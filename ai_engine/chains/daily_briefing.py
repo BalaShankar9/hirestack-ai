@@ -2,7 +2,7 @@
 Daily Briefing Chain
 Generates a personalized AI career insight based on the user's application data.
 """
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 
 BRIEFING_SYSTEM = """You are a career intelligence AI. Generate a brief, actionable daily career insight.

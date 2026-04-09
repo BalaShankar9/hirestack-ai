@@ -28,6 +28,10 @@ import {
   Users,
   Search,
   ArrowRight,
+  TrendingUp,
+  FolderOpen,
+  GitCompare,
+  User,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import { Button } from "@/components/ui/button";
@@ -42,36 +46,56 @@ import {
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "@/components/command-palette/command-palette";
 
-type NavItem = { href: string; label: string; icon: typeof Home; description: string };
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof Home;
+  description: string;
+  /** Only show when user role matches */
+  roleRequired?: "admin" | "enterprise";
+};
 type NavGroup = { title: string; items: NavItem[] };
 
+/**
+ * Navigation hierarchy:
+ * - Core: The primary user journey (target role → generate → improve → track)
+ * - Tools: Supporting tools that enhance the core flow
+ * - Admin: Enterprise/org features, only visible when role permits
+ *
+ * Naming: Plain language first. Internal brand names removed from primary labels.
+ */
 const NAV_GROUPS: NavGroup[] = [
   {
     title: "Core",
     items: [
-      { href: "/dashboard", label: "Dashboard", icon: Home, description: "Overview & stats" },
-      { href: "/nexus", label: "Career Nexus", icon: Fingerprint, description: "Your career identity" },
-      { href: "/new", label: "New Application", icon: Plus, description: "Start a workspace" },
-      { href: "/career", label: "Career Lab", icon: GraduationCap, description: "Skill sprints" },
-      { href: "/evidence", label: "Evidence Vault", icon: ShieldCheck, description: "Proof library" },
+      { href: "/dashboard", label: "Overview", icon: Home, description: "Your command center" },
+      { href: "/new", label: "New Application", icon: Plus, description: "Start a new application" },
+      { href: "/evidence", label: "Evidence", icon: ShieldCheck, description: "Your proof library" },
+      { href: "/nexus", label: "Profile", icon: User, description: "Your career identity" },
     ],
   },
   {
-    title: "Features",
+    title: "Tools",
     items: [
-      { href: "/ats-scanner", label: "ATS Scanner", icon: FileSearch, description: "Scan documents" },
-      { href: "/interview", label: "Interview Prep", icon: MessageSquare, description: "Practice questions" },
-      { href: "/salary", label: "Salary Coach", icon: DollarSign, description: "Negotiate better" },
-      { href: "/career-analytics", label: "Analytics", icon: BarChart3, description: "Track progress" },
+      { href: "/ats-scanner", label: "ATS Check", icon: FileSearch, description: "Scan for ATS compatibility" },
+      { href: "/interview", label: "Interview Prep", icon: MessageSquare, description: "Practice with AI" },
+      { href: "/salary", label: "Salary Coach", icon: DollarSign, description: "Negotiate with confidence" },
+      { href: "/career", label: "Improvement", icon: TrendingUp, description: "Close gaps & grow skills" },
+      { href: "/career-analytics", label: "Progress", icon: BarChart3, description: "Track your readiness" },
+    ],
+  },
+  {
+    title: "More",
+    items: [
       { href: "/job-board", label: "Job Board", icon: Briefcase, description: "Find opportunities" },
       { href: "/learning", label: "Daily Learn", icon: BookOpen, description: "Skill challenges" },
-      { href: "/ab-lab", label: "A/B Lab", icon: FlaskConical, description: "Compare variants" },
+      { href: "/ab-lab", label: "Compare Versions", icon: GitCompare, description: "Test document variants" },
     ],
   },
   {
-    title: "Enterprise",
+    title: "Admin",
     items: [
-      { href: "/candidates", label: "Pipeline", icon: Users, description: "Candidate tracking" },
+      { href: "/candidates", label: "Pipeline", icon: Users, description: "Candidate tracking", roleRequired: "enterprise" },
       { href: "/settings", label: "Settings", icon: Settings, description: "Organization & billing" },
     ],
   },
@@ -87,10 +111,28 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [theme, setTheme] = React.useState<"light" | "dark">("light");
   const [navSearch, setNavSearch] = React.useState("");
 
+  // Role-based nav filtering: hide enterprise items unless user has that role
+  // For now, we assume user metadata may contain role info
+  const userRole = user?.user_metadata?.role as string | undefined;
+
   const filteredGroups = React.useMemo(() => {
-    if (!navSearch.trim()) return NAV_GROUPS;
+    let groups = NAV_GROUPS.map((g) => ({
+      ...g,
+      items: g.items.filter((item) => {
+        // Filter role-gated items
+        if (item.roleRequired === "enterprise" && userRole !== "admin" && userRole !== "enterprise") {
+          return false;
+        }
+        if (item.roleRequired === "admin" && userRole !== "admin") {
+          return false;
+        }
+        return true;
+      }),
+    })).filter((g) => g.items.length > 0);
+
+    if (!navSearch.trim()) return groups;
     const q = navSearch.toLowerCase();
-    return NAV_GROUPS.map((g) => ({
+    return groups.map((g) => ({
       ...g,
       items: g.items.filter(
         (item) =>
@@ -98,7 +140,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           item.description.toLowerCase().includes(q)
       ),
     })).filter((g) => g.items.length > 0);
-  }, [navSearch]);
+  }, [navSearch, userRole]);
 
   React.useEffect(() => {
     const stored =

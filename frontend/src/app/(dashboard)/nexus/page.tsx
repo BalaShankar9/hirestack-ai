@@ -408,10 +408,10 @@ export default function CareerNexusPage() {
                 <Fingerprint className="h-8 w-8" />
               </div>
               <div>
-                <h1 className="text-xl font-bold tracking-tight">Career Nexus</h1>
+                <h1 className="text-xl font-bold tracking-tight">Profile</h1>
                 <p className="text-sm text-muted-foreground max-w-md">
-                  Your career identity hub — upload your resume and we&apos;ll build your profile,
-                  generate universal documents, and provide career intelligence.
+                  Your reusable career identity. Data you add here auto-fills into every application,
+                  interview prep, salary analysis, and document you create.
                 </p>
               </div>
             </div>
@@ -649,6 +649,15 @@ export default function CareerNexusPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Profile reuse explanation */}
+      <div className="rounded-xl border bg-muted/20 px-4 py-3 flex items-start gap-3">
+        <Sparkles className="h-4 w-4 text-teal-500 mt-0.5 shrink-0" />
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          <strong className="text-foreground">Your profile powers everything.</strong>{" "}
+          Skills, experience, and evidence you add here auto-fill into new applications, interview prep, salary analysis, and ATS scans — so you never re-enter the same data twice.
+        </p>
       </div>
 
       {/* Tabs */}
@@ -1026,7 +1035,7 @@ export default function CareerNexusPage() {
               {certs.length === 0 && (
                 <div className="text-center py-4 text-sm text-muted-foreground">
                   <Award className="mx-auto h-8 w-8 text-muted-foreground/20 mb-2" />
-                  <p>No certifications. Add them in the Evidence Vault or connect LinkedIn.</p>
+                  <p>No certifications. Add them as evidence or connect LinkedIn.</p>
                 </div>
               )}
             </div>
@@ -1051,7 +1060,7 @@ export default function CareerNexusPage() {
               {projects.length === 0 && (
                 <div className="text-center py-4 text-sm text-muted-foreground">
                   <Code className="mx-auto h-8 w-8 text-muted-foreground/20 mb-2" />
-                  <p>No projects found. Connect GitHub or add them in the Evidence Vault.</p>
+                  <p>No projects found. Connect GitHub or add them as evidence.</p>
                 </div>
               )}
             </div>
@@ -1546,11 +1555,11 @@ export default function CareerNexusPage() {
         <TabsContent value="evidence" className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-semibold">Evidence Vault Mirror</h3>
-              <p className="text-xs text-muted-foreground">Certifications and projects from your Evidence Vault, mapped to your profile.</p>
+              <h3 className="font-semibold">Evidence Mirror</h3>
+              <p className="text-xs text-muted-foreground">Certifications and projects from your evidence library, mapped to your profile.</p>
             </div>
             <Button variant="outline" size="sm" className="text-xs gap-2" onClick={() => window.location.href = "/evidence"}>
-              <ShieldCheck className="h-3.5 w-3.5" /> Open Evidence Vault
+              <ShieldCheck className="h-3.5 w-3.5" /> Open Evidence
             </Button>
           </div>
 
@@ -1586,7 +1595,7 @@ export default function CareerNexusPage() {
               <ShieldCheck className="mx-auto h-10 w-10 text-muted-foreground/20 mb-3" />
               <p className="font-medium text-sm">No Evidence Items Synced</p>
               <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
-                Add certifications, projects, and courses in the Evidence Vault. They&apos;ll appear here
+                Add certifications, projects, and courses as evidence. They&apos;ll appear here
                 and strengthen your career documents.
               </p>
               <Button variant="outline" size="sm" className="mt-4 gap-2" onClick={() => window.location.href = "/evidence"}>

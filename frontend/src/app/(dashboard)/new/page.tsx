@@ -77,7 +77,7 @@ export default function NewApplicationPage() {
   const [resumeUrl, setResumeUrl] = useState("");
   const [uploading, setUploading] = useState(false);
 
-  // Career Nexus profile pre-fill
+  // Profile pre-fill
   const [nexusProfile, setNexusProfile] = useState<Profile | null>(null);
   const [useNexus, setUseNexus] = useState(false);
   const [nexusLoading, setNexusLoading] = useState(true);
@@ -432,7 +432,7 @@ export default function NewApplicationPage() {
           <h3 className="text-base font-bold">Upload Your Resume</h3>
           <p className="mt-1 text-xs text-muted-foreground">Optional but helps generate more accurate analysis.</p>
           <div className="mt-5 space-y-4">
-            {/* Career Nexus profile pre-fill */}
+            {/* Profile pre-fill */}
             {!nexusLoading && nexusProfile && (
               <button
                 type="button"
@@ -456,7 +456,7 @@ export default function NewApplicationPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">
-                    {useNexus ? "Using Career Nexus profile" : "Use Career Nexus profile"}
+                    {useNexus ? "Using saved profile" : "Use your saved profile"}
                   </p>
                   <p className="text-xs text-muted-foreground truncate">
                     {nexusProfile.name || nexusProfile.title || "Your saved career profile"} &middot;{" "}
@@ -481,7 +481,7 @@ export default function NewApplicationPage() {
 
             {useNexus && nexusProfile && !resumeFile && (
               <p className="text-xs text-muted-foreground">
-                Resume text loaded from your Career Nexus profile. You can also{" "}
+                Resume text loaded from your saved profile. You can also{" "}
                 <button type="button" className="text-teal-600 dark:text-teal-400 underline" onClick={() => setUseNexus(false)}>
                   upload a different resume
                 </button>{" "}
@@ -584,8 +584,8 @@ export default function NewApplicationPage() {
                       ? resumeText.trim().split(/\s+/).length
                       : 0;
                     if (resumeFile) return `${resumeFile.name} (${wordCount} words)`;
-                    if (resumeText.trim()) return `Career Nexus profile used (${wordCount} words)`;
-                    return "No resume — upload one or connect Career Nexus";
+                    if (resumeText.trim()) return `Saved profile used (${wordCount} words)`;
+                    return "No resume provided — upload one or set up your profile";
                   })()}
                 </p>
               </div>

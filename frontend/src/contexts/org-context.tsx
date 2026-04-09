@@ -60,6 +60,7 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
       setOrgs([]);
     }
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.access_token]);
 
   useEffect(() => { refreshOrgs(); }, [refreshOrgs]);

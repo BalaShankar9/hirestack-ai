@@ -122,7 +122,6 @@ class ReviewService:
 
     async def summarize_feedback(self, session_id: str, user_id: str) -> Dict[str, Any]:
         """Use AI to summarize all review comments (owner only)."""
-        import json
         # Verify session belongs to the requesting user
         session = await self.db.get(TABLES["review_sessions"], session_id)
         if not session or session.get("user_id") != user_id:

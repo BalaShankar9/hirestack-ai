@@ -19,6 +19,12 @@ import {
   Newspaper,
   Package,
   ShieldCheck,
+  Presentation,
+  GitBranch,
+  Globe,
+  UserCheck,
+  BarChart3,
+  ArrowRight,
 } from "lucide-react";
 
 import { useAuth } from "@/components/providers";
@@ -36,6 +42,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { EmptyState } from "@/components/ui/empty-state";
+import { AITrace } from "@/components/ui/ai-trace";
 import {
   Dialog,
   DialogContent,
@@ -55,17 +63,28 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
+/**
+ * Extended evidence types per brief requirements.
+ * Each evidence item supports: title, summary, tags, relevance,
+ * proof strength, source link/file, suggested use.
+ */
 const EVIDENCE_TYPES = [
   { value: "cert", label: "Certification", icon: Award, color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800" },
   { value: "project", label: "Project", icon: Code2, color: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800" },
+  { value: "achievement", label: "Quantified Achievement", icon: BarChart3, color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800" },
   { value: "course", label: "Course", icon: BookOpen, color: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-200 dark:border-violet-800" },
-  { value: "award", label: "Award", icon: Trophy, color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800" },
+  { value: "award", label: "Award", icon: Trophy, color: "bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-200 dark:border-teal-800" },
+  { value: "writing", label: "Writing Sample", icon: FileText, color: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800" },
+  { value: "presentation", label: "Presentation", icon: Presentation, color: "bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-200 dark:border-pink-800" },
+  { value: "repo", label: "Repository", icon: GitBranch, color: "bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-800" },
+  { value: "portfolio", label: "Portfolio Item", icon: Globe, color: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800" },
+  { value: "recommendation", label: "Recommendation", icon: UserCheck, color: "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800" },
   { value: "publication", label: "Publication", icon: Newspaper, color: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800" },
   { value: "other", label: "Other", icon: Package, color: "bg-muted text-muted-foreground border-border" },
 ] as const;
 
 function getTypeConfig(type: string) {
-  return EVIDENCE_TYPES.find((t) => t.value === type) ?? EVIDENCE_TYPES[5];
+  return EVIDENCE_TYPES.find((t) => t.value === type) ?? EVIDENCE_TYPES[EVIDENCE_TYPES.length - 1];
 }
 
 export default function EvidenceVaultPage() {
@@ -226,9 +245,9 @@ export default function EvidenceVaultPage() {
             <ShieldCheck className="h-5 w-5 text-violet-600 dark:text-violet-400" />
           </div>
           <div>
-            <h1 className="text-xl font-bold">Evidence Vault</h1>
+            <h1 className="text-xl font-bold">Evidence</h1>
             <p className="text-xs text-muted-foreground">
-              {evidence.length} item{evidence.length !== 1 ? "s" : ""} — certifications, projects, courses, and proof
+              {evidence.length} proof item{evidence.length !== 1 ? "s" : ""} — certifications, projects, achievements, and more
             </p>
           </div>
         </div>
@@ -362,6 +381,20 @@ export default function EvidenceVaultPage() {
         </div>
       )}
 
+      {/* AI Intelligence Trace */}
+      {evidence.length > 0 && (
+        <AITrace
+          variant="banner"
+          items={[
+            { label: "proof items collected", value: evidence.length, done: true },
+            { label: "evidence types used", value: Object.keys(typeCounts).length, done: true },
+            ...(Object.keys(typeCounts).length < 3
+              ? [{ label: "Add more types to strengthen your applications" }]
+              : []),
+          ]}
+        />
+      )}
+
       {/* Grid */}
       {evidence.length === 0 ? (
         <div className="rounded-2xl border border-dashed bg-card/50">
@@ -371,10 +404,11 @@ export default function EvidenceVaultPage() {
             </div>
             <h3 className="mt-4 text-sm font-semibold">Build your proof library</h3>
             <p className="mt-1 text-xs text-muted-foreground max-w-sm text-center">
-              Add certifications, projects, courses, and awards. The AI will use these to back up claims in your documents.
+              Most candidates submit claims. You submit proof. Add certifications, projects,
+              quantified achievements, and more — the AI matches them to every application.
             </p>
             <Button className="mt-5 gap-2 rounded-xl" onClick={() => setDialogOpen(true)}>
-              <Plus className="h-4 w-4" /> Add your first evidence
+              <Plus className="h-4 w-4" /> Add your first proof item
             </Button>
           </div>
         </div>

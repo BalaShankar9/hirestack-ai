@@ -7,8 +7,8 @@ import { motion } from "framer-motion";
 import {
   ArrowRight, Sparkles, Clock, Target, ShieldCheck, ScanEye, Award,
   Plus, Briefcase, TrendingUp, Trash2, Zap, FileSearch, MessageSquare,
-  DollarSign, BookOpen, FlaskConical, BarChart3, Fingerprint, Brain,
-  Bot, Activity,
+  DollarSign, BookOpen, BarChart3, Brain,
+  Bot, Activity, CheckCircle2, User,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import { computeEvidenceStrengthScore, useApplications, useEvidence, useTasks } from "@/lib/firestore";
@@ -21,7 +21,9 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { TaskQueue } from "@/components/workspace/task-queue";
+import { AITrace } from "@/components/ui/ai-trace";
 import { cn } from "@/lib/utils";
+import { useOnboarding } from "@/contexts/onboarding-context";
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
@@ -81,11 +83,11 @@ function CareerPulse({ value }: { value: number }) {
 
 const QUICK_ACTIONS = [
   { href: "/new", label: "New Application", icon: Plus, color: "bg-primary/10 text-primary" },
-  { href: "/ats-scanner", label: "ATS Scan", icon: FileSearch, color: "bg-cyan-500/10 text-cyan-500" },
+  { href: "/ats-scanner", label: "ATS Check", icon: FileSearch, color: "bg-cyan-500/10 text-cyan-500" },
   { href: "/interview", label: "Interview Prep", icon: MessageSquare, color: "bg-blue-500/10 text-blue-500" },
   { href: "/salary", label: "Salary Coach", icon: DollarSign, color: "bg-amber-500/10 text-amber-500" },
-  { href: "/learning", label: "Daily Learn", icon: BookOpen, color: "bg-violet-500/10 text-violet-500" },
-  { href: "/nexus", label: "Career Nexus", icon: Fingerprint, color: "bg-teal-500/10 text-teal-500" },
+  { href: "/evidence", label: "Evidence", icon: ShieldCheck, color: "bg-violet-500/10 text-violet-500" },
+  { href: "/nexus", label: "Profile", icon: User, color: "bg-teal-500/10 text-teal-500" },
 ] as const;
 
 /* ── Page ─────────────────────────────────────────────────────────── */
@@ -143,6 +145,146 @@ export default function DashboardPage() {
   };
 
   const userName = user?.user_metadata?.full_name || user?.full_name || user?.email?.split("@")[0] || "";
+
+  // Update onboarding context with real data
+  const { stage: onboardingStage, updateCounts } = useOnboarding();
+  useEffect(() => {
+    if (!appsLoading && !evidenceLoading) {
+      updateCounts({
+        applications: apps.length,
+        hasEvidence: evidence.length > 0,
+      });
+    }
+  }, [apps.length, evidence.length, appsLoading, evidenceLoading, updateCounts]);
+
+  const isNewUser = !appsLoading && apps.length === 0;
+
+  // ── New User: Onboarding-first experience ──
+  if (isNewUser && !appsLoading) {
+    return (
+      <div className="space-y-6">
+        {/* Welcome + primary CTA */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="rounded-3xl border bg-gradient-to-br from-primary via-violet-600 to-indigo-700 p-8 text-white shadow-glow-md overflow-hidden relative"
+        >
+          <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
+          <div className="relative max-w-2xl">
+            <h1 className="text-2xl font-bold sm:text-3xl">
+              Welcome{userName ? `, ${userName}` : ""}
+            </h1>
+            <p className="mt-3 text-base text-white/80 leading-relaxed">
+              Build your first proof-backed application in minutes.
+              Paste a job description, add your resume, and get tailored documents
+              with gap analysis, evidence mapping, and ATS optimization.
+            </p>
+            <Button
+              className="mt-6 bg-white text-primary hover:bg-white/90 shadow-sm gap-2"
+              onClick={() => router.push("/new")}
+            >
+              Start your first application
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </motion.div>
+
+        {/* Setup progress steps */}
+        <div className="rounded-2xl border bg-card p-6">
+          <h2 className="text-sm font-semibold mb-4">Get started in 3 steps</h2>
+          <div className="space-y-3">
+            {[
+              {
+                step: 1,
+                title: "Paste a job description",
+                desc: "Drop in any JD — AI extracts every requirement, keyword, and expectation.",
+                done: false,
+                href: "/new",
+              },
+              {
+                step: 2,
+                title: "Add your resume or profile",
+                desc: "Upload a resume or set up your profile so documents are tailored to your experience.",
+                done: false,
+                href: "/nexus",
+              },
+              {
+                step: 3,
+                title: "Review your application workspace",
+                desc: "Get fit analysis, tailored documents, gap report, and evidence suggestions.",
+                done: false,
+                href: null,
+              },
+            ].map((item) => (
+              <div
+                key={item.step}
+                className={cn(
+                  "flex items-start gap-4 rounded-xl border p-4 transition-colors",
+                  item.done ? "bg-emerald-500/5 border-emerald-500/20" : "hover:bg-muted/30"
+                )}
+              >
+                <div className={cn(
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold",
+                  item.done
+                    ? "bg-emerald-500 text-white"
+                    : "bg-primary/10 text-primary"
+                )}>
+                  {item.done ? (
+                    <CheckCircle2 className="h-4 w-4" />
+                  ) : (
+                    item.step
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{item.title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                </div>
+                {item.href && !item.done && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0 rounded-xl text-xs"
+                    onClick={() => router.push(item.href!)}
+                  >
+                    {item.step === 1 ? "Start" : "Set up"}
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Sample preview: what you'll get */}
+        <div className="rounded-2xl border bg-card p-6">
+          <h2 className="text-sm font-semibold mb-1">What you&apos;ll get</h2>
+          <p className="text-xs text-muted-foreground mb-4">
+            Each application generates a complete workspace with these outputs:
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { icon: Target, label: "Fit Analysis", desc: "Match score vs job requirements", color: "text-emerald-500 bg-emerald-500/10" },
+              { icon: FileSearch, label: "ATS Optimization", desc: "Keyword coverage & format fixes", color: "text-blue-500 bg-blue-500/10" },
+              { icon: ShieldCheck, label: "Evidence Mapping", desc: "Proof attached to every claim", color: "text-violet-500 bg-violet-500/10" },
+              { icon: Briefcase, label: "Tailored Documents", desc: "CV, cover letter & more", color: "text-primary bg-primary/10" },
+              { icon: TrendingUp, label: "Gap Report", desc: "What to improve before applying", color: "text-amber-500 bg-amber-500/10" },
+              { icon: MessageSquare, label: "Interview Prep", desc: "Predicted questions & answers", color: "text-rose-500 bg-rose-500/10" },
+            ].map((item) => (
+              <div key={item.label} className="flex items-start gap-3 rounded-xl bg-muted/20 p-3">
+                <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", item.color)}>
+                  <item.icon className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold">{item.label}</p>
+                  <p className="text-[11px] text-muted-foreground">{item.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -239,8 +381,8 @@ export default function DashboardPage() {
         <div className="space-y-4">
           <div className="flex items-end justify-between">
             <div>
-              <h2 className="text-lg font-semibold">Workspaces</h2>
-              <p className="text-xs text-muted-foreground">Your application pipelines</p>
+              <h2 className="text-lg font-semibold">Applications</h2>
+              <p className="text-xs text-muted-foreground">Your active application workspaces</p>
             </div>
             {topApps.length > 0 && (
               <Button variant="outline" size="sm" className="gap-1.5 rounded-xl text-xs" onClick={() => router.push("/new")}>
@@ -325,15 +467,15 @@ export default function DashboardPage() {
           <Link href="/evidence" className="block rounded-2xl border bg-card p-4 hover:border-violet-500/20 hover:shadow-soft-sm transition-all">
             <div className="flex items-center gap-2.5">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/10"><ShieldCheck className="h-4 w-4 text-violet-500" /></div>
-              <div className="flex-1"><p className="text-sm font-semibold">Evidence Vault</p><p className="text-[11px] text-muted-foreground">{evidence.length} items collected</p></div>
+              <div className="flex-1"><p className="text-sm font-semibold">Evidence</p><p className="text-[11px] text-muted-foreground">{evidence.length} proof items collected</p></div>
               <ArrowRight className="h-4 w-4 text-muted-foreground" />
             </div>
           </Link>
 
           <Link href="/nexus" className="block rounded-2xl border bg-card p-4 hover:border-teal-500/20 hover:shadow-soft-sm transition-all">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-500/10"><Fingerprint className="h-4 w-4 text-teal-500" /></div>
-              <div className="flex-1"><p className="text-sm font-semibold">Career Nexus</p><p className="text-[11px] text-muted-foreground">Identity, documents & intelligence</p></div>
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-500/10"><User className="h-4 w-4 text-teal-500" /></div>
+              <div className="flex-1"><p className="text-sm font-semibold">Profile</p><p className="text-[11px] text-muted-foreground">Your career identity & resume</p></div>
               <ArrowRight className="h-4 w-4 text-muted-foreground" />
             </div>
           </Link>
@@ -341,7 +483,7 @@ export default function DashboardPage() {
           <Link href="/career-analytics" className="block rounded-2xl border bg-card p-4 hover:border-blue-500/20 hover:shadow-soft-sm transition-all">
             <div className="flex items-center gap-2.5">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10"><BarChart3 className="h-4 w-4 text-blue-500" /></div>
-              <div className="flex-1"><p className="text-sm font-semibold">Analytics</p><p className="text-[11px] text-muted-foreground">Track score progression</p></div>
+              <div className="flex-1"><p className="text-sm font-semibold">Progress</p><p className="text-[11px] text-muted-foreground">Track readiness over time</p></div>
               <ArrowRight className="h-4 w-4 text-muted-foreground" />
             </div>
           </Link>

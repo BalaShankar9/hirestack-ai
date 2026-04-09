@@ -208,7 +208,7 @@ export default function JobBoardPage() {
         <div className="rounded-2xl border border-dashed bg-card/50 p-10 text-center">
           <Briefcase className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
           <h3 className="font-semibold text-sm">No job matches yet</h3>
-          <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">Create a job alert and we&apos;ll find AI-scored matches based on your Career Nexus profile.</p>
+          <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">Create a job alert and we&apos;ll find AI-scored matches based on your profile.</p>
           <Button className="mt-4 rounded-xl gap-2" onClick={() => setShowForm(true)}><Plus className="h-3 w-3" /> Create Alert</Button>
         </div>
       ) : (

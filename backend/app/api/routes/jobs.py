@@ -1,10 +1,10 @@
 """
 Job Description routes (Firestore)
 """
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Request, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.services.job import JobService
 from app.api.deps import get_current_user

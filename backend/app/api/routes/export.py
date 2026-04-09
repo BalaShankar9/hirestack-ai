@@ -1,10 +1,10 @@
 """
 Export routes - PDF/DOCX generation (Firestore)
 """
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Request, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse, Response
 
 from app.services.export import ExportService

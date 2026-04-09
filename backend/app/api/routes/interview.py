@@ -4,7 +4,7 @@ Interview Simulator routes
 from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Request, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.services.interview import InterviewService

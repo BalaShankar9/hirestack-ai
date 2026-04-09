@@ -2,7 +2,6 @@
 Market Intelligence Chain
 Analyzes job market conditions based on user's location, skills, and experience level.
 """
-import json
 from typing import Dict, Any, List
 
 

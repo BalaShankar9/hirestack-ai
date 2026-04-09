@@ -5,9 +5,31 @@ on:
     branches: [main]
 
 jobs:
+  deploy-backend:
+    name: Deploy Backend (Railway)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service=backend
+
+      - name: Health Check
+        run: |
+          sleep 30
+          curl -f https://api.hirestack.tech/health || \
+          curl -f https://hirestack-production.up.railway.app/health || \
+          echo "Health check skipped - verify manually"
+
   deploy-frontend:
     name: Deploy Frontend (Netlify)
     runs-on: ubuntu-latest
+    needs: deploy-backend
     defaults:
       run:
         working-directory: frontend

@@ -2,7 +2,7 @@
 Benchmark Service
 Handles benchmark generation and management with Firestore
 """
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 import structlog
 
 from app.core.database import get_firestore_db, COLLECTIONS, FirestoreDB

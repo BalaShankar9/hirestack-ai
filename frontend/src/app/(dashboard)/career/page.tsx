@@ -50,9 +50,9 @@ export default function CareerLabPage() {
                 <GraduationCap className="h-4 w-4" />
               </div>
               <div>
-                <div className="text-sm font-semibold">Career Lab</div>
+                <div className="text-sm font-semibold">Improvement</div>
                 <div className="mt-0.5 text-xs text-muted-foreground">
-                  Skill sprints built from your gaps — produce proof, not vibes.
+                  What should you improve next? Skill sprints built from your gap analysis — produce proof, not vibes.
                 </div>
               </div>
             </div>
@@ -62,7 +62,7 @@ export default function CareerLabPage() {
               New application <ArrowRight className="h-4 w-4" />
             </Button>
             <Button variant="outline" onClick={() => router.push("/evidence")} className="gap-2 rounded-xl">
-              Evidence vault <Sparkles className="h-4 w-4" />
+              Evidence <Sparkles className="h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -108,13 +108,13 @@ export default function CareerLabPage() {
 
             {!latestPlan ? (
               <div className="rounded-xl bg-muted/40 p-4">
-                <div className="text-sm font-medium">No learning plan yet.</div>
+                <div className="text-sm font-medium">No improvement plan yet</div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  Generate a learning plan inside a workspace to populate this hub.
+                  Start an application first — the AI will identify your skill gaps and generate a targeted improvement plan with concrete tasks.
                 </div>
                 <div className="mt-3">
                   <Button variant="outline" size="sm" onClick={() => router.push("/new")}>
-                    Start wizard
+                    Start an application
                   </Button>
                 </div>
               </div>
@@ -145,7 +145,7 @@ export default function CareerLabPage() {
           <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
             <div className="text-sm font-semibold text-primary">Coach principle</div>
             <div className="mt-1 text-xs text-muted-foreground leading-snug">
-              Your goal is not “learning”. Your goal is shipping proof. Every sprint should end with an artifact you can attach to your Evidence Vault.
+              Your goal is not "learning". Your goal is shipping proof. Every sprint should end with an artifact you can attach as evidence.
             </div>
           </div>
         </div>

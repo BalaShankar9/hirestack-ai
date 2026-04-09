@@ -1,13 +1,14 @@
 """
 Career Consultant routes - Roadmaps and recommendations (Firestore)
 """
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Request, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.services.roadmap import RoadmapService
 from app.api.deps import get_current_user
+from pydantic import BaseModel
 import structlog
 
 logger = structlog.get_logger()
@@ -90,7 +91,6 @@ async def delete_roadmap(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Roadmap not found")
 
 
-from pydantic import BaseModel
 
 
 class CoachQuestionRequest(BaseModel):

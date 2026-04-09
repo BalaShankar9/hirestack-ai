@@ -16,6 +16,11 @@ export * from "./ui/toggle"
 export * from "./ui/scroll-area"
 export * from "./ui/separator"
 export * from "./ui/alert"
+export * from "./ui/empty-state"
+export * from "./ui/locked-state"
+export * from "./ui/required-action-button"
+export * from "./ui/ai-trace"
+export * from "./ui/score-explanation"
 
 // Custom Components
 export * from "./score-gauge"

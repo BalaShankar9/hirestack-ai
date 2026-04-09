@@ -68,14 +68,17 @@ export default function ABLabPage() {
           <FlaskConical className="h-5 w-5 text-fuchsia-600 dark:text-fuchsia-400" />
         </div>
         <div>
-          <h1 className="text-xl font-bold">A/B Document Lab</h1>
-          <p className="text-xs text-muted-foreground">Generate 3 tone variants and pick the winner</p>
+          <h1 className="text-xl font-bold">Compare Versions</h1>
+          <p className="text-xs text-muted-foreground">Paste a document and get 3 tone variants (conservative, balanced, creative) to compare side by side</p>
         </div>
       </div>
 
       {/* Input */}
       <div className="rounded-2xl border p-6 space-y-4 shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
-        <h2 className="text-lg font-semibold">Source Document</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Source Document</h2>
+          <p className="text-xs text-muted-foreground">You&apos;ll get 3 versions: conservative, balanced, and creative</p>
+        </div>
         <div className="space-y-4">
           <div className="space-y-2">
             <label htmlFor="ab-doc-content" className="text-sm font-medium">Document Content *</label>

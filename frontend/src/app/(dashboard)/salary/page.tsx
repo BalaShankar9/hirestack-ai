@@ -13,9 +13,10 @@ import { cn } from "@/lib/utils";
 import {
   DollarSign, Loader2, TrendingUp, MessageSquare, ArrowUp,
   Target, Copy, Zap, Shield, BarChart3, ChevronDown,
-  Briefcase, Send, Bot, CheckCircle, AlertTriangle,
+  Briefcase, Send, Bot, CheckCircle, AlertTriangle, Info,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { AITrace } from "@/components/ui/ai-trace";
 
 function fmt(n: number, currency = "$") {
   return `${currency}${n.toLocaleString()}`;
@@ -33,29 +34,33 @@ export default function SalaryCoachPage() {
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
   const [profileSkills, setProfileSkills] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // Auto-fill from Career Nexus profile
+  // Auto-fill from saved profile
   useEffect(() => {
     const token = authSession?.access_token;
     if (!token) return;
     api.setToken(token);
     api.profile.get().then((p: any) => {
       if (!p) return;
-      if (p.title && !jobTitle) setJobTitle(p.title);
+      setJobTitle(prev => p.title && !prev ? p.title : prev);
       const contact = p.contact_info || {};
-      if (contact.location && !location) setLocation(contact.location);
+      setLocation(prev => contact.location && !prev ? contact.location : prev);
       const skills = (p.skills || []).map((s: any) => typeof s === "string" ? s : s.name).join(", ");
       setProfileSkills(skills);
       // Estimate YoE from experience
-      if (!yoe && p.experience?.length) {
-        let years = 0;
-        for (const e of p.experience) {
-          if (e?.start_date) {
-            try { years += Math.max(0, (parseInt(String(e.end_date || "2026").slice(0, 4)) - parseInt(String(e.start_date).slice(0, 4)))); } catch {}
+      setYoe(prev => {
+        if (!prev && p.experience?.length) {
+          let years = 0;
+          for (const e of p.experience) {
+            if (e?.start_date) {
+              try { years += Math.max(0, (parseInt(String(e.end_date || "2026").slice(0, 4)) - parseInt(String(e.start_date).slice(0, 4)))); } catch {}
+            }
           }
+          if (years > 0) return String(years);
         }
-        if (years > 0) setYoe(String(years));
-      }
+        return prev;
+      });
     }).catch(() => {});
   }, [authSession?.access_token]);
 
@@ -107,15 +112,24 @@ export default function SalaryCoachPage() {
         </div>
       </div>
 
-      {/* Input */}
+      {/* Input — Progressive disclosure: essential first, optional behind toggle */}
       <div className="rounded-2xl border bg-card p-6 shadow-soft-sm space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="space-y-1"><label className="text-2xs font-medium">Job Title *</label><Input placeholder="Senior Engineer" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} className="rounded-xl h-9 text-sm" /></div>
           <div className="space-y-1"><label className="text-2xs font-medium">Company</label><Input placeholder="Google" value={company} onChange={(e) => setCompany(e.target.value)} className="rounded-xl h-9 text-sm" /></div>
           <div className="space-y-1"><label className="text-2xs font-medium">Location</label><Input placeholder="London, UK" value={location} onChange={(e) => setLocation(e.target.value)} className="rounded-xl h-9 text-sm" /></div>
-          <div className="space-y-1"><label className="text-2xs font-medium">Years Exp</label><Input type="number" placeholder="5" value={yoe} onChange={(e) => setYoe(e.target.value)} className="rounded-xl h-9 text-sm" /></div>
-          <div className="space-y-1"><label className="text-2xs font-medium">Current Salary</label><Input type="number" placeholder="80000" value={currentSalary} onChange={(e) => setCurrentSalary(e.target.value)} className="rounded-xl h-9 text-sm" /></div>
         </div>
+        {/* Advanced fields — hidden until requested */}
+        {showAdvanced ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-t pt-3">
+            <div className="space-y-1"><label className="text-2xs font-medium">Years of Experience</label><Input type="number" placeholder="5" value={yoe} onChange={(e) => setYoe(e.target.value)} className="rounded-xl h-9 text-sm" /></div>
+            <div className="space-y-1"><label className="text-2xs font-medium">Current Salary <span className="text-muted-foreground">(optional — improves targeting)</span></label><Input type="number" placeholder="80000" value={currentSalary} onChange={(e) => setCurrentSalary(e.target.value)} className="rounded-xl h-9 text-sm" /></div>
+          </div>
+        ) : (
+          <button onClick={() => setShowAdvanced(true)} className="flex items-center gap-1.5 text-xs text-primary hover:underline">
+            <Info className="h-3 w-3" /> Add experience &amp; current salary for more accurate results
+          </button>
+        )}
         <Button onClick={analyze} disabled={loading || !jobTitle.trim()} className="w-full rounded-xl gap-2">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
           {loading ? "Analyzing market data..." : "Analyze Salary & Generate Scripts"}
@@ -127,6 +141,16 @@ export default function SalaryCoachPage() {
       {/* Results */}
       {analysis && (
         <div className="space-y-4 animate-fade-in">
+          {/* AI Trace */}
+          <AITrace
+            variant="banner"
+            items={[
+              `Analyzed ${jobTitle}${company ? ` at ${company}` : ""}${location ? ` in ${location}` : ""}`,
+              `${scripts.length} negotiation scripts`,
+              `${counters.length} counter-offer scenarios`,
+              `${talkingPoints.length} talking points`,
+            ]}
+          />
           {/* Tab navigation */}
           <div className="flex gap-1 rounded-xl bg-muted/50 p-1 overflow-x-auto">
             {[

@@ -89,6 +89,7 @@ import { useDownloadGate } from "@/hooks/use-download-gate";
 import { ATSScorePanel } from "@/components/workspace/ats-score-panel";
 import { SignupModal } from "@/components/auth/signup-modal";
 import { UpgradeModal } from "@/components/billing/upgrade-modal";
+import { AITrace } from "@/components/ui/ai-trace";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -195,7 +196,7 @@ export default function ApplicationWorkspacePage() {
     setClLocal(app.coverLetterHtml || "");
     setPsLocal(app.personalStatementHtml || "");
     setPortfolioLocal(app.portfolioHtml || "");
-  }, [app?.cvHtml, app?.coverLetterHtml, app?.personalStatementHtml, app?.portfolioHtml]);
+  }, [app, app?.cvHtml, app?.coverLetterHtml, app?.personalStatementHtml, app?.portfolioHtml]);
 
   // Debounced persistence for editors — use refs to avoid effect re-runs on app changes
   const appRef = useRef(app);
@@ -321,7 +322,7 @@ export default function ApplicationWorkspacePage() {
     editor?.chain?.().focus().insertContent(html).run();
   };
 
-  // Auto-insert evidence from the Evidence Vault deep-link.
+  // Auto-insert evidence from the evidence deep-link.
   useEffect(() => {
     if (!user) return;
     const insertEvidenceId = searchParams.get("insertEvidence");
@@ -498,6 +499,17 @@ export default function ApplicationWorkspacePage() {
             </TabsList>
 
             <TabsContent value="overview" className="mt-4">
+              {/* AI intelligence trace */}
+              <AITrace
+                variant="inline"
+                className="mb-4"
+                items={[
+                  `${keywords.length} keywords extracted`,
+                  `${missing.length} gaps identified`,
+                  `${tasks.length} tasks generated`,
+                  `${evidence.length} evidence items available`,
+                ].filter(Boolean)}
+              />
               {/* Module completion progress */}
               {(() => {
                 const moduleKeys = ["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "personalStatement", "portfolio"] as const;

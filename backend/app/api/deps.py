@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any
 
 from fastapi import Depends, HTTPException, status, Header
 
-from app.core.database import verify_token_async, AuthServiceUnavailable, get_db, SupabaseDB, TABLES
+from app.core.database import verify_token_async, AuthServiceUnavailable, get_db, SupabaseDB
 from app.core.config import settings
 
 

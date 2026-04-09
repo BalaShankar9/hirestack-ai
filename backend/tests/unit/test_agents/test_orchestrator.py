@@ -1,6 +1,6 @@
 # backend/tests/unit/test_agents/test_orchestrator.py
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 from ai_engine.agents.base import AgentResult
 from ai_engine.agents.orchestrator import AgentPipeline, PipelineResult
 

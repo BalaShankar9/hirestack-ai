@@ -3,7 +3,7 @@ Micro-Learning Service
 Daily challenges, streak tracking, and skill progression (Supabase)
 """
 from typing import Optional, Dict, Any, List
-from datetime import date, timedelta
+from datetime import date
 import structlog
 
 from app.core.database import get_db, TABLES, SupabaseDB

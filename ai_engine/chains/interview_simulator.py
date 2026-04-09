@@ -2,7 +2,7 @@
 Interview Simulator Chain
 Generates interview questions and evaluates candidate answers
 """
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from ai_engine.client import AIClient
 

@@ -74,13 +74,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      supabase.realtime.setAuth(s?.access_token ?? "");
-      setSession(s);
-      setUser(mapUser(s?.user ?? null));
-      setLoading(false);
-    });
+    // Get initial session with a hard timeout of 5s to prevent DNS hang
+    Promise.race([
+      supabase.auth.getSession(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 5000))
+    ])
+      .then(({ data: { session: s } }) => {
+        supabase.realtime.setAuth(s?.access_token ?? "");
+        setSession(s);
+        setUser(mapUser(s?.user ?? null));
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Supabase getSession failed:", err);
+        setLoading(false); // Do not block the app forever
+      });
 
     // Listen for auth state changes
     const {
@@ -98,7 +106,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await Promise.race([
+      supabase.auth.signInWithPassword({ email, password }),
+      new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Network timeout: Auth server is unreachable.")), 8000))
+    ]);
     if (error) throw error;
   }, []);
 

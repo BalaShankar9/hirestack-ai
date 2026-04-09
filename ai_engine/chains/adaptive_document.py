@@ -2,8 +2,7 @@
 Adaptive Document Generator
 Generates ANY document type with world-class quality using specialized prompts.
 """
-import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 
 # ── System prompts per document type ─────────────────────────────────

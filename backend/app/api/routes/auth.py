@@ -6,7 +6,7 @@ The backend verifies Supabase JWTs.
 from typing import Optional, Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Request, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
 
 from app.core.database import verify_token_async, AuthServiceUnavailable, get_db, SupabaseDB, TABLES
 from app.api.deps import get_current_user
@@ -17,6 +17,7 @@ router = APIRouter()
 @limiter.limit("10/minute")
 @router.get("/verify")
 async def verify_token_endpoint(
+    request: Request,
     authorization: str = Header(...),
 ):
     """Verify Supabase JWT and return user info."""
@@ -54,6 +55,7 @@ async def verify_token_endpoint(
 @limiter.limit("10/minute")
 @router.get("/me")
 async def get_current_user_info(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get current authenticated user."""
@@ -63,6 +65,7 @@ async def get_current_user_info(
 @limiter.limit("10/minute")
 @router.put("/me")
 async def update_current_user(
+    request: Request,
     full_name: Optional[str] = None,
     avatar_url: Optional[str] = None,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -86,6 +89,7 @@ async def update_current_user(
 @limiter.limit("10/minute")
 @router.post("/sync")
 async def sync_user(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Sync user data. Called after frontend login."""

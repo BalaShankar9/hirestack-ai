@@ -5,7 +5,7 @@ Handles edge cases: multi-column layouts, tables, headers/footers, encoding issu
 """
 import io
 import re
-from typing import List, Optional
+from typing import List
 
 import pdfplumber
 from docx import Document as DocxDocument

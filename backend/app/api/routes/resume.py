@@ -7,11 +7,11 @@ provides server-side helpers (e.g. PDF parsing) for reliability.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 
-from app.api.deps import get_current_user, get_current_user_or_guest
+from app.api.deps import get_current_user_or_guest
 from app.core.config import settings
 from app.core.security import limiter
 from app.services.file_parser import FileParser

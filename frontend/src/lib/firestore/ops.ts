@@ -326,7 +326,7 @@ async function syncAutoTasks(
       appId,
       source: "gaps",
       title: `Add proof for ${kw}`,
-      description: `Create one concrete artifact (project, certification, or link) that demonstrates ${kw}, then attach it in Evidence Vault.`,
+      description: `Create one concrete artifact (project, certification, or link) that demonstrates ${kw}, then attach it in Evidence.`,
       detail: `Missing keyword: ${kw}`,
       why: `This keyword appears in the JD signal. Proof-backed keywords improve match and credibility.`,
       status: "todo",
@@ -1924,7 +1924,7 @@ export function seedPortfolioHtml(
 
   const parts: string[] = [];
   parts.push("<h2>Portfolio & Evidence</h2>");
-  parts.push(`<p>Proof-first checklist for <strong>${jobTitle}</strong> at <strong>${companyStr}</strong>. Attach links/files in Evidence Vault and reference them in your docs.</p>`);
+  parts.push(`<p>Proof-first checklist for <strong>${jobTitle}</strong> at <strong>${companyStr}</strong>. Attach links/files in Evidence and reference them in your docs.</p>`);
   if (resumeName) {
     parts.push(`<p><strong>Resume:</strong> ${resumeName}</p>`);
   }

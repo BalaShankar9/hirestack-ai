@@ -10,7 +10,7 @@ Returns a structured intel report used by document generation agents.
 """
 import re
 import asyncio
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 import httpx
 import structlog
 
@@ -457,15 +457,24 @@ class CompanyIntelChain:
         if found_tech:
             signals.append(f"Tech: {', '.join(found_tech)}")
 
-        if "remote" in lower: signals.append("Remote work")
-        if "hybrid" in lower: signals.append("Hybrid model")
-        if "on-site" in lower or "onsite" in lower: signals.append("On-site required")
-        if "agile" in lower or "scrum" in lower: signals.append("Agile/Scrum")
-        if "startup" in lower: signals.append("Startup environment")
-        if "series" in lower: signals.append("VC-backed")
-        if "diversity" in lower or "inclusion" in lower: signals.append("DEI focus")
-        if "equity" in lower or "stock" in lower: signals.append("Equity compensation")
-        if any(w in lower for w in ["unlimited pto", "unlimited vacation", "flexible time"]): signals.append("Flexible time off")
+        if "remote" in lower:
+            signals.append("Remote work")
+        if "hybrid" in lower:
+            signals.append("Hybrid model")
+        if "on-site" in lower or "onsite" in lower:
+            signals.append("On-site required")
+        if "agile" in lower or "scrum" in lower:
+            signals.append("Agile/Scrum")
+        if "startup" in lower:
+            signals.append("Startup environment")
+        if "series" in lower:
+            signals.append("VC-backed")
+        if "diversity" in lower or "inclusion" in lower:
+            signals.append("DEI focus")
+        if "equity" in lower or "stock" in lower:
+            signals.append("Equity compensation")
+        if any(w in lower for w in ["unlimited pto", "unlimited vacation", "flexible time"]):
+            signals.append("Flexible time off")
 
         # Salary signals
         salary_match = re.search(r'[\$£€]\s*(\d{2,3})[,.]?\d{0,3}\s*[-–to]+\s*[\$£€]?\s*(\d{2,3})[,.]?\d{0,3}', jd_text)

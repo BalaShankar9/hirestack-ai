@@ -2,7 +2,7 @@
 Document Generator Chain
 Creates personalized application documents based on user profile and target job
 """
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 
 from ai_engine.client import AIClient
 

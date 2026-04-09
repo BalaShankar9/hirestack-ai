@@ -15,6 +15,7 @@ import json
 import math
 import re
 import traceback
+import structlog
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, AsyncGenerator
@@ -48,12 +49,11 @@ def _check_guest_limit(request: Request, current_user: Dict[str, Any], limit: in
         )
     _guest_usage[ip].append(now)
 
+
 try:
     import openai as _openai_module
 except ImportError:
     _openai_module = None  # type: ignore
-
-import structlog
 
 try:
     from ai_engine.agents.pipelines import (
@@ -332,11 +332,14 @@ async def generate_pipeline(request: Request, req: PipelineRequest, current_user
             return_exceptions=True,
         )
         if isinstance(cv_html, Exception):
-            logger.error("pipeline.cv_failed", error=str(cv_html)); cv_html = ""
+            logger.error("pipeline.cv_failed", error=str(cv_html))
+            cv_html = ""
         if isinstance(cl_html, Exception):
-            logger.error("pipeline.cl_failed", error=str(cl_html)); cl_html = ""
+            logger.error("pipeline.cl_failed", error=str(cl_html))
+            cl_html = ""
         if isinstance(roadmap, Exception):
-            logger.error("pipeline.roadmap_failed", error=str(roadmap)); roadmap = {}
+            logger.error("pipeline.roadmap_failed", error=str(roadmap))
+            roadmap = {}
 
         # Personal Statement + Portfolio (always generated)
         ps_html, portfolio_html = "", ""
@@ -1213,7 +1216,6 @@ def _format_response(
     # ── Gaps ──────────────────────────────────
     compatibility = gap_analysis.get("compatibility_score", 50)
     skill_gaps = gap_analysis.get("skill_gaps", [])
-    exp_gaps = gap_analysis.get("experience_gaps", [])
     strengths_raw = gap_analysis.get("strengths", [])
     recommendations_raw = gap_analysis.get("recommendations", [])
     category_scores = gap_analysis.get("category_scores", {})
@@ -1750,10 +1752,11 @@ async def stream_generation_job(
             else:
                 logger.error("job_stream.error", job_id=job_id, error=str(e), traceback=traceback.format_exc())
                 err_msg = "AI generation failed due to an unexpected error. Please try again."
+                err_str = str(e)[:500]
                 try:
                     await asyncio.to_thread(
                         lambda: sb.table(TABLES["generation_jobs"])
-                        .update({"status": "failed", "error_message": str(e)[:500], "finished_at": "now()"})
+                        .update({"status": "failed", "error_message": err_str, "finished_at": "now()"})
                         .eq("id", job_id)
                         .execute()
                     )

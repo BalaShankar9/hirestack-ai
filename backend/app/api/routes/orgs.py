@@ -2,14 +2,15 @@
 Organization routes — CRUD, members, invitations, audit, usage
 """
 import re
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Request, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.services.org import OrgService
 from app.api.deps import get_current_user
+from app.core.database import TABLES
 import structlog
 
 logger = structlog.get_logger()
@@ -183,4 +184,3 @@ async def get_usage(org_id: str, current_user: Dict[str, Any] = Depends(get_curr
     return {"usage": usage, "limits": limits, "plan": subs[0].get("plan", "free") if subs else "free"}
 
 
-from app.core.database import TABLES

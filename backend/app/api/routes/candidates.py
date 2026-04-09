@@ -4,7 +4,7 @@ Candidate routes — CRUD, pipeline stage management
 from typing import Dict, Any, Optional
 
 from app.core.security import limiter
-from fastapi import APIRouter, Request, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 
 from app.services.candidate import CandidateService

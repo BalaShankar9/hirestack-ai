@@ -4,7 +4,7 @@ Analytics routes (Firestore)
 from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Request, Depends, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.services.analytics import AnalyticsService
 from app.api.deps import get_current_user

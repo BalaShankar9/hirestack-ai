@@ -4,7 +4,7 @@ Benchmark routes - Generate ideal candidate benchmarks (Firestore)
 from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Request, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.services.benchmark import BenchmarkService
 from app.api.deps import get_current_user

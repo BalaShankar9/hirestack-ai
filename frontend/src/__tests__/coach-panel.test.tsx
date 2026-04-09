@@ -52,7 +52,7 @@ describe("CoachPanel", () => {
         kind: "collect",
         title: "Add 2 evidence items",
         why: "Evidence makes your keywords credible.",
-        cta: "Open Evidence Vault",
+        cta: "Open Evidence",
         onClick: vi.fn(),
       },
     ];

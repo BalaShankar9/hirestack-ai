@@ -1,10 +1,10 @@
 """
 Document Builder routes (Firestore)
 """
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 from app.core.security import limiter
-from fastapi import APIRouter, Request, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 
 from app.services.document import DocumentService
 from app.api.deps import get_current_user

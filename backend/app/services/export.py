@@ -3,7 +3,7 @@ Export Service
 Handles document export to PDF/DOCX formats with Supabase
 """
 from typing import List, Optional, Dict, Any, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime
 import io
 import base64
 import structlog
@@ -11,7 +11,6 @@ import structlog
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph as RLParagraph, Spacer
-from reportlab.lib.units import inch
 from docx import Document as DocxDocument
 from docx.shared import Pt, Cm
 

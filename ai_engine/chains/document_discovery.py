@@ -3,8 +3,7 @@ Document Discovery Chain
 Analyzes a job description to determine exactly which documents the application needs.
 Different jobs require different document sets — this chain figures out what's needed.
 """
-import json
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 
 DISCOVERY_SYSTEM = """You are a senior career strategist who has placed 10,000+ candidates across every industry.

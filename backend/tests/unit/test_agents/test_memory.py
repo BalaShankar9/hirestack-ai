@@ -1,6 +1,6 @@
 # backend/tests/unit/test_agents/test_memory.py
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock
 from ai_engine.agents.memory import AgentMemory
 
 

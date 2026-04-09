@@ -3,8 +3,7 @@ Career Analytics routes - Timeline, trends, and portfolio (Supabase)
 """
 from typing import Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.services.career_analytics import CareerAnalyticsService
 from app.api.deps import get_current_user

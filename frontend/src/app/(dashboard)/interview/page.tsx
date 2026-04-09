@@ -15,8 +15,10 @@ import { cn } from "@/lib/utils";
 import {
   Mic, Play, Send, CheckCircle, Clock, Loader2, RotateCcw,
   Timer, Brain, Target, Zap, AlertTriangle, Trophy,
-  MessageSquare, Code, Users, Briefcase, ChevronDown,
+  MessageSquare, Code, Users, Briefcase, ChevronDown, Info,
 } from "lucide-react";
+import { AITrace } from "@/components/ui/ai-trace";
+import { ScoreExplanation } from "@/components/ui/score-explanation";
 
 /* ── Animation variants ───────────────────────────────────────── */
 
@@ -131,7 +133,7 @@ export default function InterviewSimulatorPage() {
       const skills = (p.skills || []).map((s: any) => typeof s === "string" ? s : s.name).join(", ");
       setProfileSkills(skills);
       setProfileSummary(`${p.title || ""} with skills: ${skills.slice(0, 300)}`);
-      if (p.title && !jobTitle) setJobTitle(p.title);
+      setJobTitle(prev => p.title && !prev ? p.title : prev);
     }).catch(() => {});
   }, [authSession?.access_token]);
 
@@ -186,6 +188,7 @@ export default function InterviewSimulatorPage() {
     if (timeLeft === 0 && mode === "timed" && phase === "active" && !submitting) {
       submitAnswer();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeLeft]);
 
   const startSession = async () => {
@@ -289,6 +292,12 @@ export default function InterviewSimulatorPage() {
                 </motion.button>
               ))}
             </div>
+            <p className="text-xs text-muted-foreground mt-2 flex items-start gap-1.5">
+              <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              {mode === "practice" && "Answer each question at your own pace — no time pressure. Great for preparation."}
+              {mode === "timed" && "90 seconds per question. If time runs out, your answer is auto-submitted. Simulates real interview pressure."}
+              {mode === "mock" && "A simulated live interview with AI follow-up questions based on your answers."}
+            </p>
           </div>
 
           {/* Configuration */}
@@ -461,6 +470,16 @@ export default function InterviewSimulatorPage() {
       {/* ── Review Phase ────────────────────────────────────── */}
       {phase === "review" && session && (
         <motion.div key="review" className="space-y-6" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.4 }}>
+          {/* AI Trace */}
+          <AITrace
+            variant="banner"
+            items={[
+              `${questions.length} questions generated`,
+              `${answers.length} answers evaluated`,
+              `${interviewType} · ${difficulty} level`,
+              `${mode} mode`,
+            ]}
+          />
           {/* Score summary */}
           <motion.div className="rounded-2xl border bg-gradient-to-br from-primary/5 via-violet-500/5 to-transparent p-8 shadow-soft-sm" initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.5 }}>
             <div className="flex flex-col md:flex-row items-center gap-8">

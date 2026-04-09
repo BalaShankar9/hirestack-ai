@@ -3,7 +3,6 @@ Candidate Service
 Manages candidates for recruitment agencies — lifecycle, pipeline stages, bulk operations.
 """
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timezone
 import structlog
 
 from app.core.database import get_db, TABLES, SupabaseDB

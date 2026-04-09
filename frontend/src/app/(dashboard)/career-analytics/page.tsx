@@ -62,7 +62,7 @@ export default function CareerAnalyticsPage() {
             <Activity className="h-6 w-6 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold">Career Intelligence</h1>
+            <h1 className="text-xl font-bold">Progress</h1>
             <p className="text-sm text-muted-foreground">Track your career growth over time</p>
           </div>
         </div>

@@ -2,7 +2,7 @@
 Gap Analyzer Chain
 Compares user profiles against benchmarks and identifies gaps
 """
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from ai_engine.client import AIClient
 

@@ -4,8 +4,7 @@ Pass 1: Keyword extraction + matching (structured_output model)
 Pass 2: Structure/format analysis (code_analysis model)
 Pass 3: Strategy + rewrite suggestions (reasoning model)
 """
-import json
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from ai_engine.client import AIClient
 
