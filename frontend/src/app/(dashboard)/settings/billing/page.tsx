@@ -41,7 +41,7 @@ export default function BillingPage() {
   useEffect(() => {
     if (!session?.access_token) return;
     api.setToken(session.access_token);
-    api.request("/billing/status").then((r: any) => setBilling(r)).catch(() => {}).finally(() => setLoading(false));
+    api.request("/billing/status").then((r: any) => setBilling(r)).catch(() => { setBilling(null); }).finally(() => setLoading(false));
   }, [session?.access_token]);
 
   const upgrade = async (plan: string) => {

@@ -105,7 +105,7 @@ app = FastAPI(
     version=settings.app_version,
     description="AI-powered career intelligence and job application platform",
     docs_url="/docs" if settings.debug else None,
-    redoc_url="/redoc",  # Always available for API reference
+    redoc_url="/redoc" if settings.debug else None,
     lifespan=lifespan,
 )
 
@@ -219,10 +219,12 @@ async def health_check():
         "version": settings.app_version,
         "environment": settings.environment,
         "supabase": {
-            "url": settings.supabase_url,
-            "database": supabase_status,
+            "connected": supabase_status.get("ok", False),
         },
-        "ai": ai_status,
+        "ai": {
+            "provider": ai_status.get("provider", "unknown"),
+            "ok": ai_status.get("ok", False),
+        },
         "sentry": bool(settings.sentry_dsn),
     }
 

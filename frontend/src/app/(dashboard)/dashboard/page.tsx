@@ -129,7 +129,7 @@ export default function DashboardPage() {
     fetch(`${API_URL}/api/analytics/daily-briefing`)
       .then(r => r.json())
       .then(d => setBriefing(d))
-      .catch(() => {})
+      .catch(() => { setBriefing(null); })
       .finally(() => setBriefingLoading(false));
   }, [userId, briefing]);
 

@@ -39,7 +39,7 @@ export default function MembersPage() {
         const m = await api.request(`/orgs/${orgs[0].id}/members`);
         setMembers(Array.isArray(m) ? m : []);
       }
-    }).catch(() => {}).finally(() => setLoading(false));
+    }).catch(() => { toast({ title: "Error", description: "Failed to load team members" }); }).finally(() => setLoading(false));
   }, [session?.access_token]);
 
   const invite = async () => {

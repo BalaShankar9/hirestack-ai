@@ -47,7 +47,6 @@ function LoginContent() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    console.log("Form submission triggered with email:", email, "and password length:", password.length);
     setError(null);
     setLoading(true);
     try {
@@ -264,7 +263,7 @@ function LoginContent() {
                           redirectTo: `${window.location.origin}/auth/reset-password`,
                         });
                         setError(null);
-                        alert("Password reset email sent! Check your inbox.");
+                        toast({ title: "Reset Email Sent", description: "Check your inbox for a password reset link." });
                       } catch (e: any) { setError(e.message); }
                     }}
                   >

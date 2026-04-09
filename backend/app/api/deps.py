@@ -47,8 +47,6 @@ async def get_current_user(
 ) -> Dict[str, Any]:
     """Get current authenticated user from Supabase JWT."""
     if not token:
-        if getattr(settings, "debug", False):
-            return DEV_USER
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",

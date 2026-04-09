@@ -32,7 +32,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (session?.access_token) {
       api.setToken(session.access_token);
-      api.request("/orgs").then((r: any) => setOrgs(Array.isArray(r) ? r : [])).catch(() => {}).finally(() => setLoading(false));
+      api.request("/orgs").then((r: any) => setOrgs(Array.isArray(r) ? r : [])).catch(() => { setOrgs([]); }).finally(() => setLoading(false));
     }
   }, [session?.access_token]);
 

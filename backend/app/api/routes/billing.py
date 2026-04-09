@@ -15,10 +15,14 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+# Dynamic frontend URL: prefer FRONTEND_URL env, fall back to first CORS origin
+import os as _os
+_FRONTEND_URL = _os.getenv("FRONTEND_URL", "https://hirestack.tech")
+
 class CheckoutRequest(BaseModel):
     plan: str  # "pro" | "enterprise"
-    success_url: str = "http://localhost:3002/settings/billing?success=true"
-    cancel_url: str = "http://localhost:3002/settings/billing?canceled=true"
+    success_url: str = f"{_FRONTEND_URL}/settings/billing?success=true"
+    cancel_url: str = f"{_FRONTEND_URL}/settings/billing?canceled=true"
 
 
 @limiter.limit("20/minute")

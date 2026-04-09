@@ -110,13 +110,13 @@
    - Created `/frontend/src/lib/firebase.ts` - Firebase client configuration
    - Updated `/frontend/.env.local` with Firebase web config:
      ```
-     NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyDGLHyDQIgqqWDKo8_QX7nhX1sRloCXo2o
+     NEXT_PUBLIC_FIREBASE_API_KEY=<redacted>
      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=hirestack-ai.firebaseapp.com
      NEXT_PUBLIC_FIREBASE_PROJECT_ID=hirestack-ai
      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=hirestack-ai.firebasestorage.app
-     NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=653123981374
-     NEXT_PUBLIC_FIREBASE_APP_ID=1:653123981374:web:538baa677644100f88816f
-     NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=G-2NEF23KLB7
+     NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=<redacted>
+     NEXT_PUBLIC_FIREBASE_APP_ID=<redacted>
+     NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=<redacted>
      ```
    - Updated `/frontend/src/components/providers.tsx` - Firebase Auth context
    - Updated `/frontend/src/hooks/use-auth.ts` - Firebase auth methods

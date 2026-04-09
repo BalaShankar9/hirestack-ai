@@ -31,7 +31,7 @@ export default function AuditLogPage() {
         const audit = await api.request(`/orgs/${orgs[0].id}/audit`);
         setLogs(Array.isArray(audit) ? audit : []);
       }
-    }).catch(() => {}).finally(() => setLoading(false));
+    }).catch(() => { setLogs([]); }).finally(() => setLoading(false));
   }, [session?.access_token]);
 
   return (
