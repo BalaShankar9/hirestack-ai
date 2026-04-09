@@ -69,7 +69,9 @@ function LoginContent() {
     } catch (err: any) {
       const msg = err?.message ?? "Authentication failed";
       let finalMsg = msg;
-      if (msg.toLowerCase().includes("invalid") && !isRegister) {
+      if (msg.toLowerCase().includes("failed to fetch") || msg.toLowerCase().includes("network")) {
+        finalMsg = "Unable to reach the authentication server. Please check your internet connection and try again.";
+      } else if (msg.toLowerCase().includes("invalid") && !isRegister) {
         finalMsg = "Invalid credentials. Don't have an account yet? Click 'Create Account' below.";
       }
       setError(finalMsg);
