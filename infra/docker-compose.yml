@@ -13,9 +13,8 @@ services:
       - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://:${REDIS_PASSWORD:-changeme}@redis:6379
-      - AI_PROVIDER=${AI_PROVIDER:-gemini}
+      - AI_PROVIDER=gemini
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - DEBUG=${DEBUG:-false}
     depends_on:
       - redis
@@ -66,9 +65,8 @@ services:
       - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://:${REDIS_PASSWORD:-changeme}@redis:6379
-      - AI_PROVIDER=${AI_PROVIDER:-gemini}
+      - AI_PROVIDER=gemini
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
       - redis
       - backend
