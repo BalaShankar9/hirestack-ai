@@ -15,6 +15,7 @@ from ai_engine.agents.optimizer import OptimizerAgent
 from ai_engine.agents.fact_checker import FactCheckerAgent
 from ai_engine.agents.schema_validator import ValidatorAgent
 from ai_engine.agents.lock import PipelineLockManager
+from ai_engine.agents.memory import AgentMemory
 from ai_engine.client import AIClient, get_ai_client
 
 
@@ -33,11 +34,12 @@ def create_pipeline(
     on_stage_update: Optional[Callable] = None,
     ai_client: Optional[AIClient] = None,
     db: Any = None,
+    max_iterations: int = 2,
 ) -> AgentPipeline:
     """Create a configured AgentPipeline for a specific feature."""
     client = ai_client or get_ai_client()
 
-    return AgentPipeline(
+    pipeline = AgentPipeline(
         name=name,
         researcher=ResearcherAgent(ai_client=client) if use_researcher else None,
         drafter=DrafterAgent(chain=chain, method_name=method_name, ai_client=client),
@@ -48,7 +50,17 @@ def create_pipeline(
         lock_manager=_lock_manager,
         on_stage_update=on_stage_update,
         db=db,
+        max_iterations=max_iterations,
     )
+
+    # Attach memory if DB is available
+    if db is not None:
+        try:
+            pipeline.memory = AgentMemory(db)
+        except Exception:
+            pass  # Memory is optional — pipeline works without it
+
+    return pipeline
 
 
 def resume_parse_pipeline(
