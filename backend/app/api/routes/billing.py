@@ -7,6 +7,8 @@ from app.core.security import limiter
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
+import os as _os
+
 from app.services.billing import BillingService
 from app.api.deps import get_current_user
 import structlog
@@ -14,9 +16,7 @@ import structlog
 logger = structlog.get_logger()
 router = APIRouter()
 
-
 # Dynamic frontend URL: prefer FRONTEND_URL env, fall back to first CORS origin
-import os as _os
 _FRONTEND_URL = _os.getenv("FRONTEND_URL", "https://hirestack.tech")
 
 class CheckoutRequest(BaseModel):

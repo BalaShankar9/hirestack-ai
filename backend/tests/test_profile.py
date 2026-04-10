@@ -1,6 +1,6 @@
 """Profile lifecycle tests — upload, update, versioning, social, intelligence, docs, delete."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 
 # ── Unit tests for ProfileService ─────────────────────────────────────

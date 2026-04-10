@@ -1,14 +1,13 @@
 # backend/tests/unit/test_agents/test_orchestrator_policy.py
 """Tests for the policy-driven orchestrator behavior."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 from ai_engine.agents.base import AgentResult
 from ai_engine.agents.orchestrator import (
     AgentPipeline,
     PipelinePolicy,
     PipelineResult,
     DEFAULT_POLICIES,
-    POLICY_FULL,
     POLICY_LIGHT,
     POLICY_STRICT,
     _merge_optimizations,
@@ -160,7 +159,7 @@ class TestPipelineExecution:
             drafter=agents["drafter"],
             validator=agents["validator"],
         )
-        result = await pipeline.execute({"user_id": "u1"})
+        await pipeline.execute({"user_id": "u1"})
         agents["researcher"].run.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -173,7 +172,7 @@ class TestPipelineExecution:
             critic=agents["critic"],
             validator=agents["validator"],
         )
-        result = await pipeline.execute({"user_id": "u1"})
+        await pipeline.execute({"user_id": "u1"})
         agents["critic"].run.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -186,7 +185,7 @@ class TestPipelineExecution:
             fact_checker=agents["fact_checker"],
             validator=agents["validator"],
         )
-        result = await pipeline.execute({"user_id": "u1"})
+        await pipeline.execute({"user_id": "u1"})
         agents["fact_checker"].run.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -370,5 +369,5 @@ class TestMergeOptimizations:
         draft = {"html": "<p>test</p>"}
         opt = {"suggestions": []}
         fc = {}
-        result = _merge_optimizations(draft, opt, fc)
+        _merge_optimizations(draft, opt, fc)
         assert "_optimization_report" not in draft

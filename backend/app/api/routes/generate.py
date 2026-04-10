@@ -880,7 +880,6 @@ async def generate_pipeline_stream(request: Request, req: PipelineRequest, curre
     async def event_stream() -> AsyncGenerator[str, None]:
         try:
             from ai_engine.client import AIClient
-            from ai_engine.chains.company_intel import CompanyIntelChain
             from ai_engine.chains.role_profiler import RoleProfilerChain
             from ai_engine.chains.benchmark_builder import BenchmarkBuilderChain
             from ai_engine.chains.gap_analyzer import GapAnalyzerChain
