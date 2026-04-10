@@ -1,21 +1,20 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
   Briefcase,
   CheckCircle2,
-  Circle,
   FileText,
+  Fingerprint,
   Loader2,
   Sparkles,
   Upload,
   X,
-  Timer,
-  RotateCcw,
 } from "lucide-react";
+import { PipelineAgentView } from "@/components/pipeline/pipeline-agent-view";
 
 import { useAuth } from "@/components/providers";
 import {
@@ -37,6 +36,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { UploadZone } from "@/components/upload-zone";
+import api from "@/lib/api";
+import type { Profile } from "@/types";
 
 /* ------------------------------------------------------------------ */
 /*  Steps                                                               */
@@ -76,6 +77,34 @@ export default function NewApplicationPage() {
   const [resumeUrl, setResumeUrl] = useState("");
   const [uploading, setUploading] = useState(false);
 
+  // Career Nexus profile pre-fill
+  const [nexusProfile, setNexusProfile] = useState<Profile | null>(null);
+  const [useNexus, setUseNexus] = useState(false);
+  const [nexusLoading, setNexusLoading] = useState(true);
+
+  // Fetch primary profile on mount
+  React.useEffect(() => {
+    if (!userId) { setNexusLoading(false); return; }
+    api.profile.get()
+      .then((p: Profile) => {
+        if (p?.raw_resume_text) {
+          setNexusProfile(p);
+          setUseNexus(true);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setNexusLoading(false));
+  }, [userId]);
+
+  // When toggling nexus on, pre-fill resume text
+  React.useEffect(() => {
+    if (useNexus && nexusProfile?.raw_resume_text && !resumeFile) {
+      setResumeText(nexusProfile.raw_resume_text);
+    } else if (!useNexus && !resumeFile) {
+      setResumeText("");
+    }
+  }, [useNexus, nexusProfile, resumeFile]);
+
   // Step 4: Generate — real-time SSE progress
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -86,23 +115,6 @@ export default function NewApplicationPage() {
   const abortRef = useRef<AbortController | null>(null);
   const [completedPhases, setCompletedPhases] = useState<Set<number>>(new Set());
   const [activePhaseIdx, setActivePhaseIdx] = useState(-1);
-
-  // Pipeline phases matching the backend SSE events
-  const PIPELINE_PHASES = [
-    { label: "Parsing resume & building benchmark", icon: "📄" },
-    { label: "Analyzing skill gaps", icon: "🔍" },
-    { label: "Generating CV, cover letter & learning plan", icon: "✍️" },
-    { label: "Building personal statement & portfolio", icon: "📁" },
-    { label: "Validating document quality", icon: "✅" },
-    { label: "Packaging your application", icon: "📦" },
-  ];
-
-  const formatElapsed = (ms: number) => {
-    const s = Math.floor(ms / 1000);
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
-  };
 
   // Derived
   const keywords = useMemo(() => extractKeywords(jdText), [jdText]);
@@ -177,7 +189,7 @@ export default function NewApplicationPage() {
     setGenMessage("Initializing AI engine…");
     setElapsedMs(0);
     setCompletedPhases(new Set());
-    setActivePhaseIdx(0);
+    setActivePhaseIdx(0); // Start with Recon (intel agent) as active
 
     // Start elapsed timer
     const startTime = Date.now();
@@ -213,22 +225,34 @@ export default function NewApplicationPage() {
       }
 
       // SSE progress callback — drives the entire UI
+      // Agent 0 = Recon (intel gatherer) — runs before SSE events start
+      // Agents 1-6 = Atlas, Cipher, Quill, Forge, Sentinel, Nova — mapped from SSE steps 1-6
       const handleProgress = (p: PipelineProgress) => {
         setProgress(p.progress);
         setGenMessage(p.message);
 
-        // Map SSE step (1-based) to phase index (0-based)
-        const phaseIdx = Math.max(0, p.step - 1);
+        // Map SSE step (1-based) to phase index (0-based), offset by 1 for Recon
+        const phaseIdx = Math.max(0, p.step); // step 1 → phase 1 (Atlas), etc.
+
+        // Mark Recon as done when first SSE arrives (intel gathering is complete)
+        setCompletedPhases((prev) => {
+          if (!prev.has(0)) {
+            const next = new Set(prev);
+            next.add(0); // Recon done
+            return next;
+          }
+          return prev;
+        });
+
         setActivePhaseIdx(phaseIdx);
 
-        // Mark phases that are done (phase ending with "_done")
+        // Mark phases that are done
         if (p.phase.endsWith("_done") || p.phase === "complete") {
           setCompletedPhases((prev) => {
             const next = new Set(prev);
             next.add(phaseIdx);
             return next;
           });
-          // Advance active to next phase
           if (p.phase !== "complete") {
             setActivePhaseIdx(phaseIdx + 1);
           }
@@ -397,6 +421,63 @@ export default function NewApplicationPage() {
           <h3 className="text-base font-bold">Upload Your Resume</h3>
           <p className="mt-1 text-xs text-muted-foreground">Optional but helps generate more accurate analysis.</p>
           <div className="mt-5 space-y-4">
+            {/* Career Nexus profile pre-fill */}
+            {!nexusLoading && nexusProfile && (
+              <button
+                type="button"
+                onClick={() => {
+                  setUseNexus(!useNexus);
+                  if (!useNexus) {
+                    setResumeFile(null);
+                    setResumeUrl("");
+                  }
+                }}
+                className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all ${
+                  useNexus
+                    ? "border-teal-500/40 bg-teal-500/5"
+                    : "border-border hover:border-teal-500/20"
+                }`}
+              >
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                  useNexus ? "bg-teal-500/15" : "bg-muted"
+                }`}>
+                  <Fingerprint className={`h-5 w-5 ${useNexus ? "text-teal-600 dark:text-teal-400" : "text-muted-foreground"}`} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">
+                    {useNexus ? "Using Career Nexus profile" : "Use Career Nexus profile"}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {nexusProfile.name || nexusProfile.title || "Your saved career profile"} &middot;{" "}
+                    {nexusProfile.raw_resume_text
+                      ? `${nexusProfile.raw_resume_text.split(/\s+/).length} words`
+                      : "Profile data"}
+                  </p>
+                </div>
+                <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                  useNexus
+                    ? "border-teal-500 bg-teal-500"
+                    : "border-muted-foreground/30"
+                }`}>
+                  {useNexus && (
+                    <svg viewBox="0 0 12 12" className="h-3 w-3 text-white">
+                      <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </div>
+              </button>
+            )}
+
+            {useNexus && nexusProfile && !resumeFile && (
+              <p className="text-xs text-muted-foreground">
+                Resume text loaded from your Career Nexus profile. You can also{" "}
+                <button type="button" className="text-teal-600 dark:text-teal-400 underline" onClick={() => setUseNexus(false)}>
+                  upload a different resume
+                </button>{" "}
+                for this application.
+              </p>
+            )}
+
             {resumeFile ? (
               <div className="flex items-center gap-3 rounded-xl border p-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
@@ -421,7 +502,7 @@ export default function NewApplicationPage() {
                   <X className="h-4 w-4" />
                 </Button>
               </div>
-            ) : (
+            ) : !useNexus ? (
               <UploadZone
                 onUpload={handleResumeUpload}
                 accept={{
@@ -431,7 +512,7 @@ export default function NewApplicationPage() {
                 }}
                 maxSize={10 * 1024 * 1024}
               />
-            )}
+            ) : null}
 
             {uploading && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -487,14 +568,13 @@ export default function NewApplicationPage() {
               <div className="rounded-xl border p-3 space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">Resume</p>
                 <p className="text-sm">
-                  {/** Avoid showing "1 words" when extraction is empty */}
                   {(() => {
                     const wordCount = resumeText.trim()
                       ? resumeText.trim().split(/\s+/).length
                       : 0;
-                    return resumeFile
-                      ? `${resumeFile.name} (${wordCount} words)`
-                      : "No resume uploaded";
+                    if (resumeFile) return `${resumeFile.name} (${wordCount} words)`;
+                    if (resumeText.trim()) return `Career Nexus profile used (${wordCount} words)`;
+                    return "No resume — upload one or connect Career Nexus";
                   })()}
                 </p>
               </div>
@@ -516,137 +596,21 @@ export default function NewApplicationPage() {
       )}
 
       {step === "generate" && (
-        <div className="surface-premium rounded-2xl">
-          <div className="flex flex-col items-center justify-center py-10 px-6 space-y-6">
-            {genError ? (
-              <div className="flex flex-col items-center space-y-4 max-w-md">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-500/10">
-                  <X className="h-7 w-7 text-rose-600" />
-                </div>
-                <div className="text-center space-y-1">
-                  <p className="text-base font-semibold text-destructive">Generation Failed</p>
-                  <p className="text-sm text-muted-foreground">{genError}</p>
-                  {genError.toLowerCase().includes("gemini") || genError.toLowerCase().includes("gemini_api_key") ? (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      The AI service is not properly configured. Please try again in a few moments, or contact support if the issue persists.
-                    </p>
-                  ) : null}
-                </div>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <Button className="rounded-xl" onClick={() => { setStep("review"); setGenError(null); }}>
-                    <RotateCcw className="mr-2 h-4 w-4" />
-                    Try Again
-                  </Button>
-                  {draftAppId && (
-                    <Button
-                      variant="outline"
-                      className="rounded-xl"
-                      onClick={() => router.push(`/applications/${draftAppId}`)}
-                    >
-                      <ArrowRight className="mr-2 h-4 w-4" />
-                      Open Workspace
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <>
-                {/* Header */}
-                <div className="text-center space-y-2">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5">
-                    <Sparkles className="h-4 w-4 text-primary animate-pulse" />
-                    <span className="text-sm font-semibold text-primary">
-                      {progress >= 100 ? "Complete!" : "Building Your Application"}
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">{genMessage}</p>
-                </div>
-
-                {/* Progress bar with percentage */}
-                <div className="w-full max-w-md space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium tabular-nums text-foreground">
-                      {progress}%
-                    </span>
-                    <span className="flex items-center gap-1 text-muted-foreground">
-                      <Timer className="h-3 w-3" />
-                      {formatElapsed(elapsedMs)}
-                    </span>
-                  </div>
-                  <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-primary via-violet-500 to-indigo-500 transition-all duration-700 ease-out"
-                      style={{ width: `${progress}%` }}
-                    />
-                    {progress < 100 && progress > 0 && (
-                      <div
-                        className="absolute inset-y-0 w-8 rounded-full bg-white/30 animate-pulse"
-                        style={{ left: `calc(${progress}% - 16px)` }}
-                      />
-                    )}
-                  </div>
-                </div>
-
-                {/* Phase checklist */}
-                <div className="w-full max-w-md rounded-xl border bg-muted/30 p-4 space-y-1">
-                  {PIPELINE_PHASES.map((phase, i) => {
-                    const isDone = completedPhases.has(i);
-                    const isActive = i === activePhaseIdx && !isDone;
-                    const isPending = !isDone && !isActive;
-                    return (
-                      <div
-                        key={i}
-                        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-300 ${
-                          isDone
-                            ? "text-foreground"
-                            : isActive
-                              ? "bg-primary/5 text-foreground font-medium"
-                              : "text-muted-foreground/60"
-                        }`}
-                      >
-                        {isDone ? (
-                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
-                        ) : isActive ? (
-                          <Loader2 className="h-4 w-4 shrink-0 text-primary animate-spin" />
-                        ) : (
-                          <Circle className="h-4 w-4 shrink-0" />
-                        )}
-                        <span className="flex items-center gap-2">
-                          <span>{phase.icon}</span>
-                          <span>{phase.label}</span>
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Elapsed time hint */}
-                <p className="text-xs text-muted-foreground text-center max-w-sm">
-                  {elapsedMs < 15_000
-                    ? "Typical: 1–2 min with cloud AI. Local/offline AI can take 5–20 min."
-                    : elapsedMs < 60_000
-                      ? "Making great progress — your application is taking shape!"
-                      : elapsedMs < 300_000
-                        ? "Still working — complex applications can take several minutes."
-                        : "Still running — keep this tab open while we finish."}
-                </p>
-
-                <Button
-                  variant="outline"
-                  className="rounded-xl"
-                  disabled={!generating}
-                  onClick={() => {
-                    setGenMessage("Cancelling…");
-                    abortRef.current?.abort();
-                  }}
-                >
-                  <X className="mr-2 h-4 w-4" />
-                  Cancel
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
+        <PipelineAgentView
+          progress={progress}
+          genMessage={genMessage}
+          elapsedMs={elapsedMs}
+          completedPhases={completedPhases}
+          activePhaseIdx={activePhaseIdx}
+          generating={generating}
+          genError={genError}
+          onCancel={() => {
+            setGenMessage("Cancelling...");
+            abortRef.current?.abort();
+          }}
+          onRetry={() => { setStep("review"); setGenError(null); }}
+          draftAppId={draftAppId}
+        />
       )}
 
       {/* Navigation buttons */}

@@ -99,7 +99,7 @@ class _OpenAIProvider:
     async def complete(
         self, prompt: str, system: Optional[str] = None,
         max_tokens: Optional[int] = None, temperature: float = 0.7,
-        response_format: str = "text",
+        response_format: str = "text", model: Optional[str] = None,
     ) -> str:
         messages = [
             {"role": "system", "content": system or "You are a helpful AI assistant."},
@@ -120,7 +120,8 @@ class _OpenAIProvider:
     @retry(**_RETRY_KWARGS)
     async def complete_json(
         self, prompt: str, system: Optional[str] = None,
-        max_tokens: Optional[int] = None, temperature: float = 0.3, **kwargs,
+        max_tokens: Optional[int] = None, temperature: float = 0.3,
+        schema: Optional[Dict[str, Any]] = None, model: Optional[str] = None,
     ) -> Dict[str, Any]:
         system_prompt = (system or "You are a helpful AI assistant.")
         system_prompt += "\n\nIMPORTANT: Respond ONLY with valid JSON. No markdown, no explanations, just pure JSON."
@@ -142,6 +143,7 @@ class _OpenAIProvider:
     async def chat(
         self, messages: List[Dict[str, str]], system: Optional[str] = None,
         max_tokens: Optional[int] = None, temperature: float = 0.7,
+        model: Optional[str] = None,
     ) -> str:
         chat_messages = [
             {"role": "system", "content": system or "You are a helpful AI assistant."},
@@ -222,10 +224,9 @@ class _GeminiProvider:
     async def complete(
         self, prompt: str, system: Optional[str] = None,
         max_tokens: Optional[int] = None, temperature: float = 0.7,
-        response_format: str = "text",
+        response_format: str = "text", model: Optional[str] = None,
     ) -> str:
         from google.genai import types
-        # google-genai renamed Modality → MediaModality in newer releases.
         _modality = getattr(types, "MediaModality", None) or getattr(types, "Modality", None)
         max_out = max(int(max_tokens or self.max_tokens), 64)
         config: Dict[str, Any] = {
@@ -233,7 +234,6 @@ class _GeminiProvider:
             "max_output_tokens": max_out,
         }
         if _modality is not None:
-            # Some Gemini models may return "thoughts" only unless we explicitly request TEXT output.
             config["response_modalities"] = [_modality.TEXT]
         if system:
             config["system_instruction"] = system
@@ -249,7 +249,8 @@ class _GeminiProvider:
     @retry(**_RETRY_KWARGS)
     async def complete_json(
         self, prompt: str, system: Optional[str] = None,
-        max_tokens: Optional[int] = None, temperature: float = 0.3, **kwargs,
+        max_tokens: Optional[int] = None, temperature: float = 0.3,
+        schema: Optional[Dict[str, Any]] = None, model: Optional[str] = None,
     ) -> Dict[str, Any]:
         from google.genai import types
         _modality = getattr(types, "MediaModality", None) or getattr(types, "Modality", None)
@@ -265,6 +266,11 @@ class _GeminiProvider:
         )
         if _modality is not None:
             config_kwargs["response_modalities"] = [_modality.TEXT]
+        if schema:
+            try:
+                config_kwargs["response_schema"] = schema
+            except Exception:
+                pass
         config = types.GenerateContentConfig(**config_kwargs)
         response = await self._generate_content_throttled(contents=prompt, config=config)
         content = response.text or ""
@@ -273,6 +279,7 @@ class _GeminiProvider:
     async def chat(
         self, messages: List[Dict[str, str]], system: Optional[str] = None,
         max_tokens: Optional[int] = None, temperature: float = 0.7,
+        model: Optional[str] = None,
     ) -> str:
         from google.genai import types
         _modality = getattr(types, "MediaModality", None) or getattr(types, "Modality", None)
@@ -318,10 +325,12 @@ class _OllamaProvider:
         temperature: float,
         max_tokens: Optional[int],
         response_format: str,
+        model: Optional[str] = None,
     ) -> str:
+        use_model = model or self.model
         num_predict = int(max_tokens or self.max_tokens)
         payload: Dict[str, Any] = {
-            "model": self.model,
+            "model": use_model,
             "messages": messages,
             "stream": False,
             "options": {
@@ -339,6 +348,14 @@ class _OllamaProvider:
                 resp.raise_for_status()
             except httpx.HTTPStatusError as e:
                 body = (e.response.text or "").replace("\n", " ")[:500]
+                # If model not found, fall back to default model
+                if e.response.status_code == 404 and model and model != self.model:
+                    logger.warning("ollama_model_not_found=%s, falling_back_to=%s", model, self.model)
+                    return await self._chat_once(
+                        messages=messages, temperature=temperature,
+                        max_tokens=max_tokens, response_format=response_format,
+                        model=None,
+                    )
                 raise RuntimeError(f"Ollama HTTP {e.response.status_code}: {body}") from e
             except httpx.RequestError as e:
                 raise RuntimeError(f"Ollama request failed: {type(e).__name__}: {str(e)[:200]}") from e
@@ -355,6 +372,7 @@ class _OllamaProvider:
         max_tokens: Optional[int] = None,
         temperature: float = 0.7,
         response_format: str = "text",
+        model: Optional[str] = None,
     ) -> str:
         messages: List[Dict[str, str]] = []
         if system:
@@ -365,6 +383,7 @@ class _OllamaProvider:
             temperature=temperature,
             max_tokens=max_tokens,
             response_format=response_format,
+            model=model,
         )).strip()
 
     @retry(**_RETRY_KWARGS)
@@ -374,7 +393,8 @@ class _OllamaProvider:
         system: Optional[str] = None,
         max_tokens: Optional[int] = None,
         temperature: float = 0.3,
-        **kwargs,
+        schema: Optional[Dict[str, Any]] = None,
+        model: Optional[str] = None,
     ) -> Dict[str, Any]:
         system_prompt = (system or "You are a helpful AI assistant.")
         system_prompt += "\n\nIMPORTANT: Respond ONLY with valid JSON. No markdown, no explanations, just pure JSON."
@@ -384,6 +404,7 @@ class _OllamaProvider:
             max_tokens=max_tokens,
             temperature=temperature,
             response_format="json",
+            model=model,
         )
         return _parse_json(content)
 
@@ -393,6 +414,7 @@ class _OllamaProvider:
         system: Optional[str] = None,
         max_tokens: Optional[int] = None,
         temperature: float = 0.7,
+        model: Optional[str] = None,
     ) -> str:
         chat_messages: List[Dict[str, str]] = []
         if system:
@@ -407,6 +429,7 @@ class _OllamaProvider:
             temperature=temperature,
             max_tokens=max_tokens,
             response_format="text",
+            model=model,
         )).strip()
 
 
@@ -548,28 +571,49 @@ class AIClient:
             raise last_error
         raise RuntimeError("AI call failed unexpectedly.")
 
+    def _resolve_model(self, task_type: Optional[str], model: Optional[str]) -> Optional[str]:
+        """Resolve model name from task_type or explicit model param."""
+        if model:
+            return model
+        if task_type:
+            from ai_engine.model_router import resolve_model
+            default = getattr(self._providers[0][1], "model", None) or "qwen3:4b"
+            return resolve_model(task_type, default)
+        return None
+
     async def complete(self, prompt: str, system: Optional[str] = None,
                        max_tokens: Optional[int] = None, temperature: float = 0.7,
-                       response_format: str = "text") -> str:
+                       response_format: str = "text",
+                       task_type: Optional[str] = None,
+                       model: Optional[str] = None) -> str:
+        resolved = self._resolve_model(task_type, model)
         return await self._call_with_fallback(
             "complete", prompt=prompt, system=system, max_tokens=max_tokens,
             temperature=temperature, response_format=response_format,
+            model=resolved,
         )
 
     async def complete_json(self, prompt: str, system: Optional[str] = None,
                             max_tokens: Optional[int] = None,
-                            temperature: float = 0.3, **kwargs) -> Dict[str, Any]:
+                            temperature: float = 0.3,
+                            schema: Optional[Dict[str, Any]] = None,
+                            task_type: Optional[str] = None,
+                            model: Optional[str] = None) -> Dict[str, Any]:
+        resolved = self._resolve_model(task_type, model)
         return await self._call_with_fallback(
             "complete_json", prompt=prompt, system=system, max_tokens=max_tokens,
-            temperature=temperature,
+            temperature=temperature, schema=schema, model=resolved,
         )
 
     async def chat(self, messages: List[Dict[str, str]], system: Optional[str] = None,
                    max_tokens: Optional[int] = None,
-                   temperature: float = 0.7) -> str:
+                   temperature: float = 0.7,
+                   task_type: Optional[str] = None,
+                   model: Optional[str] = None) -> str:
+        resolved = self._resolve_model(task_type, model)
         return await self._call_with_fallback(
             "chat", messages=messages, system=system, max_tokens=max_tokens,
-            temperature=temperature,
+            temperature=temperature, model=resolved,
         )
 
 

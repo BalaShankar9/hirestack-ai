@@ -115,6 +115,7 @@ class InterviewSimulatorChain:
             temperature=0.3,
             max_tokens=3000,
             schema=QUESTIONS_SCHEMA,
+            task_type="creative",
         )
 
         return self._validate_questions(result)
@@ -139,6 +140,7 @@ class InterviewSimulatorChain:
             temperature=0.0,
             max_tokens=1500,
             schema=EVALUATE_SCHEMA,
+            task_type="reasoning",
         )
 
         if "score" in result:

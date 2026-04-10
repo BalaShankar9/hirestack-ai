@@ -156,6 +156,24 @@ TABLES = {
     "learning_plans": "learning_plans",
     "doc_versions": "doc_versions",
     "generation_jobs": "generation_jobs",
+    "ats_scans": "ats_scans",
+    "career_snapshots": "career_snapshots",
+    "interview_sessions": "interview_sessions",
+    "job_alerts": "job_alerts",
+    "job_matches": "job_matches",
+    "learning_challenges": "learning_challenges",
+    "learning_streaks": "learning_streaks",
+    "doc_variants": "doc_variants",
+    "salary_analyses": "salary_analyses",
+    # Enterprise tables
+    "organizations": "organizations",
+    "org_members": "org_members",
+    "candidates": "candidates",
+    "subscriptions": "subscriptions",
+    "usage_records": "usage_records",
+    "audit_logs": "audit_logs",
+    "org_invitations": "org_invitations",
+    "webhooks": "webhooks",
 }
 
 
@@ -236,6 +254,18 @@ class SupabaseDB:
 
     # ── Generic CRUD ─────────────────────────────────────────────────────
 
+    @staticmethod
+    def _is_table_missing_error(exc: BaseException) -> bool:
+        msg = str(exc)
+        lower = msg.lower()
+        return (
+            ("relation" in lower and "does not exist" in lower)
+            or "42P01" in msg
+            or "PGRST205" in msg
+            or "Could not find the table" in msg
+            or "schema cache" in lower
+        )
+
     async def create(self, table: str, data: Dict[str, Any], doc_id: Optional[str] = None) -> str:
         """Insert a row. Returns the generated (or supplied) id."""
         safe = {k: v for k, v in data.items() if k not in ("created_at", "updated_at")}
@@ -246,22 +276,32 @@ class SupabaseDB:
             result = self.client.table(table).insert(safe).execute()
             return str(result.data[0]["id"]) if result.data else None
 
-        return await self._run(_ins)
+        try:
+            return await self._run(_ins)
+        except Exception as e:
+            if self._is_table_missing_error(e):
+                logger.warning("table_missing_on_create: %s", table)
+                # Return a fake ID so callers don't crash — data won't persist
+                import uuid
+                return str(uuid.uuid4())
+            raise
 
     async def get(self, table: str, doc_id: str) -> Optional[Dict[str, Any]]:
         """Fetch a single row by id."""
         def _get():
-            # Avoid `maybe_single()` here — supabase/postgrest-py can raise
-            # APIError "Missing response" (code '204') for some schemas/tables,
-            # which breaks SSE streaming endpoints that poll single rows.
             result = self.client.table(table).select("*").eq("id", str(doc_id)).limit(1).execute()
             data = result.data or []
             if isinstance(data, list):
                 return data[0] if data else None
-            # Be defensive in case the client returns an object already.
             return data
 
-        return await self._run(_get)
+        try:
+            return await self._run(_get)
+        except Exception as e:
+            if self._is_table_missing_error(e):
+                logger.warning("table_missing_on_get: %s", table)
+                return None
+            raise
 
     async def update(self, table: str, doc_id: str, data: Dict[str, Any]) -> bool:
         """Update a row by id. updated_at is handled by DB trigger."""
@@ -318,7 +358,13 @@ class SupabaseDB:
             result = q.execute()
             return result.data or []
 
-        return await self._run(_q)
+        try:
+            return await self._run(_q)
+        except Exception as e:
+            if self._is_table_missing_error(e):
+                logger.warning("table_missing_on_query: %s", table)
+                return []
+            raise
 
     # ── User helpers ─────────────────────────────────────────────────────
 

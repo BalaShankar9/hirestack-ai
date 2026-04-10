@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/components/providers";
 import { toast } from "@/hooks/use-toast";
 import api from "@/lib/api";
@@ -8,15 +8,74 @@ import type { InterviewSession, InterviewQuestion, InterviewAnswer } from "@/typ
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Mic, Play, Send, CheckCircle, Clock, Loader2, RotateCcw, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  Mic, Play, Send, CheckCircle, Clock, Loader2, RotateCcw,
+  Timer, Brain, Target, Zap, AlertTriangle, Trophy,
+  MessageSquare, Code, Users, Briefcase, ChevronDown,
+} from "lucide-react";
 
 type Phase = "setup" | "active" | "review";
+type InterviewMode = "practice" | "timed" | "mock";
+
+const INTERVIEW_TYPES = [
+  { value: "behavioral", label: "Behavioral", icon: Users, desc: "STAR method, leadership, teamwork" },
+  { value: "technical", label: "Technical", icon: Code, desc: "System design, coding, architecture" },
+  { value: "situational", label: "Situational", icon: AlertTriangle, desc: "Problem-solving scenarios" },
+  { value: "case", label: "Case Study", icon: Briefcase, desc: "Business analysis, strategy" },
+  { value: "mixed", label: "Mixed", icon: Brain, desc: "All question types combined" },
+];
+
+const MODES = [
+  { value: "practice" as InterviewMode, label: "Practice", icon: MessageSquare, desc: "Answer at your own pace", color: "bg-blue-500/10 text-blue-500 border-blue-500/20" },
+  { value: "timed" as InterviewMode, label: "Timed", icon: Timer, desc: "90s per question", color: "bg-amber-500/10 text-amber-500 border-amber-500/20" },
+  { value: "mock" as InterviewMode, label: "Live Mock", icon: Mic, desc: "AI interviewer with follow-ups", color: "bg-rose-500/10 text-rose-500 border-rose-500/20" },
+];
+
+function ScoreRing({ value, size = 80, label }: { value: number; size?: number; label?: string }) {
+  const r = (size - 8) / 2, circ = 2 * Math.PI * r, offset = circ - (value / 100) * circ;
+  const color = value >= 80 ? "stroke-emerald-500" : value >= 60 ? "stroke-amber-500" : "stroke-rose-500";
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="-rotate-90">
+          <circle cx={size/2} cy={size/2} r={r} strokeWidth={6} fill="none" className="stroke-muted/20" />
+          <circle cx={size/2} cy={size/2} r={r} strokeWidth={6} fill="none" strokeLinecap="round"
+            strokeDasharray={circ} strokeDashoffset={offset} className={cn("transition-all duration-1000", color)} />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className={cn("text-lg font-bold tabular-nums", value >= 80 ? "text-emerald-500" : value >= 60 ? "text-amber-500" : "text-rose-500")}>{value}</span>
+        </div>
+      </div>
+      {label && <span className="text-2xs text-muted-foreground">{label}</span>}
+    </div>
+  );
+}
 
 export default function InterviewSimulatorPage() {
-  const { user } = useAuth();
-  const userId = user?.uid || user?.id || null;
+  const { user, session: authSession } = useAuth();
   const [phase, setPhase] = useState<Phase>("setup");
+  const [mode, setMode] = useState<InterviewMode>("practice");
+
+  // Profile data for personalization
+  const [profileSummary, setProfileSummary] = useState("");
+  const [profileSkills, setProfileSkills] = useState("");
+
+  // Load profile on mount for personalization
+  useEffect(() => {
+    const token = authSession?.access_token;
+    if (!token) return;
+    api.setToken(token);
+    api.profile.get().then((p: any) => {
+      if (!p) return;
+      const skills = (p.skills || []).map((s: any) => typeof s === "string" ? s : s.name).join(", ");
+      setProfileSkills(skills);
+      setProfileSummary(`${p.title || ""} with skills: ${skills.slice(0, 300)}`);
+      if (p.title && !jobTitle) setJobTitle(p.title);
+    }).catch(() => {});
+  }, [authSession?.access_token]);
 
   // Setup
   const [jobTitle, setJobTitle] = useState("");
@@ -35,13 +94,41 @@ export default function InterviewSimulatorPage() {
   const [error, setError] = useState("");
   const [elapsed, setElapsed] = useState(0);
 
-  // P1-9: Elapsed timer
+  // Timed mode
+  const [timeLeft, setTimeLeft] = useState(90);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Elapsed timer
   useEffect(() => {
     if (phase !== "active") return;
     setElapsed(0);
     const interval = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(interval);
   }, [phase, currentIdx]);
+
+  // Timed mode countdown
+  useEffect(() => {
+    if (phase !== "active" || mode !== "timed") return;
+    setTimeLeft(90);
+    timerRef.current = setInterval(() => {
+      setTimeLeft((t) => {
+        if (t <= 1) {
+          // Auto-submit when time runs out
+          if (timerRef.current) clearInterval(timerRef.current);
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [phase, mode, currentIdx]);
+
+  // Auto-submit on time out
+  useEffect(() => {
+    if (timeLeft === 0 && mode === "timed" && phase === "active" && !submitting) {
+      submitAnswer();
+    }
+  }, [timeLeft]);
 
   const startSession = async () => {
     if (!jobTitle.trim()) return;
@@ -53,13 +140,15 @@ export default function InterviewSimulatorPage() {
         interview_type: interviewType,
         difficulty,
         question_count: questionCount,
+        profile_summary: profileSummary || undefined,
+        skills_summary: profileSkills || undefined,
       });
       setSession(result.session);
       setQuestions(result.questions);
       setCurrentIdx(0);
       setAnswers([]);
       setPhase("active");
-      toast({ title: "Interview started", description: `${result.questions.length} questions ready. Good luck!`, variant: "success" });
+      toast({ title: "Interview started", description: `${result.questions.length} questions ready` });
     } catch (e: any) {
       setError(e.message || "Failed to start");
     } finally {
@@ -68,19 +157,19 @@ export default function InterviewSimulatorPage() {
   };
 
   const submitAnswer = async () => {
-    if (!session || !answer.trim()) return;
+    if (!session) return;
+    const answerText = answer.trim() || "(No answer provided — time ran out)";
     setSubmitting(true);
     try {
       const result = await api.interview.submitAnswer(session.id, {
-        question_index: currentIdx,
-        answer_text: answer,
+        question_id: questions[currentIdx]?.id ?? String(currentIdx),
+        answer: answerText,
       });
       setAnswers((prev) => [...prev, result]);
       setAnswer("");
       if (currentIdx < questions.length - 1) {
         setCurrentIdx((prev) => prev + 1);
       } else {
-        // Complete session
         const completed = await api.interview.complete(session.id);
         setSession(completed);
         setPhase("review");
@@ -99,186 +188,265 @@ export default function InterviewSimulatorPage() {
     setAnswers([]);
     setCurrentIdx(0);
     setAnswer("");
+    if (timerRef.current) clearInterval(timerRef.current);
   };
 
+  const lastAnswer = answers.length > 0 ? answers[answers.length - 1] : null;
+
   return (
-    <div className="space-y-8 p-6 max-w-4xl mx-auto">
-      <div className="flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-500/10">
-          <Mic className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+    <div className="max-w-5xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-500 to-pink-600 shadow-glow-sm">
+          <Mic className="h-6 w-6 text-white" />
         </div>
         <div>
           <h1 className="text-xl font-bold">Interview Simulator</h1>
-          <p className="text-xs text-muted-foreground">Practice with AI-generated questions and get STAR-method feedback</p>
+          <p className="text-sm text-muted-foreground">AI-powered mock interviews with STAR feedback and real-time coaching</p>
         </div>
       </div>
 
-      {error && <p className="text-destructive text-sm bg-destructive/10 p-3 rounded-lg">{error}</p>}
+      {error && <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
 
-      {/* Setup Phase */}
+      {/* ── Setup Phase ─────────────────────────────────────── */}
       {phase === "setup" && (
-        <div className="space-y-6 rounded-2xl border p-6 shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
-          <h2 className="text-xl font-semibold">Configure Your Interview</h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label htmlFor="interview-job-title" className="text-sm font-medium">Job Title *</label>
-              <Input
-                id="interview-job-title"
-                placeholder="e.g. Senior Software Engineer"
-                value={jobTitle}
-                onChange={(e) => setJobTitle(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="interview-type" className="text-sm font-medium">Interview Type</label>
-              <Select value={interviewType} onValueChange={setInterviewType}>
-                <SelectTrigger id="interview-type" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="behavioral">Behavioral</SelectItem>
-                  <SelectItem value="technical">Technical</SelectItem>
-                  <SelectItem value="situational">Situational</SelectItem>
-                  <SelectItem value="mixed">Mixed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="interview-difficulty" className="text-sm font-medium">Difficulty</label>
-              <Select value={difficulty} onValueChange={setDifficulty}>
-                <SelectTrigger id="interview-difficulty" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="junior">Junior</SelectItem>
-                  <SelectItem value="intermediate">Intermediate</SelectItem>
-                  <SelectItem value="senior">Senior</SelectItem>
-                  <SelectItem value="executive">Executive</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="interview-questions" className="text-sm font-medium">Questions</label>
-              <Select value={String(questionCount)} onValueChange={(v) => setQuestionCount(Number(v))}>
-                <SelectTrigger id="interview-questions" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[3, 5, 7, 10].map((n) => (
-                    <SelectItem key={n} value={String(n)}>{n} questions</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <Button onClick={startSession} disabled={loading || !jobTitle.trim()} size="lg" className="w-full">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
-            {loading ? "Generating Questions..." : "Start Interview"}
-          </Button>
-        </div>
-      )}
-
-      {/* Active Phase */}
-      {phase === "active" && questions.length > 0 && (
         <div className="space-y-6">
-          {/* Progress */}
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-2 rounded-full bg-muted">
-              <div
-                className="h-2 rounded-full bg-primary transition-all"
-                style={{ width: `${((currentIdx + 1) / questions.length) * 100}%` }}
-              />
+          {/* Interview Mode Selection */}
+          <div>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Interview Mode</h2>
+            <div className="grid grid-cols-3 gap-3">
+              {MODES.map((m) => (
+                <button key={m.value} onClick={() => setMode(m.value)}
+                  className={cn("rounded-xl border p-4 text-left transition-all hover:shadow-soft-sm",
+                    mode === m.value ? "border-primary bg-primary/5 shadow-soft-sm" : "border-border hover:border-primary/30"
+                  )}>
+                  <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg border mb-2", m.color)}>
+                    <m.icon className="h-4 w-4" />
+                  </div>
+                  <p className="font-semibold text-sm">{m.label}</p>
+                  <p className="text-2xs text-muted-foreground mt-0.5">{m.desc}</p>
+                </button>
+              ))}
             </div>
-            <span className="text-sm text-muted-foreground font-medium flex items-center gap-2">
-              <Clock className="h-4 w-4" />
-              {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
-              <span className="mx-1">•</span>
-              {currentIdx + 1} / {questions.length}
-            </span>
           </div>
 
-          {/* Question Card */}
-          <div className="rounded-2xl border p-6 space-y-4 shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
-            <div className="flex items-start gap-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
-                Q{currentIdx + 1}
-              </span>
-              <div>
-                <span className="text-[11px] px-2 py-0.5 rounded-lg bg-muted font-medium uppercase">
-                  {questions[currentIdx].type || interviewType}
-                </span>
-                <p className="text-lg font-medium mt-2">{questions[currentIdx].text}</p>
-                {questions[currentIdx].tips && (
-                  <p className="text-sm text-muted-foreground mt-1">{questions[currentIdx].tips}</p>
-                )}
+          {/* Configuration */}
+          <div className="rounded-2xl border bg-card p-6 shadow-soft-sm space-y-4">
+            <h2 className="font-semibold">Configure Your Interview</h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">Job Title *</label>
+                <Input placeholder="e.g. Senior Software Engineer" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} className="rounded-xl" />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">Interview Type</label>
+                <div className="grid grid-cols-5 gap-1">
+                  {INTERVIEW_TYPES.map((t) => (
+                    <button key={t.value} onClick={() => setInterviewType(t.value)}
+                      className={cn("rounded-lg border p-2 text-center text-2xs transition-all",
+                        interviewType === t.value ? "border-primary bg-primary/5 font-medium" : "border-border hover:border-primary/30"
+                      )}>
+                      <t.icon className="h-3.5 w-3.5 mx-auto mb-0.5" />
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">Difficulty</label>
+                <Select value={difficulty} onValueChange={setDifficulty}>
+                  <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["junior", "intermediate", "senior", "executive"].map((d) => (
+                      <SelectItem key={d} value={d} className="capitalize">{d}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">Questions</label>
+                <Select value={String(questionCount)} onValueChange={(v) => setQuestionCount(Number(v))}>
+                  <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {[3, 5, 7, 10].map((n) => <SelectItem key={n} value={String(n)}>{n} questions</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
-            <Textarea
-              className="h-40 resize-none"
-              placeholder="Type your answer... Use the STAR method: Situation, Task, Action, Result"
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              maxLength={5000}
-            />
-
-            <Button onClick={submitAnswer} disabled={submitting || !answer.trim()} className="w-full">
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
-              {currentIdx < questions.length - 1 ? "Submit & Next" : "Submit & Finish"}
+            <Button onClick={startSession} disabled={loading || !jobTitle.trim()} size="lg" className="w-full rounded-xl gap-2">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              {loading ? "Generating Questions..." : `Start ${mode === "timed" ? "Timed " : mode === "mock" ? "Mock " : ""}Interview`}
             </Button>
           </div>
         </div>
       )}
 
-      {/* Review Phase */}
-      {phase === "review" && session && (
-        <div className="space-y-6">
-          {/* Summary */}
-          <div className="rounded-2xl border p-6 text-center space-y-3 shadow-soft-sm">
-            <CheckCircle className="h-12 w-12 text-green-500 dark:text-green-400 mx-auto" />
-            <h2 className="text-2xl font-bold">Interview Complete!</h2>
-            {session.overall_score !== undefined && (
-              <div className="text-4xl font-bold text-primary">{session.overall_score}/100</div>
-            )}
-            {session.overall_feedback && <p className="text-muted-foreground max-w-lg mx-auto">{session.overall_feedback}</p>}
+      {/* ── Active Phase ────────────────────────────────────── */}
+      {phase === "active" && questions.length > 0 && (
+        <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+          {/* Main question area */}
+          <div className="space-y-4">
+            {/* Progress bar */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                <div className="h-full rounded-full bg-gradient-to-r from-primary to-violet-500 transition-all" style={{ width: `${((currentIdx + 1) / questions.length) * 100}%` }} />
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
+                {mode === "timed" && (
+                  <span className={cn("flex items-center gap-1 font-bold tabular-nums", timeLeft <= 15 ? "text-rose-500 animate-pulse" : timeLeft <= 30 ? "text-amber-500" : "text-foreground")}>
+                    <Timer className="h-3 w-3" /> {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, "0")}
+                  </span>
+                )}
+                <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span>
+                <span>{currentIdx + 1}/{questions.length}</span>
+              </div>
+            </div>
+
+            {/* Question card */}
+            <div className="rounded-2xl border bg-card p-6 shadow-soft-sm space-y-4">
+              <div className="flex items-start gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground text-sm font-bold">
+                  Q{currentIdx + 1}
+                </span>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge variant="secondary" className="text-[10px] uppercase">{questions[currentIdx].type || interviewType}</Badge>
+                    {mode === "timed" && timeLeft <= 15 && <Badge variant="destructive" className="text-[10px] animate-pulse">Time running out!</Badge>}
+                  </div>
+                  <p className="text-base font-medium leading-relaxed">{questions[currentIdx].text}</p>
+                  {questions[currentIdx].tips && (
+                    <p className="text-xs text-muted-foreground mt-2 bg-muted/30 p-2 rounded-lg">
+                      <Brain className="h-3 w-3 inline mr-1" /> {questions[currentIdx].tips}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <Textarea className="h-36 resize-none rounded-xl text-sm" placeholder="Type your answer... Use the STAR method: Situation → Task → Action → Result" value={answer} onChange={(e) => setAnswer(e.target.value)} maxLength={5000} />
+
+              <div className="flex items-center justify-between">
+                <span className="text-2xs text-muted-foreground">{answer.length}/5,000</span>
+                <Button onClick={submitAnswer} disabled={submitting || (!answer.trim() && mode !== "timed")} className="rounded-xl gap-2">
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  {currentIdx < questions.length - 1 ? "Submit & Next" : "Submit & Finish"}
+                </Button>
+              </div>
+            </div>
           </div>
 
-          {/* Answer Reviews */}
-          <div className="space-y-4">
-            {answers.map((a, i) => (
-              <div key={i} className="rounded-2xl border p-5 space-y-3 shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
+          {/* Side panel — Last answer feedback */}
+          <div className="space-y-3">
+            {lastAnswer ? (
+              <div className="rounded-2xl border bg-card p-4 shadow-soft-sm space-y-3 animate-fade-in">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-semibold">Q{i + 1}: {questions[i]?.text?.slice(0, 80)}...</h3>
-                  <span className={`text-lg font-bold ${
-                    a.score >= 80 ? "text-green-600 dark:text-green-400" : a.score >= 60 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"
-                  }`}>
-                    {a.score}/100
-                  </span>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Previous Answer</h3>
+                  <ScoreRing value={lastAnswer.score} size={48} />
                 </div>
-                <p className="text-sm bg-muted/50 p-3 rounded-lg">{a.answer_text}</p>
-                {a.feedback && <p className="text-sm text-muted-foreground">{a.feedback}</p>}
-                {a.star_scores && (
-                  <div className="grid grid-cols-4 gap-2">
-                    {Object.entries(a.star_scores).map(([key, val]) => (
-                      <div key={key} className="text-center p-2 rounded-lg bg-muted/30">
-                        <div className="text-[11px] uppercase text-muted-foreground">{key}</div>
-                        <div className="font-bold">{val as number}/25</div>
+                {lastAnswer.feedback && <p className="text-xs text-muted-foreground leading-relaxed">{lastAnswer.feedback}</p>}
+                {lastAnswer.star_scores && (
+                  <div className="space-y-1.5">
+                    <p className="text-2xs font-medium text-muted-foreground uppercase tracking-wider">STAR Breakdown</p>
+                    {Object.entries(lastAnswer.star_scores).map(([key, val]) => (
+                      <div key={key} className="flex items-center gap-2">
+                        <span className="text-2xs text-muted-foreground w-16 capitalize">{key}</span>
+                        <div className="flex-1 h-1.5 bg-muted/20 rounded-full overflow-hidden">
+                          <div className={cn("h-full rounded-full", (val as number) >= 20 ? "bg-emerald-500" : (val as number) >= 15 ? "bg-amber-500" : "bg-rose-500")}
+                            style={{ width: `${((val as number) / 25) * 100}%` }} />
+                        </div>
+                        <span className="text-2xs font-mono tabular-nums w-8 text-right">{val as number}/25</span>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
-            ))}
+            ) : (
+              <div className="rounded-2xl border border-dashed bg-card/50 p-4 text-center">
+                <Brain className="h-8 w-8 text-muted-foreground/20 mx-auto mb-2" />
+                <p className="text-xs text-muted-foreground">AI feedback will appear here after your first answer</p>
+              </div>
+            )}
+
+            {/* Quick tips */}
+            <div className="rounded-xl border bg-muted/30 p-3 space-y-1.5">
+              <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">STAR Tips</p>
+              <div className="space-y-1 text-2xs text-muted-foreground">
+                <p><strong className="text-foreground">S</strong>ituation — Set the scene</p>
+                <p><strong className="text-foreground">T</strong>ask — Your responsibility</p>
+                <p><strong className="text-foreground">A</strong>ction — What YOU did</p>
+                <p><strong className="text-foreground">R</strong>esult — Quantified outcome</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Review Phase ────────────────────────────────────── */}
+      {phase === "review" && session && (
+        <div className="space-y-6">
+          {/* Score summary */}
+          <div className="rounded-2xl border bg-gradient-to-br from-primary/5 via-violet-500/5 to-transparent p-8 shadow-soft-sm">
+            <div className="flex flex-col md:flex-row items-center gap-8">
+              <ScoreRing value={session.overall_score ?? 0} size={130} label="Overall Score" />
+              <div className="flex-1 text-center md:text-left">
+                <h2 className="text-2xl font-bold">Interview Complete!</h2>
+                <p className="text-sm text-muted-foreground mt-1 max-w-md">
+                  {(session.overall_score ?? 0) >= 80 ? "Excellent performance! You're well-prepared for this role." :
+                   (session.overall_score ?? 0) >= 60 ? "Good effort! Focus on the areas below to improve." :
+                   "Keep practicing — review the feedback below and try again."}
+                </p>
+                <div className="flex items-center gap-3 mt-3 justify-center md:justify-start">
+                  <Badge variant="outline" className="text-xs">{interviewType}</Badge>
+                  <Badge variant="outline" className="text-xs">{difficulty}</Badge>
+                  <Badge variant="outline" className="text-xs">{questions.length} questions</Badge>
+                  <Badge variant="outline" className="text-xs">{mode} mode</Badge>
+                </div>
+              </div>
+              <Button onClick={restart} variant="outline" className="rounded-xl gap-2 shrink-0">
+                <RotateCcw className="h-4 w-4" /> New Interview
+              </Button>
+            </div>
           </div>
 
-          <Button onClick={restart} variant="outline" size="lg" className="w-full">
-            <RotateCcw className="h-4 w-4 mr-2" /> Start New Interview
-          </Button>
+          {/* Answer reviews */}
+          <div className="space-y-3">
+            {answers.map((a, i) => (
+              <details key={i} className="rounded-2xl border bg-card shadow-soft-sm overflow-hidden group">
+                <summary className="flex items-center gap-3 p-4 cursor-pointer list-none select-none hover:bg-muted/30 transition-colors">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-bold">Q{i + 1}</span>
+                  <span className="flex-1 text-sm font-medium truncate">{questions[i]?.text?.slice(0, 80)}...</span>
+                  <ScoreRing value={a.score} size={40} />
+                  <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="px-4 pb-4 pt-0 border-t space-y-3">
+                  <div className="rounded-lg bg-muted/30 p-3"><p className="text-xs text-muted-foreground">{a.answer_text}</p></div>
+                  {a.feedback && <p className="text-sm">{a.feedback}</p>}
+                  {a.star_scores && (
+                    <div className="grid grid-cols-4 gap-2">
+                      {Object.entries(a.star_scores).map(([key, val]) => (
+                        <div key={key} className="text-center rounded-lg border p-2">
+                          <div className="text-2xs uppercase text-muted-foreground">{key}</div>
+                          <div className={cn("text-sm font-bold", (val as number) >= 20 ? "text-emerald-500" : (val as number) >= 15 ? "text-amber-500" : "text-rose-500")}>{val as number}/25</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {a.model_answer && (
+                    <details className="rounded-lg border bg-emerald-500/5 border-emerald-500/20 overflow-hidden">
+                      <summary className="px-3 py-2 text-xs font-medium text-emerald-600 dark:text-emerald-400 cursor-pointer list-none select-none flex items-center gap-1">
+                        <Trophy className="h-3 w-3" /> View Model Answer
+                      </summary>
+                      <div className="px-3 pb-3 text-xs text-muted-foreground">{a.model_answer}</div>
+                    </details>
+                  )}
+                </div>
+              </details>
+            ))}
+          </div>
         </div>
       )}
     </div>

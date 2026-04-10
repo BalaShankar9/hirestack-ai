@@ -462,6 +462,21 @@ export default function ApplicationWorkspacePage() {
               <TabsTrigger value="cover" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><FileText className="h-3.5 w-3.5" />Cover Letter</TabsTrigger>
               <TabsTrigger value="statement" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><PenTool className="h-3.5 w-3.5" />Statement</TabsTrigger>
               <TabsTrigger value="portfolio" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><FolderOpen className="h-3.5 w-3.5" />Portfolio</TabsTrigger>
+              {/* Dynamic extra document tabs from Document Discovery */}
+              {app.generatedDocuments && Object.keys(app.generatedDocuments).length > 0 && (
+                Object.entries(app.generatedDocuments).map(([key, html]) => {
+                  if (!html) return null;
+                  // Find the label from discoveredDocuments
+                  const docInfo = (app.discoveredDocuments || []).find((d: any) => d.key === key);
+                  const label = docInfo?.label || key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+                  return (
+                    <TabsTrigger key={key} value={`extra-${key}`} className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm">
+                      <Sparkles className="h-3 w-3 text-teal-500" />
+                      <span className="text-xs">{label}</span>
+                    </TabsTrigger>
+                  );
+                })
+              )}
               <TabsTrigger value="export" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><Package className="h-3.5 w-3.5" />Export</TabsTrigger>
             </TabsList>
 
@@ -469,7 +484,7 @@ export default function ApplicationWorkspacePage() {
               {/* Module completion progress */}
               {(() => {
                 const moduleKeys = ["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "personalStatement", "portfolio"] as const;
-                const completed = moduleKeys.filter((k) => app.modules[k] === "done" || app.modules[k] === "ready").length;
+                const completed = moduleKeys.filter((k) => app.modules[k]?.state === "ready").length;
                 const pct = Math.round((completed / moduleKeys.length) * 100);
                 return (
                   <div className="mb-4 rounded-2xl border bg-gradient-to-r from-primary/5 via-violet-500/5 to-transparent p-4">
@@ -703,6 +718,43 @@ export default function ApplicationWorkspacePage() {
                     body="Run the wizard generation or regenerate the module here."
                     action={<Button onClick={() => regenerate("benchmark")} loading={regeneratingModule === "benchmark"}>Generate benchmark</Button>}
                   />
+                )}
+
+                {/* Benchmark Documents — Perfect 100% Application */}
+                {app.benchmarkDocuments && Object.keys(app.benchmarkDocuments).length > 0 && (
+                  <div className="mt-6">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10">
+                        <Target className="h-4 w-4 text-emerald-500" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold">Perfect Application Documents</p>
+                        <p className="text-xs text-muted-foreground">100% match benchmark — use as reference to improve yours</p>
+                      </div>
+                      <Badge variant="outline" className="ml-auto text-[10px] border-emerald-500/30 text-emerald-500">
+                        {Object.keys(app.benchmarkDocuments).length} documents
+                      </Badge>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {Object.entries(app.benchmarkDocuments).map(([key, html]) => {
+                        if (!html) return null;
+                        const docInfo = (app.discoveredDocuments || []).find((d: any) => d.key === key);
+                        const label = docInfo?.label || key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+                        return (
+                          <details key={key} className="rounded-xl border bg-card/50 overflow-hidden group">
+                            <summary className="px-4 py-2.5 flex items-center gap-2 cursor-pointer list-none select-none hover:bg-muted/30 transition-colors">
+                              <FileText className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                              <span className="text-xs font-medium flex-1">{label}</span>
+                              <span className="text-[9px] text-emerald-500 font-mono">100%</span>
+                            </summary>
+                            <div className="border-t p-4 max-h-[400px] overflow-y-auto">
+                              <div className="prose prose-sm dark:prose-invert max-w-none text-xs" dangerouslySetInnerHTML={{ __html: html }} />
+                            </div>
+                          </details>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
               </div>
             </TabsContent>
@@ -984,6 +1036,70 @@ export default function ApplicationWorkspacePage() {
               />
             </TabsContent>
 
+            {/* Dynamic extra document tab content panels */}
+            {app.generatedDocuments && Object.entries(app.generatedDocuments).map(([key, html]) => {
+              if (!html) return null;
+              const docInfo = (app.discoveredDocuments || []).find((d: any) => d.key === key);
+              const label = docInfo?.label || key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+              const benchmarkHtml = app.benchmarkDocuments?.[key] || "";
+              return (
+                <TabsContent key={key} value={`extra-${key}`} className="mt-4">
+                  <div className="space-y-4">
+                    {/* Document info */}
+                    {docInfo?.reason && (
+                      <div className="rounded-xl border border-teal-500/20 bg-teal-500/5 p-3 flex items-start gap-2">
+                        <Sparkles className="h-4 w-4 text-teal-500 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs font-semibold text-teal-600 dark:text-teal-400">AI-Discovered Document</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{docInfo.reason}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Document content */}
+                    <div className="rounded-2xl border bg-card shadow-soft-sm overflow-hidden">
+                      <div className="border-b bg-muted/20 px-5 py-3 flex items-center justify-between">
+                        <h3 className="text-sm font-semibold">{label}</h3>
+                        <div className="flex items-center gap-2">
+                          {benchmarkHtml && (
+                            <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-500">
+                              Benchmark available
+                            </Badge>
+                          )}
+                          <Badge variant="secondary" className="text-[10px]">
+                            {docInfo?.priority || "standard"}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="p-5">
+                        <div
+                          className="prose prose-sm dark:prose-invert max-w-none"
+                          dangerouslySetInnerHTML={{ __html: html }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Benchmark comparison */}
+                    {benchmarkHtml && (
+                      <details className="rounded-2xl border bg-card shadow-soft-sm overflow-hidden group">
+                        <summary className="px-5 py-3 border-b bg-emerald-500/5 flex items-center gap-2 cursor-pointer list-none select-none">
+                          <Target className="h-4 w-4 text-emerald-500" />
+                          <span className="text-sm font-semibold">Benchmark Version (100% Match)</span>
+                          <span className="text-xs text-muted-foreground ml-auto">Click to compare</span>
+                        </summary>
+                        <div className="p-5">
+                          <div
+                            className="prose prose-sm dark:prose-invert max-w-none opacity-90"
+                            dangerouslySetInnerHTML={{ __html: benchmarkHtml }}
+                          />
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                </TabsContent>
+              );
+            })}
+
             <TabsContent value="export" className="mt-4">
               <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                 <div className="flex items-start justify-between gap-2">
@@ -1172,7 +1288,7 @@ export default function ApplicationWorkspacePage() {
                 <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
                   <div className="text-xs font-semibold text-primary">Pro tip</div>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    Use "Download All (ZIP)" to get every document as a branded PDF + Word bundle — ready to attach to any application. Snapshot your versions before exporting to keep a history.
+                    Use &ldquo;Download All (ZIP)&rdquo; to get every document as a branded PDF + Word bundle — ready to attach to any application. Snapshot your versions before exporting to keep a history.
                   </div>
                 </div>
               </div>

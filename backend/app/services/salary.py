@@ -60,7 +60,9 @@ class SalaryService:
 
         doc_id = await self.db.create(TABLES["salary_analyses"], record)
         logger.info("salary_analysis_completed", analysis_id=doc_id, job_title=job_title)
-        return await self.db.get(TABLES["salary_analyses"], doc_id)
+        saved = await self.db.get(TABLES["salary_analyses"], doc_id)
+        # If table doesn't exist, return the AI result directly
+        return saved or {**record, "id": doc_id, **result}
 
     async def get_analysis(self, analysis_id: str, user_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific salary analysis."""

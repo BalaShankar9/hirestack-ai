@@ -62,3 +62,47 @@ async def get_application_stats(
     """Get application-related statistics."""
     service = AnalyticsService()
     return await service.get_application_stats(current_user["id"])
+
+
+@router.get("/daily-briefing")
+async def get_daily_briefing(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Get AI-generated daily career insight."""
+    from app.core.database import get_db, TABLES
+    from ai_engine.client import AIClient
+    from ai_engine.chains.daily_briefing import DailyBriefingChain
+    import structlog
+
+    logger = structlog.get_logger()
+    db = get_db()
+
+    try:
+        # Get profile
+        profiles = await db.query(TABLES["profiles"], filters=[("user_id", "==", current_user["id"]), ("is_primary", "==", True)], limit=1)
+        profile = profiles[0] if profiles else {}
+
+        # Get app stats
+        apps = await db.query(TABLES["applications"], filters=[("user_id", "==", current_user["id"])])
+        avg_match = round(sum(a.get("scores", {}).get("match", 0) for a in apps) / max(len(apps), 1))
+
+        evidence = await db.query(TABLES["evidence"], filters=[("user_id", "==", current_user["id"])])
+
+        app_stats = {
+            "app_count": len(apps),
+            "avg_match": avg_match,
+            "open_tasks": 0,
+            "evidence_count": len(evidence),
+            "recent_activity": f"Last application: {apps[0].get('title', 'N/A')}" if apps else "No applications yet",
+        }
+
+        chain = DailyBriefingChain(AIClient())
+        return await chain.generate(profile, app_stats)
+    except Exception as e:
+        logger.warning("daily_briefing_failed", error=str(e)[:200])
+        return {
+            "insight": "Keep building your career portfolio — every step counts.",
+            "category": "growth",
+            "action_label": "View Career Nexus",
+            "action_href": "/nexus",
+        }

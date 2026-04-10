@@ -1,22 +1,24 @@
 """
 Resume utilities (parse/extract).
 
-The frontend owns Firebase Auth; the backend verifies the Firebase ID token and
+The frontend owns Supabase Auth; the backend verifies the token and
 provides server-side helpers (e.g. PDF parsing) for reliability.
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
-import io
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_current_user_or_guest
 from app.core.config import settings
+from app.services.file_parser import FileParser
 
 
 router = APIRouter()
+
+_file_parser = FileParser()
 
 
 def _max_bytes() -> int:
@@ -26,14 +28,14 @@ def _max_bytes() -> int:
 @router.post("/parse")
 async def parse_resume(
     file: UploadFile = File(...),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(get_current_user_or_guest),
     max_pages: int = 4,
 ) -> Dict[str, Any]:
     """
     Extract plain text from a resume file.
 
-    Supported: PDF, DOCX, TXT.
-    Returns: { text, fileName, contentType, pagesParsed?, totalPages? }
+    Supported: PDF, DOCX, DOC, TXT.
+    Returns: { text, fileName, contentType }
     """
     if not file.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing filename")
@@ -49,46 +51,29 @@ async def parse_resume(
     ext = (name.lower().split(".")[-1] if "." in name else "").strip()
     content_type = file.content_type or ""
 
-    text: str = ""
-    total_pages: Optional[int] = None
-    pages_parsed: Optional[int] = None
+    # Map content-type to extension if extension is missing/unclear
+    if not ext or ext not in ("pdf", "docx", "doc", "txt"):
+        ct_map = {
+            "application/pdf": "pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+            "application/msword": "doc",
+            "text/plain": "txt",
+        }
+        ext = ct_map.get(content_type, ext)
+
+    if ext not in ("pdf", "docx", "doc", "txt"):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported file type. Use PDF, DOCX, or TXT.",
+        )
 
     try:
-        if ext == "txt" or content_type.startswith("text/"):
-            text = raw.decode("utf-8", errors="ignore")
-
-        elif ext == "docx" or content_type in (
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/msword",
-        ):
-            from docx import Document  # type: ignore
-
-            doc = Document(io.BytesIO(raw))
-            paragraphs = [p.text.strip() for p in doc.paragraphs if p.text and p.text.strip()]
-            text = "\n".join(paragraphs)
-
-        elif ext == "pdf" or content_type == "application/pdf":
-            from PyPDF2 import PdfReader  # type: ignore
-
-            reader = PdfReader(io.BytesIO(raw))
-            total_pages = len(reader.pages)
-            pages_parsed = min(total_pages, max(1, int(max_pages)))
-            chunks = []
-            for i in range(pages_parsed):
-                page = reader.pages[i]
-                chunks.append(page.extract_text() or "")
-            text = "\n\n".join([c.strip() for c in chunks if c.strip()])
-            if total_pages and total_pages > pages_parsed:
-                text += f"\n\n[Preview parsed from first {pages_parsed} pages for speed.]"
-
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail="Unsupported file type. Use PDF, DOCX, or TXT.",
-            )
-
-    except HTTPException:
-        raise
+        text = await _file_parser.extract_text(raw, ext)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -99,8 +84,5 @@ async def parse_resume(
         "fileName": name,
         "contentType": content_type,
         "text": text,
-        "totalPages": total_pages,
-        "pagesParsed": pages_parsed,
         "userId": current_user.get("id"),
     }
-

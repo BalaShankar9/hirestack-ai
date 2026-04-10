@@ -126,8 +126,9 @@ class SalaryCoachChain:
             prompt=prompt,
             system=SALARY_COACH_SYSTEM,
             temperature=0.1,
-            max_tokens=2500,
+            max_tokens=3000,
             schema=SALARY_ANALYSIS_SCHEMA,
+            task_type="reasoning",
         )
 
         return self._validate_result(result)

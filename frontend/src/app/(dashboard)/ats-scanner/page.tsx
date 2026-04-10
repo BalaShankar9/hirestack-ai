@@ -3,88 +3,68 @@
 import React, { useCallback, useRef, useState } from "react";
 import { useAuth } from "@/components/providers";
 import { parseResumeText } from "@/lib/firestore/ops";
-import type { ATSScan } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import {
-  ScanSearch,
-  CheckCircle,
-  XCircle,
-  AlertTriangle,
-  Loader2,
-  Upload,
-  FileText,
-  ClipboardPaste,
-  X,
-  Target,
-  ShieldCheck,
-  Type,
-  BarChart3,
-  Sparkles,
-  ArrowRight,
-  Lightbulb,
+  ScanSearch, CheckCircle, XCircle, AlertTriangle, Loader2,
+  Upload, FileText, ClipboardPaste, X, Target, ShieldCheck,
+  Type, Sparkles, Lightbulb, Copy, ChevronDown, Zap,
+  Code, BarChart3, ArrowRight, RefreshCw, Brain,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
-/* ── Score color helpers ──────────────────────────────────────────── */
+/* ── Score helpers ──────────────────────────────────────────────── */
 
 function scoreColor(v: number) {
-  if (v >= 80) return "text-emerald-600 dark:text-emerald-400";
-  if (v >= 60) return "text-amber-600 dark:text-amber-400";
-  return "text-rose-600 dark:text-rose-400";
+  if (v >= 80) return "text-emerald-500";
+  if (v >= 60) return "text-amber-500";
+  return "text-rose-500";
 }
-
 function scoreBg(v: number) {
   if (v >= 80) return "bg-emerald-500";
   if (v >= 60) return "bg-amber-500";
   return "bg-rose-500";
 }
-
-function scoreRingColor(v: number) {
+function scoreRing(v: number) {
   if (v >= 80) return "stroke-emerald-500";
   if (v >= 60) return "stroke-amber-500";
   return "stroke-rose-500";
 }
 
-/* ── Circular score gauge ─────────────────────────────────────────── */
+/* ── Gauge component ──────────────────────────────────────────── */
 
-function ScoreGauge({ value, size = 120 }: { value: number; size?: number }) {
-  const radius = (size - 12) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (value / 100) * circumference;
-
+function Gauge({ value, size = 100, label }: { value: number; size?: number; label: string }) {
+  const r = (size - 10) / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (value / 100) * circ;
   return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={radius} strokeWidth={10} fill="none" className="stroke-muted" />
-        <circle
-          cx={size / 2} cy={size / 2} r={radius} strokeWidth={10} fill="none"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          className={cn("transition-all duration-1000 ease-out", scoreRingColor(value))}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className={cn("text-3xl font-bold tabular-nums", scoreColor(value))}>{value}</span>
-        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">ATS Score</span>
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="-rotate-90">
+          <circle cx={size / 2} cy={size / 2} r={r} strokeWidth={8} fill="none" className="stroke-muted/20" />
+          <circle cx={size / 2} cy={size / 2} r={r} strokeWidth={8} fill="none"
+            strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset}
+            className={cn("transition-all duration-1000", scoreRing(value))}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className={cn("text-xl font-bold tabular-nums", scoreColor(value))}>{value}</span>
+        </div>
       </div>
+      <span className="text-2xs text-muted-foreground uppercase tracking-wider font-medium">{label}</span>
     </div>
   );
 }
 
-/* ── Page ─────────────────────────────────────────────────────────── */
+/* ── Page ───────────────────────────────────────────────────────── */
 
 export default function ATSScannerPage() {
   const { user } = useAuth();
-  const userId = user?.uid || user?.id || null;
-
-  // Input state
   const [inputMode, setInputMode] = useState<"paste" | "upload">("paste");
   const [documentContent, setDocumentContent] = useState("");
   const [jdText, setJdText] = useState("");
@@ -93,13 +73,9 @@ export default function ATSScannerPage() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Results state
   const [loading, setLoading] = useState(false);
-  const [scan, setScan] = useState<ATSScan | null>(null);
+  const [scan, setScan] = useState<any>(null);
   const [error, setError] = useState("");
-
-  /* ── File upload handler ────────────────────────────────────────── */
 
   const handleFileUpload = useCallback(async (file: File) => {
     setUploadedFile(file);
@@ -108,390 +84,292 @@ export default function ATSScannerPage() {
       const text = await parseResumeText(file);
       if (text && text.trim().length > 10) {
         setDocumentContent(text);
-        toast({ title: "Resume parsed", description: `Extracted ${text.split(/\s+/).length} words from ${file.name}` });
-      } else {
-        toast({ title: "Parse warning", description: "Could not extract text. Try pasting your resume content instead.", variant: "destructive" });
+        toast({ title: "Resume parsed", description: `${text.split(/\s+/).length} words extracted` });
       }
-    } catch (err) {
-      toast({ title: "Parse failed", description: "Could not read this file. Try pasting content instead.", variant: "destructive" });
-    } finally {
-      setParsing(false);
-    }
+    } catch { toast({ title: "Parse failed", description: "Try pasting instead", variant: "error" }); }
+    finally { setParsing(false); }
   }, []);
-
-  const handleFileDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file && (file.type === "application/pdf" || file.name.endsWith(".docx") || file.name.endsWith(".doc") || file.name.endsWith(".txt"))) {
-      handleFileUpload(file);
-    }
-  }, [handleFileUpload]);
-
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFileUpload(file);
-  }, [handleFileUpload]);
-
-  /* ── Run scan ───────────────────────────────────────────────────── */
 
   const runScan = async () => {
     if (!documentContent.trim()) return;
     setLoading(true);
     setError("");
+    setScan(null);
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
       const res = await fetch(`${API_URL}/api/ats/scan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          document_content: documentContent,
-          document_type: "cv",
-          job_title: jobTitle,
-          company,
-          jd_text: jdText,
-        }),
+        body: JSON.stringify({ document_content: documentContent, jd_text: jdText }),
       });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || `Scan failed (${res.status})`);
-      }
-      const result = await res.json();
-      setScan(result);
-      toast({ title: "Scan complete", description: `ATS score: ${result.ats_score ?? "N/A"}` });
-    } catch (e: any) {
-      setError(e.message || "Scan failed. Make sure the backend is running.");
-    } finally {
-      setLoading(false);
-    }
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+      const raw = await res.json();
+      setScan(raw.data ?? raw);
+    } catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
   };
 
   const wordCount = documentContent.trim() ? documentContent.trim().split(/\s+/).length : 0;
+  const breakdown = scan?.score_breakdown || {};
+  const keywords = scan?.keywords || {};
+  const structure = scan?.structure || {};
+  const strategy = scan?.strategy || {};
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
-      {/* ── Header ────────────────────────────────────────────────── */}
+    <div className="max-w-6xl mx-auto space-y-6">
+      {/* Header */}
       <div className="flex items-center gap-4">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-soft-sm">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-glow-sm">
           <ScanSearch className="h-6 w-6 text-white" />
         </div>
         <div>
           <h1 className="text-xl font-bold">ATS Scanner</h1>
-          <p className="text-sm text-muted-foreground">
-            See your resume through a recruiter's ATS — keyword match, formatting, readability
-          </p>
+          <p className="text-sm text-muted-foreground">3-pass deep analysis — keyword matching, structure parsing, strategic assessment</p>
         </div>
       </div>
 
-      {/* ── Input Section ─────────────────────────────────────────── */}
+      {/* Input Section */}
       <div className="rounded-2xl border bg-card shadow-soft-sm overflow-hidden">
-        {/* Two-column layout */}
         <div className="grid lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-border">
-          {/* Left: Document input */}
-          <div className="p-5 space-y-4">
+          {/* Left: Resume */}
+          <div className="p-5 space-y-3">
             <div className="flex items-center justify-between">
               <Label className="text-sm font-semibold">Your Resume / CV</Label>
               <div className="inline-flex items-center gap-1 rounded-lg border bg-muted/50 p-0.5">
-                <button
-                  type="button"
-                  className={cn("flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors", inputMode === "paste" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground")}
-                  onClick={() => setInputMode("paste")}
-                >
+                <button className={cn("flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors", inputMode === "paste" ? "bg-background shadow-sm" : "text-muted-foreground")} onClick={() => setInputMode("paste")}>
                   <ClipboardPaste className="h-3 w-3" /> Paste
                 </button>
-                <button
-                  type="button"
-                  className={cn("flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors", inputMode === "upload" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground")}
-                  onClick={() => setInputMode("upload")}
-                >
+                <button className={cn("flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors", inputMode === "upload" ? "bg-background shadow-sm" : "text-muted-foreground")} onClick={() => setInputMode("upload")}>
                   <Upload className="h-3 w-3" /> Upload
                 </button>
               </div>
             </div>
-
             {inputMode === "paste" ? (
-              <div className="space-y-1.5">
-                <Textarea
-                  className="h-52 resize-none rounded-xl font-mono text-[13px]"
-                  placeholder="Paste your resume/CV text here..."
-                  value={documentContent}
-                  onChange={(e) => setDocumentContent(e.target.value)}
-                  maxLength={10000}
-                />
-                <div className="flex justify-between text-[11px] text-muted-foreground">
-                  <span>{wordCount > 0 ? `${wordCount} words` : "No content yet"}</span>
+              <div>
+                <Textarea className="h-48 resize-none rounded-xl font-mono text-[13px]" placeholder="Paste your resume/CV text..." value={documentContent} onChange={(e) => setDocumentContent(e.target.value)} maxLength={10000} />
+                <div className="flex justify-between text-[11px] text-muted-foreground mt-1">
+                  <span>{wordCount > 0 ? `${wordCount} words` : ""}</span>
                   <span>{documentContent.length.toLocaleString()}/10,000</span>
                 </div>
               </div>
             ) : (
               <div
                 onDragOver={(e) => e.preventDefault()}
-                onDrop={handleFileDrop}
-                className={cn(
-                  "flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors cursor-pointer",
-                  uploadedFile ? "border-primary/30 bg-primary/5" : "border-border hover:border-primary/30 hover:bg-muted/30"
-                )}
+                onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFileUpload(f); }}
+                className={cn("flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 cursor-pointer transition-colors", uploadedFile ? "border-primary/30 bg-primary/5" : "border-border hover:border-primary/30")}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  accept=".pdf,.doc,.docx,.txt"
-                  onChange={handleFileSelect}
-                />
-                {parsing ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <Loader2 className="h-8 w-8 text-primary animate-spin" />
-                    <p className="text-sm text-muted-foreground">Extracting text...</p>
-                  </div>
-                ) : uploadedFile ? (
+                <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.txt" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }} />
+                {parsing ? <Loader2 className="h-6 w-6 text-primary animate-spin" /> : uploadedFile ? (
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-                      <FileText className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">{uploadedFile.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {(uploadedFile.size / 1024).toFixed(0)} KB{wordCount > 0 ? ` · ${wordCount} words extracted` : ""}
-                      </p>
-                    </div>
-                    <Button
-                      variant="ghost" size="icon" className="h-8 w-8 ml-2"
-                      onClick={(e) => { e.stopPropagation(); setUploadedFile(null); setDocumentContent(""); }}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
+                    <FileText className="h-5 w-5 text-primary" />
+                    <div><p className="text-sm font-medium">{uploadedFile.name}</p><p className="text-xs text-muted-foreground">{wordCount} words</p></div>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setUploadedFile(null); setDocumentContent(""); }}><X className="h-3 w-3" /></Button>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center gap-2 text-center">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
-                      <Upload className="h-5 w-5 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Drop your resume here</p>
-                      <p className="text-xs text-muted-foreground">PDF, DOC, DOCX, or TXT (max 10 MB)</p>
-                    </div>
-                  </div>
+                  <div className="text-center"><Upload className="h-5 w-5 text-muted-foreground mx-auto mb-1" /><p className="text-xs text-muted-foreground">Drop PDF, DOCX, or TXT</p></div>
                 )}
-              </div>
-            )}
-
-            {/* Extracted content preview when using upload */}
-            {inputMode === "upload" && documentContent && !parsing && (
-              <div className="rounded-xl border bg-muted/30 p-3">
-                <p className="text-[11px] font-semibold text-muted-foreground mb-1">Extracted text preview</p>
-                <p className="text-xs text-muted-foreground line-clamp-3">{documentContent.slice(0, 300)}...</p>
               </div>
             )}
           </div>
 
-          {/* Right: Job description */}
-          <div className="p-5 space-y-4">
+          {/* Right: JD */}
+          <div className="p-5 space-y-3">
             <Label className="text-sm font-semibold">Target Job Description</Label>
-            <Textarea
-              className="h-52 resize-none rounded-xl text-[13px]"
-              placeholder="Paste the job description you're targeting..."
-              value={jdText}
-              onChange={(e) => setJdText(e.target.value)}
-              maxLength={10000}
-            />
-            <div className="flex justify-end text-[11px] text-muted-foreground">
-              {jdText.length.toLocaleString()}/10,000
-            </div>
-
+            <Textarea className="h-48 resize-none rounded-xl text-[13px]" placeholder="Paste the job description..." value={jdText} onChange={(e) => setJdText(e.target.value)} maxLength={10000} />
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Job Title</Label>
-                <Input className="rounded-xl h-9 text-sm" placeholder="e.g. Senior Engineer" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Company</Label>
-                <Input className="rounded-xl h-9 text-sm" placeholder="e.g. Google" value={company} onChange={(e) => setCompany(e.target.value)} />
-              </div>
+              <div><Label className="text-2xs">Job Title</Label><Input className="rounded-xl h-8 text-sm mt-1" placeholder="e.g. Senior Engineer" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} /></div>
+              <div><Label className="text-2xs">Company</Label><Input className="rounded-xl h-8 text-sm mt-1" placeholder="e.g. Google" value={company} onChange={(e) => setCompany(e.target.value)} /></div>
             </div>
           </div>
         </div>
 
         {/* Scan button */}
-        <div className="border-t bg-muted/20 px-5 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <Target className="h-3.5 w-3.5" /> Keyword matching
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Type className="h-3.5 w-3.5" /> Readability analysis
-              </span>
-              <span className="flex items-center gap-1.5">
-                <ShieldCheck className="h-3.5 w-3.5" /> Format scoring
-              </span>
-            </div>
-            <Button
-              onClick={runScan}
-              disabled={loading || !documentContent.trim()}
-              className="gap-2 rounded-xl px-6"
-              size="lg"
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanSearch className="h-4 w-4" />}
-              {loading ? "Scanning..." : "Run ATS Scan"}
-            </Button>
+        <div className="border-t bg-muted/20 px-5 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-4 text-2xs text-muted-foreground">
+            <span className="flex items-center gap-1"><Target className="h-3 w-3" /> Keywords</span>
+            <span className="flex items-center gap-1"><Code className="h-3 w-3" /> Structure</span>
+            <span className="flex items-center gap-1"><Brain className="h-3 w-3" /> Strategy</span>
           </div>
+          <Button onClick={runScan} disabled={loading || !documentContent.trim()} className="gap-2 rounded-xl px-6">
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanSearch className="h-4 w-4" />}
+            {loading ? "Analyzing (3 passes)..." : "Run ATS Scan"}
+          </Button>
         </div>
       </div>
 
-      {error && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
-          <p className="text-sm text-destructive">{error}</p>
-        </div>
-      )}
+      {error && <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4"><p className="text-sm text-destructive">{error}</p></div>}
 
-      {/* ── Results ───────────────────────────────────────────────── */}
+      {/* ── Results ─────────────────────────────────────────────── */}
       {scan && (
-        <div className="space-y-6 animate-fade-in">
-          {/* Score overview */}
+        <div className="space-y-4 animate-fade-in">
+          {/* Score Decomposition */}
           <div className="rounded-2xl border bg-card p-6 shadow-soft-sm">
-            <div className="flex flex-col md:flex-row items-center gap-8">
-              {/* Main gauge */}
-              <ScoreGauge value={scan.ats_score ?? 0} />
-
-              {/* Sub-scores */}
-              <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4 w-full">
-                <SubScore icon={<Target className="h-4 w-4" />} label="Keyword Match" value={scan.keyword_match_rate ?? 0} suffix="%" />
-                <SubScore icon={<Type className="h-4 w-4" />} label="Readability" value={scan.readability_score ?? 0} />
-                <SubScore icon={<ShieldCheck className="h-4 w-4" />} label="Formatting" value={scan.format_score ?? 0} />
-                <div className="rounded-xl border p-3 text-center">
-                  <div className="flex justify-center mb-1">
-                    {scan.pass_prediction === "pass"
-                      ? <CheckCircle className="h-5 w-5 text-emerald-500" />
-                      : scan.pass_prediction === "fail"
-                        ? <XCircle className="h-5 w-5 text-rose-500" />
-                        : <AlertTriangle className="h-5 w-5 text-amber-500" />
-                    }
-                  </div>
-                  <div className={cn("text-lg font-bold uppercase", scan.pass_prediction === "pass" ? "text-emerald-600 dark:text-emerald-400" : scan.pass_prediction === "fail" ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400")}>
-                    {scan.pass_prediction ?? "N/A"}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">Prediction</div>
+            <div className="flex flex-col md:flex-row items-center gap-6">
+              <Gauge value={scan.ats_score ?? 0} size={130} label="Overall ATS" />
+              <div className="h-16 w-px bg-border hidden md:block" />
+              <div className="flex items-center gap-6 flex-wrap justify-center">
+                <Gauge value={breakdown.keyword_score ?? 0} size={90} label="Keywords" />
+                <Gauge value={breakdown.structure_score ?? 0} size={90} label="Structure" />
+                <Gauge value={breakdown.strategy_score ?? 0} size={90} label="Strategy" />
+              </div>
+              <div className="ml-auto text-center md:text-right">
+                <div className={cn("text-2xl font-bold uppercase", scan.pass_probability === "high" ? "text-emerald-500" : scan.pass_probability === "medium" ? "text-amber-500" : "text-rose-500")}>
+                  {scan.pass_probability || "unknown"}
                 </div>
+                <p className="text-2xs text-muted-foreground">Pass Likelihood</p>
+                {strategy.competitive_position && <p className="text-xs text-muted-foreground mt-1">{strategy.competitive_position}</p>}
               </div>
             </div>
+            {strategy.overall_assessment && (
+              <p className="text-sm text-muted-foreground mt-4 border-t pt-4">{strategy.overall_assessment}</p>
+            )}
           </div>
 
-          {/* Keywords grid */}
-          <div className="grid md:grid-cols-2 gap-4">
-            {/* Matched */}
-            <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
-              <div className="flex items-center gap-2 mb-3">
-                <CheckCircle className="h-4 w-4 text-emerald-500" />
-                <h3 className="text-sm font-semibold">Matched Keywords</h3>
-                <Badge variant="secondary" className="ml-auto text-[11px] rounded-lg">{scan.matched_keywords?.length ?? 0}</Badge>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {(scan.matched_keywords ?? []).map((k, i) => (
-                  <Badge key={i} className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 text-xs rounded-lg border">
-                    {k.keyword}
-                    {k.frequency > 1 && <span className="ml-1 opacity-60">×{k.frequency}</span>}
-                  </Badge>
-                ))}
-                {(!scan.matched_keywords || scan.matched_keywords.length === 0) && (
-                  <p className="text-xs text-muted-foreground">No keywords matched</p>
-                )}
-              </div>
+          {/* Quick Wins + Deal Breakers */}
+          {(strategy.quick_wins?.length > 0 || strategy.deal_breakers?.length > 0) && (
+            <div className="grid md:grid-cols-2 gap-4">
+              {strategy.quick_wins?.length > 0 && (
+                <div className="rounded-2xl border bg-emerald-500/5 border-emerald-500/20 p-4">
+                  <h3 className="font-semibold text-sm flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-3"><Zap className="h-4 w-4" /> Quick Wins</h3>
+                  <ul className="space-y-1.5">
+                    {strategy.quick_wins.map((w: string, i: number) => (
+                      <li key={i} className="text-xs flex items-start gap-2"><span className="text-emerald-500 font-bold mt-0.5">→</span> {w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {strategy.deal_breakers?.length > 0 && (
+                <div className="rounded-2xl border bg-rose-500/5 border-rose-500/20 p-4">
+                  <h3 className="font-semibold text-sm flex items-center gap-2 text-rose-600 dark:text-rose-400 mb-3"><AlertTriangle className="h-4 w-4" /> Deal Breakers</h3>
+                  <ul className="space-y-1.5">
+                    {strategy.deal_breakers.map((d: string, i: number) => (
+                      <li key={i} className="text-xs flex items-start gap-2"><span className="text-rose-500 font-bold mt-0.5">✗</span> {d}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
+          )}
 
-            {/* Missing */}
-            <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
-              <div className="flex items-center gap-2 mb-3">
-                <XCircle className="h-4 w-4 text-rose-500" />
-                <h3 className="text-sm font-semibold">Missing Keywords</h3>
-                <Badge variant="secondary" className="ml-auto text-[11px] rounded-lg">{scan.missing_keywords?.length ?? 0}</Badge>
+          {/* Keyword Heat Map */}
+          <div className="rounded-2xl border bg-card p-5">
+            <h3 className="font-semibold text-sm flex items-center gap-2 mb-3"><Target className="h-4 w-4 text-cyan-500" /> Keyword Analysis</h3>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div>
+                <p className="text-2xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><CheckCircle className="h-3 w-3 text-emerald-500" /> Present ({(keywords.present || []).length})</p>
+                <div className="flex flex-wrap gap-1">{(keywords.present || []).map((k: any, i: number) => <Badge key={i} className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px]">{typeof k === "string" ? k : k.keyword || k}</Badge>)}</div>
               </div>
-              <div className="space-y-2">
-                {(scan.missing_keywords ?? []).map((k, i) => (
-                  <div key={i} className="flex items-start gap-2 text-sm">
-                    <Badge
-                      variant="secondary"
-                      className={cn("text-[10px] shrink-0 rounded-md border", k.importance === "critical"
-                        ? "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800"
-                        : "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
-                      )}
-                    >
-                      {k.importance}
-                    </Badge>
-                    <span className="font-medium">{k.keyword}</span>
-                    {k.suggestion && <span className="text-muted-foreground">— {k.suggestion}</span>}
-                  </div>
-                ))}
-                {(!scan.missing_keywords || scan.missing_keywords.length === 0) && (
-                  <p className="text-xs text-muted-foreground">No missing keywords — great coverage!</p>
-                )}
+              <div>
+                <p className="text-2xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><XCircle className="h-3 w-3 text-rose-500" /> Missing ({(keywords.missing || []).length})</p>
+                <div className="flex flex-wrap gap-1">{(keywords.missing || []).map((k: any, i: number) => <Badge key={i} className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20 text-[10px]">{typeof k === "string" ? k : k.keyword || k}</Badge>)}</div>
+              </div>
+              <div>
+                <p className="text-2xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1"><AlertTriangle className="h-3 w-3 text-amber-500" /> Partial ({(keywords.partial || []).length})</p>
+                <div className="flex flex-wrap gap-1">{(keywords.partial || []).map((k: any, i: number) => <Badge key={i} className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 text-[10px]">{typeof k === "string" ? k : k.keyword || k}</Badge>)}</div>
               </div>
             </div>
+            {keywords.critical_missing?.length > 0 && (
+              <div className="mt-3 rounded-lg bg-rose-500/5 border border-rose-500/20 p-3">
+                <p className="text-xs font-semibold text-rose-500 mb-1">Critical Missing — These will likely cause ATS rejection:</p>
+                <div className="flex flex-wrap gap-1">{keywords.critical_missing.map((k: string, i: number) => <Badge key={i} variant="destructive" className="text-[10px]">{k}</Badge>)}</div>
+              </div>
+            )}
           </div>
 
-          {/* Recommendations */}
-          {scan.recommendations && scan.recommendations.length > 0 && (
-            <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <Lightbulb className="h-4 w-4 text-primary" />
-                <h3 className="text-sm font-semibold">Recommendations</h3>
-              </div>
-              <div className="space-y-2">
-                {scan.recommendations.map((r, i) => (
-                  <div key={i} className="flex items-start gap-3 rounded-xl border bg-muted/20 p-3">
-                    <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white",
-                      r.impact === "high" ? "bg-rose-500" : r.impact === "medium" ? "bg-amber-500" : "bg-blue-500"
-                    )}>
-                      {r.priority}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="secondary" className={cn("text-[10px] border rounded-md",
-                          r.impact === "high" ? "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800" : "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800"
-                        )}>
-                          {r.impact} impact
-                        </Badge>
+          {/* Rewrite Suggestions */}
+          {strategy.rewrite_suggestions?.length > 0 && (
+            <div className="rounded-2xl border bg-card p-5">
+              <h3 className="font-semibold text-sm flex items-center gap-2 mb-4"><Lightbulb className="h-4 w-4 text-primary" /> Rewrite Suggestions</h3>
+              <div className="space-y-3">
+                {strategy.rewrite_suggestions.map((r: any, i: number) => (
+                  <details key={i} className="group rounded-xl border hover:shadow-soft-sm transition-shadow">
+                    <summary className="flex items-center gap-3 p-3 cursor-pointer list-none select-none">
+                      <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white", r.impact === "high" ? "bg-rose-500" : r.impact === "medium" ? "bg-amber-500" : "bg-blue-500")}>{i + 1}</div>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium">{r.section || "General"}</span>
+                        <span className="text-2xs text-muted-foreground ml-2">{r.reason}</span>
                       </div>
-                      <p className="text-sm mt-1 text-foreground/80">{r.action}</p>
+                      <Badge variant="outline" className={cn("text-[10px] shrink-0", r.impact === "high" ? "border-rose-500/30 text-rose-500" : "border-amber-500/30 text-amber-500")}>{r.impact}</Badge>
+                      <ChevronDown className="h-3 w-3 text-muted-foreground transition-transform group-open:rotate-180" />
+                    </summary>
+                    <div className="px-3 pb-3 pt-0 border-t space-y-2">
+                      {r.current_text && <div className="text-xs"><span className="text-muted-foreground font-medium">Current:</span> <span className="text-muted-foreground line-through">{r.current_text}</span></div>}
+                      {r.suggested_text && (
+                        <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/20 p-3 relative">
+                          <p className="text-xs text-foreground pr-8">{r.suggested_text}</p>
+                          <button className="absolute top-2 right-2 text-muted-foreground hover:text-foreground" onClick={() => { navigator.clipboard.writeText(r.suggested_text); toast({ title: "Copied!" }); }}>
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
+                      {r.keywords_addressed?.length > 0 && (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className="text-2xs text-muted-foreground">Addresses:</span>
+                          {r.keywords_addressed.map((k: string, j: number) => <Badge key={j} className="text-[9px] bg-emerald-500/10 text-emerald-500 border-0">{k}</Badge>)}
+                        </div>
+                      )}
                     </div>
+                  </details>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Structure Analysis */}
+          {structure.sections_found && (
+            <div className="rounded-2xl border bg-card p-5">
+              <h3 className="font-semibold text-sm flex items-center gap-2 mb-3"><Code className="h-4 w-4 text-violet-500" /> Structure Analysis</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                {Object.entries(structure.sections_found).map(([section, found]) => (
+                  <div key={section} className={cn("flex items-center gap-2 rounded-lg border p-2 text-xs", found ? "bg-emerald-500/5 border-emerald-500/20" : "bg-rose-500/5 border-rose-500/20")}>
+                    {found ? <CheckCircle className="h-3 w-3 text-emerald-500 shrink-0" /> : <XCircle className="h-3 w-3 text-rose-500 shrink-0" />}
+                    <span className="capitalize">{section.replace(/_/g, " ")}</span>
                   </div>
                 ))}
               </div>
+              {structure.bullet_quality && (
+                <div className="text-xs text-muted-foreground flex items-center gap-4 flex-wrap border-t pt-2">
+                  <span>{structure.bullet_quality.total_bullets} bullets</span>
+                  <span>{structure.bullet_quality.action_verb_starts} start with action verbs</span>
+                  <span>{structure.bullet_quality.quantified_results} have quantified results</span>
+                  <Badge variant="outline" className="text-[10px]">Bullet score: {structure.bullet_quality.score}/100</Badge>
+                </div>
+              )}
+              {structure.parsing_issues?.length > 0 && (
+                <div className="mt-3 space-y-1">
+                  {structure.parsing_issues.map((p: any, i: number) => (
+                    <div key={i} className="flex items-start gap-2 text-xs rounded-lg bg-muted/30 p-2">
+                      <Badge variant="outline" className={cn("text-[9px] shrink-0", p.severity === "critical" ? "text-rose-500 border-rose-500/30" : p.severity === "major" ? "text-amber-500 border-amber-500/30" : "text-blue-500 border-blue-500/30")}>{p.severity}</Badge>
+                      <span>{p.issue}</span>
+                      {p.fix && <span className="text-muted-foreground ml-auto shrink-0">Fix: {p.fix}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
       )}
 
-      {/* ── Empty state hint ──────────────────────────────────────── */}
+      {/* Empty state */}
       {!scan && !loading && (
         <div className="rounded-2xl border border-dashed bg-card/50 p-8">
           <div className="flex flex-col md:flex-row items-center gap-6 text-center md:text-left">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-cyan-500/10 shrink-0">
-              <Sparkles className="h-7 w-7 text-cyan-600 dark:text-cyan-400" />
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500/10 to-blue-500/10 shrink-0">
+              <Brain className="h-7 w-7 text-cyan-500" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold">How it works</h3>
+              <h3 className="text-sm font-semibold">3-Pass Deep Analysis</h3>
               <p className="mt-1 text-xs text-muted-foreground leading-relaxed max-w-lg">
-                Paste or upload your resume, add the target job description, and run the scan.
-                The AI analyzes keyword coverage, formatting quality, and readability — then gives you
-                a pass/fail prediction with actionable recommendations to improve your ATS score.
+                Our ATS scanner runs 3 specialized AI passes: <strong>Keyword extraction</strong> matches every term in the JD against your resume.
+                <strong> Structure analysis</strong> parses your resume like Workday/Greenhouse would.
+                <strong> Strategy assessment</strong> provides exact rewrite suggestions with copy-paste text.
               </p>
             </div>
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ── Sub-components ───────────────────────────────────────────────── */
-
-function SubScore({ icon, label, value, suffix = "" }: { icon: React.ReactNode; label: string; value: number; suffix?: string }) {
-  return (
-    <div className="rounded-xl border p-3 text-center">
-      <div className="flex justify-center mb-1 text-muted-foreground">{icon}</div>
-      <div className={cn("text-lg font-bold tabular-nums", scoreColor(value))}>{value}{suffix}</div>
-      <div className="text-[10px] text-muted-foreground mt-0.5">{label}</div>
     </div>
   );
 }

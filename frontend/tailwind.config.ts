@@ -144,6 +144,19 @@ const config: Config = {
           from: { opacity: "0", transform: "translateY(12px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        "agent-border-glow": {
+          "0%, 100%": { boxShadow: "0 0 0 1px hsl(var(--primary) / 0.2), 0 0 8px -2px hsl(var(--primary) / 0.15)" },
+          "50%": { boxShadow: "0 0 0 1px hsl(var(--primary) / 0.4), 0 0 20px -2px hsl(var(--primary) / 0.3)" },
+        },
+        "timeline-pulse": {
+          "0%": { transform: "scale(1)", opacity: "1" },
+          "50%": { transform: "scale(2)", opacity: "0" },
+          "100%": { transform: "scale(1)", opacity: "0" },
+        },
+        "log-line-in": {
+          from: { opacity: "0", transform: "translateX(-4px)" },
+          to: { opacity: "1", transform: "translateX(0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -158,6 +171,9 @@ const config: Config = {
         "bounce-sm": "bounce-sm 0.4s ease-out",
         "check-pop": "check-pop 0.3s ease-out",
         "slide-up": "slide-up 0.4s ease-out",
+        "agent-border-glow": "agent-border-glow 2.5s ease-in-out infinite",
+        "timeline-pulse": "timeline-pulse 2s ease-in-out infinite",
+        "log-line-in": "log-line-in 0.2s ease-out",
       },
     },
   },

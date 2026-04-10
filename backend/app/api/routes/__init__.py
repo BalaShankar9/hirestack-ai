@@ -24,6 +24,9 @@ from app.api.routes.variants import router as variants_router
 from app.api.routes.job_sync import router as job_sync_router
 from app.api.routes.api_keys import router as api_keys_router
 from app.api.routes.review import router as review_router
+from app.api.routes.orgs import router as orgs_router
+from app.api.routes.billing import router as billing_router
+from app.api.routes.candidates import router as candidates_router
 
 router = APIRouter()
 
@@ -50,3 +53,6 @@ router.include_router(variants_router, prefix="/variants", tags=["Document Varia
 router.include_router(job_sync_router, prefix="/job-sync", tags=["Job Sync"])
 router.include_router(api_keys_router, prefix="/api-keys", tags=["API Keys"])
 router.include_router(review_router, prefix="/review", tags=["Review"])
+router.include_router(orgs_router, prefix="/orgs", tags=["Organizations"])
+router.include_router(billing_router, prefix="/billing", tags=["Billing"])
+router.include_router(candidates_router, prefix="/candidates", tags=["Candidates"])

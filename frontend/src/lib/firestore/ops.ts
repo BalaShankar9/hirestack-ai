@@ -84,6 +84,10 @@ export function mapApplicationRow(row: any): ApplicationDoc {
     clVersions: Array.isArray(row.cl_versions) ? row.cl_versions : [],
     psVersions: Array.isArray(row.ps_versions) ? row.ps_versions : [],
     portfolioVersions: Array.isArray(row.portfolio_versions) ? row.portfolio_versions : [],
+    discoveredDocuments: row.discovered_documents ?? undefined,
+    generatedDocuments: row.generated_documents ?? undefined,
+    benchmarkDocuments: row.benchmark_documents ?? undefined,
+    documentStrategy: row.document_strategy ?? undefined,
   };
 }
 
@@ -782,6 +786,23 @@ export async function generateApplicationModules(
         if (result.validation) patch.validation = result.validation;
         if (result.scorecard) patch.scorecard = { ...result.scorecard, updatedAt: Date.now() };
         if (result.scores) patch.scores = result.scores;
+      }
+
+      // Store adaptive document data (new pipeline features)
+      if (result.discoveredDocuments) {
+        (patch as any).discovered_documents = result.discoveredDocuments;
+      }
+      if (result.generatedDocuments) {
+        (patch as any).generated_documents = result.generatedDocuments;
+      }
+      if (result.benchmarkDocuments) {
+        (patch as any).benchmark_documents = result.benchmarkDocuments;
+      }
+      if (result.documentStrategy) {
+        (patch as any).document_strategy = result.documentStrategy;
+      }
+      if (result.companyIntel) {
+        (patch as any).company_intel = result.companyIntel;
       }
 
       const readyAt = Date.now();

@@ -17,9 +17,12 @@ import { supabase } from "@/lib/supabase";
 
 export interface AuthUser {
   uid: string;
+  id: string;
   email: string | null;
   displayName: string | null;
+  full_name: string | null;
   photoURL: string | null;
+  user_metadata?: Record<string, any>;
 }
 
 interface AuthContextValue {
@@ -52,9 +55,12 @@ function mapUser(u: User | null): AuthUser | null {
   if (!u) return null;
   return {
     uid: u.id,
+    id: u.id,
     email: u.email ?? null,
     displayName: u.user_metadata?.full_name ?? u.user_metadata?.name ?? null,
+    full_name: u.user_metadata?.full_name ?? null,
     photoURL: u.user_metadata?.avatar_url ?? null,
+    user_metadata: u.user_metadata,
   };
 }
 
@@ -98,12 +104,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = useCallback(
     async (email: string, password: string, name?: string) => {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: { data: { full_name: name ?? "" } },
       });
       if (error) throw error;
+      // If user already exists, signUp returns a user with no session
+      // In that case, try signing in instead
+      if (data?.user && !data?.session) {
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInError) throw new Error("Account exists. Please sign in instead.");
+      }
     },
     []
   );

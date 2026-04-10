@@ -34,7 +34,7 @@ class APIClient {
     this.token = token;
   }
 
-  private async request<T = any>(
+  async request<T = any>(
     endpoint: string,
     options: RequestOptions = {}
   ): Promise<T> {
@@ -254,6 +254,8 @@ class APIClient {
   // Resource-style API helpers (used by hooks/)
   profile = {
     get: async () => this.getPrimaryProfile(),
+    getById: async (id: string) => this.getProfile(id),
+    list: async () => this.getProfiles(),
     upload: async (file: File, isPrimary: boolean = true) =>
       this.uploadResume(file, isPrimary),
     update: async (data: Partial<Profile>) => {
@@ -262,6 +264,30 @@ class APIClient {
       }
       return this.request(`/profile/${data.id}`, { method: "PUT", body: data });
     },
+    delete: async (id: string) =>
+      this.request(`/profile/${id}`, { method: "DELETE" }),
+    setPrimary: async (id: string) =>
+      this.request(`/profile/${id}/set-primary`, { method: "POST" }),
+    reparse: async (id: string) =>
+      this.request(`/profile/${id}/reparse`, { method: "POST" }),
+    updateSocialLinks: async (id: string, links: { linkedin?: string; github?: string; website?: string; twitter?: string; other?: string }) =>
+      this.request(`/profile/${id}/social-links`, { method: "PUT", body: links }),
+    connectSocial: async (id: string, platform: string, url: string) =>
+      this.request(`/profile/${id}/connect-social`, { method: "POST", body: { platform, url } }),
+    augmentSkills: async (id: string) =>
+      this.request(`/profile/${id}/augment-skills`, { method: "POST" }),
+    generateUniversalDocs: async (id: string) =>
+      this.request(`/profile/${id}/universal-documents`, { method: "POST" }),
+    completeness: async () =>
+      this.request("/profile/intelligence/completeness"),
+    resumeWorth: async () =>
+      this.request("/profile/intelligence/resume-worth"),
+    aggregateGaps: async () =>
+      this.request("/profile/intelligence/aggregate-gaps"),
+    marketIntelligence: async (forceRefresh = false) =>
+      this.request(`/profile/intelligence/market?force_refresh=${forceRefresh}`),
+    syncedEvidence: async () =>
+      this.request("/profile/evidence/synced"),
   };
 
   jobs = {
@@ -303,6 +329,8 @@ class APIClient {
       this.generateRoadmap(data.gap_report_id, data.title),
     deleteRoadmap: async (roadmapId: string) =>
       this.request(`/consultant/roadmap/${roadmapId}`, { method: "DELETE" }),
+    askCoach: async (appId: string, question: string) =>
+      this.request("/consultant/coach", { method: "POST", body: { app_id: appId, question } }),
   };
 
   builder = {
@@ -324,7 +352,7 @@ class APIClient {
   };
 
   interview = {
-    start: async (data: { job_title: string; interview_type?: string; difficulty?: string; question_count?: number }) =>
+    start: async (data: { job_title: string; interview_type?: string; difficulty?: string; question_count?: number; profile_summary?: string; skills_summary?: string }) =>
       this.request("/interview/sessions", { method: "POST", body: data }),
     submitAnswer: async (sessionId: string, data: { question_id: string; answer: string }) =>
       this.request(`/interview/sessions/${sessionId}/answers`, { method: "POST", body: data }),
@@ -334,7 +362,7 @@ class APIClient {
   };
 
   salary = {
-    analyze: async (data: { job_title: string; company?: string; location?: string; years_experience?: number; current_salary?: number }) =>
+    analyze: async (data: { job_title: string; company?: string; location?: string; years_experience?: number; current_salary?: number; skills_summary?: string }) =>
       this.request("/salary/analyze", { method: "POST", body: data }),
   };
 
@@ -347,14 +375,17 @@ class APIClient {
   learning = {
     getStreak: async () => this.request("/learning/streak"),
     getToday: async () => this.request("/learning/today"),
-    generate: async (data: { topic?: string; difficulty?: string }) =>
-      this.request("/learning/generate", { method: "POST", body: data }),
-    submitAnswer: async (challengeId: string, data: { answer: string }) =>
-      this.request(`/learning/${challengeId}/answer`, { method: "POST", body: data }),
+    generate: async (data?: { topic?: string; difficulty?: string; skills?: string[] }) =>
+      this.request("/learning/generate", { method: "POST", body: data ?? {} }),
+    submitAnswer: async (challengeId: string, data: string | { answer: string }) =>
+      this.request(`/learning/${challengeId}/answer`, {
+        method: "POST",
+        body: typeof data === "string" ? { answer: data } : data,
+      }),
   };
 
   variants = {
-    generate: async (data: { application_id: string; document_type: string; tones?: string[] }) =>
+    generate: async (data: { original_content?: string; application_id?: string; document_type: string; job_title?: string; tones?: string[] }) =>
       this.request("/variants/generate", { method: "POST", body: data }),
     select: async (variantId: string) =>
       this.request(`/variants/${variantId}/select`, { method: "POST" }),
@@ -379,6 +410,13 @@ class APIClient {
       this.request("/api-keys/keys", { method: "POST", body: data }),
     revoke: async (keyId: string) =>
       this.request(`/api-keys/keys/${keyId}`, { method: "DELETE" }),
+  };
+
+  review = {
+    getByToken: async (token: string) => this.request(`/review/${token}`),
+    getComments: async (sessionId: string) => this.request(`/review/${sessionId}/comments`),
+    addComment: async (sessionId: string, data: { reviewer_name: string; comment_text: string; section?: string }) =>
+      this.request(`/review/${sessionId}/comments`, { method: "POST", body: data }),
   };
 }
 

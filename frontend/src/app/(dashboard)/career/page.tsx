@@ -83,9 +83,9 @@ export default function CareerLabPage() {
             onToggle={async (task) => {
               try {
                 const next = task.status === "done" ? "todo" : "done";
-                await setTaskStatus(user.uid, task.id, next);
+                await setTaskStatus(user!.uid, task.id, next);
                 if (next === "done") {
-                  await trackEvent(user.uid, { name: "task_completed", appId: task.appId ?? undefined, properties: { taskId: task.id } });
+                  await trackEvent(user!.uid, { name: "task_completed", appId: task.appId ?? undefined, properties: { taskId: task.id } });
                 }
               } catch (err) {
                 console.error("Task toggle failed:", err);

@@ -23,6 +23,8 @@ import {
   BarChart3,
   BookOpen,
   FlaskConical,
+  Fingerprint,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import { Button } from "@/components/ui/button";
@@ -40,6 +42,7 @@ import { CommandPalette } from "@/components/command-palette/command-palette";
 const NAV = [
   // Core
   { href: "/dashboard", label: "Dashboard", icon: Home, description: "Overview & stats" },
+  { href: "/nexus", label: "Career Nexus", icon: Fingerprint, description: "Your career identity" },
   { href: "/new", label: "New Application", icon: Plus, description: "Start a workspace" },
   { href: "/career", label: "Career Lab", icon: GraduationCap, description: "Skill sprints" },
   { href: "/evidence", label: "Evidence Vault", icon: ShieldCheck, description: "Proof library" },
@@ -51,6 +54,8 @@ const NAV = [
   { href: "/job-board", label: "Job Board", icon: Briefcase, description: "Find opportunities" },
   { href: "/learning", label: "Daily Learn", icon: BookOpen, description: "Skill challenges" },
   { href: "/ab-lab", label: "A/B Lab", icon: FlaskConical, description: "Compare variants" },
+  // Enterprise
+  { href: "/settings", label: "Settings", icon: Settings, description: "Organization & billing" },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {

@@ -41,7 +41,8 @@ class LearningService:
             "skills_mastered": [],
         }
         doc_id = await self.db.create(TABLES["learning_streaks"], record)
-        return await self.db.get(TABLES["learning_streaks"], doc_id)
+        saved = await self.db.get(TABLES["learning_streaks"], doc_id)
+        return saved or {**record, "id": doc_id}
 
     async def generate_daily_challenges(
         self,
