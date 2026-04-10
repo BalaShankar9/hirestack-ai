@@ -11,10 +11,8 @@ Provides structured evaluation for each agent role:
 """
 from __future__ import annotations
 
-import json
-import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -124,7 +122,6 @@ class FactCheckerEval:
 
         claims = result.get("claims", [])
         summary = result.get("summary", {})
-        fabricated = result.get("fabricated_claims", [])
         accuracy = result.get("overall_accuracy", 0)
         confidence = result.get("confidence", 0)
         det_match_rate = result.get("deterministic_match_rate", 0)

@@ -13,7 +13,7 @@ and historical outcomes. Stages:
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Optional
 from uuid import uuid4
 

@@ -531,7 +531,6 @@ class BenchmarkBuilderChain:
         Uses the user's real data as the base, fabricates any missing details
         to create the perfect benchmark application.
         """
-        import json
         from ai_engine.chains.adaptive_document import AdaptiveDocumentChain
 
         # Step 1: Create perfect profile (existing method)
@@ -664,7 +663,7 @@ class BenchmarkBuilderChain:
         html = html.strip()
         if html.startswith("```"):
             lines = html.split("\n")
-            lines = [l for l in lines if not l.strip().startswith("```")]
+            lines = [ln for ln in lines if not ln.strip().startswith("```")]
             html = "\n".join(lines).strip()
 
         return html

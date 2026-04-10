@@ -47,8 +47,13 @@ class Settings(BaseSettings):
     # Redis (optional - for caching)
     redis_url: str = "redis://localhost:6379"
 
-    # AI Provider — Gemini only
+    # AI Provider — "gemini", "openai", or "ollama"
     ai_provider: str = "gemini"
+
+    # OpenAI
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o"
+    openai_max_tokens: int = 4096
 
     # Gemini
     gemini_api_key: str = ""
@@ -63,6 +68,11 @@ class Settings(BaseSettings):
     # Provide these when GEMINI_USE_VERTEXAI=true.
     gemini_vertex_project: str = ""
     gemini_vertex_location: str = ""
+
+    # Ollama (local LLM, optional)
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen3:4b"
+    ollama_max_tokens: int = 1024
 
     # File Upload
     max_upload_size_mb: int = 10

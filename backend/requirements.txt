@@ -10,7 +10,7 @@ supabase>=2.0,<3.0
 PyJWT>=2.8,<3.0
 
 # AI
-# openai removed — Gemini-only
+openai>=1.30,<2.0
 google-genai>=1.0,<2.0
 
 # Validation

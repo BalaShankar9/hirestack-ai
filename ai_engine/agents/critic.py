@@ -68,9 +68,9 @@ class CriticAgent(BaseAgent):
             prompt += f"\n\nUser Preferences (from memory):\n{json.dumps(memories[:3], default=str)[:500]}"
 
         prompt += (
-            f"\n\nFor critical_issues, tie each issue to a specific section of the document.\n"
-            f"Set severity to 'critical', 'high', or 'medium'.\n"
-            f"Return a confidence score (0-1) for your overall assessment."
+            "\n\nFor critical_issues, tie each issue to a specific section of the document.\n"
+            "Set severity to 'critical', 'high', or 'medium'.\n"
+            "Return a confidence score (0-1) for your overall assessment."
         )
 
         result = await self.ai_client.complete_json(
