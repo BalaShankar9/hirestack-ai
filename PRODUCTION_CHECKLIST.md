@@ -45,19 +45,11 @@ SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 SUPABASE_JWT_SECRET=your-jwt-secret
 
-# AI Provider (Gemini recommended for production)
+# AI Provider (Gemini only)
 AI_PROVIDER=gemini
 GEMINI_API_KEY=your-gemini-key
 GEMINI_MODEL=gemini-2.5-flash
 GEMINI_MAX_TOKENS=8192
-
-# Fallback AI (OpenAI)
-OPENAI_API_KEY=your-openai-key
-OPENAI_MODEL=gpt-4o
-
-# Optional: Ollama (local fallback)
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=qwen3:4b
 
 # Rate Limiting
 RATE_LIMIT_REQUESTS=100
@@ -76,7 +68,6 @@ MAX_UPLOAD_SIZE_MB=10
 The following keys were potentially exposed and should be regenerated:
 
 - [ ] `GEMINI_API_KEY` - Regenerate at [Google AI Studio](https://aistudio.google.com/app/apikey)
-- [ ] `OPENAI_API_KEY` - Regenerate at [OpenAI Platform](https://platform.openai.com/api-keys)
 - [ ] `SUPABASE_SERVICE_ROLE_KEY` - Regenerate in Supabase Dashboard → Project Settings → API
 
 ### 2. Database Setup
@@ -105,9 +96,7 @@ The following keys were potentially exposed and should be regenerated:
 ### 5. Testing
 
 - [ ] Test complete user flow on staging
-- [ ] Test AI generation with all providers
-- [ ] Test payment flow (if enabled)
-- [ ] Load test critical endpoints
+- [ ] Test AI generation with Gemini
 
 ---
 

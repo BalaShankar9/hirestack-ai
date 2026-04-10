@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>AI-Powered Career Intelligence Platform</strong><br/>
-  The world's most comprehensive application builder — from resume parsing to interview prep, powered by multi-model AI agents.
+  The world's most comprehensive application builder — from resume parsing to interview prep, powered by Gemini AI agents.
 </p>
 
 <p align="center">
@@ -23,7 +23,6 @@
   <img src="https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat-square&logo=typescript" alt="TypeScript"/>
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python" alt="Python"/>
   <img src="https://img.shields.io/badge/Supabase-PostgreSQL-3FCF8E?style=flat-square&logo=supabase" alt="Supabase"/>
-  <img src="https://img.shields.io/badge/Ollama-Local_AI-000?style=flat-square" alt="Ollama"/>
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License"/>
 </p>
 
@@ -33,7 +32,7 @@
 
 HireStack AI is a full-stack career intelligence platform that transforms how professionals build job applications. Instead of manually crafting resumes and cover letters, HireStack deploys a swarm of specialized AI agents that analyze your profile, research the target company, identify skill gaps, and generate a complete, tailored application package — all in real-time with a streaming mission-control interface.
 
-**For job seekers:** Upload your resume, paste a job description, and watch 6 AI agents build a world-class application with CV, cover letter, portfolio, learning plan, and more.
+**For job seekers:** Sign up, upload your resume, paste a job description, and watch 6 AI agents build a world-class application with CV, cover letter, portfolio, learning plan, and more.
 
 **For recruitment agencies (Enterprise):** Manage candidates at scale with organization workspaces, team roles, candidate pipelines, and bulk operations.
 
@@ -100,16 +99,7 @@ The platform doesn't just generate fixed documents — it analyzes the job type 
 | **Team Analytics** | Organization-wide stats, member activity, placement rates |
 | **API Platform** | RESTful API with rate limiting for third-party integrations |
 | **Audit Logs** | Track all actions for compliance |
-| **Billing & Quotas** | Free/Pro/Enterprise tiers with usage-based limits |
-
-### Freemium Business Model
-
-```
-Guest (no signup)  → Try 1 application, download requires signup
-Free (signed up)   → 5 exports, basic features
-Pro ($19/mo)       → Unlimited exports, all AI agents, priority processing
-Enterprise ($49/mo) → Team workspaces, candidate pipeline, API access, audit logs
-```
+| **Audit Logs** | Track all actions for compliance |
 
 ---
 
@@ -122,12 +112,12 @@ Enterprise ($49/mo) → Team workspaces, candidate pipeline, API access, audit l
 │  Landing ─── Auth ─── Dashboard ─── New Application ─── Workspace       │
 │  Career Nexus ─── ATS Scanner ─── Interview ─── Salary Coach            │
 │  Evidence Vault ─── Career Lab ─── Job Board ─── Daily Learn            │
-│  A/B Lab ─── Analytics ─── Settings (Org/Members/Billing/Audit)         │
-│  Pricing ─── 404                                                         │
+│  Analytics ─── Settings (Org/Members/Audit)                              │
+│  404                                                                      │
 │                                                                          │
 │  UI: shadcn/ui + Tailwind CSS + Framer Motion                           │
 │  State: React hooks + Supabase Realtime                                  │
-│  Auth: Supabase Auth (email/password + Google OAuth + guest mode)        │
+│  Auth: Supabase Auth (email/password + Google + GitHub OAuth)           │
 └──────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -149,11 +139,11 @@ Enterprise ($49/mo) → Team workspaces, candidate pipeline, API access, audit l
 ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
 │   AI ENGINE      │  │   DATABASE       │  │   WORKERS        │
 │                  │  │                  │  │                  │
-│  Multi-Model:    │  │  Supabase        │  │  Celery/Redis    │
-│  ├─ Gemini 2.0   │  │  PostgreSQL      │  │  (background     │
-│  ├─ Ollama       │  │  35+ tables      │  │   processing)    │
-│  │  (local LLMs) │  │  + Auth          │  │                  │
-│  └─ OpenAI       │  │  + Storage       │  │                  │
+│  Gemini 2.5      │  │  Supabase        │  │  Celery/Redis    │
+│  Flash           │  │  PostgreSQL      │  │  (background     │
+│                  │  │  35+ tables      │  │   processing)    │
+│                  │  │  + Auth          │  │                  │
+│                  │  │  + Storage       │  │                  │
 │                  │  │  + Realtime      │  │                  │
 │  Chains:         │  │                  │  │                  │
 │  ├─ RoleProfiler │  │  RLS policies    │  │                  │
@@ -166,20 +156,11 @@ Enterprise ($49/mo) → Team workspaces, candidate pipeline, API access, audit l
 └──────────────────┘  └──────────────────┘  └──────────────────┘
 ```
 
-### Multi-Model AI Routing
+### AI Chains
 
-HireStack uses intelligent model routing with automatic fallback:
+All inference is powered by Gemini 2.5 Flash via `ai_engine.client.AIClient`.
 
-```python
-# Primary: Gemini 2.0 Flash (fast, cost-effective)
-# Fallback: Ollama (local, private) → OpenAI (cloud backup)
-
-AIClient → Gemini → Ollama → OpenAI
-              ↓        ↓        ↓
-          Fast/Free  Private  Reliable
-```
-
-Each AI chain is specialized:
+Specialized chains:
 - **RoleProfilerChain** — Resume parsing with 60+ skill normalizations
 - **GapAnalyzerChain** — Skill gap detection against job requirements
 - **DocGeneratorChain** — Tailored document generation (CV, cover letter, etc.)
@@ -197,7 +178,7 @@ Each AI chain is specialized:
 | **Frontend** | Next.js 14, TypeScript, Tailwind CSS, shadcn/ui, Framer Motion, Lucide Icons |
 | **Backend** | FastAPI, Python 3.11+, Pydantic, structlog |
 | **Database** | Supabase (PostgreSQL + Auth + Storage + Realtime) |
-| **AI Models** | Google Gemini 2.0, Ollama (local LLMs), OpenAI GPT-4 |
+| **AI Models** | Google Gemini 2.5 Flash |
 | **Hosting** | Netlify (frontend), Railway (backend) |
 | **CI/CD** | GitHub Actions |
 | **Containerization** | Docker (multi-stage builds) |
@@ -214,7 +195,6 @@ HireStack AI/
 │   │   │   ├── (dashboard)/ # Authenticated pages
 │   │   │   ├── auth/       # Auth callbacks
 │   │   │   ├── login/      # Login page
-│   │   │   ├── pricing/    # Pricing page
 │   │   │   └── page.tsx    # Landing page
 │   │   ├── components/     # Shared components
 │   │   └── lib/            # Utilities, API client, auth
@@ -227,7 +207,7 @@ HireStack AI/
 │       └── services/       # Business logic services
 │
 ├── ai_engine/               # AI prompt chains
-│   ├── client.py           # Multi-model AIClient
+│   ├── client.py           # Gemini AIClient
 │   └── chains/             # Specialized AI chains
 │
 ├── supabase/                # Database
@@ -253,7 +233,6 @@ HireStack AI/
 - **Python 3.11+**
 - **Supabase account** ([supabase.com](https://supabase.com))
 - **Gemini API key** ([aistudio.google.com](https://aistudio.google.com))
-- **Ollama** (optional, for local AI models) — [ollama.com](https://ollama.com)
 
 ### 1. Clone and Install
 
@@ -279,7 +258,6 @@ cd ..
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 GEMINI_API_KEY=your-gemini-api-key
-OLLAMA_BASE_URL=http://localhost:11434  # optional
 ```
 
 **Frontend** (`frontend/.env.local`):
@@ -320,7 +298,7 @@ Visit **http://localhost:3000** to start using HireStack AI.
 | Frontend | **Netlify** | Static + SSR hosting |
 | Backend | **Railway** | Container hosting |
 | Database | **Supabase** | Managed PostgreSQL |
-| AI | **Google AI Studio** + **Ollama** | Multi-model inference |
+| AI | **Google AI Studio** (Gemini) | AI inference |
 
 ### Deploy with Docker
 
