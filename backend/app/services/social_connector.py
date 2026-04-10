@@ -58,12 +58,12 @@ class SocialConnector:
             # Fetch top repos (sorted by stars)
             repos_resp = await client.get(
                 f"https://api.github.com/users/{username}/repos",
-                params={"sort": "stars", "direction": "desc", "per_page": 10},
+                params={"sort": "stars", "direction": "desc", "per_page": 30},
                 headers={"Accept": "application/vnd.github.v3+json"},
             )
             repos_data = repos_resp.json() if repos_resp.status_code == 200 else []
 
-        # Extract top languages
+        # Extract language statistics
         language_counts: Dict[str, int] = {}
         repos = []
         for repo in repos_data:
@@ -79,7 +79,12 @@ class SocialConnector:
                     "url": repo.get("html_url"),
                 })
 
-        top_languages = sorted(language_counts.keys(), key=lambda k: language_counts[k], reverse=True)[:5]
+        total_repos_with_lang = sum(language_counts.values()) or 1
+        top_languages = sorted(language_counts.keys(), key=lambda k: language_counts[k], reverse=True)[:8]
+        language_summary = [
+            {"language": lang, "repos": language_counts[lang], "percentage": round(language_counts[lang] / total_repos_with_lang * 100)}
+            for lang in top_languages
+        ]
 
         return {
             "status": "connected",
@@ -94,7 +99,8 @@ class SocialConnector:
                 "followers": user_data.get("followers", 0),
                 "following": user_data.get("following", 0),
                 "top_languages": top_languages,
-                "top_repos": repos[:6],
+                "language_summary": language_summary,
+                "top_repos": repos[:8],
                 "profile_url": user_data.get("html_url"),
                 "avatar_url": user_data.get("avatar_url"),
             },
@@ -127,8 +133,8 @@ class SocialConnector:
             "method": "ai_analysis",
         }
 
-        # Run AI analysis if profile data is available
-        if profile_data and (profile_data.get("skills") or profile_data.get("experience")):
+        # Always attempt AI analysis when profile data is available
+        if profile_data:
             try:
                 from ai_engine.client import AIClient
                 from ai_engine.chains.linkedin_advisor import LinkedInAdvisorChain
@@ -174,6 +180,11 @@ class SocialConnector:
         og_title = self._extract_meta(html, "og:title") or title
         og_description = self._extract_meta(html, "og:description") or description
 
+        # Extract visible text snippet (strip HTML tags)
+        import re as _re
+        visible_text = _re.sub(r"<[^>]+>", " ", html)
+        visible_text = _re.sub(r"\s+", " ", visible_text).strip()[:500]
+
         return {
             "status": "connected",
             "connected_at": datetime.now(timezone.utc).isoformat(),
@@ -181,6 +192,7 @@ class SocialConnector:
                 "title": og_title or title,
                 "description": og_description or description,
                 "keywords": [k.strip() for k in keywords.split(",") if k.strip()][:10],
+                "text_snippet": visible_text,
                 "method": "metadata_extracted",
             },
         }
@@ -209,16 +221,22 @@ class SocialConnector:
         """Twitter/X: validate URL and extract handle."""
         match = re.search(r"(?:twitter\.com|x\.com)/([a-zA-Z0-9_]+)", url)
         if not match:
-            raise ValueError("Invalid Twitter/X URL. Expected format: twitter.com/handle or x.com/handle")
+            # Maybe just a handle
+            if re.match(r"^@?[a-zA-Z0-9_]+$", url):
+                handle = url.lstrip("@")
+            else:
+                raise ValueError("Invalid Twitter/X URL. Expected format: twitter.com/handle or x.com/handle")
+        else:
+            handle = match.group(1)
 
-        handle = match.group(1)
+        normalized_url = f"https://x.com/{handle}"
 
         return {
             "status": "linked",
             "connected_at": datetime.now(timezone.utc).isoformat(),
             "data": {
                 "handle": handle,
+                "url": normalized_url,
                 "method": "url_verified",
-                "note": "Twitter/X profile linked.",
             },
         }

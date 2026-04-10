@@ -69,6 +69,16 @@ class OrgService:
         return await self.db.get(TABLES["organizations"], org_id)
 
     async def delete_org(self, org_id: str) -> bool:
+        for table in (
+            TABLES["candidates"],
+            TABLES["usage_records"],
+            TABLES["audit_logs"],
+            TABLES["org_invitations"],
+            TABLES["webhooks"],
+            TABLES["subscriptions"],
+            TABLES["org_members"],
+        ):
+            await self.db.delete_where(table, filters=[("org_id", "==", org_id)])
         return await self.db.delete(TABLES["organizations"], org_id)
 
     # ── Members ───────────────────────────────────────────────────

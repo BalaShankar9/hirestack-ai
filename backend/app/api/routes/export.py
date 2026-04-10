@@ -1,11 +1,12 @@
 """
 Export routes - PDF/DOCX generation (Firestore)
 """
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 from app.core.security import limiter
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import StreamingResponse, Response
+from pydantic import BaseModel, Field
 
 from app.services.export import ExportService
 from app.api.deps import get_current_user, validate_uuid
@@ -16,10 +17,18 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+class CreateExportRequest(BaseModel):
+    document_ids: List[str] = []
+    format: str = Field("pdf", pattern="^(pdf|docx|markdown)$")
+    filename: Optional[str] = None
+    options: Optional[Dict[str, Any]] = None
+
+
 @limiter.limit("20/minute")
 @router.post("")
 async def create_export(
-    request: Dict[str, Any],
+    body: CreateExportRequest,
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Create an export of documents."""
@@ -27,10 +36,10 @@ async def create_export(
     try:
         return await service.create_export(
             user_id=current_user["id"],
-            document_ids=request.get("document_ids", []),
-            fmt=request.get("format", "pdf"),
-            filename=request.get("filename"),
-            options=request.get("options"),
+            document_ids=body.document_ids,
+            fmt=body.format,
+            filename=body.filename,
+            options=body.options,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))

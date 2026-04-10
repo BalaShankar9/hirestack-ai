@@ -16,7 +16,6 @@ import math
 import re
 import traceback
 import structlog
-from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, AsyncGenerator
 
@@ -27,24 +26,6 @@ from pydantic import BaseModel
 from app.api.deps import get_current_user
 from app.core.security import limiter
 
-# ── Guest abuse prevention ─────────────────────────────────────────────
-# In-memory tracker: IP → list of timestamps (resets on server restart)
-_guest_usage: Dict[str, list] = defaultdict(list)
-GUEST_MAX_GENERATIONS_PER_DAY = 2
-GUEST_MAX_RESUMES_PER_DAY = 5
-
-
-def _check_guest_limit(request: Request, current_user: Dict[str, Any], limit: int) -> None:
-    """Raise 429 if guest user exceeds daily limit.
-    TESTING MODE: guest limits disabled — re-enable for production.
-    """
-    return  # All users unlimited during testing
-
-
-try:
-    import openai as _openai_module
-except ImportError:
-    _openai_module = None  # type: ignore
 
 try:
     from ai_engine.agents.pipelines import (
@@ -85,20 +66,6 @@ def _extract_retry_after_seconds(err: str) -> Optional[int]:
 
 def _classify_ai_error(exc: Exception) -> Optional[Dict[str, Any]]:
     """Classify an AI provider exception into a structured response for HTTP/SSE."""
-    # ── OpenAI SDK errors ──
-    if _openai_module is not None:
-        if isinstance(exc, _openai_module.AuthenticationError):
-            return {"code": 401, "message": "AI API key is invalid or missing. Please check your configuration."}
-        if isinstance(exc, _openai_module.PermissionDeniedError):
-            return {"code": 403, "message": "Your AI API key does not have permission to use this model. Check your billing or access settings."}
-        if isinstance(exc, _openai_module.NotFoundError):
-            from app.core.config import settings as _s
-            model = _s.openai_model if _s.ai_provider == "openai" else _s.gemini_model
-            return {"code": 404, "message": f"The AI model '{model}' was not found. Check your model setting."}
-        if isinstance(exc, _openai_module.RateLimitError):
-            # OpenAI SDK sometimes provides retry headers, but keep a simple message here.
-            return {"code": 429, "message": "AI rate limit reached. Please wait a moment and try again."}
-
     # ── Gemini / generic string-based errors ──
     err = str(exc).lower()
     if (
@@ -164,7 +131,6 @@ def _validate_pipeline_input(req: PipelineRequest) -> None:
 @limiter.limit("3/minute")
 async def generate_pipeline(request: Request, req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Run the complete AI generation pipeline and return all modules."""
-    _check_guest_limit(request, current_user, GUEST_MAX_GENERATIONS_PER_DAY)
     _validate_pipeline_input(req)
     try:
         from ai_engine.client import AIClient
@@ -896,7 +862,6 @@ async def generate_pipeline_stream(request: Request, req: PipelineRequest, curre
     alongside regular progress events.
     Falls back to the legacy direct-chain path if agents are unavailable.
     """
-    _check_guest_limit(request, current_user, GUEST_MAX_GENERATIONS_PER_DAY)
     _validate_pipeline_input(req)
     user_id = current_user.get("id") or current_user.get("uid") or current_user.get("sub") or "anonymous"
 
@@ -1858,6 +1823,32 @@ async def _persist_generation_job_event(
 
 
 async def _run_generation_job(job_id: str, user_id: str) -> None:  # noqa: C901
+    """Run a generation job with a hard 30-minute timeout."""
+    try:
+        await asyncio.wait_for(
+            _run_generation_job_inner(job_id, user_id),
+            timeout=1800,  # 30 minutes
+        )
+    except asyncio.TimeoutError:
+        logger.error("job_runner.timeout", job_id=job_id)
+        try:
+            from app.core.database import get_supabase, TABLES
+            sb = get_supabase()
+            await _persist_generation_job_update(
+                sb, TABLES, job_id,
+                {
+                    "status": "failed",
+                    "error_message": "Generation timed out after 30 minutes. Please try again.",
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+        except Exception:
+            pass
+    finally:
+        _ACTIVE_GENERATION_TASKS.pop(job_id, None)
+
+
+async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa: C901
     from app.core.database import get_supabase, TABLES
 
     sb = get_supabase()
@@ -2393,8 +2384,6 @@ async def _run_generation_job(job_id: str, user_id: str) -> None:  # noqa: C901
         else:
             logger.error("job_runner.error", job_id=job_id, error=str(e), traceback=traceback.format_exc())
             await emit_error("AI generation failed due to an unexpected error. Please try again.", 500)
-    finally:
-        _ACTIVE_GENERATION_TASKS.pop(job_id, None)
 
 
 def _start_generation_job(job_id: str, user_id: str) -> None:

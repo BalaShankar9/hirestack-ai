@@ -37,17 +37,6 @@ DEV_USER: Dict[str, Any] = {
     "email": "dev@hirestack.local",
     "full_name": "Dev User",
     "is_active": True,
-    "is_premium": True,
-}
-
-GUEST_USER: Dict[str, Any] = {
-    "uid": "guest",
-    "id": "guest",
-    "email": "guest@hirestack.tech",
-    "full_name": "Guest User",
-    "is_active": True,
-    "is_premium": False,
-    "is_guest": True,
 }
 
 
@@ -110,21 +99,6 @@ async def get_current_user(
         )
 
 
-async def get_current_user_or_guest(
-    token: Optional[str] = Depends(get_token_from_header),
-    db: SupabaseDB = Depends(get_db),
-) -> Dict[str, Any]:
-    """Get current user OR allow guest access for tryout endpoints."""
-    if not token:
-        if getattr(settings, "debug", False):
-            return DEV_USER
-        return GUEST_USER
-    try:
-        return await get_current_user(token, db)
-    except HTTPException:
-        return GUEST_USER
-
-
 async def get_current_user_optional(
     token: Optional[str] = Depends(get_token_from_header),
     db: SupabaseDB = Depends(get_db),
@@ -136,12 +110,3 @@ async def get_current_user_optional(
         return await get_current_user(token, db)
     except HTTPException:
         return None
-
-
-async def require_premium_user(
-    current_user: Dict[str, Any] = Depends(get_current_user),
-) -> Dict[str, Any]:
-    """Require premium subscription.
-    TESTING MODE: all users treated as premium — re-enable for production.
-    """
-    return current_user

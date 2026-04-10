@@ -14,7 +14,6 @@ class UserDict(TypedDict, total=False):
     full_name: Optional[str]
     avatar_url: Optional[str]
     is_active: bool
-    is_premium: bool
     created_at: datetime
     updated_at: datetime
 

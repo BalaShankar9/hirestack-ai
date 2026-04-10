@@ -59,6 +59,10 @@ class SalaryService:
         }
 
         doc_id = await self.db.create(TABLES["salary_analyses"], record)
+        if not doc_id:
+            logger.warning("salary_analysis_not_persisted", job_title=job_title, user_id=user_id)
+            return {**record, **result}
+
         logger.info("salary_analysis_completed", analysis_id=doc_id, job_title=job_title)
         saved = await self.db.get(TABLES["salary_analyses"], doc_id)
         # If table doesn't exist, return the AI result directly

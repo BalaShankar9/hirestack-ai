@@ -15,9 +15,6 @@ logger = structlog.get_logger()
 
 MAX_RESUME_SIZE = 50 * 1024  # 50 KB of UTF-8 encoded text
 
-# Columns added by the career_nexus migration — may not exist yet
-_NEXUS_COLUMNS = {"social_links", "profile_version", "completeness_score", "resume_worth_score", "universal_documents", "universal_docs_version"}
-
 # Completeness weights per section (must sum to 100)
 COMPLETENESS_WEIGHTS = {
     "personal_info": 15,
@@ -29,9 +26,6 @@ COMPLETENESS_WEIGHTS = {
     "social_links": 5,
 }
 
-# Cache whether nexus columns exist (checked once per process)
-_nexus_columns_available: Optional[bool] = None
-
 
 class ProfileService:
     """Service for profile operations."""
@@ -40,34 +34,6 @@ class ProfileService:
         self.db = db or get_db()
         self.file_parser = FileParser()
         self.ai_client = AIClient()
-
-    async def _has_nexus_columns(self) -> bool:
-        """Check if the career_nexus migration columns exist (cached)."""
-        global _nexus_columns_available
-        if _nexus_columns_available is not None:
-            return _nexus_columns_available
-        try:
-            # Try a lightweight query selecting a nexus column
-            import asyncio
-            loop = asyncio.get_running_loop()
-            def _check():
-                self.db.client.table("profiles").select("profile_version").limit(1).execute()
-            await loop.run_in_executor(None, _check)
-            _nexus_columns_available = True
-        except Exception:
-            _nexus_columns_available = False
-            logger.info("nexus_columns_not_available", hint="Run the career_nexus migration to enable profile versioning")
-        return _nexus_columns_available
-
-    def _strip_nexus_fields(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Remove nexus-only columns from data dict."""
-        return {k: v for k, v in data.items() if k not in _NEXUS_COLUMNS}
-
-    async def _safe_update(self, table: str, doc_id: str, data: Dict[str, Any]) -> bool:
-        """Update, stripping nexus columns if they don't exist in DB."""
-        if await self._has_nexus_columns():
-            return await self.db.update(table, doc_id, data)
-        return await self.db.update(table, doc_id, self._strip_nexus_fields(data))
 
     # ── CRUD ──────────────────────────────────────────────────────────────
 
@@ -123,25 +89,18 @@ class ProfileService:
             "languages": parsed_data.get("languages", []),
             "achievements": parsed_data.get("achievements", []),
             "is_primary": is_primary or not has_profiles,
+            "social_links": social_links,
+            "profile_version": 1,
+            "universal_docs_version": 0,
         }
-
-        # Add nexus columns only if migration has been applied
-        if await self._has_nexus_columns():
-            profile_data["social_links"] = social_links
-            profile_data["profile_version"] = 1
 
         doc_id = await self.db.create(TABLES["profiles"], profile_data)
         profile = await self.db.get(TABLES["profiles"], doc_id)
 
-        # Compute and cache completeness (best-effort)
+        # Compute and persist completeness score
         completeness = self.compute_completeness(profile)
-        if await self._has_nexus_columns():
-            try:
-                await self.db.update(TABLES["profiles"], doc_id, {"completeness_score": completeness["score"]})
-                profile["completeness_score"] = completeness["score"]
-            except Exception:
-                pass
-        profile.setdefault("completeness_score", completeness["score"])
+        await self.db.update(TABLES["profiles"], doc_id, {"completeness_score": completeness["score"]})
+        profile["completeness_score"] = completeness["score"]
 
         return profile
 
@@ -178,25 +137,17 @@ class ProfileService:
         if not profile:
             return None
 
-        has_nexus = await self._has_nexus_columns()
+        # Increment profile version on every edit
+        current_version = profile.get("profile_version") or 1
+        update_data["profile_version"] = current_version + 1
 
-        # Increment profile version on every edit (if column exists)
-        if has_nexus:
-            current_version = profile.get("profile_version") or 1
-            update_data["profile_version"] = current_version + 1
-
-        await self._safe_update(TABLES["profiles"], profile_id, update_data)
+        await self.db.update(TABLES["profiles"], profile_id, update_data)
         updated = await self.db.get(TABLES["profiles"], profile_id)
 
-        # Recompute completeness (best-effort)
+        # Recompute and persist completeness score
         completeness = self.compute_completeness(updated)
-        if has_nexus:
-            try:
-                await self.db.update(TABLES["profiles"], profile_id, {"completeness_score": completeness["score"]})
-                updated["completeness_score"] = completeness["score"]
-            except Exception:
-                pass
-        updated.setdefault("completeness_score", completeness["score"])
+        await self.db.update(TABLES["profiles"], profile_id, {"completeness_score": completeness["score"]})
+        updated["completeness_score"] = completeness["score"]
 
         return updated
 
@@ -252,9 +203,8 @@ class ProfileService:
             "projects": parsed_data.get("projects", []),
             "languages": parsed_data.get("languages", []),
             "achievements": parsed_data.get("achievements", []),
+            "social_links": social_links,
         }
-        if await self._has_nexus_columns():
-            update_data["social_links"] = social_links
 
         return await self.update_profile(profile_id, user_id, update_data)
 
@@ -395,12 +345,11 @@ class ProfileService:
         else:
             label = "Getting Started"
 
-        # Update cached score (best-effort)
-        if await self._has_nexus_columns():
-            try:
-                await self.db.update(TABLES["profiles"], profile["id"], {"resume_worth_score": score})
-            except Exception:
-                pass
+        # Update cached score
+        try:
+            await self.db.update(TABLES["profiles"], profile["id"], {"resume_worth_score": score})
+        except Exception:
+            pass
 
         return {"score": score, "breakdown": breakdown, "label": label}
 
@@ -537,7 +486,7 @@ class ProfileService:
                     added += 1
 
         if added > 0:
-            await self._safe_update(TABLES["profiles"], profile_id, {"skills": existing_skills})
+            await self.update_profile(profile_id, user_id, {"skills": existing_skills})
 
         return {"added": added, "skills": existing_skills}
 
@@ -614,6 +563,11 @@ class ProfileService:
         if not profile:
             raise ValueError("Profile not found")
 
+        # Sync evidence into profile before generating docs
+        await self.sync_evidence_to_profile(profile_id, user_id)
+        # Re-read profile with merged evidence
+        profile = await self.get_profile(profile_id, user_id)
+
         # Get evidence items for portfolio
         evidence = await self.db.query(
             TABLES["evidence"],
@@ -623,17 +577,16 @@ class ProfileService:
         chain = UniversalDocGeneratorChain(self.ai_client)
         docs = await chain.generate_all(profile, evidence)
 
-        # Store results (best-effort if nexus columns exist)
-        docs["generated_at"] = datetime.utcnow().isoformat()
-        if await self._has_nexus_columns():
-            profile_version = profile.get("profile_version") or 1
-            try:
-                await self.db.update(TABLES["profiles"], profile_id, {
-                    "universal_documents": docs,
-                    "universal_docs_version": profile_version,
-                })
-            except Exception:
-                logger.warning("universal_docs_store_failed", profile_id=profile_id)
+        # Store results and lock docs_version to current profile_version
+        docs["generated_at"] = datetime.now(timezone.utc).isoformat()
+        profile_version = profile.get("profile_version") or 1
+        try:
+            await self.db.update(TABLES["profiles"], profile_id, {
+                "universal_documents": docs,
+                "universal_docs_version": profile_version,
+            })
+        except Exception:
+            logger.warning("universal_docs_store_failed", profile_id=profile_id)
 
         return docs
 
@@ -665,3 +618,56 @@ class ProfileService:
                 bucket.append(item)
 
         return organized
+
+    async def sync_evidence_to_profile(self, profile_id: str, user_id: str) -> Dict[str, Any]:
+        """Merge evidence vault items (certs, projects) into profile without duplication."""
+        profile = await self.get_profile(profile_id, user_id)
+        if not profile:
+            return {"merged_certs": 0, "merged_projects": 0}
+
+        evidence = await self.get_synced_evidence(user_id)
+        changes = False
+        merged_certs = 0
+        merged_projects = 0
+
+        # Merge certifications
+        existing_certs = profile.get("certifications") or []
+        cert_names = {c.get("name", "").lower().strip() for c in existing_certs if isinstance(c, dict)}
+        for ev_cert in evidence.get("certifications", []):
+            title = (ev_cert.get("title") or "").strip()
+            if title and title.lower() not in cert_names:
+                existing_certs.append({
+                    "name": title,
+                    "issuer": ev_cert.get("issuer", ""),
+                    "date": ev_cert.get("date", ""),
+                    "url": ev_cert.get("url", ""),
+                    "source": "evidence",
+                })
+                cert_names.add(title.lower())
+                merged_certs += 1
+                changes = True
+
+        # Merge projects
+        existing_projects = profile.get("projects") or []
+        project_names = {p.get("name", "").lower().strip() for p in existing_projects if isinstance(p, dict)}
+        for ev_proj in evidence.get("projects", []):
+            title = (ev_proj.get("title") or "").strip()
+            if title and title.lower() not in project_names:
+                existing_projects.append({
+                    "name": title,
+                    "description": ev_proj.get("description", ""),
+                    "technologies": ev_proj.get("skills", []),
+                    "url": ev_proj.get("url", ""),
+                    "source": "evidence",
+                })
+                project_names.add(title.lower())
+                merged_projects += 1
+                changes = True
+
+        if changes:
+            await self.update_profile(profile_id, user_id, {
+                "certifications": existing_certs,
+                "projects": existing_projects,
+            })
+
+        return {"merged_certs": merged_certs, "merged_projects": merged_projects}

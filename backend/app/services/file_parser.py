@@ -20,9 +20,14 @@ class FileParser:
         file_type: str,
     ) -> str:
         """Extract text from file contents based on file type."""
+        if not file_contents or len(file_contents) == 0:
+            raise ValueError("File is empty. Please upload a file with content.")
+
         file_type = file_type.lower().strip(".")
 
         if file_type == "pdf":
+            if len(file_contents) < 100:
+                raise ValueError("PDF file appears to be corrupt or incomplete.")
             return await self._extract_pdf(file_contents)
         elif file_type in ("docx", "doc"):
             return await self._extract_docx(file_contents)

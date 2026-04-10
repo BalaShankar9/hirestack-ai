@@ -281,7 +281,7 @@ class SupabaseDB:
             return await self._run(_ins)
         except Exception as e:
             if self._is_table_missing_error(e):
-                logger.error("table_missing_on_create", table=table, error=str(e)[:200])
+                logger.error("table_missing_on_create: table=%s error=%s", table, str(e)[:200])
                 return None  # Callers must handle None — no more fake IDs
             raise
 
@@ -319,6 +319,39 @@ class SupabaseDB:
 
         await self._run(_del)
         return True
+
+    async def delete_where(self, table: str, filters: Optional[List[tuple]] = None) -> bool:
+        """Delete rows matching the provided filters."""
+        def _del_where():
+            q = self.client.table(table).delete()
+            if filters:
+                for field, op, value in filters:
+                    if op == "==":
+                        q = q.eq(field, value)
+                    elif op == "!=":
+                        q = q.neq(field, value)
+                    elif op == ">":
+                        q = q.gt(field, value)
+                    elif op == ">=":
+                        q = q.gte(field, value)
+                    elif op == "<":
+                        q = q.lt(field, value)
+                    elif op == "<=":
+                        q = q.lte(field, value)
+                    elif op == "in":
+                        q = q.in_(field, value)
+                    else:
+                        q = q.eq(field, value)
+            q.execute()
+
+        try:
+            await self._run(_del_where)
+            return True
+        except Exception as e:
+            if self._is_table_missing_error(e):
+                logger.warning("table_missing_on_delete_where: %s", table)
+                return True
+            raise
 
     async def query(
         self,

@@ -73,17 +73,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     if not settings.supabase_service_role_key:
         logger.warning("SUPABASE_SERVICE_ROLE_KEY is not configured — backend DB access will fail")
 
-    ai_configured = False
-    if settings.ai_provider == "gemini" and settings.gemini_api_key:
-        ai_configured = True
-    elif settings.ai_provider == "openai" and settings.openai_api_key:
-        ai_configured = True
-    elif settings.ai_provider == "ollama":
-        ai_configured = True  # Ollama doesn't need an API key
+    ai_configured = bool(settings.gemini_api_key) or settings.gemini_use_vertexai
     if not ai_configured:
         logger.warning(
-            "No AI provider configured — generation endpoints will fail",
-            provider=settings.ai_provider,
+            "Gemini is not configured — generation endpoints will fail. "
+            "Set GEMINI_API_KEY or enable GEMINI_USE_VERTEXAI.",
         )
 
     try:
@@ -201,18 +195,8 @@ async def health_check():
     except Exception as e:
         supabase_status = {"ok": False, "error": str(e)}
 
-    # Check AI provider
-    ai_status = {"provider": getattr(settings, "ai_provider", "unknown"), "ok": False}
-    try:
-        if getattr(settings, "ai_provider", "") == "ollama":
-            import httpx
-            r = httpx.get("http://localhost:11434/api/tags", timeout=2)
-            ai_status["ok"] = r.status_code == 200
-        elif getattr(settings, "gemini_api_key", ""):
-            ai_status["ok"] = True
-            ai_status["provider"] = "gemini"
-    except Exception:
-        pass
+    # Check AI provider (Gemini only)
+    ai_status = {"provider": "gemini", "ok": bool(getattr(settings, "gemini_api_key", "")) or getattr(settings, "gemini_use_vertexai", False)}
 
     return {
         "status": "healthy",

@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 
 from app.core.security import limiter
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from pydantic import BaseModel, Field
 
 from app.services.document import DocumentService
 from app.api.deps import get_current_user
@@ -15,10 +16,19 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+class GenerateDocumentRequest(BaseModel):
+    document_type: str = Field("cv", pattern="^(cv|cover_letter|personal_statement|portfolio|roadmap)$")
+    profile_id: Optional[str] = None
+    job_id: Optional[str] = None
+    benchmark_id: Optional[str] = None
+    options: Optional[Dict[str, Any]] = None
+
+
 @limiter.limit("3/minute")
 @router.post("/generate")
 async def generate_document(
-    request: Dict[str, Any],
+    body: GenerateDocumentRequest,
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Generate a document using AI."""
@@ -26,11 +36,11 @@ async def generate_document(
     try:
         return await service.generate_document(
             user_id=current_user["id"],
-            document_type=request.get("document_type", "cv"),
-            profile_id=request.get("profile_id"),
-            job_id=request.get("job_id"),
-            benchmark_id=request.get("benchmark_id"),
-            options=request.get("options"),
+            document_type=body.document_type,
+            profile_id=body.profile_id,
+            job_id=body.job_id,
+            benchmark_id=body.benchmark_id,
+            options=body.options,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
@@ -39,10 +49,16 @@ async def generate_document(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
+class GenerateAllRequest(BaseModel):
+    profile_id: Optional[str] = None
+    job_id: Optional[str] = None
+
+
 @limiter.limit("3/minute")
 @router.post("/generate-all")
 async def generate_all_documents(
-    request: Dict[str, Any],
+    body: GenerateAllRequest,
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Generate complete application package."""
@@ -50,8 +66,8 @@ async def generate_all_documents(
     try:
         documents = await service.generate_all_documents(
             user_id=current_user["id"],
-            profile_id=request.get("profile_id"),
-            job_id=request.get("job_id"),
+            profile_id=body.profile_id,
+            job_id=body.job_id,
         )
         return {"documents": documents, "count": len(documents)}
     except ValueError as e:

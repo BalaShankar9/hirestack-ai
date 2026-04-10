@@ -39,13 +39,15 @@ async def upload_resume(
     allowed_types = [".pdf", ".docx", ".doc", ".txt"]
     file_ext = "." + file.filename.split(".")[-1].lower() if file.filename and "." in file.filename else ""
 
-    if file_ext not in allowed_types:
+    if not file_ext or file_ext not in allowed_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"File type not allowed. Allowed types: {', '.join(allowed_types)}",
         )
 
     contents = await file.read()
+    if not contents or len(contents) == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File is empty.")
     if len(contents) > 10 * 1024 * 1024:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File too large. Maximum size is 10MB")
 
@@ -81,6 +83,7 @@ async def upload_resume(
 
 
 @limiter.limit("30/minute")
+@router.get("/all")
 @router.get("")
 async def list_profiles(
     request: Request,
@@ -267,16 +270,32 @@ async def update_social_links(
 
     links_dict = links.model_dump()
 
-    # Always store URLs in contact_info (column that exists in DB)
+    # Build canonical social_links: preserve existing connection data, update URLs
+    existing_social = profile.get("social_links") or {}
+    new_social: Dict[str, Any] = {}
+    for key in ("linkedin", "github", "website", "twitter"):
+        url = links_dict.get(key, "")
+        existing = existing_social.get(key)
+        if isinstance(existing, dict):
+            # Preserve connection data, update URL
+            new_social[key] = {**existing, "url": url}
+        elif url:
+            new_social[key] = {"url": url, "status": "linked"}
+        else:
+            new_social[key] = {"url": "", "status": "none"}
+    if links_dict.get("other"):
+        new_social["other"] = links_dict["other"]
+
+    # Mirror plain URLs into contact_info for backward compat
     contact_info = profile.get("contact_info") or {}
     for key in ("linkedin", "github", "website", "twitter"):
         if links_dict.get(key):
             contact_info[key] = links_dict[key]
-    # Preserve existing social_connections data
-    update_data: Dict[str, Any] = {"contact_info": contact_info}
 
-    # Also try social_links column if it exists
-    update_data["social_links"] = links_dict
+    update_data: Dict[str, Any] = {
+        "social_links": new_social,
+        "contact_info": contact_info,
+    }
 
     updated = await service.update_profile(
         profile_id=profile_id,
@@ -332,27 +351,31 @@ async def connect_social(
             detail="Failed to connect to profile. Please try again.",
         )
 
-    connection_entry = {"url": req.url, **result}
+    # Build unified social_links entry: url + status + data + timestamp
+    connection_entry = {
+        "url": req.url,
+        "status": result.get("status", "connected"),
+        "connected_at": result.get("connected_at"),
+        "data": result.get("data"),
+    }
 
-    # Store in contact_info.social_connections (always exists in DB)
+    # Update social_links (canonical source)
+    social_links = profile.get("social_links") or {}
+    social_links[req.platform] = connection_entry
+
+    # Mirror plain URL into contact_info for backward compat
     contact_info = profile.get("contact_info") or {}
-    social_connections = contact_info.get("social_connections") or {}
-    social_connections[req.platform] = connection_entry
-    contact_info["social_connections"] = social_connections
-    # Also store the URL in the standard contact_info field
     if req.platform in ("linkedin", "github", "website"):
         contact_info[req.platform] = req.url
+    # Keep legacy social_connections for any code that reads it
+    social_connections = contact_info.get("social_connections") or {}
+    social_connections[req.platform] = {"url": req.url, **result}
+    contact_info["social_connections"] = social_connections
 
-    update_data: Dict[str, Any] = {"contact_info": contact_info}
-    # Also try social_links if column exists (best-effort)
-    try:
-        social_links = profile.get("social_links") or {}
-        if isinstance(social_links.get(req.platform), str):
-            social_links[req.platform] = {"url": social_links[req.platform]}
-        social_links[req.platform] = connection_entry
-        update_data["social_links"] = social_links
-    except Exception:
-        pass
+    update_data: Dict[str, Any] = {
+        "social_links": social_links,
+        "contact_info": contact_info,
+    }
 
     await service.update_profile(
         profile_id=profile_id,
@@ -386,3 +409,17 @@ async def get_synced_evidence(
     """Get evidence vault items synced to profile."""
     service = ProfileService()
     return await service.get_synced_evidence(current_user["id"])
+
+
+@limiter.limit("10/minute")
+@router.post("/{profile_id}/sync-evidence")
+async def sync_evidence(
+    request: Request,
+    profile_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Merge evidence vault items into profile data."""
+    service = ProfileService()
+    profile = await service.get_profile(profile_id, current_user["id"])
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    return await service.sync_evidence_to_profile(profile_id, current_user["id"])

@@ -10,6 +10,9 @@ from pydantic import BaseModel, Field
 from app.services.learning import LearningService
 from app.api.deps import get_current_user
 from app.core.security import limiter
+import structlog
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -59,7 +62,8 @@ async def generate_daily_challenges(
             count=body.count,
             job_context=body.job_context,
         )
-    except Exception:
+    except Exception as e:
+        logger.error("challenge_generation_failed", error=str(e), user_id=current_user["id"])
         raise HTTPException(status_code=500, detail="Challenge generation failed. Please try again.")
 
 

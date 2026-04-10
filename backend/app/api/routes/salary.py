@@ -6,12 +6,14 @@ from typing import Dict, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+import structlog
 
 from app.services.salary import SalaryService
 from app.api.deps import get_current_user
 from app.core.security import limiter
 
 router = APIRouter()
+logger = structlog.get_logger()
 
 
 def _validate_uuid(value: str, field_name: str = "id") -> str:
@@ -52,7 +54,8 @@ async def analyze_salary(
             skills_summary=body.skills_summary,
             application_id=body.application_id,
         )
-    except Exception:
+    except Exception as e:
+        logger.error("salary_analysis_failed", error=str(e), user_id=current_user["id"])
         raise HTTPException(status_code=500, detail="Salary analysis failed. Please try again.")
 
 
