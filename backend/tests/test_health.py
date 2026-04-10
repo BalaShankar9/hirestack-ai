@@ -30,14 +30,13 @@ async def test_auth_required_endpoints(client):
 
 
 @pytest.mark.asyncio
-async def test_guest_endpoints_accessible(client):
-    """Guest endpoints should not return 401."""
-    # Resume parse needs a file, so 422 is expected (validation error)
+async def test_generate_endpoints_require_auth(client):
+    """Generation endpoints should require authentication."""
     resp = await client.post("/api/generate/pipeline", json={})
-    assert resp.status_code != 401, "Pipeline should be accessible without auth"
+    assert resp.status_code == 401, "Pipeline should require auth"
 
     resp = await client.post("/api/generate/pipeline/stream", json={})
-    assert resp.status_code != 401, "Pipeline stream should be accessible without auth"
+    assert resp.status_code == 401, "Pipeline stream should require auth"
 
 
 @pytest.mark.asyncio

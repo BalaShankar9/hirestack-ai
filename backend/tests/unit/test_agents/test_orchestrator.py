@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import AsyncMock
 from ai_engine.agents.base import AgentResult
-from ai_engine.agents.orchestrator import AgentPipeline, PipelineResult
+from ai_engine.agents.orchestrator import AgentPipeline, PipelinePolicy, PipelineResult
 
 
 def _mock_result(content=None, needs_revision=False, flags=None, feedback=None, suggestions=None):
@@ -78,9 +78,21 @@ async def test_pipeline_executes_all_stages(mock_agents):
 
 @pytest.mark.asyncio
 async def test_pipeline_triggers_revision_when_critic_says_so(mock_agents):
+    # First call returns needs_revision=True, second call (re-eval) returns False
     mock_agents["critic"].run = AsyncMock(
-        return_value=_mock_result(needs_revision=True, feedback={"issue": "tone"})
+        side_effect=[
+            _mock_result(
+                content={"text": "mock", "confidence": 0.3},
+                needs_revision=True, feedback={"issue": "tone"},
+            ),
+            _mock_result(
+                content={"text": "mock", "confidence": 0.95},
+                needs_revision=False,
+            ),
+        ]
     )
+    # Use a policy that allows revision when confidence < 0.85
+    policy = PipelinePolicy(confidence_threshold=0.85, max_iterations=2)
     pipeline = AgentPipeline(
         name="cv_generation",
         researcher=mock_agents["researcher"],
@@ -89,6 +101,7 @@ async def test_pipeline_triggers_revision_when_critic_says_so(mock_agents):
         optimizer=mock_agents["optimizer"],
         fact_checker=mock_agents["fact_checker"],
         validator=mock_agents["validator"],
+        policy=policy,
     )
     result = await pipeline.execute({"user_id": "u1", "user_profile": {}, "job_title": "SWE"})
     mock_agents["drafter"].revise.assert_awaited_once()
