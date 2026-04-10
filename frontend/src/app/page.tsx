@@ -180,14 +180,14 @@ export default function HomePage() {
             </span>
           </Link>
           <div className="flex items-center gap-3">
-            <Link href="/pricing" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-              Pricing
+            <Link href="/#how-it-works" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+              How It Works
             </Link>
             <Link href="/login" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               Sign In
             </Link>
-            <Link href="/new" className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-glow-sm hover:shadow-glow-md transition-all hover:brightness-110">
-              Start Free <ArrowRight className="h-3.5 w-3.5" />
+            <Link href="/login?mode=register&redirect=/new" className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-glow-sm hover:shadow-glow-md transition-all hover:brightness-110">
+              Get Started <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
         </div>
@@ -219,7 +219,7 @@ export default function HomePage() {
           </p>
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300 fill-mode-both">
-            <Link href="/new" className="group inline-flex items-center gap-2 rounded-2xl bg-primary px-8 py-4 text-base font-semibold text-primary-foreground shadow-glow-md hover:shadow-glow-lg transition-all hover:brightness-110">
+            <Link href="/login?mode=register&redirect=/new" className="group inline-flex items-center gap-2 rounded-2xl bg-primary px-8 py-4 text-base font-semibold text-primary-foreground shadow-glow-md hover:shadow-glow-lg transition-all hover:brightness-110">
               Start Your Application
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
@@ -229,7 +229,7 @@ export default function HomePage() {
           </div>
 
           <p className="mt-4 text-xs text-muted-foreground/60 animate-in fade-in duration-1000 delay-500 fill-mode-both">
-            Free to start. Sign in to save and export your documents.
+            Create an account to save, edit, and export your documents.
           </p>
 
           {/* Stats */}
@@ -490,12 +490,12 @@ export default function HomePage() {
                 Paste a job description, add your resume, and let AI build a
                 tailored, proof-backed application package.
               </p>
-              <Link href="/new" className="mt-8 inline-flex items-center gap-2 rounded-2xl bg-white px-8 py-4 text-base font-semibold text-primary shadow-soft-lg hover:shadow-soft-xl transition-all hover:scale-[1.02]">
+              <Link href="/login?mode=register&redirect=/new" className="mt-8 inline-flex items-center gap-2 rounded-2xl bg-white px-8 py-4 text-base font-semibold text-primary shadow-soft-lg hover:shadow-soft-xl transition-all hover:scale-[1.02]">
                 Start Your Application
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <p className="mt-3 text-xs text-white/50">
-                Free to start. Sign in to save and export.
+                Create an account to save, edit, and export.
               </p>
             </div>
           </motion.div>
@@ -513,9 +513,9 @@ export default function HomePage() {
               <span className="text-sm font-bold">HireStack <span className="text-primary">AI</span></span>
             </div>
             <div className="flex items-center gap-6 text-xs text-muted-foreground">
-              <Link href="/pricing" className="hover:text-foreground transition-colors">Pricing</Link>
+              <Link href="/#how-it-works" className="hover:text-foreground transition-colors">How It Works</Link>
               <Link href="/login" className="hover:text-foreground transition-colors">Sign In</Link>
-              <Link href="/new" className="hover:text-foreground transition-colors">Try Free</Link>
+              <Link href="/login?mode=register&redirect=/new" className="hover:text-foreground transition-colors">Get Started</Link>
             </div>
             <p className="text-xs text-muted-foreground">
               &copy; {new Date().getFullYear()} HireStack AI

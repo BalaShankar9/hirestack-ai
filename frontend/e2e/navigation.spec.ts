@@ -16,7 +16,7 @@ test.describe("Landing Page", () => {
 
     // Should render the marketing landing page for unauthenticated users
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole("link", { name: /start free analysis/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /get started/i }).first()).toBeVisible();
     await expect(page.getByRole("link", { name: /sign in/i })).toBeVisible();
   });
 

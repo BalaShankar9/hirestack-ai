@@ -88,7 +88,6 @@ import { useAgentStatus } from "@/hooks/use-agent-status";
 import { useDownloadGate } from "@/hooks/use-download-gate";
 import { ATSScorePanel } from "@/components/workspace/ats-score-panel";
 import { SignupModal } from "@/components/auth/signup-modal";
-import { UpgradeModal } from "@/components/billing/upgrade-modal";
 import { AITrace } from "@/components/ui/ai-trace";
 
 import { Button } from "@/components/ui/button";
@@ -134,7 +133,7 @@ export default function ApplicationWorkspacePage() {
   const params = useParams<{ id: string }>();
   const appId = params.id;
   const searchParams = useSearchParams();
-  const { gatedDownload, showSignup, setShowSignup, showUpgrade, setShowUpgrade, onSignupSuccess } = useDownloadGate();
+  const { gatedDownload, showSignup, setShowSignup, onSignupSuccess } = useDownloadGate();
 
   const { user } = useAuth();
   const userId = user?.uid || user?.id || null;
@@ -1652,7 +1651,6 @@ export default function ApplicationWorkspacePage() {
 
       {/* Download gate modals */}
       <SignupModal open={showSignup} onOpenChange={setShowSignup} onSuccess={onSignupSuccess} />
-      <UpgradeModal open={showUpgrade} onOpenChange={setShowUpgrade} feature="exports" />
     </div>
   );
 }

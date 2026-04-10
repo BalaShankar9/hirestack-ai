@@ -206,6 +206,8 @@ export default function CareerNexusPage() {
   const [editValue, setEditValue] = useState("");
   const [activeTab, setActiveTab] = useState("profile");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [intelligenceErrors, setIntelligenceErrors] = useState<string[]>([]);
 
   // Social links state (empty state)
   const [onboardingLinks, setOnboardingLinks] = useState<Record<string, string>>({});
@@ -214,6 +216,20 @@ export default function CareerNexusPage() {
   const [socialInputs, setSocialInputs] = useState<Record<string, string>>({});
 
   useEffect(() => { if (token) api.setToken(token); }, [token]);
+
+  // Auto-dismiss messages
+  useEffect(() => {
+    if (errorMessage) {
+      const t = setTimeout(() => setErrorMessage(null), 8000);
+      return () => clearTimeout(t);
+    }
+  }, [errorMessage]);
+  useEffect(() => {
+    if (successMessage) {
+      const t = setTimeout(() => setSuccessMessage(null), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [successMessage]);
 
   const loadProfile = useCallback(async () => {
     if (!token) return;
@@ -229,6 +245,7 @@ export default function CareerNexusPage() {
 
   const loadIntelligence = useCallback(async () => {
     if (!token) return;
+    const labels = ["Completeness", "Resume Worth", "Gap Analysis", "Evidence", "Market Intelligence"];
     try {
       const [comp, worth, gaps, ev, market] = await Promise.allSettled([
         api.profile.completeness(),
@@ -243,10 +260,9 @@ export default function CareerNexusPage() {
       if (ev.status === "fulfilled") setEvidence(ev.value);
       if (market.status === "fulfilled" && !market.value?.error) setMarketIntel(market.value);
 
-      const failed = [comp, worth, gaps, ev, market].filter(r => r.status === "rejected").length;
-      if (failed > 0) {
-        setErrorMessage(`Some intelligence data couldn't load (${failed} of 5). This may resolve on retry.`);
-      }
+      const results = [comp, worth, gaps, ev, market];
+      const failed = results.map((r, i) => r.status === "rejected" ? labels[i] : null).filter(Boolean) as string[];
+      setIntelligenceErrors(failed);
     } catch { /* non-critical */ }
   }, [token]);
 
@@ -298,6 +314,8 @@ export default function CareerNexusPage() {
           setProfile(updated);
         } catch { /* non-critical */ }
       }
+      // Refresh intelligence for the new profile
+      loadIntelligence();
     } catch (err: any) {
       setErrorMessage(err.message || "Upload failed. Please try again or use a different file format.");
     }
@@ -311,6 +329,7 @@ export default function CareerNexusPage() {
       const updated = await api.profile.update({ id: profile.id, [field]: value });
       setProfile(updated);
       setEditingField(null);
+      setSuccessMessage("Saved");
     } catch (err: any) {
       setErrorMessage(err.message || "Update failed");
     }
@@ -320,8 +339,10 @@ export default function CareerNexusPage() {
     if (!profile) return;
     setGenerating(true);
     try {
-      const docs = await api.profile.generateUniversalDocs(profile.id);
-      setProfile({ ...profile, universal_documents: docs });
+      await api.profile.generateUniversalDocs(profile.id);
+      // Reload full profile to get persisted universal_docs_version
+      const updated = await api.profile.getById(profile.id);
+      if (updated) setProfile(updated);
     } catch (err: any) {
       setErrorMessage(err.message || "Document generation failed");
     }
@@ -334,6 +355,7 @@ export default function CareerNexusPage() {
     try {
       const p = await api.profile.reparse(profile.id);
       setProfile(p);
+      loadIntelligence();
     } catch (err: any) {
       setErrorMessage(err.message || "Re-parse failed");
     }
@@ -366,6 +388,8 @@ export default function CareerNexusPage() {
       // Reload profile to get updated social_links with extracted data
       const updated = await api.profile.getById(profile.id);
       if (updated) setProfile(updated);
+      // Refresh intelligence (skills may have been augmented)
+      loadIntelligence();
     } catch (err: any) {
       setErrorMessage(err.message || `Failed to connect ${platform}`);
     }
@@ -502,38 +526,32 @@ export default function CareerNexusPage() {
   const languages = profile.languages || [];
   const social: Record<string, any> = (profile.social_links as any) || {};
   const contact: Record<string, any> = (profile.contact_info as any) || {};
-  // Social connections data lives in contact_info.social_connections (always in DB)
-  const socialConnections: Record<string, any> = contact.social_connections || {};
   const docs = profile.universal_documents || {};
   const docsStale = (profile.profile_version || 1) > (profile.universal_docs_version || 0);
   const score = completeness?.score ?? profile.completeness_score ?? 0;
 
-  // Helper to get URL from social entry — checks social_links, then contact_info
+  // Helper to get URL from social_links (canonical source), fallback to contact_info
   const getSocialUrl = (key: string): string => {
     const entry = social[key];
     if (entry) {
       if (typeof entry === "string") return entry;
       if (entry.url) return entry.url;
     }
-    // Fallback: check contact_info (always in DB)
     return (contact as any)[key] || "";
   };
-  const getSocialConnection = (key: string): any => {
-    // Check social_links first (if nexus migration applied)
-    const entry = social[key];
-    if (entry && typeof entry !== "string" && entry.data) return entry;
-    // Then check contact_info.social_connections (always works)
-    return socialConnections[key] || null;
-  };
   const getSocialData = (key: string): Record<string, any> | null => {
-    const conn = getSocialConnection(key);
+    const entry = social[key];
+    if (entry && typeof entry !== "string" && entry.data) return entry.data;
+    // Legacy fallback: contact_info.social_connections
+    const socialConnections: Record<string, any> = contact.social_connections || {};
+    const conn = socialConnections[key];
     return conn?.data || null;
   };
   const getSocialStatus = (key: string): string => {
-    const conn = getSocialConnection(key);
-    if (conn?.status) return conn.status;
+    const entry = social[key];
+    if (entry && typeof entry !== "string" && entry.status) return entry.status;
     const url = getSocialUrl(key);
-    return url.trim() ? "url_only" : "none";
+    return url.trim() ? "linked" : "none";
   };
 
   const connectedPlatforms = SOCIAL_PLATFORMS.filter((p) => getSocialUrl(p.key).trim());
@@ -585,6 +603,14 @@ export default function CareerNexusPage() {
           <button onClick={() => setErrorMessage(null)} className="text-muted-foreground hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
+        </div>
+      )}
+
+      {/* Success Banner */}
+      {successMessage && (
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+          <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
+          <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{successMessage}</p>
         </div>
       )}
 
@@ -1164,6 +1190,19 @@ export default function CareerNexusPage() {
         {/* ── TAB 3: Intelligence ─────────────────────────────────────── */}
         <TabsContent value="intelligence" className="space-y-6">
 
+          {/* Intelligence loading errors */}
+          {intelligenceErrors.length > 0 && (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 flex items-center gap-3">
+              <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+              <p className="text-xs text-muted-foreground flex-1">
+                Could not load: {intelligenceErrors.join(", ")}
+              </p>
+              <Button variant="ghost" size="sm" className="text-xs gap-1 shrink-0" onClick={() => loadIntelligence()}>
+                <RefreshCw className="h-3 w-3" /> Retry
+              </Button>
+            </div>
+          )}
+
           {/* ── Hero stats row ──────────────────────────────────────── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
@@ -1455,7 +1494,7 @@ export default function CareerNexusPage() {
                   <p className="text-2xs text-muted-foreground mt-0.5">Most requested skills you&apos;re missing across {aggregateGaps.total_applications_analyzed} applications</p>
                 </div>
                 <div className="p-4 space-y-1">
-                  {aggregateGaps.most_missing_skills.slice(0, 8).map((item, i) => (
+                  {(aggregateGaps.most_missing_skills || []).slice(0, 8).map((item, i) => (
                     <div key={i} className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-muted/30 transition-colors group">
                       <span className="text-2xs text-muted-foreground/50 font-mono w-4 tabular-nums">{i + 1}</span>
                       <span className="flex-1 font-medium text-sm">{item.skill}</span>
@@ -1469,7 +1508,7 @@ export default function CareerNexusPage() {
                       <span className="text-2xs text-muted-foreground tabular-nums font-mono">{item.frequency}x</span>
                     </div>
                   ))}
-                  {aggregateGaps.most_missing_skills.length === 0 && (
+                  {(aggregateGaps.most_missing_skills || []).length === 0 && (
                     <p className="text-sm text-muted-foreground text-center py-4">No gaps detected yet</p>
                   )}
                 </div>
@@ -1484,7 +1523,7 @@ export default function CareerNexusPage() {
                   <p className="text-2xs text-muted-foreground mt-0.5">Your most recognized skills across applications</p>
                 </div>
                 <div className="p-4 space-y-1">
-                  {aggregateGaps.strongest_areas.slice(0, 8).map((item, i) => (
+                  {(aggregateGaps.strongest_areas || []).slice(0, 8).map((item, i) => (
                     <div key={i} className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-muted/30 transition-colors">
                       <span className="text-2xs text-muted-foreground/50 font-mono w-4 tabular-nums">{i + 1}</span>
                       <span className="flex-1 font-medium text-sm">{item.area}</span>
@@ -1496,7 +1535,7 @@ export default function CareerNexusPage() {
                       </div>
                     </div>
                   ))}
-                  {aggregateGaps.strongest_areas.length === 0 && (
+                  {(aggregateGaps.strongest_areas || []).length === 0 && (
                     <p className="text-sm text-muted-foreground text-center py-4">Apply to more jobs to see patterns</p>
                   )}
                 </div>
@@ -1505,7 +1544,7 @@ export default function CareerNexusPage() {
           )}
 
           {/* ── Growth Roadmap ──────────────────────────────────────── */}
-          {aggregateGaps && aggregateGaps.recommended_learning.length > 0 && (
+          {aggregateGaps && aggregateGaps.recommended_learning?.length > 0 && (
             <Card className="rounded-2xl overflow-hidden">
               <div className="bg-gradient-to-r from-teal-500/10 to-transparent px-6 py-4 border-b border-border/50">
                 <h3 className="font-semibold flex items-center gap-2">
@@ -1661,6 +1700,11 @@ export default function CareerNexusPage() {
                 if (confirm("Are you sure you want to delete your profile? This cannot be undone.")) {
                   await api.profile.delete(profile.id);
                   setProfile(null);
+                  setCompleteness(null);
+                  setResumeWorth(null);
+                  setAggregateGaps(null);
+                  setMarketIntel(null);
+                  setEvidence({});
                 }
               }}>
                 <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete

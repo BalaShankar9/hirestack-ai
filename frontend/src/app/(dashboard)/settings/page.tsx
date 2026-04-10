@@ -16,7 +16,7 @@ import { toast } from "@/hooks/use-toast";
 
 const SETTINGS_LINKS = [
   { href: "/settings/members", label: "Team Members", desc: "Invite and manage your team", icon: Users, color: "text-blue-500 bg-blue-500/10" },
-  { href: "/settings/billing", label: "Billing & Plans", desc: "Manage subscription and usage", icon: CreditCard, color: "text-emerald-500 bg-emerald-500/10" },
+  { href: "/settings/billing", label: "Usage", desc: "Monitor account usage", icon: CreditCard, color: "text-emerald-500 bg-emerald-500/10" },
   { href: "/settings/audit", label: "Audit Log", desc: "Activity history and compliance", icon: Shield, color: "text-violet-500 bg-violet-500/10" },
   { href: "/api-keys", label: "API Keys", desc: "Manage API access tokens", icon: Settings, color: "text-amber-500 bg-amber-500/10" },
 ];

@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     template: "%s | HireStack AI",
   },
   description:
-    "Build interview-winning applications with 6 AI agents. ATS-optimized CV, tailored cover letter, gap analysis, company intel — all in under 3 minutes. Try free, no signup required.",
+    "Build interview-winning applications with 6 AI agents. ATS-optimized CV, tailored cover letter, gap analysis, company intel — all in under 3 minutes.",
   keywords: [
     "resume builder", "AI resume", "CV generator", "cover letter generator",
     "ATS scanner", "job application", "career intelligence", "interview prep",
@@ -29,13 +29,13 @@ export const metadata: Metadata = {
     url: "https://hirestack.tech",
     siteName: "HireStack AI",
     title: "HireStack AI — Stop Applying. Start Landing.",
-    description: "6 AI agents build your perfect application package. ATS-optimized CV, tailored cover letter, company intel, gap analysis. Try free.",
+    description: "6 AI agents build your perfect application package. ATS-optimized CV, tailored cover letter, company intel, gap analysis.",
     images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "HireStack AI" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "HireStack AI — AI-Powered Career Intelligence",
-    description: "Build interview-winning applications with 6 AI agents. Try free, no signup required.",
+    description: "Build interview-winning applications with 6 AI agents. Get started today.",
     images: ["/og-image.png"],
   },
   robots: {

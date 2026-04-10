@@ -336,21 +336,16 @@ export interface PipelineDetailEvent {
 }
 
 export async function cancelGenerationJob(jobId: string): Promise<void> {
-  let accessToken: string | null = null;
-  try {
-    const { error: userErr } = await supabase.auth.getUser();
-    if (!userErr) {
-      const { data: sessionData } = await supabase.auth.getSession();
-      accessToken = sessionData.session?.access_token ?? null;
-    }
-  } catch {
-    accessToken = null;
-  }
+  // getUser() triggers a token refresh if the session is stale
+  await supabase.auth.getUser();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token ?? null;
+  if (!accessToken) throw new Error("Authentication required");
 
   const response = await fetch(`${AI_API_URL}/api/generate/jobs/${jobId}/cancel`, {
     method: "POST",
     headers: {
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      Authorization: `Bearer ${accessToken}`,
     },
   });
 
@@ -498,28 +493,23 @@ export async function generateApplicationModules(
   const company = confirmedFacts.company;
 
   // Set modules to "generating" (single DB update; preserves other module states)
-  // For guest users this may fail due to RLS — that's OK, we proceed anyway.
   let moduleStates: Record<ModuleKey, ModuleStatus> = { ...DEFAULT_MODULES } as any;
-  try {
-    const { data: modRow } = await supabase
-      .from(TABLES.applications)
-      .select("modules")
-      .eq("id", appId)
-      .maybeSingle();
+  const { data: modRow } = await supabase
+    .from(TABLES.applications)
+    .select("modules")
+    .eq("id", appId)
+    .maybeSingle();
 
-    moduleStates = (modRow?.modules ?? moduleStates) as any;
-    const generatingAt = Date.now();
-    for (const mod of modules) {
-      moduleStates[mod] = { state: "generating", updatedAt: generatingAt };
-    }
-
-    await supabase
-      .from(TABLES.applications)
-      .update({ modules: moduleStates })
-      .eq("id", appId);
-  } catch {
-    // Guest mode — no DB writes, proceed to generation
+  moduleStates = (modRow?.modules ?? moduleStates) as any;
+  const generatingAt = Date.now();
+  for (const mod of modules) {
+    moduleStates[mod] = { state: "generating", updatedAt: generatingAt };
   }
+
+  await supabase
+    .from(TABLES.applications)
+    .update({ modules: moduleStates })
+    .eq("id", appId);
 
   const MAX_RETRIES = 3;
   let lastError: Error | null = null;
@@ -546,17 +536,11 @@ export async function generateApplicationModules(
 
       // getUser() validates the token with Supabase and triggers a refresh if
       // the access token is expired — ensures we always send a fresh token.
-      // For guest users (no session), we proceed without a token.
-      let accessToken: string | null = null;
-      try {
-        const { error: userErr } = await supabase.auth.getUser();
-        if (!userErr) {
-          const { data: sessionData } = await supabase.auth.getSession();
-          accessToken = sessionData.session?.access_token ?? null;
-        }
-      } catch {
-        // Guest mode — no auth token needed
-      }
+      const { error: userErr } = await supabase.auth.getUser();
+      if (userErr) throw new Error("Authentication required to generate documents");
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token ?? null;
+      if (!accessToken) throw new Error("Authentication required to generate documents");
 
       // Prefer DB-backed generation jobs (resilient to refresh/disconnect).
       // Falls back to legacy /pipeline/stream if the endpoint isn't available.

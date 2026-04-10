@@ -288,6 +288,8 @@ class APIClient {
       this.request(`/profile/intelligence/market?force_refresh=${forceRefresh}`),
     syncedEvidence: async () =>
       this.request("/profile/evidence/synced"),
+    syncEvidence: async (id: string) =>
+      this.request(`/profile/${id}/sync-evidence`, { method: "POST" }),
   };
 
   jobs = {

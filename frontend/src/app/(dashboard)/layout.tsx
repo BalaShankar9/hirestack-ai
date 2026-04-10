@@ -5,7 +5,6 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/components/providers";
 import { AppShell } from "@/components/app-shell";
 import { PageTransition } from "@/components/page-transition";
-import { QuotaProvider } from "@/contexts/quota-context";
 import { OnboardingProvider } from "@/contexts/onboarding-context";
 import api from "@/lib/api";
 
@@ -27,8 +26,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!loading && !user && !hasRedirected) {
       setHasRedirected(true);
-      const currentPath = pathname || "/dashboard";
-      window.location.assign("/login?redirect=" + encodeURIComponent(currentPath));
+      if (pathname === "/new") {
+        window.location.assign("/login?mode=register&redirect=/new");
+      } else {
+        const currentPath = pathname || "/dashboard";
+        window.location.assign("/login?redirect=" + encodeURIComponent(currentPath));
+      }
     }
   }, [user, loading, pathname, hasRedirected]);
 
@@ -42,11 +45,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   return (
     <OnboardingProvider>
-      <QuotaProvider>
-        <AppShell>
-          <PageTransition>{children}</PageTransition>
-        </AppShell>
-      </QuotaProvider>
+      <AppShell>
+        <PageTransition>{children}</PageTransition>
+      </AppShell>
     </OnboardingProvider>
   );
 }

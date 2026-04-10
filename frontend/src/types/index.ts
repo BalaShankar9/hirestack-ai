@@ -6,7 +6,6 @@ export interface User {
   full_name?: string;
   avatar_url?: string;
   is_active: boolean;
-  is_premium: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -39,7 +38,7 @@ export interface Profile {
 
 export interface SocialLinkEntry {
   url: string;
-  status?: "linked" | "connected" | "error";
+  status?: "none" | "linked" | "connected" | "error";
   data?: Record<string, any>;
   connected_at?: string;
   error?: string;
