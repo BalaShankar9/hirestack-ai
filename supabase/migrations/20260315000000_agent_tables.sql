@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS agent_memory (
     UNIQUE(user_id, agent_type, memory_key)
 );
 
-CREATE INDEX idx_agent_memory_user ON agent_memory(user_id, agent_type);
+CREATE INDEX IF NOT EXISTS idx_agent_memory_user ON agent_memory(user_id, agent_type);
 
 -- Agent Traces: full pipeline observability
 CREATE TABLE IF NOT EXISTS agent_traces (
@@ -29,21 +29,15 @@ CREATE TABLE IF NOT EXISTS agent_traces (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_agent_traces_user ON agent_traces(user_id);
-CREATE INDEX idx_agent_traces_pipeline ON agent_traces(pipeline_name);
+CREATE INDEX IF NOT EXISTS idx_agent_traces_user ON agent_traces(user_id);
+CREATE INDEX IF NOT EXISTS idx_agent_traces_pipeline ON agent_traces(pipeline_name);
 
 -- RLS policies
 ALTER TABLE agent_memory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_traces ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can manage own agent memory"
-    ON agent_memory FOR ALL
-    USING (auth.uid() = user_id);
+DO $$ BEGIN CREATE POLICY "Users can manage own agent memory" ON agent_memory FOR ALL USING (auth.uid() = user_id); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE POLICY "Users can view own agent traces"
-    ON agent_traces FOR SELECT
-    USING (auth.uid() = user_id);
+DO $$ BEGIN CREATE POLICY "Users can view own agent traces" ON agent_traces FOR SELECT USING (auth.uid() = user_id); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE POLICY "Service role can insert agent traces"
-    ON agent_traces FOR INSERT
-    WITH CHECK (true);
+DO $$ BEGIN CREATE POLICY "Service role can insert agent traces" ON agent_traces FOR INSERT WITH CHECK (true); EXCEPTION WHEN duplicate_object THEN NULL; END $$;

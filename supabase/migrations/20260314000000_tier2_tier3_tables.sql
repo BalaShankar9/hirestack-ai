@@ -1,4 +1,4 @@
--- Tier 2+3 feature tables
+-- Tier 2+3 feature tables (idempotent)
 
 -- ATS Scans
 CREATE TABLE IF NOT EXISTS ats_scans (
@@ -14,8 +14,8 @@ CREATE TABLE IF NOT EXISTS ats_scans (
 );
 
 ALTER TABLE ats_scans ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage own ats scans" ON ats_scans FOR ALL USING (auth.uid() = user_id);
-CREATE INDEX idx_ats_scans_user ON ats_scans(user_id);
+DO $$ BEGIN CREATE POLICY "Users can manage own ats scans" ON ats_scans FOR ALL USING (auth.uid() = user_id); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+CREATE INDEX IF NOT EXISTS idx_ats_scans_user ON ats_scans(user_id);
 
 -- Interview Sessions
 CREATE TABLE IF NOT EXISTS interview_sessions (
@@ -32,8 +32,8 @@ CREATE TABLE IF NOT EXISTS interview_sessions (
 );
 
 ALTER TABLE interview_sessions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage own interview sessions" ON interview_sessions FOR ALL USING (auth.uid() = user_id);
-CREATE INDEX idx_interview_sessions_user ON interview_sessions(user_id);
+DO $$ BEGIN CREATE POLICY "Users can manage own interview sessions" ON interview_sessions FOR ALL USING (auth.uid() = user_id); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+CREATE INDEX IF NOT EXISTS idx_interview_sessions_user ON interview_sessions(user_id);
 
 -- Document Variants (A/B Lab)
 CREATE TABLE IF NOT EXISTS doc_variants (
@@ -48,8 +48,8 @@ CREATE TABLE IF NOT EXISTS doc_variants (
 );
 
 ALTER TABLE doc_variants ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage own doc variants" ON doc_variants FOR ALL USING (auth.uid() = user_id);
-CREATE INDEX idx_doc_variants_user ON doc_variants(user_id);
+DO $$ BEGIN CREATE POLICY "Users can manage own doc variants" ON doc_variants FOR ALL USING (auth.uid() = user_id); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+CREATE INDEX IF NOT EXISTS idx_doc_variants_user ON doc_variants(user_id);
 
 -- Learning Challenges (Daily Learn)
 CREATE TABLE IF NOT EXISTS learning_challenges (
@@ -64,8 +64,8 @@ CREATE TABLE IF NOT EXISTS learning_challenges (
 );
 
 ALTER TABLE learning_challenges ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage own learning challenges" ON learning_challenges FOR ALL USING (auth.uid() = user_id);
-CREATE INDEX idx_learning_challenges_user ON learning_challenges(user_id);
+DO $$ BEGIN CREATE POLICY "Users can manage own learning challenges" ON learning_challenges FOR ALL USING (auth.uid() = user_id); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+CREATE INDEX IF NOT EXISTS idx_learning_challenges_user ON learning_challenges(user_id);
 
 -- Review Comments (Salary Coach / document reviews)
 CREATE TABLE IF NOT EXISTS review_comments (
@@ -78,5 +78,5 @@ CREATE TABLE IF NOT EXISTS review_comments (
 );
 
 ALTER TABLE review_comments ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage own review comments" ON review_comments FOR ALL USING (auth.uid() = user_id);
-CREATE INDEX idx_review_comments_document ON review_comments(document_id);
+DO $$ BEGIN CREATE POLICY "Users can manage own review comments" ON review_comments FOR ALL USING (auth.uid() = user_id); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+CREATE INDEX IF NOT EXISTS idx_review_comments_document ON review_comments(document_id);
