@@ -1,6 +1,7 @@
 """
-Multi-Model Routing for Ollama
+Multi-Model Routing
 Routes AI tasks to the optimal model based on task type.
+Supports Gemini model variants and can be overridden via env var.
 """
 from typing import Optional
 import os
@@ -9,13 +10,23 @@ import logging
 
 logger = logging.getLogger("hirestack.model_router")
 
-# Default model routes — can be overridden via OLLAMA_MODEL_ROUTES env var (JSON)
+# Default model routes — can be overridden via MODEL_ROUTES env var (JSON)
+# Uses Gemini model variants by default since Gemini is the active provider.
 _DEFAULT_ROUTES = {
-    "reasoning": "deepseek-v3.1:671b-cloud",
-    "code_analysis": "qwen3-coder:480b-cloud",
-    "structured_output": "minimax-m2:cloud",
-    "creative": "minimax-m2:cloud",
-    "general": "qwen3:4b",
+    # Analysis / structured reasoning tasks — higher-capability model
+    "reasoning":          "gemini-2.5-pro",
+    "research":           "gemini-2.5-pro",
+    "fact_checking":      "gemini-2.5-pro",
+    # Structured output / classification — fast model
+    "structured_output":  "gemini-2.5-flash",
+    "validation":         "gemini-2.5-flash",
+    "optimization":       "gemini-2.5-flash",
+    # Creative generation — balanced model
+    "creative":           "gemini-2.5-pro",
+    "drafting":           "gemini-2.5-pro",
+    "critique":           "gemini-2.5-flash",
+    # General / fallback
+    "general":            "gemini-2.5-flash",
 }
 
 _routes: Optional[dict] = None
@@ -26,7 +37,7 @@ def _load_routes() -> dict:
     if _routes is not None:
         return _routes
     _routes = dict(_DEFAULT_ROUTES)
-    override = os.getenv("OLLAMA_MODEL_ROUTES", "").strip()
+    override = os.getenv("MODEL_ROUTES", os.getenv("OLLAMA_MODEL_ROUTES", "")).strip()
     if override:
         try:
             custom = json.loads(override)

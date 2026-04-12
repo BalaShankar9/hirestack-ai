@@ -1145,6 +1145,42 @@ export async function regenerateModule(
 }
 
 /* ================================================================== */
+/*  ON-DEMAND OPTIONAL DOCUMENT GENERATION                              */
+/* ================================================================== */
+
+export async function generateOptionalDocument(
+  applicationId: string,
+  docKey: string,
+  docLabel: string = "",
+): Promise<{ doc_key: string; doc_label: string; html: string }> {
+  const { error: userErr } = await supabase.auth.getUser();
+  if (userErr) throw new Error("Authentication required");
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token ?? null;
+  if (!accessToken) throw new Error("Authentication required");
+
+  const res = await fetch(`${AI_API_URL}/api/generate/document`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      application_id: applicationId,
+      doc_key: docKey,
+      doc_label: docLabel,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Failed to generate document (${res.status})`);
+  }
+
+  return res.json();
+}
+
+/* ================================================================== */
 /*  DOC VERSIONING                                                      */
 /* ================================================================== */
 
@@ -1870,11 +1906,33 @@ export function computeEvidenceStrengthScore(input: {
 /*  COACH ACTIONS                                                       */
 /* ================================================================== */
 
+export type CoachActionKind = "fix" | "write" | "collect" | "review" | "danger" | "replay";
+
+export interface CoachAction {
+  kind: CoachActionKind;
+  title: string;
+  why: string;
+  cta: string;
+  signal?: string;
+}
+
 export function buildCoachActions(ctx: {
   missingKeywords: string[];
   factsLocked: boolean;
   evidenceCount: number;
-}): { kind: "fix" | "write" | "collect" | "review"; title: string; why: string; cta: string }[] {
+  /** v7: runtime truth signals from agent pipeline */
+  fabricatedClaims?: number;
+  unsupportedClaims?: number;
+  validationHardFailures?: number;
+  validationSoftWarnings?: number;
+  residualMissingKeywords?: string[];
+  replayFailureClass?: string | null;
+  contradictionCount?: number;
+  finalATSScore?: number | null;
+}): CoachAction[] {
+  const actions: CoachAction[] = [];
+
+  // Priority 0: unlock facts — nothing else matters until facts are confirmed
   if (!ctx.factsLocked) {
     return [
       {
@@ -1886,36 +1944,107 @@ export function buildCoachActions(ctx: {
     ];
   }
 
+  // Priority 1: fabricated claims — immediate danger to application credibility
+  if ((ctx.fabricatedClaims ?? 0) > 0) {
+    actions.push({
+      kind: "danger",
+      title: `Remove ${ctx.fabricatedClaims} fabricated claim${ctx.fabricatedClaims !== 1 ? "s" : ""}`,
+      why: "The fact-checker flagged claims as fabricated. These undermine your entire application and can fail ATS screening.",
+      cta: "Review claims",
+      signal: "fact_checker.fabricated",
+    });
+  }
+
+  // Priority 2: validation hard failures — document won't pass quality gate
+  if ((ctx.validationHardFailures ?? 0) > 0) {
+    actions.push({
+      kind: "danger",
+      title: `Fix ${ctx.validationHardFailures} validation failure${ctx.validationHardFailures !== 1 ? "s" : ""}`,
+      why: "The validator found blocking issues that must be resolved before export.",
+      cta: "View issues",
+      signal: "validator.hard_failure",
+    });
+  }
+
+  // Priority 3: unsupported claims — weaken evidence chain
+  if ((ctx.unsupportedClaims ?? 0) > 0) {
+    actions.push({
+      kind: "fix",
+      title: `Back up ${ctx.unsupportedClaims} unsupported claim${ctx.unsupportedClaims !== 1 ? "s" : ""}`,
+      why: "Claims without linked evidence weaken your application. Add projects or certificates to support them.",
+      cta: "Add evidence",
+      signal: "evidence_inspector.unsupported",
+    });
+  }
+
+  // Priority 4: replay failure — if the last generation failed, explain why
+  if (ctx.replayFailureClass && ctx.replayFailureClass !== "unknown") {
+    actions.push({
+      kind: "replay",
+      title: "Review generation failure",
+      why: `The last generation failed (${ctx.replayFailureClass.replace(/_/g, " ")}). Review the replay analysis to understand what went wrong.`,
+      cta: "View replay",
+      signal: `replay.${ctx.replayFailureClass}`,
+    });
+  }
+
+  // Priority 5: no evidence at all
   if (ctx.evidenceCount === 0) {
-    return [
-      {
-        kind: "collect",
-        title: "Collect evidence",
-        why: "Upload certificates, project links, or other proof to strengthen your application.",
-        cta: "Open vault",
-      },
-    ];
+    actions.push({
+      kind: "collect",
+      title: "Collect evidence",
+      why: "Upload certificates, project links, or other proof to strengthen your application.",
+      cta: "Open vault",
+    });
   }
 
-  if (ctx.missingKeywords.length > 0) {
-    return [
-      {
-        kind: "fix",
-        title: `Add proof for ${ctx.missingKeywords[0]}`,
-        why: `You're missing evidence for ${ctx.missingKeywords[0]}. Add a project or cert.`,
-        cta: "Fix in CV",
-      },
-    ];
+  // Priority 6: residual missing keywords from final analysis (more precise than gap analysis)
+  const residualMissing = ctx.residualMissingKeywords ?? ctx.missingKeywords;
+  if (residualMissing.length > 0 && actions.length < 3) {
+    actions.push({
+      kind: "fix",
+      title: `Add proof for ${residualMissing[0]}`,
+      why: residualMissing.length > 1
+        ? `${residualMissing.length} keywords still missing after optimization: ${residualMissing.slice(0, 3).join(", ")}${residualMissing.length > 3 ? "…" : ""}.`
+        : `You're missing evidence for ${residualMissing[0]}. Add a project or cert.`,
+      cta: "Fix in CV",
+      signal: residualMissing === ctx.residualMissingKeywords ? "final_analysis.missing_keywords" : "gap_analysis.missing",
+    });
   }
 
-  return [
-    {
+  // Priority 7: contradictions
+  if ((ctx.contradictionCount ?? 0) > 0 && actions.length < 3) {
+    actions.push({
+      kind: "fix",
+      title: `Resolve ${ctx.contradictionCount} contradiction${ctx.contradictionCount !== 1 ? "s" : ""}`,
+      why: "Contradictory information was detected between your claims and evidence.",
+      cta: "Review evidence",
+      signal: "evidence_inspector.contradiction",
+    });
+  }
+
+  // Priority 8: low ATS score after optimization
+  if (ctx.finalATSScore != null && ctx.finalATSScore < 75 && actions.length < 3) {
+    actions.push({
+      kind: "fix",
+      title: `Improve ATS score (${ctx.finalATSScore}/100)`,
+      why: "Your ATS score is below the 75% target. Add missing keywords and rephrase content to improve machine readability.",
+      cta: "View ATS",
+      signal: "final_analysis.low_ats",
+    });
+  }
+
+  // Default: everything looks good
+  if (actions.length === 0) {
+    actions.push({
       kind: "write",
       title: "Take a snapshot",
       why: "All modules look good. Snapshot your CV and cover letter versions.",
       cta: "Open versions",
-    },
-  ];
+    });
+  }
+
+  return actions;
 }
 
 /* ================================================================== */

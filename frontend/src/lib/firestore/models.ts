@@ -328,3 +328,103 @@ export interface GenerationJobEventDoc {
   payload?: Record<string, any>;
   createdAt: number;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Runtime truth types (v7 — mission-control parity)                  */
+/* ------------------------------------------------------------------ */
+
+/** Optimizer final analysis report from the agent pipeline. */
+export interface FinalAnalysisReport {
+  initial_ats_score: number;
+  final_ats_score: number;
+  keyword_gap_delta: number;
+  readability_delta: number;
+  residual_issue_count: number;
+  missing_keywords?: string[];
+  suggestions?: string[];
+}
+
+/** Compact evidence summary from pipeline execution. */
+export interface EvidenceSummary {
+  evidence_count: number;
+  tier_distribution: Record<string, number>;
+  citation_count: number;
+  fabricated_count: number;
+  unlinked_count: number;
+}
+
+/** A single claim→evidence citation from the fact-checker. */
+export interface ClaimCitation {
+  claim_text: string;
+  evidence_ids: string[];
+  classification: "verified" | "supported" | "inferred" | "embellished" | "fabricated" | "unsupported";
+  confidence: number;
+  tier?: string;
+}
+
+/** Per-stage checkpoint from the durable workflow runtime. */
+export interface WorkflowStageState {
+  status: "pending" | "running" | "completed" | "failed" | "skipped" | "timed_out";
+  latency_ms?: number;
+}
+
+/** Workflow state snapshot from the pipeline execution. */
+export interface WorkflowState {
+  stages: Record<string, WorkflowStageState>;
+}
+
+/** Validation report from the schema validator. */
+export interface ValidationReport {
+  valid: boolean;
+  checks: Record<string, boolean>;
+  issues: Array<{ field: string; severity: string; message: string }>;
+  hard_failures: number;
+  soft_warnings: number;
+  confidence: number;
+}
+
+/** Residual risk summary derived from final analysis + validation. */
+export interface ResidualRiskSummary {
+  evidenceStrength: number;
+  contradictionCount: number;
+  unsupportedClaims: number;
+  residualATSGap: number;
+  confidence: number;
+}
+
+/** Replay report from the replay engine. */
+export interface ReplayReport {
+  job_id: string;
+  pipeline_name: string;
+  job_status: string;
+  completed_stages: string[];
+  failed_stages: string[];
+  skipped_stages: string[];
+  timed_out_stages: string[];
+  artifacts_present: string[];
+  artifacts_missing: string[];
+  evidence_count: number;
+  evidence_tier_distribution: Record<string, number>;
+  citation_count: number;
+  unlinked_citation_count: number;
+  fabricated_claim_count: number;
+  failure_class: string;
+  likely_root_cause: string;
+  suggested_regression_target?: string;
+  event_count: number;
+  /** Computed on the frontend: true when job_status is "failed" or failure_class is not "unknown". */
+  is_failure?: boolean;
+}
+
+/** Extended pipeline meta returned from generation endpoints. */
+export interface PipelineMeta {
+  quality_scores?: Record<string, Record<string, number>>;
+  fact_check?: Record<string, any>;
+  agent_powered?: boolean;
+  final_analysis?: FinalAnalysisReport | null;
+  validation_report?: ValidationReport | null;
+  citations?: ClaimCitation[] | null;
+  evidence_summary?: EvidenceSummary | null;
+  workflow_state?: WorkflowState | null;
+  company_intel?: Record<string, any>;
+}

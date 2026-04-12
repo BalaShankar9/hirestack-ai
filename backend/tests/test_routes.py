@@ -18,6 +18,7 @@ AUTH_PROTECTED_ROUTES = [
     ("POST", "/api/generate/pipeline"),
     ("POST", "/api/generate/pipeline/stream"),
     ("POST", "/api/generate/jobs"),
+    ("GET", "/api/generate/jobs/test-job/replay"),
     ("POST", "/api/builder/generate"),
     ("POST", "/api/builder/generate-all"),
     ("GET", "/api/builder/documents"),
@@ -97,3 +98,16 @@ def test_user_dict_has_no_premium_field():
     from app.models import UserDict
 
     assert "is_premium" not in UserDict.__annotations__
+
+
+def test_extract_pipeline_html_handles_raw_document_payload():
+    from app.api.routes.generate import _extract_pipeline_html
+
+    assert _extract_pipeline_html({"html": "<p>CV</p>"}) == "<p>CV</p>"
+
+
+def test_extract_pipeline_html_handles_validator_envelope():
+    from app.api.routes.generate import _extract_pipeline_html
+
+    payload = {"valid": True, "content": {"html": "<p>CV</p>"}, "issues": []}
+    assert _extract_pipeline_html(payload) == "<p>CV</p>"

@@ -43,6 +43,9 @@ export const metadata: Metadata = {
     follow: true,
     googleBot: { index: true, follow: true, "max-video-preview": -1, "max-image-preview": "large", "max-snippet": -1 },
   },
+  alternates: {
+    canonical: "/",
+  },
   icons: {
     icon: "/favicon.ico",
   },
@@ -55,6 +58,33 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@graph": [
+                {
+                  "@type": "SoftwareApplication",
+                  "name": "HireStack AI",
+                  "url": "https://hirestack.tech",
+                  "applicationCategory": "BusinessApplication",
+                  "operatingSystem": "Web",
+                  "description": "Build interview-winning applications with 6 AI agents. ATS-optimized CV, tailored cover letter, gap analysis, company intel — all in under 3 minutes.",
+                  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+                },
+                {
+                  "@type": "Organization",
+                  "name": "HireStack AI",
+                  "url": "https://hirestack.tech",
+                  "logo": "https://hirestack.tech/og-image.png",
+                },
+              ],
+            }),
+          }}
+        />
+      </head>
       <body className={`${inter.className} ${ibmPlexMono.variable}`}>
         <ErrorBoundary>
           <Providers>

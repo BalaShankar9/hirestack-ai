@@ -23,6 +23,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.database import init_supabase, get_supabase
+from app.core.tracing import RequestIDMiddleware, request_id_var
 from app.api.routes import router as api_router
 
 # ── Sentry Error Monitoring ────────────────────────────────────────────
@@ -40,11 +41,20 @@ if settings.sentry_dsn:
         pass
 
 # Configure structured logging
+def _add_request_id(logger_instance, method_name, event_dict):
+    """Structlog processor: inject X-Request-ID from context var."""
+    rid = request_id_var.get("")
+    if rid:
+        event_dict["request_id"] = rid
+    return event_dict
+
+
 structlog.configure(
     processors=[
         structlog.stdlib.filter_by_level,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
+        _add_request_id,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.JSONRenderer(),
     ],
@@ -88,9 +98,46 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             logger.info("Recovered inflight generation jobs", count=recovered)
     except Exception as e:
         logger.warning("Failed to recover inflight generation jobs", error=str(e))
+
+    # Check PipelineRuntime availability — fallback paths lack catalog integration
+    try:
+        from app.api.routes.generate import _RUNTIME_AVAILABLE
+        if not _RUNTIME_AVAILABLE:
+            logger.critical(
+                "PipelineRuntime not available — fallback execution paths lack "
+                "catalog learning, company intel integration, and doc pack planning. "
+                "Ensure pipeline_runtime.py and its dependencies are importable."
+            )
+    except Exception:
+        pass
+
+    # Start periodic stale job cleanup (every 10 minutes)
+    _stale_cleanup_task = asyncio.create_task(_periodic_stale_job_cleanup())
+
     yield
+
     # Shutdown
+    _stale_cleanup_task.cancel()
+    try:
+        await _stale_cleanup_task
+    except asyncio.CancelledError:
+        pass
     logger.info("Shutting down HireStack AI")
+
+
+async def _periodic_stale_job_cleanup() -> None:
+    """Background task that sweeps for stale generation jobs every 10 minutes."""
+    while True:
+        try:
+            await asyncio.sleep(600)  # 10 minutes
+            from app.api.routes.generate import cleanup_stale_generation_jobs
+            cleaned = await cleanup_stale_generation_jobs()
+            if cleaned:
+                logger.info("Stale job cleanup completed", cleaned_count=cleaned)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.warning("Stale job cleanup error", error=str(e))
 
 
 # Create FastAPI application
@@ -139,8 +186,14 @@ app.add_middleware(
     allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["Authorization", "Content-Type", "X-Org-Id", "X-API-Key", "Accept", "Origin"],
+    allow_headers=["Authorization", "Content-Type", "X-Org-Id", "X-API-Key", "Accept", "Origin", "X-Request-ID"],
 )
+
+# Request-ID tracing (runs BEFORE security headers so the ID is available everywhere)
+from app.core.security import SecurityHeadersMiddleware
+
+app.add_middleware(RequestIDMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 # Exception handlers
@@ -167,19 +220,24 @@ async def validation_exception_handler(
 async def global_exception_handler(
     request: Request, exc: Exception
 ) -> JSONResponse:
+    rid = request_id_var.get("")
     logger.error(
         "Unhandled exception",
         path=request.url.path,
         method=request.method,
         error=str(exc),
+        request_id=rid,
         exc_info=True,
     )
+    body: dict = {
+        "detail": "An unexpected error occurred",
+        "error": str(exc) if settings.debug else "Internal server error",
+    }
+    if rid:
+        body["request_id"] = rid
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "detail": "An unexpected error occurred",
-            "error": str(exc) if settings.debug else "Internal server error",
-        },
+        content=body,
     )
 
 
@@ -198,6 +256,26 @@ async def health_check():
     # Check AI provider (Gemini only)
     ai_status = {"provider": "gemini", "ok": bool(getattr(settings, "gemini_api_key", "")) or getattr(settings, "gemini_use_vertexai", False)}
 
+    # Circuit breaker state
+    breaker_status = {}
+    try:
+        from app.core.circuit_breaker import _breakers
+        for name, breaker in _breakers.items():
+            breaker_status[name] = {
+                "state": breaker.state.value,
+                "failure_count": breaker.failure_count,
+            }
+    except Exception:
+        pass
+
+    # Pipeline metrics summary
+    metrics_summary = {}
+    try:
+        from app.core.metrics import MetricsCollector
+        metrics_summary = MetricsCollector.get().get_stats()
+    except Exception:
+        pass
+
     return {
         "status": "healthy",
         "version": settings.app_version,
@@ -210,6 +288,8 @@ async def health_check():
             "ok": ai_status.get("ok", False),
         },
         "sentry": bool(settings.sentry_dsn),
+        "circuit_breakers": breaker_status,
+        "metrics": metrics_summary,
     }
 
 

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field
 
 from app.services.interview import InterviewService
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, check_billing_limit
 from app.api.response import success_response
 import structlog
 
@@ -40,6 +40,7 @@ async def create_session(
 ),
 ):
     """Create a new interview session."""
+    await check_billing_limit("ai_calls", current_user)
     if not req.job_title.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

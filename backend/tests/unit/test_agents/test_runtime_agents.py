@@ -73,6 +73,7 @@ async def test_researcher_supplies_document_text_for_overlap_tool():
     assert "Python" in captured["document_text"]
     assert result.content["tools_used"] == ["compute_keyword_overlap"]
     assert result.content["tool_steps"] == 1
+    assert result.content["tool_results"]["compute_keyword_overlap"]["match_ratio"] == 0.5
 
 
 @pytest.mark.asyncio

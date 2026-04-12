@@ -4,10 +4,13 @@ Agent Evaluation Harness — per-role quality metrics.
 Provides structured evaluation for each agent role:
   - ResearcherEval: source coverage, relevance, tool utilization
   - CriticEval: issue detection precision, quality lift measurement
-  - FactCheckerEval: fabricated-claim recall, false positive rate
-  - OptimizerEval: ATS score delta, readability delta
-  - ValidatorEval: invalid payload escape rate
+  - FactCheckerEval: fabricated-claim recall, false positive rate, 4-tier coverage
+  - OptimizerEval: ATS score delta, readability delta, suggestion quality
+  - ValidatorEval: invalid payload escape rate, hard/soft failure detection
   - PipelineEval: end-to-end quality, latency, cost, task success
+
+v2: Per-fact-checker claim-tier coverage, fabrication recall metric,
+    optimizer improvement plan quality, validator escape rate tracking.
 """
 from __future__ import annotations
 
@@ -112,7 +115,7 @@ class CriticEval:
 
 
 class FactCheckerEval:
-    """Evaluate fact-checker for claim coverage and accuracy."""
+    """Evaluate fact-checker for claim coverage, 4-tier accuracy, and fabrication recall."""
 
     @staticmethod
     def evaluate(
@@ -129,6 +132,8 @@ class FactCheckerEval:
         # Claim coverage (how many claims does it actually classify)
         total_classified = (
             summary.get("verified", 0)
+            + summary.get("inferred", 0)
+            + summary.get("embellished", 0)
             + summary.get("enhanced", 0)
             + summary.get("fabricated", 0)
         )
@@ -139,6 +144,13 @@ class FactCheckerEval:
 
         # Deterministic match rate (hybrid approach effectiveness)
         metrics.scores["deterministic_match_rate"] = det_match_rate
+
+        # Auto-verification rate (how much work was done deterministically)
+        auto_verified = result.get("auto_verified_count", 0)
+        total_extracted = result.get("total_claims_extracted", 0)
+        metrics.scores["auto_verify_rate"] = (
+            auto_verified / max(total_extracted, 1)
+        )
 
         # Confidence
         metrics.scores["confidence"] = confidence

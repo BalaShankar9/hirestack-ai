@@ -189,10 +189,12 @@ FACT_CHECKER_SCHEMA: dict = {
             "type": "object",
             "properties": {
                 "verified": {"type": "integer"},
+                "inferred": {"type": "integer"},
+                "embellished": {"type": "integer"},
                 "enhanced": {"type": "integer"},
                 "fabricated": {"type": "integer"},
             },
-            "required": ["verified", "enhanced", "fabricated"],
+            "required": ["verified", "fabricated"],
         },
         "fabricated_claims": {
             "type": "array",
@@ -202,7 +204,7 @@ FACT_CHECKER_SCHEMA: dict = {
                     "text": {"type": "string"},
                     "reason": {"type": "string"},
                 },
-                "required": ["text", "reason"],
+                "required": ["text"],
             },
         },
         "overall_accuracy": {"type": "number"},

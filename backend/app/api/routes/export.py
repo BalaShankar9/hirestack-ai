@@ -114,27 +114,30 @@ async def delete_export(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Export not found")
 
 
+class DocxExportRequest(BaseModel):
+    content: str
+    document_type: str = "document"
+
+
 @limiter.limit("20/minute")
 @router.post("/docx")
 async def export_docx(
-    request: Dict[str, Any],
+    request: Request,
+    body: DocxExportRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Generate and download a DOCX file from HTML content."""
     from app.services.export import generate_docx_from_html
 
-    content = request.get("content", "")
-    document_type = request.get("document_type", "document")
-
-    if not content or not content.strip():
+    if not body.content or not body.content.strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="content is required and cannot be empty",
         )
 
     try:
-        docx_bytes = generate_docx_from_html(content, document_type)
-        filename = f"{document_type}.docx"
+        docx_bytes = generate_docx_from_html(body.content, body.document_type)
+        filename = f"{body.document_type}.docx"
         return Response(
             content=docx_bytes,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",

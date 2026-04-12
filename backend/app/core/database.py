@@ -157,6 +157,9 @@ TABLES = {
     "doc_versions": "doc_versions",
     "generation_jobs": "generation_jobs",
     "generation_job_events": "generation_job_events",
+    "evidence_ledger_items": "evidence_ledger_items",
+    "evidence_mappings": "evidence_mappings",
+    "claim_citations": "claim_citations",
     "ats_scans": "ats_scans",
     "career_snapshots": "career_snapshots",
     "interview_sessions": "interview_sessions",
@@ -175,6 +178,9 @@ TABLES = {
     "audit_logs": "audit_logs",
     "org_invitations": "org_invitations",
     "webhooks": "webhooks",
+    # Document catalog (platform-wide)
+    "document_type_catalog": "document_type_catalog",
+    "document_observations": "document_observations",
 }
 
 
@@ -431,13 +437,80 @@ class AuthServiceUnavailable(RuntimeError):
     """Raised when Supabase Auth verification is temporarily unavailable."""
 
 
+# ── Token verification cache ─────────────────────────────────────────────────
+# Caches successful token verifications to avoid redundant remote calls.
+# Keyed by a truncated SHA-256 hash of the token (not the token itself).
+# Expires entries when the JWT's `exp` claim has passed.
+
+import hashlib
+import time as _time
+from collections import OrderedDict
+
+_TOKEN_CACHE_MAX_SIZE = 256
+
+
+class _TokenCache:
+    """LRU cache for verified JWT claims, keyed by token hash."""
+
+    def __init__(self, max_size: int = _TOKEN_CACHE_MAX_SIZE):
+        self._cache: OrderedDict[str, tuple[dict, float]] = OrderedDict()
+        self._max_size = max_size
+
+    @staticmethod
+    def _key(token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()[:32]
+
+    def get(self, token: str) -> Optional[Dict[str, Any]]:
+        key = self._key(token)
+        entry = self._cache.get(key)
+        if entry is None:
+            return None
+        claims, expires_at = entry
+        if _time.time() >= expires_at:
+            self._cache.pop(key, None)
+            return None
+        # Move to end (most recently used)
+        self._cache.move_to_end(key)
+        return claims
+
+    def put(self, token: str, claims: Dict[str, Any]) -> None:
+        key = self._key(token)
+        # Use JWT exp claim; fall back to 5 minutes
+        exp = claims.get("exp") or (_time.time() + 300)
+        if isinstance(exp, (int, float)):
+            expires_at = float(exp)
+        else:
+            expires_at = _time.time() + 300
+        self._cache[key] = (claims, expires_at)
+        self._cache.move_to_end(key)
+        # Evict oldest if over limit
+        while len(self._cache) > self._max_size:
+            self._cache.popitem(last=False)
+
+    def invalidate(self, token: str) -> None:
+        key = self._key(token)
+        self._cache.pop(key, None)
+
+    def clear(self) -> None:
+        self._cache.clear()
+
+
+_token_cache = _TokenCache()
+
+
 async def verify_token_async(id_token: str, db: Optional[SupabaseDB] = None) -> Optional[Dict[str, Any]]:
     """
     Verify a Supabase access token.
+    0. Check LRU cache for previously verified token.
     1. Fast-path: local HS256 decode (no I/O — uses SUPABASE_JWT_SECRET).
     2. Async remote fallback: calls Supabase /auth/v1/user in a thread executor
        (never blocks the event loop).
     """
+    # ── 0. Cache hit ──────────────────────────────────────────────────
+    cached = _token_cache.get(id_token)
+    if cached is not None:
+        return cached
+
     # ── 1. Local JWT decode (no network I/O) ──────────────────────────
     jwt_secret = (settings.supabase_jwt_secret or "").strip()
     if jwt_secret:
@@ -452,6 +525,7 @@ async def verify_token_async(id_token: str, db: Optional[SupabaseDB] = None) -> 
             try:
                 result = _decode_jwt_with_secret(id_token, jwt_secret)
                 if result is not None:
+                    _token_cache.put(id_token, result)
                     return result
             except jwt.ExpiredSignatureError:
                 return None
@@ -461,6 +535,7 @@ async def verify_token_async(id_token: str, db: Optional[SupabaseDB] = None) -> 
                 secret_bytes = base64.b64decode(jwt_secret)
                 result = _decode_jwt_with_secret(id_token, secret_bytes)
                 if result is not None:
+                    _token_cache.put(id_token, result)
                     return result
             except jwt.ExpiredSignatureError:
                 return None
@@ -486,13 +561,15 @@ async def verify_token_async(id_token: str, db: Optional[SupabaseDB] = None) -> 
     if response and getattr(response, "user", None):
         user = response.user
         meta = user.user_metadata or {}
-        return {
+        claims = {
             "sub": str(user.id),
             "email": user.email,
             "user_metadata": meta,
             "aud": "authenticated",
             "role": "authenticated",
         }
+        _token_cache.put(id_token, claims)
+        return claims
     return None
 
 

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from app.services.ats import ATSService
-from app.api.deps import get_current_user, validate_uuid
+from app.api.deps import get_current_user, validate_uuid, check_billing_limit
 from app.api.response import success_response
 from app.core.security import limiter
 import structlog
@@ -34,6 +34,7 @@ async def scan_document(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Scan a document for ATS compatibility."""
+    await check_billing_limit("ats_scans", current_user)
     combined_size = len((req.document_content + req.jd_text).encode("utf-8"))
     if combined_size > MAX_ATS_INPUT_SIZE:
         raise HTTPException(

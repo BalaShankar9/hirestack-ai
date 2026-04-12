@@ -1,8 +1,8 @@
-"""
-HireStack AI Client — Multi-provider (Gemini + OpenAI + Ollama) with Automatic Fallback
-Tries the configured primary provider first; on auth/permission or quota/rate-limit
-errors, automatically retries with the next available provider (prefers local
-Ollama as the first fallback).
+"""HireStack AI Client — Gemini-backed client facade.
+
+The runtime currently uses Gemini as the sole provider. Retry behavior is still
+provider-agnostic so transient transport and quota-related failures are handled
+consistently in one place.
 """
 import json
 import logging
@@ -11,18 +11,25 @@ import time
 from typing import Optional, Dict, Any, List
 import asyncio
 
-import httpx
-
 from tenacity import (
     retry,
     stop_after_attempt,
+    stop_after_delay,
     wait_exponential,
     retry_if_exception,
+    before_sleep_log,
 )
 
 from app.core.config import settings
 
 logger = logging.getLogger("hirestack.ai_client")
+
+
+# ── Circuit breaker for AI provider ───────────────────────────────────
+def _get_ai_breaker():
+    """Lazy import to avoid circular dependency at module load."""
+    from app.core.circuit_breaker import get_breaker_sync
+    return get_breaker_sync("ai_provider", failure_threshold=5, recovery_timeout=60.0)
 
 # ── Provider-agnostic retry logic ──────────────────────────────────────
 
@@ -73,93 +80,17 @@ def _is_retryable(exc: BaseException) -> bool:
 _RETRY_KWARGS: Dict[str, Any] = dict(
     # Gemini free-tier often returns RetryInfo delays in the 30–60s range.
     # Give the SDK time to recover rather than failing the whole pipeline.
-    stop=stop_after_attempt(6),
-    wait=wait_exponential(multiplier=1, min=2, max=60),
+    # Stop after 6 attempts OR 120s total — whichever comes first.
+    stop=(stop_after_attempt(6) | stop_after_delay(120)),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
     retry=retry_if_exception(_is_retryable),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
     reraise=True,
 )
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  OpenAI Provider
-# ═══════════════════════════════════════════════════════════════════════
-
-class _OpenAIProvider:
-    """OpenAI ChatCompletions backend."""
-
-    def __init__(self):
-        if not (settings.openai_api_key or "").strip():
-            raise ValueError("OpenAI API key is not configured (set OPENAI_API_KEY).")
-        from openai import AsyncOpenAI
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
-        self.model = settings.openai_model
-        self.max_tokens = settings.openai_max_tokens
-
-    @retry(**_RETRY_KWARGS)
-    async def complete(
-        self, prompt: str, system: Optional[str] = None,
-        max_tokens: Optional[int] = None, temperature: float = 0.7,
-        response_format: str = "text", model: Optional[str] = None,
-    ) -> str:
-        messages = [
-            {"role": "system", "content": system or "You are a helpful AI assistant."},
-            {"role": "user", "content": prompt},
-        ]
-        kwargs: Dict[str, Any] = dict(
-            model=self.model,
-            max_completion_tokens=max_tokens or self.max_tokens,
-            temperature=temperature,
-            messages=messages,
-        )
-        if response_format == "json":
-            kwargs["response_format"] = {"type": "json_object"}
-
-        response = await self.client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content or ""
-
-    @retry(**_RETRY_KWARGS)
-    async def complete_json(
-        self, prompt: str, system: Optional[str] = None,
-        max_tokens: Optional[int] = None, temperature: float = 0.3,
-        schema: Optional[Dict[str, Any]] = None, model: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        system_prompt = (system or "You are a helpful AI assistant.")
-        system_prompt += "\n\nIMPORTANT: Respond ONLY with valid JSON. No markdown, no explanations, just pure JSON."
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
-        ]
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            max_completion_tokens=max_tokens or self.max_tokens,
-            temperature=temperature,
-            messages=messages,
-            response_format={"type": "json_object"},
-        )
-        content = response.choices[0].message.content or ""
-        return _parse_json(content)
-
-    async def chat(
-        self, messages: List[Dict[str, str]], system: Optional[str] = None,
-        max_tokens: Optional[int] = None, temperature: float = 0.7,
-        model: Optional[str] = None,
-    ) -> str:
-        chat_messages = [
-            {"role": "system", "content": system or "You are a helpful AI assistant."},
-            *messages,
-        ]
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            max_completion_tokens=max_tokens or self.max_tokens,
-            temperature=temperature,
-            messages=chat_messages,
-        )
-        return response.choices[0].message.content or ""
-
-
-# ═══════════════════════════════════════════════════════════════════════
-#  Gemini Provider
+#  Gemini Provider (sole supported backend)
 # ═══════════════════════════════════════════════════════════════════════
 
 class _GeminiProvider:
@@ -170,8 +101,8 @@ class _GeminiProvider:
         self.model_name = settings.gemini_model
         self.max_tokens = settings.gemini_max_tokens
         # Avoid bursty requests (common cause of 429s on free-tier keys).
-        # Set to 0 to disable throttling.
-        self._min_interval_s = max(0.0, float(os.getenv("GEMINI_MIN_INTERVAL_MS", "3500")) / 1000.0)
+        # Default lowered to 100ms for paid-tier; set GEMINI_MIN_INTERVAL_MS=3500 to restore old behaviour.
+        self._min_interval_s = max(0.0, float(os.getenv("GEMINI_MIN_INTERVAL_MS", "100")) / 1000.0)
         self._throttle_lock: Optional[asyncio.Lock] = None
         self._last_call_started = 0.0
 
@@ -201,7 +132,10 @@ class _GeminiProvider:
                 self._client = genai.Client(api_key=api_key, vertexai=False)
         return self._client
 
-    async def _generate_content_throttled(self, *, contents: Any, config: Any):
+    async def _generate_content_throttled(
+        self, *, contents: Any, config: Any, model: Optional[str] = None,
+    ):
+        effective_model = model or self.model_name
         if self._throttle_lock is None:
             # Create lock inside the running loop (py3.9 asyncio primitives can be loop-bound).
             self._throttle_lock = asyncio.Lock()
@@ -213,12 +147,37 @@ class _GeminiProvider:
                     await asyncio.sleep(wait_s)
                 self._last_call_started = time.monotonic()
 
-            return await asyncio.to_thread(
-                self._get_client().models.generate_content,
-                model=self.model_name,
-                contents=contents,
-                config=config,
+            logger.debug(
+                "gemini_request: model=%s default_model=%s routed=%s",
+                effective_model,
+                self.model_name,
+                effective_model != self.model_name,
             )
+            try:
+                return await asyncio.to_thread(
+                    self._get_client().models.generate_content,
+                    model=effective_model,
+                    contents=contents,
+                    config=config,
+                )
+            except Exception as exc:
+                # Fallback to the default model when the routed model is
+                # unavailable or quota-exhausted.  Only attempt fallback
+                # when we actually routed to a different model.
+                if effective_model != self.model_name and _is_quota_exhausted(exc):
+                    logger.warning(
+                        "routed_model_fallback: failed_model=%s fallback_model=%s reason=%s",
+                        effective_model,
+                        self.model_name,
+                        str(exc)[:200],
+                    )
+                    return await asyncio.to_thread(
+                        self._get_client().models.generate_content,
+                        model=self.model_name,
+                        contents=contents,
+                        config=config,
+                    )
+                raise
 
     @retry(**_RETRY_KWARGS)
     async def complete(
@@ -243,6 +202,7 @@ class _GeminiProvider:
         response = await self._generate_content_throttled(
             contents=prompt,
             config=types.GenerateContentConfig(**config),
+            model=model,
         )
         return response.text or ""
 
@@ -272,7 +232,9 @@ class _GeminiProvider:
             except Exception:
                 pass
         config = types.GenerateContentConfig(**config_kwargs)
-        response = await self._generate_content_throttled(contents=prompt, config=config)
+        response = await self._generate_content_throttled(
+            contents=prompt, config=config, model=model,
+        )
         content = response.text or ""
         return _parse_json(content)
 
@@ -305,151 +267,18 @@ class _GeminiProvider:
         response = await self._generate_content_throttled(
             contents=contents,
             config=types.GenerateContentConfig(**config),
+            model=model,
         )
         return response.text or ""
 
 
-class _OllamaProvider:
-    """Local Ollama backend (http://127.0.0.1:11434) for offline development."""
-
-    def __init__(self):
-        self.base_url = (settings.ollama_base_url or "http://127.0.0.1:11434").rstrip("/")
-        self.model = (settings.ollama_model or "qwen3:4b").strip()
-        self.max_tokens = int(settings.ollama_max_tokens or 2048)
-        self._timeout_s = float(os.getenv("OLLAMA_TIMEOUT_S", "180"))
-
-    async def _chat_once(
-        self,
-        *,
-        messages: List[Dict[str, str]],
-        temperature: float,
-        max_tokens: Optional[int],
-        response_format: str,
-        model: Optional[str] = None,
-    ) -> str:
-        use_model = model or self.model
-        num_predict = int(max_tokens or self.max_tokens)
-        payload: Dict[str, Any] = {
-            "model": use_model,
-            "messages": messages,
-            "stream": False,
-            "options": {
-                "temperature": float(temperature),
-                "num_predict": num_predict,
-            },
-        }
-        if response_format == "json":
-            payload["format"] = "json"
-
-        timeout = httpx.Timeout(self._timeout_s)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            try:
-                resp = await client.post(f"{self.base_url}/api/chat", json=payload)
-                resp.raise_for_status()
-            except httpx.HTTPStatusError as e:
-                body = (e.response.text or "").replace("\n", " ")[:500]
-                # If model not found, fall back to default model
-                if e.response.status_code == 404 and model and model != self.model:
-                    logger.warning("ollama_model_not_found=%s, falling_back_to=%s", model, self.model)
-                    return await self._chat_once(
-                        messages=messages, temperature=temperature,
-                        max_tokens=max_tokens, response_format=response_format,
-                        model=None,
-                    )
-                raise RuntimeError(f"Ollama HTTP {e.response.status_code}: {body}") from e
-            except httpx.RequestError as e:
-                raise RuntimeError(f"Ollama request failed: {type(e).__name__}: {str(e)[:200]}") from e
-
-            data = resp.json()
-            msg = (data.get("message") or {}).get("content") or ""
-            return str(msg)
-
-    @retry(**_RETRY_KWARGS)
-    async def complete(
-        self,
-        prompt: str,
-        system: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: float = 0.7,
-        response_format: str = "text",
-        model: Optional[str] = None,
-    ) -> str:
-        messages: List[Dict[str, str]] = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
-        return (await self._chat_once(
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format=response_format,
-            model=model,
-        )).strip()
-
-    @retry(**_RETRY_KWARGS)
-    async def complete_json(
-        self,
-        prompt: str,
-        system: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: float = 0.3,
-        schema: Optional[Dict[str, Any]] = None,
-        model: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        system_prompt = (system or "You are a helpful AI assistant.")
-        system_prompt += "\n\nIMPORTANT: Respond ONLY with valid JSON. No markdown, no explanations, just pure JSON."
-        content = await self.complete(
-            prompt,
-            system=system_prompt,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            response_format="json",
-            model=model,
-        )
-        return _parse_json(content)
-
-    async def chat(
-        self,
-        messages: List[Dict[str, str]],
-        system: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: float = 0.7,
-        model: Optional[str] = None,
-    ) -> str:
-        chat_messages: List[Dict[str, str]] = []
-        if system:
-            chat_messages.append({"role": "system", "content": system})
-        for msg in messages:
-            role = msg.get("role", "user")
-            if role not in ("system", "user", "assistant"):
-                role = "user" if role == "model" else "assistant"
-            chat_messages.append({"role": role, "content": msg.get("content", "")})
-        return (await self._chat_once(
-            messages=chat_messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format="text",
-            model=model,
-        )).strip()
-
-
 # ═══════════════════════════════════════════════════════════════════════
-#  Unified AIClient facade with automatic fallback
+#  Unified AIClient facade
 # ═══════════════════════════════════════════════════════════════════════
 
 def _is_auth_or_permission_error(exc: BaseException) -> bool:
     """Return True if the error is an auth/permission issue (key invalid, leaked, etc.)."""
-    # OpenAI auth errors
-    try:
-        import openai as _oai
-        if isinstance(exc, (_oai.AuthenticationError, _oai.PermissionDeniedError)):
-            return True
-    except ImportError:
-        pass
-    # Gemini / generic auth errors (string matching)
     err_str = str(exc).lower()
-    # Never treat rate limits / quota exhaustion as auth errors — falling back
-    # would just double the calls and worsen throttling.
     if any(k in err_str for k in ("resource_exhausted", "resource exhausted", "rate limit", "too many requests", "429")):
         return False
     return any(k in err_str for k in (
@@ -467,109 +296,70 @@ def _is_auth_or_permission_error(exc: BaseException) -> bool:
     ))
 
 
-def _is_rate_limit_error(exc: BaseException) -> bool:
-    """Return True if this looks like a quota/rate-limit issue (fallback may help)."""
-    err_str = str(exc).lower()
-    return (
-        any(k in err_str for k in (
-            "resource_exhausted",
-            "resource exhausted",
-            "rate limit",
-            "too many requests",
-            "429",
-        ))
-        or _is_quota_exhausted(exc)
-    )
-
-
-def _is_json_parse_error(exc: BaseException) -> bool:
-    """Return True if the provider returned invalid/truncated JSON."""
-    return isinstance(exc, ValueError) and "parse json" in str(exc).lower()
-
-
 class AIClient:
     """
-    Unified AI client — delegates to the configured provider and automatically
-    falls back to the next available provider on:
-      - auth/permission/config errors
-      - quota/rate-limit errors
-      - invalid/truncated JSON (for JSON calls)
+    Unified AI client — delegates to Gemini provider.
 
-    Provider order:
-      1) `AI_PROVIDER` (default: gemini)
-      2) `ollama` (local) if not primary
-      3) the remaining cloud provider
+    Integrates a circuit breaker that trips after repeated failures,
+    preventing thundering-herd retries against a degraded AI backend.
+
+    Token tracking: every call records prompt/completion token estimates
+    accessible via `token_usage` property and `reset_token_usage()`.
     """
 
     def __init__(self):
-        provider = (settings.ai_provider or "gemini").lower().strip()
-        if provider not in ("gemini", "openai", "ollama"):
-            logger.warning("unknown_ai_provider=%s; defaulting_to=gemini", provider)
-            provider = "gemini"
+        self._provider = _GeminiProvider()
+        self.provider_name = "gemini"
+        self.model = self._provider.model_name
+        self.max_tokens = self._provider.max_tokens
+        self._breaker = _get_ai_breaker()
+        self._prompt_tokens = 0
+        self._completion_tokens = 0
+        self._call_count = 0
 
-        def build(name: str):
-            if name == "gemini":
-                return _GeminiProvider()
-            if name == "openai":
-                return _OpenAIProvider()
-            if name == "ollama":
-                return _OllamaProvider()
-            raise ValueError(f"Unknown provider: {name}")
+    @property
+    def token_usage(self) -> Dict[str, int]:
+        """Current accumulated token usage for this client instance."""
+        return {
+            "prompt_tokens": self._prompt_tokens,
+            "completion_tokens": self._completion_tokens,
+            "total_tokens": self._prompt_tokens + self._completion_tokens,
+            "call_count": self._call_count,
+            "estimated_cost_usd_cents": self._estimate_cost_cents(),
+        }
 
-        order: List[str] = [provider]
-        # Prefer local Ollama as the first fallback.
-        if provider != "ollama":
-            order.append("ollama")
-        for name in ("gemini", "openai"):
-            if name != provider:
-                order.append(name)
+    def reset_token_usage(self) -> Dict[str, int]:
+        """Reset token counters and return the final snapshot."""
+        snapshot = self.token_usage
+        self._prompt_tokens = 0
+        self._completion_tokens = 0
+        self._call_count = 0
+        return snapshot
 
-        self._providers: List[tuple[str, Any]] = []
-        for name in dict.fromkeys(order):  # preserve order, drop dupes
-            try:
-                self._providers.append((name, build(name)))
-            except Exception as e:
-                logger.warning("provider_init_failed (%s): %s", name, str(e).replace("\n", " ")[:200])
+    def _estimate_cost_cents(self) -> int:
+        """Rough cost estimate in USD cents based on Gemini 1.5 pricing."""
+        # Gemini 1.5 Flash: ~$0.075/1M input, ~$0.30/1M output
+        # Gemini 1.5 Pro:   ~$1.25/1M input,  ~$5.00/1M output
+        is_pro = "pro" in self.model.lower()
+        if is_pro:
+            input_rate = 1.25 / 1_000_000
+            output_rate = 5.00 / 1_000_000
+        else:
+            input_rate = 0.075 / 1_000_000
+            output_rate = 0.30 / 1_000_000
+        cost_usd = (self._prompt_tokens * input_rate) + (self._completion_tokens * output_rate)
+        return max(0, int(cost_usd * 100))
 
-        if not self._providers:
-            raise RuntimeError("No AI providers available. Configure keys or enable Ollama.")
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        """Rough token estimate (~4 chars per token for English text)."""
+        return max(1, len(text) // 4)
 
-        active = self._providers[0][1]
-        self.provider_name = self._providers[0][0]
-        self.model = getattr(active, "model", None) or getattr(active, "model_name", "unknown")
-        self.max_tokens = getattr(active, "max_tokens", 4096)
-
-    async def _call_with_fallback(self, method_name: str, **kwargs):
-        """Try providers in order; fall back on auth, quota/rate-limit, or parse errors."""
-        last_error: Optional[BaseException] = None
-        for idx, (name, prov) in enumerate(self._providers):
-            try:
-                method = getattr(prov, method_name)
-                result = await method(**kwargs)
-                if idx > 0:
-                    logger.info("fallback_success: %s → %s", self._providers[0][0], name)
-                self.provider_name = name
-                self.model = getattr(prov, "model", None) or getattr(prov, "model_name", self.model)
-                self.max_tokens = getattr(prov, "max_tokens", self.max_tokens)
-                return result
-            except Exception as e:
-                last_error = e
-                is_last = idx >= (len(self._providers) - 1)
-                if is_last:
-                    raise
-
-                if _is_auth_or_permission_error(e) or _is_rate_limit_error(e) or _is_json_parse_error(e):
-                    logger.warning(
-                        "provider_failed (%s): %s — trying next provider (%s)",
-                        name, str(e).replace("\n", " ")[:140], self._providers[idx + 1][0],
-                    )
-                    continue
-
-                raise
-
-        if last_error is not None:
-            raise last_error
-        raise RuntimeError("AI call failed unexpectedly.")
+    def _track_usage(self, prompt: str, response_text: str) -> None:
+        """Track token usage after a successful call."""
+        self._prompt_tokens += self._estimate_tokens(prompt)
+        self._completion_tokens += self._estimate_tokens(response_text)
+        self._call_count += 1
 
     def _resolve_model(self, task_type: Optional[str], model: Optional[str]) -> Optional[str]:
         """Resolve model name from task_type or explicit model param."""
@@ -577,9 +367,22 @@ class AIClient:
             return model
         if task_type:
             from ai_engine.model_router import resolve_model
-            default = getattr(self._providers[0][1], "model", None) or "qwen3:4b"
-            return resolve_model(task_type, default)
+            default = self._provider.model_name
+            resolved = resolve_model(task_type, default)
+            if resolved != default:
+                logger.info(
+                    "model_routed: task_type=%s resolved_model=%s default_model=%s",
+                    task_type,
+                    resolved,
+                    default,
+                )
+            return resolved
         return None
+
+    @property
+    def default_model(self) -> str:
+        """The configured default model name."""
+        return self._provider.model_name
 
     async def complete(self, prompt: str, system: Optional[str] = None,
                        max_tokens: Optional[int] = None, temperature: float = 0.7,
@@ -587,11 +390,14 @@ class AIClient:
                        task_type: Optional[str] = None,
                        model: Optional[str] = None) -> str:
         resolved = self._resolve_model(task_type, model)
-        return await self._call_with_fallback(
-            "complete", prompt=prompt, system=system, max_tokens=max_tokens,
-            temperature=temperature, response_format=response_format,
-            model=resolved,
-        )
+        async with self._breaker:
+            result = await self._provider.complete(
+                prompt=prompt, system=system, max_tokens=max_tokens,
+                temperature=temperature, response_format=response_format,
+                model=resolved,
+            )
+            self._track_usage(prompt + (system or ""), result)
+            return result
 
     async def complete_json(self, prompt: str, system: Optional[str] = None,
                             max_tokens: Optional[int] = None,
@@ -600,10 +406,13 @@ class AIClient:
                             task_type: Optional[str] = None,
                             model: Optional[str] = None) -> Dict[str, Any]:
         resolved = self._resolve_model(task_type, model)
-        return await self._call_with_fallback(
-            "complete_json", prompt=prompt, system=system, max_tokens=max_tokens,
-            temperature=temperature, schema=schema, model=resolved,
-        )
+        async with self._breaker:
+            result = await self._provider.complete_json(
+                prompt=prompt, system=system, max_tokens=max_tokens,
+                temperature=temperature, schema=schema, model=resolved,
+            )
+            self._track_usage(prompt + (system or ""), json.dumps(result))
+            return result
 
     async def chat(self, messages: List[Dict[str, str]], system: Optional[str] = None,
                    max_tokens: Optional[int] = None,
@@ -611,10 +420,14 @@ class AIClient:
                    task_type: Optional[str] = None,
                    model: Optional[str] = None) -> str:
         resolved = self._resolve_model(task_type, model)
-        return await self._call_with_fallback(
-            "chat", messages=messages, system=system, max_tokens=max_tokens,
-            temperature=temperature, model=resolved,
-        )
+        all_text = " ".join(m.get("content", "") for m in messages)
+        async with self._breaker:
+            result = await self._provider.chat(
+                messages=messages, system=system, max_tokens=max_tokens,
+                temperature=temperature, model=resolved,
+            )
+            self._track_usage(all_text + (system or ""), result)
+            return result
 
 
 # ── JSON helpers ───────────────────────────────────────────────────────
@@ -636,19 +449,37 @@ def _extract_json(content: str) -> str:
 
 
 def _parse_json(content: str) -> Dict[str, Any]:
-    """Parse JSON from response."""
+    """Parse JSON from response, including repair of truncated LLM output."""
     content = _extract_json(content)
     if not content or not content.strip():
         return {}
     try:
         return json.loads(content)
-    except json.JSONDecodeError as e:
-        content = content.replace("'", '"').replace("None", "null")
-        content = content.replace("True", "true").replace("False", "false")
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            raise ValueError(f"Failed to parse JSON response: {str(e)}")
+    except json.JSONDecodeError:
+        pass
+
+    # Try Python-style replacements first
+    fixed = content.replace("'", '"').replace("None", "null")
+    fixed = fixed.replace("True", "true").replace("False", "false")
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        pass
+
+    # Use json_repair for truncated / malformed LLM responses
+    try:
+        from json_repair import repair_json
+        repaired = repair_json(content, return_objects=True)
+        if isinstance(repaired, dict):
+            return repaired
+        if isinstance(repaired, list):
+            return repaired[0] if repaired and isinstance(repaired[0], dict) else {}
+        if isinstance(repaired, str):
+            return json.loads(repaired)
+    except Exception:
+        pass
+
+    raise ValueError(f"Failed to parse JSON response after repair attempts")
 
 
 # ── Singleton ──────────────────────────────────────────────────────────

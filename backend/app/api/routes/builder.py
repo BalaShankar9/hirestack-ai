@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from pydantic import BaseModel, Field
 
 from app.services.document import DocumentService
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, check_billing_limit
 import structlog
 
 logger = structlog.get_logger()
@@ -32,6 +32,7 @@ async def generate_document(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Generate a document using AI."""
+    await check_billing_limit("ai_calls", current_user)
     service = DocumentService()
     try:
         return await service.generate_document(

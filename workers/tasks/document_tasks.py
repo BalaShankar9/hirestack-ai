@@ -24,6 +24,10 @@ def generate_document_async(self, user_id: str, document_type: str, data: dict):
     """
     Async task to generate a document using AI.
 
+    v2: Routes through AgentPipeline for full quality gates (critic,
+    optimizer, fact-checker, validator). Falls back to direct chain
+    if pipeline construction fails.
+
     Args:
         user_id: The user's ID
         document_type: Type of document (cv, cover_letter, etc.)
@@ -31,10 +35,45 @@ def generate_document_async(self, user_id: str, document_type: str, data: dict):
     """
     try:
         from ai_engine.client import get_ai_client
-        from ai_engine.chains.document_generator import DocumentGeneratorChain
 
         async def _generate():
             client = get_ai_client()
+
+            # Try pipeline-based generation first (full quality gates)
+            try:
+                from ai_engine.agents.pipelines import build_pipeline
+                from app.core.database import get_supabase, TABLES
+
+                pipeline_name = {
+                    "cv": "cv_generation",
+                    "cover_letter": "cover_letter",
+                }.get(document_type)
+
+                if pipeline_name:
+                    sb = get_supabase()
+                    pipeline = build_pipeline(pipeline_name, ai_client=client, db=sb, tables=TABLES)
+                    pipeline_context = {
+                        "user_id": user_id,
+                        "user_profile": data.get("profile", {}),
+                        "job_title": data.get("job_title", ""),
+                        "company": data.get("company", ""),
+                        "jd_text": data.get("job_requirements", {}).get("description", "")
+                            or data.get("benchmark", {}).get("description", ""),
+                        "company_intel": data.get("company_info", {}),
+                        "gap_insights": data.get("gaps", {}),
+                    }
+                    result = await pipeline.execute(pipeline_context)
+                    return result.content
+            except Exception as pipeline_err:
+                logger.warning(
+                    "pipeline_fallback_to_chain",
+                    document_type=document_type,
+                    error=str(pipeline_err),
+                )
+
+            # Fallback: direct chain (no quality gates)
+            from ai_engine.chains.document_generator import DocumentGeneratorChain
+
             generator = DocumentGeneratorChain(client)
 
             if document_type == "cv":

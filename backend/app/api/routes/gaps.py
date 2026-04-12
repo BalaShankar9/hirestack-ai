@@ -7,7 +7,7 @@ from app.core.security import limiter
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 
 from app.services.gap import GapService
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, check_billing_limit
 from app.api.response import success_response
 import structlog
 
@@ -23,6 +23,7 @@ async def analyze_gaps(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Perform gap analysis comparing profile to benchmark."""
+    await check_billing_limit("ai_calls", current_user)
     service = GapService()
     profile_id = request.get("profile_id")
     benchmark_id = request.get("benchmark_id")

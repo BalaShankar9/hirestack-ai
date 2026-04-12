@@ -6,11 +6,18 @@ import type { NextRequest } from "next/server";
  *
  * Auth is handled CLIENT-SIDE by the AuthProvider + dashboard layout.
  * Supabase JS stores sessions in localStorage (not cookies), so server-side
- * middleware cannot reliably detect auth state. Instead, we only use middleware
- * for security headers and let the client redirect unauthenticated users.
+ * middleware cannot reliably detect auth state. We apply security headers
+ * here and let the client redirect unauthenticated users.
  */
 export function middleware(req: NextRequest) {
-  return NextResponse.next();
+  const response = NextResponse.next();
+
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+
+  return response;
 }
 
 export const config = {

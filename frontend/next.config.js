@@ -18,6 +18,7 @@ const nextConfig = {
     ];
   },
   async headers() {
+    const isDev = process.env.NODE_ENV !== "production";
     return [
       {
         source: "/(.*)",
@@ -31,11 +32,12 @@ const nextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline'",
+              // Next.js dev mode (HMR / webpack) requires 'unsafe-eval'
+              `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https:",
               "font-src 'self' data:",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.up.railway.app",
+              `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.up.railway.app${isDev ? " http://localhost:* http://127.0.0.1:* ws://localhost:*" : ""}`,
               "frame-ancestors 'none'",
             ].join("; "),
           },

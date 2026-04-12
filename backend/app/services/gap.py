@@ -33,7 +33,7 @@ class GapService:
 
         # Fetch benchmark
         benchmark = await self.db.get(COLLECTIONS["benchmarks"], benchmark_id)
-        if not benchmark:
+        if not benchmark or benchmark.get("user_id") != user_id:
             raise ValueError("Benchmark not found")
 
         # Fetch linked job for title/company

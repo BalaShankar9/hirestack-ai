@@ -27,6 +27,7 @@ from app.api.routes.review import router as review_router
 from app.api.routes.orgs import router as orgs_router
 from app.api.routes.billing import router as billing_router
 from app.api.routes.candidates import router as candidates_router
+from app.api.routes.feedback import router as feedback_router
 
 router = APIRouter()
 
@@ -56,3 +57,4 @@ router.include_router(review_router, prefix="/review", tags=["Review"])
 router.include_router(orgs_router, prefix="/orgs", tags=["Organizations"])
 router.include_router(billing_router, prefix="/billing", tags=["Billing"])
 router.include_router(candidates_router, prefix="/candidates", tags=["Candidates"])
+router.include_router(feedback_router, prefix="/feedback", tags=["Feedback & Outcomes"])

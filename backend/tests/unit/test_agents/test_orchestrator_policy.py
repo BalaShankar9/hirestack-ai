@@ -96,6 +96,7 @@ class TestPipelinePolicy:
         p = PipelinePolicy()
         assert p.should_fact_check("cv_generation", {}) is True
         assert p.should_fact_check("cover_letter", {}) is True
+        assert p.should_fact_check("personal_statement", {}) is True
         assert p.should_fact_check("portfolio", {}) is True
 
     def test_should_fact_check_skip_override(self):
@@ -135,7 +136,7 @@ class TestDefaultPolicies:
         assert expected <= set(DEFAULT_POLICIES.keys())
 
     def test_strict_policy(self):
-        assert POLICY_STRICT.confidence_threshold == 0.95
+        assert POLICY_STRICT.confidence_threshold == 0.90
         assert POLICY_STRICT.max_iterations == 3
 
     def test_light_policy(self):

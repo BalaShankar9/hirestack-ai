@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export type CoachAction = {
-  kind: "fix" | "write" | "collect" | "review";
+  kind: "fix" | "write" | "collect" | "review" | "danger" | "replay";
   title: string;
   why: string;
   cta: string;

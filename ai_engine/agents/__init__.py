@@ -9,7 +9,10 @@ from ai_engine.agents.schema_validator import ValidatorAgent
 from ai_engine.agents.memory import AgentMemory
 from ai_engine.agents.trace import AgentTracer
 from ai_engine.agents.lock import PipelineLockManager
+from ai_engine.agents.planner import PlannerAgent, PipelinePlan, PipelineStep
+from ai_engine.agents.multi_pipeline import execute_plan
 from ai_engine.agents.orchestrator import (
+    AdaptivePolicyTracker,
     AgentPipeline,
     PipelinePolicy,
     PipelineResult,
@@ -31,6 +34,31 @@ from ai_engine.agents.schemas import (
     OPTIMIZER_SCHEMA,
     FACT_CHECKER_SCHEMA,
     VALIDATOR_SCHEMA,
+)
+from ai_engine.agents.evidence import (
+    EvidenceLedger,
+    EvidenceItem,
+    EvidenceTier,
+    EvidenceSource,
+    Citation,
+    populate_from_profile,
+    populate_from_jd,
+    populate_from_tool_result,
+    populate_from_company_intel,
+)
+from ai_engine.agents.workflow_runtime import (
+    WorkflowEventStore,
+    WorkflowState,
+    StageCheckpoint,
+    StageStatus,
+    execute_stage,
+    skip_stage,
+    reconstruct_state,
+    get_completed_stages,
+    get_last_completed_stage,
+    WorkflowCancelled,
+    WorkflowStageTimeout,
+    WorkflowStageFailed,
 )
 from ai_engine.agents.pipelines import (
     create_pipeline,
@@ -65,6 +93,7 @@ __all__ = [
     "AgentTracer",
     "PipelineLockManager",
     "AgentPipeline",
+    "AdaptivePolicyTracker",
     "PipelinePolicy",
     "PipelineResult",
     "DEFAULT_POLICIES",
@@ -98,4 +127,26 @@ __all__ = [
     "CONSERVATIVE_TONE",
     "BALANCED_TONE",
     "CREATIVE_TONE",
+    # v3: Evidence + Workflow
+    "EvidenceLedger",
+    "EvidenceItem",
+    "EvidenceTier",
+    "EvidenceSource",
+    "Citation",
+    "populate_from_profile",
+    "populate_from_jd",
+    "populate_from_tool_result",
+    "populate_from_company_intel",
+    "WorkflowEventStore",
+    "WorkflowState",
+    "StageCheckpoint",
+    "StageStatus",
+    "execute_stage",
+    "skip_stage",
+    "reconstruct_state",
+    "get_completed_stages",
+    "get_last_completed_stage",
+    "WorkflowCancelled",
+    "WorkflowStageTimeout",
+    "WorkflowStageFailed",
 ]

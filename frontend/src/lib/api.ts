@@ -102,25 +102,6 @@ class APIClient {
     return response.json();
   }
 
-  // Auth
-  async login(email: string, password: string) {
-    return this.request("/auth/login", {
-      method: "POST",
-      body: { email, password },
-    });
-  }
-
-  async register(email: string, password: string, fullName?: string) {
-    return this.request("/auth/register", {
-      method: "POST",
-      body: { email, password, full_name: fullName },
-    });
-  }
-
-  async getMe() {
-    return this.request("/auth/me");
-  }
-
   // Profile
   async uploadResume(file: File, isPrimary: boolean = false) {
     return this.uploadFile("/profile/upload", file, {

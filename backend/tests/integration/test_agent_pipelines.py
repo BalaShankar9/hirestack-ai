@@ -13,16 +13,57 @@ def _make_mock_complete_json():
         call_count["value"] += 1
         prompt_lower = prompt.lower()
 
+        # LLM reflection: pipeline orchestrator deciding next action
+        if "decide" in prompt_lower and ("accept" in prompt_lower or "revise" in prompt_lower):
+            return {"decision": "accept", "reasoning": "Quality is sufficient"}
+
         if "analyze" in prompt_lower and "job" in prompt_lower:
-            return {"industry": "tech", "keyword_priority": [{"keyword": "Python", "priority": "high"}]}
-        if "evaluate" in prompt_lower or "quality" in prompt_lower:
-            return {"quality_scores": {"impact": 85, "clarity": 90}, "needs_revision": False, "feedback": {}}
-        if "optimize" in prompt_lower or "ats" in prompt_lower:
-            return {"keyword_analysis": {"present": ["Python"], "missing": []}, "suggestions": []}
-        if "verify" in prompt_lower or "claim" in prompt_lower:
-            return {"summary": {"verified": 10, "enhanced": 3, "fabricated": 0}, "claims": [], "fabricated_claims": []}
+            return {
+                "industry": "tech",
+                "keyword_priority": [{"keyword": "Python", "priority": "high"}],
+                "key_signals": ["python"],
+                "coverage_score": 0.8,
+            }
         if "validate" in prompt_lower:
-            return {"valid": True, "checks": {}, "issues": []}
+            return {
+                "valid": True,
+                "checks": {
+                    "schema_compliant": True,
+                    "format_valid": True,
+                    "all_sections_present": True,
+                    "length_appropriate": True,
+                },
+                "issues": [],
+                "confidence": 0.95,
+            }
+        if "evaluate" in prompt_lower or "quality" in prompt_lower:
+            return {
+                "quality_scores": {
+                    "impact": 85,
+                    "clarity": 90,
+                    "tone_match": 88,
+                    "completeness": 84,
+                },
+                "needs_revision": False,
+                "feedback": {"strengths": [], "improvements": [], "critical_issues": []},
+                "confidence": 0.95,
+            }
+        if "optimize" in prompt_lower or "ats" in prompt_lower:
+            return {
+                "keyword_analysis": {"present": ["Python"], "missing": []},
+                "readability_score": 68,
+                "quantification": {"quantified_count": 1},
+                "suggestions": [],
+                "confidence": 0.9,
+            }
+        if "verify" in prompt_lower or "claim" in prompt_lower:
+            return {
+                "summary": {"verified": 10, "inferred": 0, "embellished": 0, "enhanced": 0, "fabricated": 0},
+                "claims": [],
+                "fabricated_claims": [],
+                "overall_accuracy": 1.0,
+                "confidence": 0.95,
+            }
         return {"result": "mock"}
 
     return _mock_complete_json, call_count
@@ -60,7 +101,9 @@ async def test_cv_pipeline_end_to_end(mock_ai_with_counter):
             })
 
     assert isinstance(result, PipelineResult)
-    assert result.content is not None
+    assert result.content["html"] == "<h1>John Doe</h1><p>Software Engineer</p>"
+    assert "_optimization_report" in result.content
+    assert "_fact_check_report" in result.content
     assert result.trace_id is not None
     assert result.total_latency_ms >= 0
     assert call_count["value"] >= 4

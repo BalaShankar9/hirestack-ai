@@ -34,7 +34,7 @@ def test_registry_register_and_get():
 def test_registry_list_tools():
     reg = build_researcher_tools()
     tools = reg.list_tools()
-    assert len(tools) == 3
+    assert len(tools) >= 3  # 3 core + external tools
     names = {t.name for t in tools}
     assert "parse_jd" in names
     assert "extract_profile_evidence" in names
@@ -51,7 +51,7 @@ def test_registry_describe_for_llm():
 def test_registry_describe_as_json():
     reg = build_researcher_tools()
     desc = reg.describe_as_json()
-    assert len(desc) == 3
+    assert len(desc) >= 3  # 3 core + external tools
     assert all("name" in d and "description" in d for d in desc)
 
 

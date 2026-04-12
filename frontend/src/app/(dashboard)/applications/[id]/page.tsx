@@ -58,6 +58,7 @@ import {
   setTaskStatus,
   snapshotDocVersion,
   trackEvent,
+  generateOptionalDocument,
 } from "@/lib/firestore";
 import { useApplication, useEvidence, useTasks } from "@/lib/firestore";
 import type { ModuleKey } from "@/lib/firestore";
@@ -83,6 +84,11 @@ import { DocEditorModule, ExportCard, EmptyState } from "@/components/workspace/
 import type { DocMode } from "@/components/workspace/diff-toggle";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { AgentProgress } from "@/components/workspace/agent-progress";
+import { AgentTimelineRail } from "@/components/workspace/agent-timeline-rail";
+import { EvidenceInspector } from "@/components/workspace/evidence-inspector";
+import { RiskPanel } from "@/components/workspace/risk-panel";
+import { ValidationDrawer } from "@/components/workspace/validation-drawer";
+import { ReplayDrawer } from "@/components/workspace/replay-drawer";
 import { QualityReport } from "@/components/workspace/quality-report";
 import { useAgentStatus } from "@/hooks/use-agent-status";
 import { useDownloadGate } from "@/hooks/use-download-gate";
@@ -171,10 +177,11 @@ export default function ApplicationWorkspacePage() {
   const [exporting, setExporting] = useState(false);
   const [regeneratingModule, setRegeneratingModule] = useState<string | null>(null);
   const [regeneratingAll, setRegeneratingAll] = useState(false);
+  const [generatingDocKey, setGeneratingDocKey] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const { state: agentState, subscribe: agentSubscribe, handleAgentEvent, handleComplete, handleError: handleAgentError, reset: agentReset } = useAgentStatus();
+  const { state: agentState, subscribe: agentSubscribe, handleAgentEvent, handleComplete, handleError: handleAgentError, reset: agentReset, setReplayReport } = useAgentStatus();
 
   // Auto-clear save indicator
   useEffect(() => {
@@ -269,10 +276,22 @@ export default function ApplicationWorkspacePage() {
 
   const coachActions = useMemo(() => {
     if (!app || !user) return [];
+    const es = agentState.evidenceSummary;
+    const vr = agentState.validationReport;
+    const fa = agentState.finalAnalysis;
+
     const actions = buildCoachActions({
       missingKeywords: missing,
       factsLocked: app.factsLocked ?? false,
       evidenceCount: evidence.length,
+      fabricatedClaims: es?.fabricated_count,
+      unsupportedClaims: es?.unlinked_count,
+      validationHardFailures: vr?.hard_failures,
+      validationSoftWarnings: vr?.soft_warnings,
+      residualMissingKeywords: (fa as any)?.missing_keywords,
+      replayFailureClass: agentState.replayReport?.failure_class,
+      contradictionCount: (fa as any)?.contradiction_count,
+      finalATSScore: (fa as any)?.ats_score,
     });
 
     return actions.map((a) => {
@@ -282,15 +301,18 @@ export default function ApplicationWorkspacePage() {
       if (a.kind === "review") {
         return { ...a, onClick: () => router.push(`/new?appId=${appId}&step=1`) };
       }
-      if (a.kind === "fix") {
+      if (a.kind === "fix" || a.kind === "danger") {
         return { ...a, onClick: () => setTab("cv") };
+      }
+      if (a.kind === "replay") {
+        return { ...a, onClick: () => { /* scroll to replay drawer */ } };
       }
       return { ...a, onClick: () => {
         setVersionsTarget("cv");
         setVersionsOpen(true);
       } };
     });
-  }, [app, appId, evidence.length, missing, router, user]);
+  }, [app, appId, evidence.length, missing, router, user, agentState.evidenceSummary, agentState.validationReport, agentState.finalAnalysis, agentState.replayReport]);
 
   const title = app?.title || app?.confirmedFacts?.jobTitle || "Application workspace";
   const subtitle = app?.confirmedFacts?.company ? `@ ${app.confirmedFacts.company}` : undefined;
@@ -511,6 +533,21 @@ export default function ApplicationWorkspacePage() {
                   );
                 })
               )}
+              {/* Optional documents tab — shown when ungenerated discovered docs exist */}
+              {(() => {
+                const generated = app.generatedDocuments || {};
+                const coreKeys = new Set(["cv", "cover_letter", "personal_statement", "portfolio"]);
+                const hasUngenerated = (app.discoveredDocuments || []).some(
+                  (d: any) => d.key && !generated[d.key] && !coreKeys.has(d.key)
+                );
+                if (!hasUngenerated) return null;
+                return (
+                  <TabsTrigger value="optional-docs" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm">
+                    <Sparkles className="h-3 w-3 text-amber-500" />
+                    <span className="text-xs">Optional Docs</span>
+                  </TabsTrigger>
+                );
+              })()}
               <TabsTrigger value="ats" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><FileSearch className="h-3.5 w-3.5" />ATS Score</TabsTrigger>
               <TabsTrigger value="export" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><Package className="h-3.5 w-3.5" />Export</TabsTrigger>
             </TabsList>
@@ -1371,6 +1408,88 @@ export default function ApplicationWorkspacePage() {
               );
             })}
 
+            {/* ── Optional Documents Available for Generation ── */}
+            {(() => {
+              const generated = app.generatedDocuments || {};
+              const coreKeys = new Set(["cv", "cover_letter", "personal_statement", "portfolio"]);
+              const ungeneratedDocs = (app.discoveredDocuments || []).filter(
+                (d: any) => d.key && !generated[d.key] && !coreKeys.has(d.key)
+              );
+              if (ungeneratedDocs.length === 0) return null;
+              return (
+                <TabsContent value="optional-docs" className="mt-4">
+                  <div className="rounded-2xl border bg-card p-5 shadow-soft-sm space-y-4">
+                    <div>
+                      <h3 className="text-sm font-semibold flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-teal-500" />
+                        Optional Documents
+                      </h3>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        AI discovered these documents could strengthen your application. Generate them on demand.
+                      </p>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {ungeneratedDocs.map((doc: any) => (
+                        <div
+                          key={doc.key}
+                          className="rounded-xl border bg-muted/30 p-4 flex flex-col gap-2"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{doc.label || doc.key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}</p>
+                              {doc.reason && (
+                                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{doc.reason}</p>
+                              )}
+                            </div>
+                            {doc.priority && (
+                              <span className={`shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                                doc.priority === "high" ? "bg-amber-500/10 text-amber-600" :
+                                doc.priority === "critical" ? "bg-red-500/10 text-red-600" :
+                                "bg-muted text-muted-foreground"
+                              }`}>
+                                {doc.priority}
+                              </span>
+                            )}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2 rounded-xl self-start mt-1"
+                            disabled={generatingDocKey === doc.key}
+                            onClick={async () => {
+                              if (!user) return;
+                              setGeneratingDocKey(doc.key);
+                              try {
+                                const result = await generateOptionalDocument(appId, doc.key, doc.label || "");
+                                // Update local app data so the new doc appears in tabs
+                                if (result.html) {
+                                  await patchApplication(appId, {
+                                    generatedDocuments: { ...generated, [doc.key]: result.html },
+                                  });
+                                  toast({ title: "Document generated", description: `${doc.label || doc.key} is ready.` });
+                                }
+                              } catch (err: any) {
+                                toast({ title: "Generation failed", description: err.message || "Please try again.", variant: "error" });
+                              } finally {
+                                setGeneratingDocKey(null);
+                              }
+                            }}
+                          >
+                            {generatingDocKey === doc.key ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Sparkles className="h-3.5 w-3.5" />
+                            )}
+                            {generatingDocKey === doc.key ? "Generating…" : "Generate"}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </TabsContent>
+              );
+            })()}
+
             {/* ── ATS Score Tab ── */}
             <TabsContent value="ats" className="mt-4">
               <ATSScorePanel cvHtml={cvLocal} jdText={app.confirmedFacts?.jdText || ""} />
@@ -1579,15 +1698,46 @@ export default function ApplicationWorkspacePage() {
         </div>
 
         <div className="space-y-4 lg:sticky lg:top-6 h-fit">
+          {/* Agent Timeline Rail — replaces basic progress when stages are available */}
           {(agentState.isRunning || agentState.stages.length > 0) && (
             <div className="rounded-2xl border p-4 bg-card shadow-soft-sm">
-              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Agent Pipeline</div>
-              <AgentProgress
+              <AgentTimelineRail
                 stages={agentState.stages}
+                workflowState={agentState.workflowState}
                 isRunning={agentState.isRunning}
               />
             </div>
           )}
+
+          {/* Risk Panel — evidence strength, contradictions, ATS gaps */}
+          {(agentState.finalAnalysis || agentState.evidenceSummary || (agentState.citations && agentState.citations.length > 0)) && (
+            <div className="rounded-2xl border p-4 bg-card shadow-soft-sm">
+              <RiskPanel
+                finalAnalysis={agentState.finalAnalysis}
+                evidenceSummary={agentState.evidenceSummary}
+                citations={agentState.citations}
+              />
+            </div>
+          )}
+
+          {/* Evidence Inspector — claims, evidence links, fabrication flags */}
+          {(agentState.citations || agentState.evidenceSummary) && (
+            <div className="rounded-2xl border p-4 bg-card shadow-soft-sm">
+              <EvidenceInspector
+                citations={agentState.citations}
+                evidenceSummary={agentState.evidenceSummary}
+              />
+            </div>
+          )}
+
+          {/* Validation Drawer — hard failures and soft warnings */}
+          {agentState.validationReport && (
+            <div className="rounded-2xl border p-4 bg-card shadow-soft-sm">
+              <ValidationDrawer report={agentState.validationReport} />
+            </div>
+          )}
+
+          {/* Quality Report */}
           {Object.keys(agentState.qualityScores).length > 0 && (
             <div className="rounded-2xl border p-4 bg-card shadow-soft-sm">
               <QualityReport
@@ -1596,6 +1746,27 @@ export default function ApplicationWorkspacePage() {
               />
             </div>
           )}
+
+          {/* Replay Drawer — for failed or weak jobs */}
+          <ReplayDrawer
+            jobId={app?.id ?? null}
+            jobStatus={regeneratingAll ? "running" : null}
+            replayReport={agentState.replayReport}
+            onRequestReplay={async (jobId) => {
+              try {
+                const token = await user?.getIdToken();
+                const res = await fetch(`/api/generate/jobs/${jobId}/replay`, {
+                  headers: { Authorization: `Bearer ${token}` },
+                });
+                if (!res.ok) throw new Error(`Replay failed: ${res.status}`);
+                const data = await res.json();
+                setReplayReport(data.replay_report ?? null);
+              } catch (e: any) {
+                throw e;
+              }
+            }}
+          />
+
           <CoachPanel actions={coachActions} statusLine={`${taskStats.remaining} open tasks · ${evidence.length} evidence`} />
         </div>
       </div>

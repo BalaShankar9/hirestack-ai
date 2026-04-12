@@ -125,7 +125,11 @@ async def stripe_webhook(request: Request):
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Webhook error: {str(e)[:100]}")
 
-    await billing.handle_webhook(event["type"], event["data"]["object"])
+    try:
+        await billing.handle_webhook(event["type"], event["data"]["object"])
+    except Exception as e:
+        logger.error("stripe_webhook_processing_failed", event_type=event.get("type"), error=str(e)[:200])
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Webhook processing failed")
     return {"status": "processed"}
 
 

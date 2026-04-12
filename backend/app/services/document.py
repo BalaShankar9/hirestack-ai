@@ -5,11 +5,18 @@ Handles document generation and management with Firestore
 from typing import List, Optional, Dict, Any
 import structlog
 
-from app.core.database import get_firestore_db, COLLECTIONS, FirestoreDB
+from app.core.database import get_firestore_db, get_supabase, COLLECTIONS, TABLES, FirestoreDB
 from ai_engine.client import AIClient
 from ai_engine.chains.document_generator import DocumentGeneratorChain
 
 logger = structlog.get_logger()
+
+# Try to import agent pipelines — fall back to chains-only if unavailable
+try:
+    from ai_engine.agents.pipelines import cv_generation_pipeline, cover_letter_pipeline, personal_statement_pipeline
+    _PIPELINES_AVAILABLE = True
+except Exception:
+    _PIPELINES_AVAILABLE = False
 
 
 class DocumentService:
@@ -81,23 +88,14 @@ class DocumentService:
             }
             company_info = job.get("company_info", {})
 
-        # Generate with AI
-        generator = DocumentGeneratorChain(self.ai_client)
+        # Generate with AI — prefer agent pipeline, fall back to chain
         job_title = job.get("title", "Target Role") if job else "Target Role"
         company = job.get("company", "Target Company") if job else "Target Company"
 
-        if document_type == "cv":
-            content = await generator.generate_cv(profile_data, job_title, company, job_requirements, gap_analysis)
-        elif document_type == "cover_letter":
-            content = await generator.generate_cover_letter(
-                profile_data, job_title, company, company_info, job_requirements,
-                gap_analysis.get("strengths", []) if gap_analysis else [],
-            )
-        elif document_type == "motivation":
-            result = await generator.generate_motivation_statement(profile_data, company, company_info, job_title)
-            content = str(result)
-        else:
-            raise ValueError(f"Unsupported document type: {document_type}")
+        content = await self._generate_with_pipeline_or_chain(
+            document_type, profile_data, job_title, company,
+            job_requirements, company_info, gap_analysis,
+        )
 
         title = f"{document_type.replace('_', ' ').title()} - {job_title}"
         record = {
@@ -114,6 +112,90 @@ class DocumentService:
         doc_id = await self.db.create(COLLECTIONS["documents"], record)
         logger.info("document_generated", doc_id=doc_id, type=document_type)
         return await self.db.get(COLLECTIONS["documents"], doc_id)
+
+    async def _generate_with_pipeline_or_chain(
+        self,
+        document_type: str,
+        profile_data: Dict[str, Any],
+        job_title: str,
+        company: str,
+        job_requirements: Dict[str, Any],
+        company_info: Dict[str, Any],
+        gap_analysis: Optional[Dict[str, Any]],
+    ) -> str:
+        """Try agent pipeline first, fall back to direct chain on failure."""
+        if _PIPELINES_AVAILABLE:
+            try:
+                return await self._generate_via_pipeline(
+                    document_type, profile_data, job_title, company,
+                    job_requirements, company_info, gap_analysis,
+                )
+            except Exception as pipe_err:
+                logger.warning("pipeline_fallback_to_chain", type=document_type, error=str(pipe_err)[:200])
+
+        return await self._generate_via_chain(
+            document_type, profile_data, job_title, company,
+            job_requirements, company_info, gap_analysis,
+        )
+
+    async def _generate_via_pipeline(
+        self,
+        document_type: str,
+        profile_data: Dict[str, Any],
+        job_title: str,
+        company: str,
+        job_requirements: Dict[str, Any],
+        company_info: Dict[str, Any],
+        gap_analysis: Optional[Dict[str, Any]],
+    ) -> str:
+        """Generate content using the multi-agent pipeline."""
+        pipeline_input = {
+            "user_profile": profile_data,
+            "job_title": job_title,
+            "company": company,
+            "job_requirements": job_requirements,
+            "company_info": company_info,
+            "gap_analysis": gap_analysis or {},
+        }
+
+        sb = get_supabase()
+        if document_type == "cv":
+            pipe = cv_generation_pipeline(ai_client=self.ai_client, db=sb, tables=TABLES)
+        elif document_type == "cover_letter":
+            pipe = cover_letter_pipeline(ai_client=self.ai_client, db=sb, tables=TABLES)
+        elif document_type in ("motivation", "personal_statement"):
+            pipe = personal_statement_pipeline(ai_client=self.ai_client, db=sb, tables=TABLES)
+        else:
+            raise ValueError(f"Unsupported document type: {document_type}")
+
+        result = await pipe.execute(pipeline_input)
+        return str(result.content) if hasattr(result, "content") else str(result)
+
+    async def _generate_via_chain(
+        self,
+        document_type: str,
+        profile_data: Dict[str, Any],
+        job_title: str,
+        company: str,
+        job_requirements: Dict[str, Any],
+        company_info: Dict[str, Any],
+        gap_analysis: Optional[Dict[str, Any]],
+    ) -> str:
+        """Generate content using the direct chain (fallback)."""
+        generator = DocumentGeneratorChain(self.ai_client)
+
+        if document_type == "cv":
+            return await generator.generate_cv(profile_data, job_title, company, job_requirements, gap_analysis)
+        elif document_type == "cover_letter":
+            return await generator.generate_cover_letter(
+                profile_data, job_title, company, company_info, job_requirements,
+                gap_analysis.get("strengths", []) if gap_analysis else [],
+            )
+        elif document_type in ("motivation", "personal_statement"):
+            result = await generator.generate_motivation_statement(profile_data, company, company_info, job_title)
+            return str(result)
+        else:
+            raise ValueError(f"Unsupported document type: {document_type}")
 
     async def generate_all_documents(
         self, user_id: str, profile_id: str, job_id: str
