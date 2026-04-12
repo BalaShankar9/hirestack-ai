@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ArrowRight, Sparkles, Clock, Target, ShieldCheck, ScanEye, Award,
-  Plus, Briefcase, TrendingUp, Trash2, Zap, FileSearch, MessageSquare,
+  Plus, Briefcase, TrendingUp, Trash2, Zap, FileSearch, FileText, MessageSquare,
   DollarSign, BookOpen, BarChart3, Brain, Flame,
   Bot, Activity, CheckCircle2, User,
 } from "lucide-react";

@@ -1,7 +1,7 @@
 """Document Library API — endpoints for managing Benchmark, Fixed, and Tailored documents."""
 import asyncio
 import structlog
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from pydantic import BaseModel, Field

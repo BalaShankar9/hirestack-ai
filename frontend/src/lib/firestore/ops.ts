@@ -28,6 +28,8 @@ import type {
   EventDoc,
   GenerationJobDoc,
   GenerationJobEventDoc,
+  DocumentLibraryItem,
+  DocumentLibrarySummary,
 } from "./models";
 
 /* ================================================================== */
@@ -2272,8 +2274,6 @@ export function emptyDocModule(seedHtml = ""): {
 /*  DOCUMENT LIBRARY                                                    */
 /* ================================================================== */
 
-import type { DocumentLibraryItem, DocumentLibrarySummary } from "./models";
-
 function mapDocumentLibraryRow(row: any): DocumentLibraryItem {
   return {
     id: row.id,
@@ -2293,6 +2293,15 @@ function mapDocumentLibraryRow(row: any): DocumentLibraryItem {
   };
 }
 
+async function _docLibHeaders(): Promise<Record<string, string>> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 export async function getDocumentLibrary(
   applicationId?: string,
   category?: string,
@@ -2300,13 +2309,14 @@ export async function getDocumentLibrary(
   const params = new URLSearchParams();
   if (applicationId) params.set("application_id", applicationId);
   if (category) params.set("category", category);
-  const resp = await api.get(`/documents/library?${params.toString()}`);
-  const data = resp.data?.documents ?? {};
-  // Normalize: if data is an array, wrap it
+  const headers = await _docLibHeaders();
+  const resp = await fetch(`${AI_API_URL}/api/documents/library?${params.toString()}`, { headers });
+  if (!resp.ok) throw new Error(`Failed to fetch document library (${resp.status})`);
+  const json = await resp.json();
+  const data = json?.documents ?? {};
   if (Array.isArray(data)) {
     return { [category || "all"]: data.map(mapDocumentLibraryRow) };
   }
-  // data is { benchmark: [...], fixed: [...], tailored: [...] }
   const result: Record<string, DocumentLibraryItem[]> = {};
   for (const [cat, docs] of Object.entries(data)) {
     result[cat] = Array.isArray(docs) ? docs.map(mapDocumentLibraryRow) : [];
@@ -2317,8 +2327,11 @@ export async function getDocumentLibrary(
 export async function getDocumentLibrarySummary(
   applicationId: string,
 ): Promise<DocumentLibrarySummary> {
-  const resp = await api.get(`/documents/library/summary?application_id=${applicationId}`);
-  return resp.data?.summary ?? {
+  const headers = await _docLibHeaders();
+  const resp = await fetch(`${AI_API_URL}/api/documents/library/summary?application_id=${applicationId}`, { headers });
+  if (!resp.ok) throw new Error(`Failed to fetch summary (${resp.status})`);
+  const json = await resp.json();
+  return json?.summary ?? {
     benchmark: { total: 0, ready: 0, generating: 0, planned: 0, error: 0 },
     fixed: { total: 0, ready: 0, generating: 0, planned: 0, error: 0 },
     tailored: { total: 0, ready: 0, generating: 0, planned: 0, error: 0 },
@@ -2328,8 +2341,11 @@ export async function getDocumentLibrarySummary(
 export async function getDocumentFromLibrary(
   docId: string,
 ): Promise<DocumentLibraryItem | null> {
-  const resp = await api.get(`/documents/library/${docId}`);
-  return resp.data?.document ? mapDocumentLibraryRow(resp.data.document) : null;
+  const headers = await _docLibHeaders();
+  const resp = await fetch(`${AI_API_URL}/api/documents/library/${docId}`, { headers });
+  if (!resp.ok) return null;
+  const json = await resp.json();
+  return json?.document ? mapDocumentLibraryRow(json.document) : null;
 }
 
 export async function generateDocumentInLibrary(
@@ -2338,19 +2354,33 @@ export async function generateDocumentInLibrary(
   applicationId?: string,
   label?: string,
 ): Promise<DocumentLibraryItem> {
-  const resp = await api.post("/documents/library/generate", {
-    doc_type: docType,
-    doc_category: docCategory,
-    application_id: applicationId,
-    label,
+  const headers = await _docLibHeaders();
+  const resp = await fetch(`${AI_API_URL}/api/documents/library/generate`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      doc_type: docType,
+      doc_category: docCategory,
+      application_id: applicationId,
+      label,
+    }),
   });
-  return mapDocumentLibraryRow(resp.data?.document ?? {});
+  if (!resp.ok) throw new Error(`Failed to generate document (${resp.status})`);
+  const json = await resp.json();
+  return mapDocumentLibraryRow(json?.document ?? {});
 }
 
 export async function updateDocumentInLibrary(
   docId: string,
   patch: { html_content?: string; label?: string },
 ): Promise<DocumentLibraryItem | null> {
-  const resp = await api.patch(`/documents/library/${docId}`, patch);
-  return resp.data?.document ? mapDocumentLibraryRow(resp.data.document) : null;
+  const headers = await _docLibHeaders();
+  const resp = await fetch(`${AI_API_URL}/api/documents/library/${docId}`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(patch),
+  });
+  if (!resp.ok) return null;
+  const json = await resp.json();
+  return json?.document ? mapDocumentLibraryRow(json.document) : null;
 }
