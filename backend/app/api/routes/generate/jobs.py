@@ -1378,10 +1378,21 @@ async def _run_generation_job_inner_runtime(job_id: str, user_id: str) -> None:
     )
     runtime = _PipelineRuntime(config=config, event_sink=sink)
 
-    # Mark job as running
+    # Mark job as running with full state
     await asyncio.to_thread(
         lambda: sb.table(TABLES["generation_jobs"])
-        .update({"status": "running", "progress": 1})
+        .update({
+            "status": "running",
+            "progress": 1,
+            "phase": "initializing",
+            "message": "Initializing AI engine…",
+            "current_agent": "recon",
+            "completed_steps": 0,
+            "total_steps": _JOB_TOTAL_STEPS,
+            "active_sources_count": 0,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "error_message": None,
+        })
         .eq("id", job_id).execute()
     )
 
@@ -1416,10 +1427,23 @@ async def _run_generation_job_inner_runtime(job_id: str, user_id: str) -> None:
             except Exception as dpp_err:
                 logger.warning("job_runtime.doc_pack_plan_persist_failed", error=str(dpp_err)[:200])
 
-        # Mark job complete
+        # Mark job complete with all fields
+        _job_update: dict = {
+                "status": "succeeded",
+                "progress": 100,
+                "phase": "complete",
+                "message": "Generation complete.",
+                "current_agent": "nova",
+                "completed_steps": _JOB_TOTAL_STEPS,
+                "total_steps": _JOB_TOTAL_STEPS,
+                "active_sources_count": 0,
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if doc_pack_plan:
+            _job_update["generation_plan"] = doc_pack_plan
         await asyncio.to_thread(
             lambda: sb.table(TABLES["generation_jobs"])
-            .update({"status": "succeeded", "progress": 100})
+            .update(_job_update)
             .eq("id", job_id).execute()
         )
         logger.info("job_runtime.complete", job_id=job_id)
@@ -1429,7 +1453,12 @@ async def _run_generation_job_inner_runtime(job_id: str, user_id: str) -> None:
         logger.error("job_runtime.failed", job_id=job_id, error=_err_msg[:300])
         await asyncio.to_thread(
             lambda: sb.table(TABLES["generation_jobs"])
-            .update({"status": "failed", "progress": 0, "message": _err_msg[:500]})
+            .update({
+                "status": "failed",
+                "progress": 0,
+                "message": _err_msg[:500],
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            })
             .eq("id", job_id).execute()
         )
         # Reset application modules from "generating" → "error" so UI isn't stuck

@@ -428,3 +428,34 @@ export interface PipelineMeta {
   workflow_state?: WorkflowState | null;
   company_intel?: Record<string, any>;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Document Library types                                              */
+/* ------------------------------------------------------------------ */
+
+export type DocumentCategory = "benchmark" | "fixed" | "tailored";
+export type DocumentStatus = "planned" | "generating" | "ready" | "error";
+export type DocumentSource = "planner" | "user_request" | "auto_evolve" | "migration";
+
+export interface DocumentLibraryItem {
+  id: string;
+  userId: string;
+  applicationId?: string | null;
+  docType: string;
+  docCategory: DocumentCategory;
+  label: string;
+  htmlContent: string;
+  metadata: Record<string, any>;
+  version: number;
+  status: DocumentStatus;
+  errorMessage?: string;
+  source: DocumentSource;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DocumentLibrarySummary {
+  benchmark: { total: number; ready: number; generating: number; planned: number; error: number };
+  fixed: { total: number; ready: number; generating: number; planned: number; error: number };
+  tailored: { total: number; ready: number; generating: number; planned: number; error: number };
+}

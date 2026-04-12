@@ -46,6 +46,7 @@ import {
   TrendingUp,
   FileSearch,
   CheckCircle2,
+  Library,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import {
@@ -59,10 +60,13 @@ import {
   snapshotDocVersion,
   trackEvent,
   generateOptionalDocument,
+  getDocumentLibrary,
+  generateDocumentInLibrary,
 } from "@/lib/firestore";
 import { useApplication, useEvidence, useTasks } from "@/lib/firestore";
 import type { ModuleKey } from "@/lib/firestore";
 import type { PipelineProgress } from "@/lib/firestore/ops";
+import type { DocumentLibraryItem } from "@/lib/firestore/models";
 import { toast } from "@/hooks";
 import {
   downloadPdf,
@@ -95,6 +99,7 @@ import { QualityReport } from "@/components/workspace/quality-report";
 import { useAgentStatus } from "@/hooks/use-agent-status";
 import { useDownloadGate } from "@/hooks/use-download-gate";
 import { ATSScorePanel } from "@/components/workspace/ats-score-panel";
+import { DocumentLibraryView } from "@/components/workspace/document-library-view";
 import { SignupModal } from "@/components/auth/signup-modal";
 import { AITrace } from "@/components/ui/ai-trace";
 
@@ -184,6 +189,8 @@ export default function ApplicationWorkspacePage() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [docLibrary, setDocLibrary] = useState<Record<string, DocumentLibraryItem[]>>({});
+  const [docLibraryLoading, setDocLibraryLoading] = useState(false);
   const { state: agentState, subscribe: agentSubscribe, handleAgentEvent, handleComplete, handleError: handleAgentError, reset: agentReset, setReplayReport } = useAgentStatus();
 
   // Auto-clear save indicator
@@ -193,6 +200,22 @@ export default function ApplicationWorkspacePage() {
       return () => clearTimeout(t);
     }
   }, [saveStatus]);
+
+  // Fetch document library when the library tab is selected
+  const fetchDocLibrary = useCallback(async () => {
+    if (!appId) return;
+    setDocLibraryLoading(true);
+    try {
+      const grouped = await getDocumentLibrary(appId);
+      setDocLibrary(grouped);
+    } catch { /* ignore */ } finally {
+      setDocLibraryLoading(false);
+    }
+  }, [appId]);
+
+  useEffect(() => {
+    if (tab === "library") fetchDocLibrary();
+  }, [tab, fetchDocLibrary]);
 
   // Track workspace views
   useEffect(() => {
@@ -591,6 +614,7 @@ export default function ApplicationWorkspacePage() {
                 );
               })()}
               <TabsTrigger value="ats" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><FileSearch className="h-3.5 w-3.5" />ATS Score</TabsTrigger>
+              <TabsTrigger value="library" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><Library className="h-3.5 w-3.5" />Library</TabsTrigger>
               <TabsTrigger value="export" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><Package className="h-3.5 w-3.5" />Export</TabsTrigger>
             </TabsList>
 
@@ -1545,6 +1569,46 @@ export default function ApplicationWorkspacePage() {
             {/* ── ATS Score Tab ── */}
             <TabsContent value="ats" className="mt-4">
               <ATSScorePanel cvHtml={cvLocal} jdText={app.confirmedFacts?.jdText || ""} />
+            </TabsContent>
+
+            {/* ── Document Library Tab ── */}
+            <TabsContent value="library" className="mt-4">
+              <SectionErrorBoundary label="Document Library">
+                {docLibraryLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <DocumentLibraryView
+                    documents={docLibrary}
+                    onViewDocument={(doc) => {
+                      // Navigate to the appropriate document tab if it's a core doc
+                      const tabMap: Record<string, string> = {
+                        cv: "cv", cover_letter: "cover", personal_statement: "statement", portfolio: "portfolio",
+                      };
+                      if (tabMap[doc.docType]) {
+                        setTab(tabMap[doc.docType]);
+                      }
+                    }}
+                    onGenerateDocument={async (doc) => {
+                      try {
+                        await generateDocumentInLibrary(doc.docType, doc.docCategory, appId, doc.label);
+                        toast({ title: "Generation started", description: `Generating ${doc.label}…` });
+                        // Refresh after a delay
+                        setTimeout(fetchDocLibrary, 3000);
+                      } catch {
+                        toast({ title: "Generation failed", variant: "error" });
+                      }
+                    }}
+                    onDownloadDocument={async (doc) => {
+                      if (!doc.htmlContent) return;
+                      await downloadPdf(doc.htmlContent, {
+                        filename: doc.label.replace(/\s+/g, "_"),
+                      });
+                    }}
+                  />
+                )}
+              </SectionErrorBoundary>
             </TabsContent>
 
             <TabsContent value="export" className="mt-4">

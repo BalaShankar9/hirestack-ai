@@ -13,6 +13,8 @@ import {
   RotateCcw,
   ArrowRight,
   Radar,
+  FileText,
+  CheckCircle2,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,6 +39,19 @@ const AGENT_PERSONAS: AgentPersona[] = [
   { name: "Sentinel", role: "Quality Inspector", icon: ShieldCheck, accentColor: "emerald-500" },
   { name: "Nova", role: "Final Assembler", icon: PackageCheck, accentColor: "primary" },
 ];
+
+// ── Progress status labels ────────────────────────────────────────
+
+function getStatusLabel(progress: number, generating: boolean, isComplete: boolean): string {
+  if (isComplete) return "Mission Complete";
+  if (!generating) return "Mission Control";
+  if (progress < 10) return "Initializing Mission";
+  if (progress < 30) return "Intelligence Gathering";
+  if (progress < 50) return "Analysis Phase";
+  if (progress < 75) return "Document Generation";
+  if (progress < 90) return "Quality Assurance";
+  return "Finalizing";
+}
 
 // ── Props ────────────────────────────────────────────────────────
 
@@ -104,6 +119,7 @@ export function PipelineAgentView({
   const activeAgents = activePhaseIdx >= 0 && !completedPhases.has(activePhaseIdx) ? 1 : 0;
   const completedCount = completedPhases.size;
   const isComplete = progress >= 100;
+  const statusLabel = getStatusLabel(progress, generating, isComplete);
 
   // ── Error state ──────────────────────────────────────────────
 
@@ -150,13 +166,13 @@ export function PipelineAgentView({
   return (
     <div className="surface-premium rounded-2xl overflow-hidden">
       {/* Header */}
-      <div className="text-center pt-6 pb-3 px-6 space-y-1">
+      <div className="text-center pt-6 pb-3 px-6 space-y-2">
         <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5">
           <Sparkles
             className={`h-4 w-4 text-primary ${isComplete ? "" : "animate-pulse"}`}
           />
           <span className="text-sm font-semibold text-primary">
-            {isComplete ? "Mission Complete" : "Mission Control"}
+            {statusLabel}
           </span>
         </div>
         <p className="text-sm text-muted-foreground min-h-[20px] transition-all duration-300">
@@ -174,15 +190,15 @@ export function PipelineAgentView({
             {formatElapsed(elapsedMs)}
           </span>
         </div>
-        <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
           <div
             className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-blue-500 via-violet-500 to-emerald-500 transition-all duration-700 ease-out"
-            style={{ width: `${progress}%` }}
+            style={{ width: `${Math.min(progress, 100)}%` }}
           />
           {!isComplete && progress > 0 && (
             <div
-              className="absolute inset-y-0 w-12 rounded-full bg-white/20 animate-shimmer"
-              style={{ left: `calc(${progress}% - 24px)` }}
+              className="absolute inset-y-0 w-16 rounded-full bg-white/20 animate-shimmer"
+              style={{ left: `calc(${progress}% - 32px)` }}
             />
           )}
         </div>
@@ -230,17 +246,56 @@ export function PipelineAgentView({
         </div>
       </div>
 
+      {/* Document readiness summary (visible after first docs are done) */}
+      {completedCount >= 4 && (
+        <div className="px-6 pb-4">
+          <div className="glass-panel rounded-xl p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs font-semibold text-foreground">Documents Preparing</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { name: "CV", done: completedCount >= 4 },
+                { name: "Cover Letter", done: completedCount >= 4 },
+                { name: "Personal Statement", done: completedCount >= 5 },
+                { name: "Portfolio", done: completedCount >= 5 },
+                { name: "Learning Plan", done: completedCount >= 4 },
+                { name: "Gap Analysis", done: completedCount >= 3 },
+              ].map((doc) => (
+                <div key={doc.name} className="flex items-center gap-1.5">
+                  <CheckCircle2
+                    className={`h-3 w-3 shrink-0 ${
+                      doc.done && isComplete
+                        ? "text-emerald-500"
+                        : doc.done
+                          ? "text-primary animate-pulse"
+                          : "text-muted-foreground/30"
+                    }`}
+                  />
+                  <span className={`text-[11px] ${doc.done ? "text-foreground" : "text-muted-foreground/50"}`}>
+                    {doc.name}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Footer */}
       <div className="px-6 pb-6 flex flex-col items-center gap-2">
         {/* Contextual hint */}
         <p className="text-xs text-muted-foreground text-center max-w-sm">
-          {elapsedMs < 15_000
-            ? "Agents are warming up — typical build takes 1-2 minutes."
-            : elapsedMs < 60_000
-              ? "Making great progress — your application is taking shape."
-              : elapsedMs < 300_000
-                ? "Still working — complex applications can take several minutes."
-                : "Still running — keep this tab open while agents finish."}
+          {isComplete
+            ? "All agents have completed their work. Your application pack is ready."
+            : elapsedMs < 15_000
+              ? "Agents are warming up — typical build takes 1-2 minutes."
+              : elapsedMs < 60_000
+                ? "Making great progress — your application is taking shape."
+                : elapsedMs < 300_000
+                  ? "Still working — complex applications can take several minutes."
+                  : "Still running — keep this tab open while agents finish."}
         </p>
 
         {isComplete ? (

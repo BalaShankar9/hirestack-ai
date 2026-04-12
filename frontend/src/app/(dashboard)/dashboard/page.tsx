@@ -479,6 +479,18 @@ export default function DashboardPage() {
                       </div>
                       <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
                         <span className="flex items-center gap-1"><Clock className="h-2.5 w-2.5" /> {formatRelativeTime(a.updatedAt)}</span>
+                        {(() => {
+                          const coreCount = [a.cvHtml, a.coverLetterHtml, a.personalStatementHtml, a.portfolioHtml].filter(Boolean).length;
+                          const extraCount = Object.keys(a.generatedDocuments || {}).length;
+                          const total = coreCount + extraCount;
+                          if (total === 0) return null;
+                          return (
+                            <span className="flex items-center gap-1">
+                              <FileText className="h-2.5 w-2.5" />
+                              {total} doc{total !== 1 ? "s" : ""}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </Link>
                   </div>

@@ -2266,3 +2266,91 @@ export function emptyDocModule(seedHtml = ""): {
     updatedAt: Date.now(),
   };
 }
+
+
+/* ================================================================== */
+/*  DOCUMENT LIBRARY                                                    */
+/* ================================================================== */
+
+import type { DocumentLibraryItem, DocumentLibrarySummary } from "./models";
+
+function mapDocumentLibraryRow(row: any): DocumentLibraryItem {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    applicationId: row.application_id ?? null,
+    docType: row.doc_type ?? "",
+    docCategory: row.doc_category ?? "tailored",
+    label: row.label ?? "",
+    htmlContent: row.html_content ?? "",
+    metadata: row.metadata ?? {},
+    version: row.version ?? 1,
+    status: row.status ?? "planned",
+    errorMessage: row.error_message ?? undefined,
+    source: row.source ?? "planner",
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+    updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : Date.now(),
+  };
+}
+
+export async function getDocumentLibrary(
+  applicationId?: string,
+  category?: string,
+): Promise<Record<string, DocumentLibraryItem[]>> {
+  const params = new URLSearchParams();
+  if (applicationId) params.set("application_id", applicationId);
+  if (category) params.set("category", category);
+  const resp = await api.get(`/documents/library?${params.toString()}`);
+  const data = resp.data?.documents ?? {};
+  // Normalize: if data is an array, wrap it
+  if (Array.isArray(data)) {
+    return { [category || "all"]: data.map(mapDocumentLibraryRow) };
+  }
+  // data is { benchmark: [...], fixed: [...], tailored: [...] }
+  const result: Record<string, DocumentLibraryItem[]> = {};
+  for (const [cat, docs] of Object.entries(data)) {
+    result[cat] = Array.isArray(docs) ? docs.map(mapDocumentLibraryRow) : [];
+  }
+  return result;
+}
+
+export async function getDocumentLibrarySummary(
+  applicationId: string,
+): Promise<DocumentLibrarySummary> {
+  const resp = await api.get(`/documents/library/summary?application_id=${applicationId}`);
+  return resp.data?.summary ?? {
+    benchmark: { total: 0, ready: 0, generating: 0, planned: 0, error: 0 },
+    fixed: { total: 0, ready: 0, generating: 0, planned: 0, error: 0 },
+    tailored: { total: 0, ready: 0, generating: 0, planned: 0, error: 0 },
+  };
+}
+
+export async function getDocumentFromLibrary(
+  docId: string,
+): Promise<DocumentLibraryItem | null> {
+  const resp = await api.get(`/documents/library/${docId}`);
+  return resp.data?.document ? mapDocumentLibraryRow(resp.data.document) : null;
+}
+
+export async function generateDocumentInLibrary(
+  docType: string,
+  docCategory: string,
+  applicationId?: string,
+  label?: string,
+): Promise<DocumentLibraryItem> {
+  const resp = await api.post("/documents/library/generate", {
+    doc_type: docType,
+    doc_category: docCategory,
+    application_id: applicationId,
+    label,
+  });
+  return mapDocumentLibraryRow(resp.data?.document ?? {});
+}
+
+export async function updateDocumentInLibrary(
+  docId: string,
+  patch: { html_content?: string; label?: string },
+): Promise<DocumentLibraryItem | null> {
+  const resp = await api.patch(`/documents/library/${docId}`, patch);
+  return resp.data?.document ? mapDocumentLibraryRow(resp.data.document) : null;
+}

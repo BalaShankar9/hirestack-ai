@@ -131,7 +131,17 @@ class SSESink(EventSink):
 
 
 class DatabaseSink(EventSink):
-    """Persists events to the generation_job_events table."""
+    """Persists events to the generation_job_events table and keeps the
+    generation_jobs row fully up-to-date so polling clients see real state."""
+
+    # Phase → step index (1-based) for tracking completed_steps
+    _PHASE_STEP: Dict[str, int] = {
+        "recon": 1, "atlas": 2, "cipher": 3, "quill": 4,
+        "forge": 5, "sentinel": 6, "nova": 7,
+    }
+    # Phase names that signal the *previous* phase is done
+    _PHASE_ORDER = ["recon", "atlas", "cipher", "quill", "forge", "sentinel", "nova"]
+    _TOTAL_STEPS = 7
 
     def __init__(
         self,
@@ -150,6 +160,8 @@ class DatabaseSink(EventSink):
         self._requested_modules = requested_modules or []
         self._sequence_no = 0
         self._last_module_progress = -1  # track to avoid redundant DB writes
+        self._completed_steps = 0
+        self._current_phase = ""
 
     async def emit(self, event: PipelineEvent) -> None:
         self._sequence_no += 1
@@ -160,6 +172,7 @@ class DatabaseSink(EventSink):
             "status": event.status,
             **event.data,
         }
+        # Persist event row
         try:
             await asyncio.to_thread(
                 lambda: self._db.table(self._tables["generation_job_events"])
@@ -177,23 +190,117 @@ class DatabaseSink(EventSink):
             logger.warning("db_sink.event_persist_failed",
                            job_id=self._job_id, seq=self._sequence_no, error=str(e)[:200])
 
-        # Also update the generation_jobs row so polling endpoints see progress
+        # Update generation_jobs row with full state for polling clients
         if event.event_type == "progress" and event.progress is not None:
-            await self.update_job_progress(event.progress)
+            phase = event.phase or ""
+            agent_name = self._phase_to_agent(phase)
+
+            # Track completed_steps: when we move to a new phase, the previous one is done
+            if phase and phase != self._current_phase:
+                new_idx = self._phase_index(phase)
+                if new_idx > 0:
+                    self._completed_steps = max(self._completed_steps, new_idx)
+                self._current_phase = phase
+
+            await self._update_job_full(
+                progress=event.progress,
+                status="running",
+                phase=phase,
+                message=event.message or "",
+                current_agent=agent_name,
+                completed_steps=self._completed_steps,
+                total_steps=self._TOTAL_STEPS,
+            )
             # Update module-level progress so frontend module cards show real %
             await self._update_module_progress(event.progress)
 
-    async def update_job_progress(self, progress: int, status: str = "running") -> None:
-        """Update the generation_jobs row with current progress."""
+        elif event.event_type == "complete":
+            await self._update_job_full(
+                progress=100,
+                status="running",
+                phase="complete",
+                message="All pipelines completed",
+                current_agent="nova",
+                completed_steps=self._TOTAL_STEPS,
+                total_steps=self._TOTAL_STEPS,
+            )
+
+        elif event.event_type == "agent_status":
+            agent_name = event.pipeline_name or event.stage or ""
+            await self._update_job_partial(
+                current_agent=agent_name,
+                message=event.message or f"{agent_name} {event.status or 'updated'}",
+            )
+
+    def _phase_to_agent(self, phase: str) -> str:
+        """Map a progress phase name to the agent persona name."""
+        mapping = {
+            "recon": "recon", "atlas": "atlas", "cipher": "cipher",
+            "quill": "quill", "forge": "forge", "sentinel": "sentinel",
+            "nova": "nova", "initializing": "recon",
+        }
+        return mapping.get(phase, phase or "pipeline")
+
+    def _phase_index(self, phase: str) -> int:
+        """Return 0-based index for a phase name, or -1 if unknown."""
+        try:
+            return self._PHASE_ORDER.index(phase)
+        except ValueError:
+            return -1
+
+    async def _update_job_full(
+        self,
+        *,
+        progress: int,
+        status: str,
+        phase: str,
+        message: str,
+        current_agent: str,
+        completed_steps: int,
+        total_steps: int,
+    ) -> None:
+        """Write all tracking fields to the generation_jobs row."""
         try:
             await asyncio.to_thread(
                 lambda: self._db.table(self._tables["generation_jobs"])
-                .update({"progress": progress, "status": status})
+                .update({
+                    "progress": progress,
+                    "status": status,
+                    "phase": phase,
+                    "message": message,
+                    "current_agent": current_agent,
+                    "completed_steps": completed_steps,
+                    "total_steps": total_steps,
+                })
                 .eq("id", self._job_id)
                 .execute()
             )
         except Exception as e:
             logger.warning("db_sink.job_update_failed", job_id=self._job_id, error=str(e)[:200])
+
+    async def _update_job_partial(self, **fields: Any) -> None:
+        """Update a subset of fields on the generation_jobs row."""
+        try:
+            await asyncio.to_thread(
+                lambda: self._db.table(self._tables["generation_jobs"])
+                .update(fields)
+                .eq("id", self._job_id)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning("db_sink.job_partial_update_failed", job_id=self._job_id, error=str(e)[:200])
+
+    async def update_job_progress(self, progress: int, status: str = "running") -> None:
+        """Legacy helper — now delegates to _update_job_full with current state."""
+        await self._update_job_full(
+            progress=progress,
+            status=status,
+            phase=self._current_phase or "",
+            message="",
+            current_agent=self._phase_to_agent(self._current_phase or ""),
+            completed_steps=self._completed_steps,
+            total_steps=self._TOTAL_STEPS,
+        )
 
     async def _update_module_progress(self, progress: int) -> None:
         """Push progress into applications.modules so module cards update in real-time."""
@@ -894,6 +1001,21 @@ class PipelineRuntime:
             "workflow_state": cv_result.workflow_state if cv_result else None,
         }
 
+        # ── Persist to document_library table ─────────────────────────
+        await self._persist_to_document_library(
+            sb=sb, tables=tables, user_id=user_id,
+            cv_html=sanitize_html(cv_html) if cv_html else "",
+            cl_html=sanitize_html(cl_html) if cl_html else "",
+            ps_html=sanitize_html(ps_html) if ps_html else "",
+            portfolio_html=sanitize_html(portfolio_html) if portfolio_html else "",
+            benchmark_cv_html=sanitize_html(benchmark_cv_html) if benchmark_cv_html else "",
+            generated_docs={k: sanitize_html(v) for k, v in generated_docs.items() if v},
+            benchmark_docs={
+                k: (sanitize_html(v) if isinstance(v, str) else v)
+                for k, v in benchmark_documents.items()
+            },
+        )
+
         return response
 
     # ── Legacy (chain-only) fallback ──────────────────────────────────
@@ -1075,6 +1197,98 @@ class PipelineRuntime:
         return response
 
     # ── Helpers ────────────────────────────────────────────────────────
+
+    async def _persist_to_document_library(
+        self,
+        sb: Any,
+        tables: Dict[str, str],
+        user_id: str,
+        cv_html: str,
+        cl_html: str,
+        ps_html: str,
+        portfolio_html: str,
+        benchmark_cv_html: str,
+        generated_docs: Dict[str, str],
+        benchmark_docs: Dict[str, str],
+    ) -> None:
+        """Persist all generated documents to the document_library table."""
+        if "document_library" not in tables:
+            return
+        application_id = self.config.application_id
+        if not application_id:
+            return
+
+        try:
+            from app.services.document_library import DocumentLibraryService
+            service = DocumentLibraryService(sb, tables)
+
+            # Tailored core documents
+            tailored_docs = []
+            if cv_html:
+                tailored_docs.append({"doc_type": "cv", "label": "Tailored CV", "html": cv_html})
+            if cl_html:
+                tailored_docs.append({"doc_type": "cover_letter", "label": "Tailored Cover Letter", "html": cl_html})
+            if ps_html:
+                tailored_docs.append({"doc_type": "personal_statement", "label": "Tailored Personal Statement", "html": ps_html})
+            if portfolio_html:
+                tailored_docs.append({"doc_type": "portfolio", "label": "Tailored Portfolio", "html": portfolio_html})
+
+            for doc in tailored_docs:
+                await service.create_document(
+                    user_id=user_id,
+                    doc_type=doc["doc_type"],
+                    doc_category="tailored",
+                    label=doc["label"],
+                    application_id=application_id,
+                    html_content=doc["html"],
+                    status="ready",
+                    source="planner",
+                )
+
+            # Extra generated documents (tailored)
+            for key, html in generated_docs.items():
+                if html:
+                    await service.create_document(
+                        user_id=user_id,
+                        doc_type=key,
+                        doc_category="tailored",
+                        label=key.replace("_", " ").title(),
+                        application_id=application_id,
+                        html_content=html,
+                        status="ready",
+                        source="planner",
+                    )
+
+            # Benchmark documents
+            if benchmark_cv_html:
+                await service.create_document(
+                    user_id=user_id,
+                    doc_type="cv",
+                    doc_category="benchmark",
+                    label="Benchmark CV",
+                    application_id=application_id,
+                    html_content=benchmark_cv_html,
+                    status="ready",
+                    source="planner",
+                )
+            for key, html in benchmark_docs.items():
+                if html and isinstance(html, str):
+                    await service.create_document(
+                        user_id=user_id,
+                        doc_type=key,
+                        doc_category="benchmark",
+                        label=f"Benchmark {key.replace('_', ' ').title()}",
+                        application_id=application_id,
+                        html_content=html,
+                        status="ready",
+                        source="planner",
+                    )
+
+            logger.info("pipeline_runtime.document_library_persisted",
+                        tailored=len(tailored_docs) + len(generated_docs),
+                        benchmarks=1 + len(benchmark_docs) if benchmark_cv_html else len(benchmark_docs))
+        except Exception as e:
+            logger.warning("pipeline_runtime.document_library_persist_failed", error=str(e)[:200])
 
     @staticmethod
     def _agents_available() -> bool:

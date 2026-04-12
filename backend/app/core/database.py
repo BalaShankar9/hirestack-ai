@@ -181,6 +181,8 @@ TABLES = {
     # Document catalog (platform-wide)
     "document_type_catalog": "document_type_catalog",
     "document_observations": "document_observations",
+    # Document library (user documents across all categories)
+    "document_library": "document_library",
 }
 
 
