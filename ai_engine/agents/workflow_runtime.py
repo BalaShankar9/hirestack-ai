@@ -78,18 +78,10 @@ class WorkflowState:
 #  Stage definitions with timeout and retry config
 # ═══════════════════════════════════════════════════════════════════════
 
-# Per-stage timeout in seconds.  Generous defaults — these are safety nets,
-# not performance targets.
-DEFAULT_STAGE_TIMEOUTS: dict[str, int] = {
-    "researcher": 120,
-    "drafter": 180,
-    "critic": 60,
-    "optimizer": 60,
-    "fact_checker": 90,
-    "validator": 60,
-    "drafter_revision": 180,
-    "critic_re_eval": 60,
-}
+# Per-stage timeout in seconds.  Set to None to disable timeouts.
+# Phase-level timeouts have been removed — future document types may
+# take variable time and premature timeouts waste effort.
+DEFAULT_STAGE_TIMEOUTS: dict[str, int] = {}
 
 DEFAULT_STAGE_RETRIES: dict[str, int] = {
     "researcher": 2,
@@ -399,7 +391,7 @@ async def execute_stage(
         WorkflowStageTimeout: If stage exceeded timeout.
         WorkflowStageFailed: If all retries exhausted.
     """
-    timeout = timeout or DEFAULT_STAGE_TIMEOUTS.get(stage_name.split("_")[0], 120)
+    timeout = timeout or DEFAULT_STAGE_TIMEOUTS.get(stage_name.split("_")[0]) or None
     max_retries = max_retries or DEFAULT_STAGE_RETRIES.get(stage_name.split("_")[0], 1)
 
     checkpoint = StageCheckpoint(

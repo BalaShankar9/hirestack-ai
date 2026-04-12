@@ -321,7 +321,6 @@ async def discover_and_observe(
     user_id: str = "",
     application_id: Optional[str] = None,
     company_intel: Optional[Dict[str, Any]] = None,
-    phase_timeout: float = 60.0,
 ) -> Optional["DocumentPackPlan"]:
     """
     Seed catalog → plan optimal doc pack → record observations.
@@ -339,15 +338,12 @@ async def discover_and_observe(
         catalog = await get_full_catalog(db, tables)
 
         planner = DocumentPackPlanner(ai_client=ai_client, catalog=catalog)
-        doc_pack_plan: DocumentPackPlan = await asyncio.wait_for(
-            planner.plan(
-                jd_text=jd_text,
-                job_title=job_title,
-                company=company,
-                user_profile=user_profile,
-                company_intel=company_intel,
-            ),
-            timeout=phase_timeout,
+        doc_pack_plan: DocumentPackPlan = await planner.plan(
+            jd_text=jd_text,
+            job_title=job_title,
+            company=company,
+            user_profile=user_profile,
+            company_intel=company_intel,
         )
 
         # Collect all discovered doc types for observation

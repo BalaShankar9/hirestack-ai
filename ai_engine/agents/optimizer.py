@@ -342,7 +342,7 @@ class OptimizerAgent(BaseAgent):
         ]
 
         coord = SubAgentCoordinator(agents)
-        results = await coord.gather(sub_ctx, timeout=45.0)
+        results = await coord.gather(sub_ctx)
 
         merged: dict = {}
         for r in results:

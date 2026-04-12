@@ -135,31 +135,15 @@ class SubAgentCoordinator:
         self,
         context: dict,
         *,
-        timeout: float | None = 120.0,
+        timeout: float | None = None,
     ) -> list[SubAgentResult]:
         """
         Run all sub-agents concurrently.
 
         * Each sub-agent is wrapped with ``safe_run`` so failures are isolated.
-        * An optional *timeout* (seconds) caps the total wall-clock time.
         """
         coros = [agent.safe_run(context) for agent in self._sub_agents]
-        try:
-            if timeout:
-                results = await asyncio.wait_for(
-                    asyncio.gather(*coros), timeout=timeout
-                )
-            else:
-                results = await asyncio.gather(*coros)
-        except asyncio.TimeoutError:
-            logger.error("SubAgentCoordinator timed out after %.1fs", timeout)
-            results = [
-                SubAgentResult(
-                    agent_name=a.name,
-                    error=f"Coordinator timeout after {timeout}s",
-                )
-                for a in self._sub_agents
-            ]
+        results = await asyncio.gather(*coros)
         return list(results)
 
     def merge_evidence(self, results: list[SubAgentResult]) -> list[dict]:

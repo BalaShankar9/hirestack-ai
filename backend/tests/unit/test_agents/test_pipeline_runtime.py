@@ -178,7 +178,6 @@ class TestRuntimeConfig:
         config = RuntimeConfig()
         assert config.mode == ExecutionMode.SYNC
         assert config.timeout == 300.0
-        assert config.phase_timeout == 60.0
         assert config.user_id == ""
 
     def test_custom(self):

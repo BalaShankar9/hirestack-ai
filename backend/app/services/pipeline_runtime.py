@@ -40,7 +40,6 @@ class RuntimeConfig:
     """Controls execution behavior per mode."""
     mode: ExecutionMode = ExecutionMode.SYNC
     timeout: float = 300.0          # seconds
-    phase_timeout: float = 90.0     # per-phase timeout
     user_id: str = ""
     job_id: str = ""                # only for JOB mode
     application_id: str = ""        # only for JOB mode
@@ -451,11 +450,8 @@ class PipelineRuntime:
         try:
             from ai_engine.chains.company_intel import CompanyIntelChain
             intel_chain = CompanyIntelChain(ai)
-            company_intel = await asyncio.wait_for(
-                intel_chain.gather_intel(
-                    company=company, job_title=job_title, jd_text=jd_text,
-                ),
-                timeout=self.config.phase_timeout,
+            company_intel = await intel_chain.gather_intel(
+                company=company, job_title=job_title, jd_text=jd_text,
             )
             logger.info("pipeline_runtime.intel_done",
                         confidence=company_intel.get("confidence", "unknown"))
@@ -476,10 +472,7 @@ class PipelineRuntime:
                     ai_client=ai, on_stage_update=stage_callback,
                     db=sb, tables=tables, user_id=user_id,
                 )
-                parse_result: PipelineResult = await asyncio.wait_for(
-                    pipe.execute({"user_id": user_id, "resume_text": resume_text}),
-                    timeout=self.config.phase_timeout * 2,
-                )
+                parse_result: PipelineResult = await pipe.execute({"user_id": user_id, "resume_text": resume_text})
                 await flush_events()
                 user_profile = parse_result.content if isinstance(parse_result.content, dict) else {}
             except Exception as rp_err:
@@ -499,15 +492,12 @@ class PipelineRuntime:
                 ai_client=ai, on_stage_update=stage_callback,
                 db=sb, tables=tables, user_id=user_id,
             )
-            bench_result = await asyncio.wait_for(
-                bench_pipe.execute({
-                    "user_id": user_id,
-                    "job_title": job_title,
-                    "company": company,
-                    "jd_text": jd_text,
-                }),
-                timeout=self.config.phase_timeout * 3,
-            )
+            bench_result = await bench_pipe.execute({
+                "user_id": user_id,
+                "job_title": job_title,
+                "company": company,
+                "jd_text": jd_text,
+            })
             await flush_events()
             benchmark_data = bench_result.content if isinstance(bench_result.content, dict) else {}
         except Exception as bench_err:
@@ -550,16 +540,13 @@ class PipelineRuntime:
                 ai_client=ai, on_stage_update=stage_callback,
                 db=sb, tables=tables, user_id=user_id,
             )
-            gap_result = await asyncio.wait_for(
-                gap_pipe.execute({
-                    "user_id": user_id,
-                    "user_profile": user_profile,
-                    "benchmark": benchmark_data,
-                    "job_title": job_title,
-                    "company": company,
-                }),
-                timeout=self.config.phase_timeout * 2,
-            )
+            gap_result = await gap_pipe.execute({
+                "user_id": user_id,
+                "user_profile": user_profile,
+                "benchmark": benchmark_data,
+                "job_title": job_title,
+                "company": company,
+            })
             await flush_events()
             gap_analysis = gap_result.content if isinstance(gap_result.content, dict) else {}
         except Exception as gap_err:
@@ -629,7 +616,6 @@ class PipelineRuntime:
                 company=company, user_profile=user_profile,
                 user_id=user_id,
                 company_intel=company_intel,
-                phase_timeout=self.config.phase_timeout,
             )
 
             if doc_pack_plan:
@@ -942,18 +928,12 @@ class PipelineRuntime:
         benchmark_data = {}
         try:
             if resume_text.strip():
-                user_profile, benchmark_data = await asyncio.wait_for(
-                    asyncio.gather(
-                        profiler.parse_resume(resume_text),
-                        benchmark_chain.create_ideal_profile(job_title, company, jd_text),
-                    ),
-                    timeout=self.config.phase_timeout * 3,
+                user_profile, benchmark_data = await asyncio.gather(
+                    profiler.parse_resume(resume_text),
+                    benchmark_chain.create_ideal_profile(job_title, company, jd_text),
                 )
             else:
-                benchmark_data = await asyncio.wait_for(
-                    benchmark_chain.create_ideal_profile(job_title, company, jd_text),
-                    timeout=self.config.phase_timeout * 2,
-                )
+                benchmark_data = await benchmark_chain.create_ideal_profile(job_title, company, jd_text)
         except Exception as phase1_err:
             logger.warning("pipeline_runtime.legacy_phase1_failed", error=str(phase1_err)[:200])
             self._failed_modules.append({"module": "benchmark", "error": str(phase1_err)[:200]})
@@ -986,10 +966,7 @@ class PipelineRuntime:
         gap_chain = GapAnalyzerChain(ai)
         gap_analysis = {}
         try:
-            gap_analysis = await asyncio.wait_for(
-                gap_chain.analyze_gaps(user_profile, benchmark_data, job_title, company),
-                timeout=self.config.phase_timeout * 2,
-            )
+            gap_analysis = await gap_chain.analyze_gaps(user_profile, benchmark_data, job_title, company)
         except Exception as gap_err:
             logger.warning("pipeline_runtime.legacy_gap_failed", error=str(gap_err)[:200])
             self._failed_modules.append({"module": "gap_analysis", "error": str(gap_err)[:200]})
@@ -1069,13 +1046,10 @@ class PipelineRuntime:
         try:
             validator = ValidatorChain(ai)
             if cv_html:
-                cv_valid, cv_validation = await asyncio.wait_for(
-                    validator.validate_document(
-                        document_type="Tailored CV",
-                        content=cv_html[:3000],
-                        profile_data=user_profile,
-                    ),
-                    timeout=self.config.phase_timeout,
+                cv_valid, cv_validation = await validator.validate_document(
+                    document_type="Tailored CV",
+                    content=cv_html[:3000],
+                    profile_data=user_profile,
                 )
                 validation["cv"] = {
                     "valid": cv_valid,

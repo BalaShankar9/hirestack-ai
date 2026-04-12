@@ -477,7 +477,6 @@ async def test_partial_failure_reports_failed_modules(aclient):
 
 
 def test_pipeline_timeout_constant_exists():
-    """PIPELINE_TIMEOUT and PHASE_TIMEOUT constants are defined."""
-    from app.api.routes.generate import PIPELINE_TIMEOUT, PHASE_TIMEOUT
+    """PIPELINE_TIMEOUT constant is defined."""
+    from app.api.routes.generate import PIPELINE_TIMEOUT
     assert PIPELINE_TIMEOUT == 300  # 5 minutes
-    assert PHASE_TIMEOUT == 60     # 60 seconds per phase

@@ -339,7 +339,7 @@ class CriticAgent(BaseAgent):
         ]
 
         coord = SubAgentCoordinator(agents)
-        results = await coord.gather(sub_ctx, timeout=60.0)
+        results = await coord.gather(sub_ctx)
 
         merged_scores: dict[str, int] = {}
         all_issues: list[dict] = []

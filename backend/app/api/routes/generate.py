@@ -219,7 +219,6 @@ router = APIRouter()
 MAX_JD_SIZE = 50_000       # 50KB — no JD is this long
 MAX_RESUME_SIZE = 100_000  # 100KB — generous for parsed text
 PIPELINE_TIMEOUT = 300     # 5 minutes — hard ceiling for the sync pipeline
-PHASE_TIMEOUT = 60         # 60s per individual phase (discovery, parsing, etc.)
 
 
 class PipelineRequest(BaseModel):
@@ -447,10 +446,7 @@ async def _run_sync_pipeline(req: PipelineRequest, current_user: Dict[str, Any])
     # ── Phase 0: Document Discovery ───────────────────────────────
     discovery_chain = DocumentDiscoveryChain(ai)
     try:
-        discovery = await asyncio.wait_for(
-            discovery_chain.discover(req.jd_text, req.job_title, company),
-            timeout=PHASE_TIMEOUT,
-        )
+        discovery = await discovery_chain.discover(req.jd_text, req.job_title, company)
         required_docs = discovery.get("required_documents", [])
         optional_docs = discovery.get("optional_documents", [])
         logger.info("pipeline.discovery_done", required=len(required_docs), optional=len(optional_docs))
@@ -473,13 +469,10 @@ async def _run_sync_pipeline(req: PipelineRequest, current_user: Dict[str, Any])
     company_intel = {}
     try:
         intel_chain = CompanyIntelChain(ai)
-        company_intel = await asyncio.wait_for(
-            intel_chain.gather_intel(
-                company=company,
-                job_title=req.job_title,
-                jd_text=req.jd_text,
-            ),
-            timeout=PHASE_TIMEOUT,
+        company_intel = await intel_chain.gather_intel(
+            company=company,
+            job_title=req.job_title,
+            jd_text=req.jd_text,
         )
         logger.info(
             "pipeline.intel_done",
@@ -503,7 +496,6 @@ async def _run_sync_pipeline(req: PipelineRequest, current_user: Dict[str, Any])
         company=company, user_profile=None,  # profile not parsed yet; planner uses JD + intel
         user_id=user_id,
         company_intel=company_intel,
-        phase_timeout=PHASE_TIMEOUT,
     )
 
     if doc_pack_plan:
@@ -524,22 +516,16 @@ async def _run_sync_pipeline(req: PipelineRequest, current_user: Dict[str, Any])
     benchmark_chain = BenchmarkBuilderChain(ai)
 
     if req.resume_text.strip():
-        user_profile, benchmark_data = await asyncio.wait_for(
-            asyncio.gather(
-                profiler.parse_resume(req.resume_text),
-                benchmark_chain.create_ideal_profile(
-                    req.job_title, company, req.jd_text
-                ),
-            ),
-            timeout=PHASE_TIMEOUT * 2,  # parsing + benchmark in parallel
-        )
-    else:
-        user_profile = {}
-        benchmark_data = await asyncio.wait_for(
+        user_profile, benchmark_data = await asyncio.gather(
+            profiler.parse_resume(req.resume_text),
             benchmark_chain.create_ideal_profile(
                 req.job_title, company, req.jd_text
             ),
-            timeout=PHASE_TIMEOUT,
+        )
+    else:
+        user_profile = {}
+        benchmark_data = await benchmark_chain.create_ideal_profile(
+            req.job_title, company, req.jd_text
         )
 
     logger.info("pipeline.phase1_done", has_profile=bool(user_profile))
@@ -548,16 +534,13 @@ async def _run_sync_pipeline(req: PipelineRequest, current_user: Dict[str, Any])
     benchmark_cv_html = ""
     benchmark_documents = {}
     try:
-        benchmark_result = await asyncio.wait_for(
-            benchmark_chain.generate_perfect_application(
-                jd_text=req.jd_text,
-                job_title=req.job_title,
-                company=company,
-                user_profile=user_profile,
-                required_documents=required_docs,
-                discovery_context=discovery,
-            ),
-            timeout=PHASE_TIMEOUT * 2,
+        benchmark_result = await benchmark_chain.generate_perfect_application(
+            jd_text=req.jd_text,
+            job_title=req.job_title,
+            company=company,
+            user_profile=user_profile,
+            required_documents=required_docs,
+            discovery_context=discovery,
         )
         benchmark_documents = benchmark_result.get("benchmark_documents", {})
         benchmark_cv_html = benchmark_documents.get("cv", "")
@@ -590,11 +573,8 @@ async def _run_sync_pipeline(req: PipelineRequest, current_user: Dict[str, Any])
 
     # ── Phase 2: Gap Analysis ─────────────────────────────────────
     gap_chain = GapAnalyzerChain(ai)
-    gap_analysis = await asyncio.wait_for(
-        gap_chain.analyze_gaps(
-            user_profile, benchmark_data, req.job_title, company
-        ),
-        timeout=PHASE_TIMEOUT,
+    gap_analysis = await gap_chain.analyze_gaps(
+        user_profile, benchmark_data, req.job_title, company
     )
 
     logger.info(
@@ -741,13 +721,10 @@ async def _run_sync_pipeline(req: PipelineRequest, current_user: Dict[str, Any])
     try:
         validator = ValidatorChain(ai)
         if cv_html:
-            cv_valid, cv_validation = await asyncio.wait_for(
-                validator.validate_document(
-                    document_type="Tailored CV",
-                    content=cv_html[:3000],
-                    profile_data=user_profile,
-                ),
-                timeout=PHASE_TIMEOUT,
+            cv_valid, cv_validation = await validator.validate_document(
+                document_type="Tailored CV",
+                content=cv_html[:3000],
+                profile_data=user_profile,
             )
             validation["cv"] = {
                 "valid": cv_valid,
@@ -961,9 +938,8 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
         company_intel_stream: dict = {}
         try:
             intel_chain = CompanyIntelChain(ai)
-            company_intel_stream = await asyncio.wait_for(
-                intel_chain.gather_intel(company=company, job_title=req.job_title, jd_text=req.jd_text),
-                timeout=PHASE_TIMEOUT,
+            company_intel_stream = await intel_chain.gather_intel(
+                company=company, job_title=req.job_title, jd_text=req.jd_text,
             )
         except Exception as intel_err:
             logger.warning("agent_pipeline.intel_failed", error=str(intel_err)[:200])
@@ -974,7 +950,6 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             company=company, user_profile=user_profile,
             user_id=user_id,
             company_intel=company_intel_stream,
-            phase_timeout=PHASE_TIMEOUT,
         )
 
         # ── Phase 2: Gap analysis pipeline ───────────────────────────
@@ -2868,7 +2843,6 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             company=company_str, user_profile=user_profile,
             user_id=user_id, application_id=app_id,
             company_intel=company_intel,
-            phase_timeout=PHASE_TIMEOUT,
         )
 
         await emit_progress("documents", 4, 58, "Quill is generating the CV, cover letter, and learning plan…")
@@ -3839,17 +3813,12 @@ async def generate_on_demand_document(
     chain = AdaptiveDocumentChain(ai)
 
     try:
-        html = await asyncio.wait_for(
-            chain.generate(
-                doc_type=req.doc_key,
-                doc_label=doc_label,
-                context=context,
-                mode="user",
-            ),
-            timeout=PHASE_TIMEOUT * 2,
+        html = await chain.generate(
+            doc_type=req.doc_key,
+            doc_label=doc_label,
+            context=context,
+            mode="user",
         )
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="Document generation timed out")
     except Exception as gen_err:
         logger.error("on_demand_doc.generation_failed", doc_key=req.doc_key, error=str(gen_err)[:200])
         raise HTTPException(status_code=500, detail="Document generation failed")
