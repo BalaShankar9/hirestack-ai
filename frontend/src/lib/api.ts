@@ -25,6 +25,8 @@ interface RequestOptions {
 class APIClient {
   private baseUrl: string;
   private token: string | null = null;
+  private static readonly MAX_RETRIES = 3;
+  private static readonly NON_RETRYABLE = new Set([400, 401, 402, 403, 404, 409, 422]);
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
@@ -55,18 +57,36 @@ class APIClient {
       config.body = JSON.stringify(body);
     }
 
-    const response = await fetch(`${this.baseUrl}/api${endpoint}`, config);
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= APIClient.MAX_RETRIES; attempt++) {
+      const response = await fetch(`${this.baseUrl}/api${endpoint}`, config);
 
-    if (!response.ok) {
+      if (response.ok) {
+        if (response.status === 204) return {} as T;
+        return response.json();
+      }
+
+      // Non-retryable status codes — fail immediately
+      if (APIClient.NON_RETRYABLE.has(response.status)) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || `HTTP error! status: ${response.status}`);
+      }
+
+      // Retryable (503, 429, 5xx) — respect Retry-After header
+      const retryAfter = response.headers.get("Retry-After");
+      const delayMs = retryAfter && Number.isFinite(Number(retryAfter))
+        ? Number(retryAfter) * 1000
+        : attempt * 2000;
+
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `HTTP error! status: ${response.status}`);
+      lastError = new Error(error.detail || `HTTP error! status: ${response.status}`);
+
+      if (attempt < APIClient.MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
     }
 
-    if (response.status === 204) {
-      return {} as T;
-    }
-
-    return response.json();
+    throw lastError!;
   }
 
   async uploadFile(

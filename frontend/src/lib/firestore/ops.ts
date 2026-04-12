@@ -189,6 +189,30 @@ export function uid(prefix = "id"): string {
 }
 
 /* ================================================================== */
+/*  RETRY HELPER                                                        */
+/* ================================================================== */
+
+const CRUD_MAX_RETRIES = 3;
+
+async function withRetry<T>(fn: () => Promise<T>, retries = CRUD_MAX_RETRIES): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastError = err;
+      // Don't retry auth errors or client errors
+      const code = err?.code ?? err?.status ?? err?.statusCode;
+      if ([400, 401, 403, 404, 409, 422].includes(Number(code))) throw err;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, attempt * 1000));
+      }
+    }
+  }
+  throw lastError;
+}
+
+/* ================================================================== */
 /*  APPLICATION CRUD                                                    */
 /* ================================================================== */
 
@@ -197,18 +221,20 @@ export async function createApplication(
   title: string,
   confirmedFacts?: ConfirmedFacts
 ): Promise<string> {
-  const row = {
-    user_id: userId,
-    title,
-    status: "draft",
-    confirmed_facts: confirmedFacts ?? null,
-    modules: { ...DEFAULT_MODULES },
-    scores: null,
-  };
+  return withRetry(async () => {
+    const row = {
+      user_id: userId,
+      title,
+      status: "draft",
+      confirmed_facts: confirmedFacts ?? null,
+      modules: { ...DEFAULT_MODULES },
+      scores: null,
+    };
 
-  const { data, error } = await supabase.from(TABLES.applications).insert(row).select("id").single();
-  if (error) throw error;
-  return data.id;
+    const { data, error } = await supabase.from(TABLES.applications).insert(row).select("id").single();
+    if (error) throw error;
+    return data.id;
+  });
 }
 
 export async function getApplication(appId: string): Promise<ApplicationDoc | null> {
@@ -248,21 +274,25 @@ export async function patchApplication(
     dbPatch[keyMap[k] || k] = v;
   }
 
-  const { error } = await supabase
-    .from(TABLES.applications)
-    .update(dbPatch)
-    .eq("id", appId);
+  return withRetry(async () => {
+    const { error } = await supabase
+      .from(TABLES.applications)
+      .update(dbPatch)
+      .eq("id", appId);
 
-  if (error) throw error;
+    if (error) throw error;
+  });
 }
 
 export async function deleteApplication(appId: string): Promise<void> {
-  const { error } = await supabase
-    .from(TABLES.applications)
-    .delete()
-    .eq("id", appId);
+  return withRetry(async () => {
+    const { error } = await supabase
+      .from(TABLES.applications)
+      .delete()
+      .eq("id", appId);
 
-  if (error) throw error;
+    if (error) throw error;
+  });
 }
 
 /* ================================================================== */
