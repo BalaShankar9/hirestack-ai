@@ -58,9 +58,9 @@ export const AgentTimelineCard = memo(function AgentTimelineCard({
 
   useEffect(() => {
     if (status === "running" && logEndRef.current) {
-      logEndRef.current.scrollIntoView({ behavior: "smooth" });
+      logEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
-  }, [logs.length, status]);
+  }, [status]);
 
   return (
     <motion.div

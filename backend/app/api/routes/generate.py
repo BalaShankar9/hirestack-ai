@@ -3151,12 +3151,13 @@ async def _run_generation_job_inner_runtime(job_id: str, user_id: str) -> None:
         .eq("id", job_id).execute()
     )
 
+    confirmed_facts = app_data.get("confirmed_facts") or {}
     try:
         result = await runtime.execute({
-            "job_title": app_data.get("job_title", ""),
-            "company": app_data.get("company", ""),
-            "jd_text": app_data.get("jd_text", ""),
-            "resume_text": app_data.get("resume_text", ""),
+            "job_title": confirmed_facts.get("jobTitle") or confirmed_facts.get("job_title") or "",
+            "company": confirmed_facts.get("company") or "",
+            "jd_text": confirmed_facts.get("jdText") or confirmed_facts.get("jd_text") or "",
+            "resume_text": (confirmed_facts.get("resume") or {}).get("text") or "",
         })
 
         # Use the canonical persistence helper — handles all dynamic doc fields
@@ -3184,7 +3185,7 @@ async def _run_generation_job_inner_runtime(job_id: str, user_id: str) -> None:
         # Mark job complete
         await asyncio.to_thread(
             lambda: sb.table(TABLES["generation_jobs"])
-            .update({"status": "completed", "progress": 100})
+            .update({"status": "succeeded", "progress": 100})
             .eq("id", job_id).execute()
         )
         logger.info("job_runtime.complete", job_id=job_id)

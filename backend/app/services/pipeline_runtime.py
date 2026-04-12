@@ -313,7 +313,7 @@ class PipelineRuntime:
             await self.sink.emit(PipelineEvent(
                 event_type="complete", phase="nova", progress=100,
                 message="All pipelines completed",
-                data={"result": result} if self.config.mode == ExecutionMode.STREAM else {},
+                data={"result": result},
             ))
 
             if self._failed_modules:

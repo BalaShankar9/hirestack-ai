@@ -700,7 +700,7 @@ export async function generateApplicationModules(
       let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
       // Configurable via NEXT_PUBLIC_AI_INACTIVITY_TIMEOUT_MS.
       const inactivityMsRaw = Number.parseInt(process.env.NEXT_PUBLIC_AI_INACTIVITY_TIMEOUT_MS ?? "", 10);
-      const inactivityMs = Number.isFinite(inactivityMsRaw) && inactivityMsRaw > 0 ? inactivityMsRaw : 900_000;
+      const inactivityMs = Number.isFinite(inactivityMsRaw) && inactivityMsRaw > 0 ? inactivityMsRaw : 120_000;
       const resetInactivity = () => {
         if (inactivityTimer) clearTimeout(inactivityTimer);
         inactivityTimer = setTimeout(() => {
