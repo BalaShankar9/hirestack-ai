@@ -4,7 +4,7 @@ Export routes - PDF/DOCX generation (Firestore)
 from typing import Dict, Any, List, Optional
 
 from app.core.security import limiter
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, Field
 
@@ -52,11 +52,13 @@ async def create_export(
 @router.get("")
 async def list_exports(
     request: Request,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """List all user's exports."""
     service = ExportService()
-    return await service.get_user_exports(current_user["id"])
+    return await service.get_user_exports(current_user["id"], limit=limit, offset=offset)
 
 
 @limiter.limit("20/minute")

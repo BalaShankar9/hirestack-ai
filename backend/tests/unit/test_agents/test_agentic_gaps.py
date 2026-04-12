@@ -381,15 +381,11 @@ class TestWorkerPipelineIntegration:
         pipeline = build_pipeline("cover_letter")
         assert pipeline.name == "cover_letter"
 
-    def test_worker_document_task_attempts_pipeline(self):
-        """The worker task code references build_pipeline (import check)."""
-        # This is a static analysis test — verify the code path exists
-        import ast
+    def test_worker_document_task_removed(self):
+        """Workers directory was removed as dead code — no Celery tasks exist."""
         import pathlib
-        src = pathlib.Path(__file__).resolve().parents[4] / "workers" / "tasks" / "document_tasks.py"
-        _tree = ast.parse(src.read_text())
-        source_code = src.read_text()
-        assert "build_pipeline" in source_code or "pipeline" in source_code.lower()
+        src = pathlib.Path(__file__).resolve().parents[4] / "workers"
+        assert not src.exists(), "workers/ should be deleted (dead code)"
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -119,7 +119,7 @@ class TestJobStatusPolling:
         mock_user = {"id": "user-1"}
 
         with patch("app.core.database.get_supabase", return_value=sb), \
-             patch("app.api.routes.generate.validate_uuid"):
+             patch("app.api.routes.generate.jobs.validate_uuid"):
             result = await get_generation_job_status(
                 job_id="job-1",
                 current_user=mock_user,
@@ -139,7 +139,7 @@ class TestJobStatusPolling:
         sb = _make_sb_mock(job_data=[])
 
         with patch("app.core.database.get_supabase", return_value=sb), \
-             patch("app.api.routes.generate.validate_uuid"):
+             patch("app.api.routes.generate.jobs.validate_uuid"):
             with pytest.raises(HTTPException) as exc_info:
                 await get_generation_job_status(
                     job_id="nonexistent",
@@ -181,10 +181,10 @@ class TestModuleRetry:
         req = RetryModulesRequest(modules=["cv"])
 
         with patch("app.core.database.get_supabase", return_value=sb), \
-             patch("app.api.routes.generate.validate_uuid"), \
-             patch("app.api.routes.generate._start_generation_job", side_effect=mock_start), \
-             patch("app.api.routes.generate._persist_generation_job_event", new_callable=AsyncMock), \
-             patch("app.api.routes.generate._set_application_modules_generating", new_callable=AsyncMock):
+             patch("app.api.routes.generate.jobs.validate_uuid"), \
+             patch("app.api.routes.generate.jobs._start_generation_job", side_effect=mock_start), \
+             patch("app.api.routes.generate.jobs._persist_generation_job_event", new_callable=AsyncMock), \
+             patch("app.api.routes.generate.jobs._set_application_modules_generating", new_callable=AsyncMock):
             result = await retry_generation_modules.__wrapped__(
                 request=MagicMock(),
                 job_id="job-orig",
@@ -213,7 +213,7 @@ class TestModuleRetry:
         req = RetryModulesRequest(modules=["cv"])
 
         with patch("app.core.database.get_supabase", return_value=sb), \
-             patch("app.api.routes.generate.validate_uuid"):
+             patch("app.api.routes.generate.jobs.validate_uuid"):
             with pytest.raises(HTTPException) as exc_info:
                 await retry_generation_modules.__wrapped__(
                     request=MagicMock(),
@@ -270,7 +270,7 @@ class TestStaleJobCleanup:
 
         with patch("app.core.database.get_supabase", return_value=sb), \
              patch("app.core.database.TABLES", TABLES), \
-             patch("app.api.routes.generate._finalize_orphaned_job", side_effect=capture_finalize):
+             patch("app.api.routes.generate.jobs._finalize_orphaned_job", side_effect=capture_finalize):
             cleaned = await cleanup_stale_generation_jobs()
 
         assert cleaned == 1
@@ -301,7 +301,7 @@ class TestStaleJobCleanup:
 
         with patch("app.core.database.get_supabase", return_value=sb), \
              patch("app.core.database.TABLES", TABLES), \
-             patch("app.api.routes.generate._finalize_orphaned_job", side_effect=capture_finalize):
+             patch("app.api.routes.generate.jobs._finalize_orphaned_job", side_effect=capture_finalize):
             cleaned = await cleanup_stale_generation_jobs()
 
         assert cleaned == 0
@@ -334,7 +334,7 @@ class TestStaleJobCleanup:
 
         with patch("app.core.database.get_supabase", return_value=sb), \
              patch("app.core.database.TABLES", TABLES), \
-             patch("app.api.routes.generate._finalize_orphaned_job", side_effect=capture_finalize):
+             patch("app.api.routes.generate.jobs._finalize_orphaned_job", side_effect=capture_finalize):
             cleaned = await cleanup_stale_generation_jobs()
 
         assert cleaned == 0

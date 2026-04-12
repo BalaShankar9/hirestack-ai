@@ -4,7 +4,7 @@ Job Description routes (Firestore)
 from typing import Dict, Any
 
 from app.core.security import limiter
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 
 from app.services.job import JobService
 from app.api.deps import get_current_user, validate_uuid
@@ -28,11 +28,13 @@ async def create_job(
 @router.get("")
 async def list_jobs(
     request: Request,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """List all user's job descriptions."""
     service = JobService()
-    return await service.get_user_jobs(current_user["id"])
+    return await service.get_user_jobs(current_user["id"], limit=limit, offset=offset)
 
 
 @limiter.limit("30/minute")

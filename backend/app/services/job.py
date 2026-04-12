@@ -66,13 +66,14 @@ class JobService:
             logger.warning("job_parse_failed", job_id=doc_id, error=str(e))
             return created
 
-    async def get_user_jobs(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    async def get_user_jobs(self, user_id: str, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
         return await self.db.query(
             COLLECTIONS["jobs"],
             filters=[("user_id", "==", user_id)],
             order_by="created_at",
             order_direction="DESCENDING",
             limit=limit,
+            offset=offset,
         )
 
     async def get_job(self, job_id: str, user_id: str) -> Optional[Dict[str, Any]]:

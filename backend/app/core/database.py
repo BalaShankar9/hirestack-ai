@@ -366,8 +366,9 @@ class SupabaseDB:
         order_by: Optional[str] = None,
         order_direction: str = "DESCENDING",
         limit: Optional[int] = None,
+        offset: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        """Query rows with optional filters, ordering, and limit."""
+        """Query rows with optional filters, ordering, limit, and offset."""
         def _q():
             q = self.client.table(table).select("*")
             if filters:
@@ -393,6 +394,8 @@ class SupabaseDB:
                 q = q.order(order_by, desc=desc)
             if limit:
                 q = q.limit(limit)
+            if offset:
+                q = q.offset(offset)
             result = q.execute()
             return result.data or []
 

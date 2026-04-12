@@ -37,7 +37,7 @@ def _load_routes() -> dict:
     if _routes is not None:
         return _routes
     _routes = dict(_DEFAULT_ROUTES)
-    override = os.getenv("MODEL_ROUTES", os.getenv("OLLAMA_MODEL_ROUTES", "")).strip()
+    override = os.getenv("MODEL_ROUTES", "").strip()
     if override:
         try:
             custom = json.loads(override)
@@ -45,12 +45,12 @@ def _load_routes() -> dict:
                 _routes.update(custom)
                 logger.info("model_routes_overridden: %s", list(custom.keys()))
         except json.JSONDecodeError:
-            logger.warning("invalid_OLLAMA_MODEL_ROUTES env var — using defaults")
+            logger.warning("invalid MODEL_ROUTES env var — using defaults")
     return _routes
 
 
 def resolve_model(task_type: Optional[str], default: str) -> str:
-    """Resolve the optimal Ollama model for a given task type."""
+    """Resolve the optimal model for a given task type."""
     if not task_type:
         return default
     routes = _load_routes()

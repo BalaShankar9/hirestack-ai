@@ -176,24 +176,107 @@ class ExportService:
 
     # ── DOCX ──
     def _generate_docx(self, documents: List[Dict[str, Any]], options: Optional[Dict[str, Any]] = None) -> bytes:
+        from html.parser import HTMLParser
+
+        class _DocxHTMLParser(HTMLParser):
+            """Simple HTML parser that produces python-docx elements."""
+            def __init__(self, docx_doc):
+                super().__init__()
+                self.doc = docx_doc
+                self._text = ""
+                self._tag_stack: list = []
+                self._in_table = False
+                self._table_rows: list = []
+                self._current_row: list = []
+                self._cell_text = ""
+
+            def _flush_text(self):
+                text = self._text.strip()
+                self._text = ""
+                return text
+
+            def handle_starttag(self, tag, attrs):
+                self._tag_stack.append(tag)
+                if tag in ("table",):
+                    self._flush_text()
+                    self._in_table = True
+                    self._table_rows = []
+                elif tag == "tr":
+                    self._current_row = []
+                elif tag in ("td", "th"):
+                    self._cell_text = ""
+                elif tag == "br":
+                    self._text += "\n"
+
+            def handle_endtag(self, tag):
+                if tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
+                    level = int(tag[1])
+                    text = self._flush_text()
+                    if text:
+                        self.doc.add_heading(text, level=min(level, 4))
+                elif tag == "p":
+                    text = self._flush_text()
+                    if text:
+                        self.doc.add_paragraph(text)
+                elif tag == "li":
+                    text = self._flush_text()
+                    if text:
+                        parent_tag = self._tag_stack[-2] if len(self._tag_stack) >= 2 else "ul"
+                        style = "List Number" if parent_tag == "ol" else "List Bullet"
+                        self.doc.add_paragraph(text, style=style)
+                elif tag in ("td", "th"):
+                    self._current_row.append(self._cell_text.strip())
+                    self._cell_text = ""
+                elif tag == "tr":
+                    if self._current_row:
+                        self._table_rows.append(self._current_row)
+                elif tag == "table":
+                    self._in_table = False
+                    if self._table_rows:
+                        cols = max(len(r) for r in self._table_rows)
+                        tbl = self.doc.add_table(rows=0, cols=cols)
+                        tbl.style = "Table Grid"
+                        for row_data in self._table_rows:
+                            row = tbl.add_row()
+                            for i, cell_text in enumerate(row_data):
+                                if i < cols:
+                                    row.cells[i].text = cell_text
+                    self._table_rows = []
+                elif tag in ("div", "section", "article"):
+                    text = self._flush_text()
+                    if text:
+                        self.doc.add_paragraph(text)
+
+                if self._tag_stack and self._tag_stack[-1] == tag:
+                    self._tag_stack.pop()
+
+            def handle_data(self, data):
+                if self._in_table:
+                    self._cell_text += data
+                else:
+                    self._text += data
+
+            def handle_entityref(self, name):
+                char_map = {"nbsp": " ", "amp": "&", "lt": "<", "gt": ">", "quot": '"'}
+                self.handle_data(char_map.get(name, f"&{name};"))
+
         docx = DocxDocument()
         for document in documents:
             docx.add_heading(document.get("title", "Untitled"), level=1)
 
             content = document.get("content", "")
             if "<" in content and ">" in content:
-                content = self._strip_html(content)
-
-            for para in content.split("\n\n"):
-                para = para.strip()
-                if not para:
-                    continue
-                if para.startswith("#"):
-                    level = min(len(para.split()[0].rstrip("#")), 4)
-                    docx.add_heading(para.lstrip("#").strip(), level=level + 1)
-                elif para.startswith("- ") or para.startswith("* "):
-                    docx.add_paragraph(para[2:], style="List Bullet")
-                else:
+                parser = _DocxHTMLParser(docx)
+                parser.feed(content)
+                # Flush any remaining text
+                remaining = parser._flush_text()
+                if remaining:
+                    docx.add_paragraph(remaining)
+            else:
+                for para in content.split("\n\n"):
+                    para = para.strip()
+                    if not para:
+                        continue
                     docx.add_paragraph(para)
             docx.add_page_break()
 
@@ -215,13 +298,14 @@ class ExportService:
         return "".join(parts).encode("utf-8")
 
     # ── CRUD ──
-    async def get_user_exports(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    async def get_user_exports(self, user_id: str, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
         return await self.db.query(
             TABLES["exports"],
             filters=[("user_id", "==", user_id)],
             order_by="created_at",
             order_direction="DESCENDING",
             limit=limit,
+            offset=offset,
         )
 
     async def get_export(self, export_id: str, user_id: str) -> Optional[Dict[str, Any]]:

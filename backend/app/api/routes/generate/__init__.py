@@ -27,9 +27,19 @@ from .jobs import (  # noqa: F401
     cleanup_orphaned_generating_modules,
 )
 
-# Tests import these
-from .helpers import _extract_pipeline_html  # noqa: F401
-from .schemas import GenerateDocumentRequest  # noqa: F401
+# Tests and other modules import these
+from .helpers import (  # noqa: F401
+    _extract_pipeline_html,
+    _classify_ai_error,
+    _extract_retry_after_seconds,
+    _validate_pipeline_input,
+)
+from .schemas import (  # noqa: F401
+    GenerateDocumentRequest,
+    PipelineRequest,
+    GenerationJobRequest,
+    RetryModulesRequest,
+)
 from .jobs import (  # noqa: F401
     _fetch_job_and_application,
     _normalize_requested_modules,
@@ -38,8 +48,15 @@ from .jobs import (  # noqa: F401
     _module_has_content,
     _run_generation_job_inner,
     _finalize_orphaned_job,
+    _mark_application_generation_finished,
+    _run_generation_job,
+    _ACTIVE_GENERATION_TASKS,
     _CAMEL_TO_SNAKE,
     _SNAKE_TO_CAMEL,
     _IDENTITY_KEYS,
     _DEFAULT_REQUESTED_MODULES,
+    create_generation_job,
+    get_generation_job_status,
+    retry_generation_modules,
+    replay_generation_job,
 )

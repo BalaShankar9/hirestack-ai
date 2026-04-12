@@ -91,8 +91,8 @@ class TestFinalizeOrphanedJob:
             patches_written.append(patch)
 
         with patch("app.core.database.get_supabase", return_value=sb), \
-             patch("app.api.routes.generate._persist_generation_job_update", side_effect=capture_persist), \
-             patch("app.api.routes.generate._mark_application_generation_finished", new_callable=AsyncMock):
+             patch("app.api.routes.generate.jobs._persist_generation_job_update", side_effect=capture_persist), \
+             patch("app.api.routes.generate.jobs._mark_application_generation_finished", new_callable=AsyncMock):
             await _finalize_orphaned_job("job-1", status="failed", error_message="test error")
 
         assert len(patches_written) >= 1
@@ -111,7 +111,7 @@ class TestFinalizeOrphanedJob:
             patches_written.append(patch)
 
         with patch("app.core.database.get_supabase", return_value=sb), \
-             patch("app.api.routes.generate._persist_generation_job_update", side_effect=capture_persist):
+             patch("app.api.routes.generate.jobs._persist_generation_job_update", side_effect=capture_persist):
             await _finalize_orphaned_job("job-1", status="failed")
 
         # Nothing should be written — job is already terminal
@@ -142,7 +142,7 @@ class TestMarkApplicationFinished:
         async def capture_patch(sb_arg, tables, app_id, patch):
             patches_written.append(patch)
 
-        with patch("app.api.routes.generate._persist_application_patch", side_effect=capture_patch):
+        with patch("app.api.routes.generate.jobs._persist_application_patch", side_effect=capture_patch):
             await _mark_application_generation_finished(
                 sb, TABLES, "app-1", None, ["cv", "coverLetter"],
                 status="failed", error_message="oops",
@@ -171,7 +171,7 @@ class TestMarkApplicationFinished:
         async def capture_patch(sb_arg, tables, app_id, patch):
             patches_written.append(patch)
 
-        with patch("app.api.routes.generate._persist_application_patch", side_effect=capture_patch):
+        with patch("app.api.routes.generate.jobs._persist_application_patch", side_effect=capture_patch):
             await _mark_application_generation_finished(
                 sb, TABLES, "app-1", None, ["cv", "coverLetter"],
                 status="cancelled",
@@ -203,8 +203,8 @@ class TestRunGenerationJobFinalization:
         async def capture_finalize(job_id, *, status, error_message):
             finalize_calls.append({"job_id": job_id, "status": status})
 
-        with patch("app.api.routes.generate._run_generation_job_inner", side_effect=mock_inner), \
-             patch("app.api.routes.generate._finalize_orphaned_job", side_effect=capture_finalize):
+        with patch("app.api.routes.generate.jobs._run_generation_job_inner", side_effect=mock_inner), \
+             patch("app.api.routes.generate.jobs._finalize_orphaned_job", side_effect=capture_finalize):
             await _run_generation_job("job-1", "user-1")
 
         assert len(finalize_calls) == 1
@@ -227,9 +227,9 @@ class TestRunGenerationJobFinalization:
             coro.close()
             raise asyncio.TimeoutError()
 
-        with patch("app.api.routes.generate._run_generation_job_inner", side_effect=mock_inner), \
-             patch("app.api.routes.generate._finalize_orphaned_job", side_effect=capture_finalize), \
-             patch("app.api.routes.generate.asyncio.wait_for", new=mock_wait_for):
+        with patch("app.api.routes.generate.jobs._run_generation_job_inner", side_effect=mock_inner), \
+             patch("app.api.routes.generate.jobs._finalize_orphaned_job", side_effect=capture_finalize), \
+             patch("app.api.routes.generate.jobs.asyncio.wait_for", new=mock_wait_for):
             await _run_generation_job("job-1", "user-1")
 
         assert len(finalize_calls) == 1
@@ -247,8 +247,8 @@ class TestRunGenerationJobFinalization:
         async def capture_finalize(job_id, *, status, error_message):
             finalize_calls.append({"job_id": job_id, "status": status})
 
-        with patch("app.api.routes.generate._run_generation_job_inner", side_effect=mock_inner), \
-             patch("app.api.routes.generate._finalize_orphaned_job", side_effect=capture_finalize):
+        with patch("app.api.routes.generate.jobs._run_generation_job_inner", side_effect=mock_inner), \
+             patch("app.api.routes.generate.jobs._finalize_orphaned_job", side_effect=capture_finalize):
             await _run_generation_job("job-1", "user-1")
 
         assert len(finalize_calls) == 1
