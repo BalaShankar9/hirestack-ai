@@ -37,7 +37,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https:",
               "font-src 'self' data:",
-              `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.up.railway.app${isDev ? " http://localhost:* http://127.0.0.1:* ws://localhost:*" : ""}`,
+              `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.up.railway.app https://api.hirestack.tech${isDev ? " http://localhost:* http://127.0.0.1:* ws://localhost:*" : ""}`,
               "frame-ancestors 'none'",
             ].join("; "),
           },
