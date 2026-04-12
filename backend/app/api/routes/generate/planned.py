@@ -1,7 +1,6 @@
 """Planner-driven pipeline endpoint (POST /pipeline/planned)."""
 import asyncio
 import traceback
-import structlog
 from typing import Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request

@@ -1,7 +1,6 @@
 """Synchronous pipeline endpoint (POST /pipeline)."""
 import asyncio
 import traceback
-import structlog
 from typing import Dict, Any, List
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -11,8 +10,6 @@ from app.core.security import limiter
 
 from .schemas import PipelineRequest
 from .helpers import (
-    MAX_JD_SIZE,
-    MAX_RESUME_SIZE,
     PIPELINE_TIMEOUT,
     _RUNTIME_AVAILABLE,
     _classify_ai_error,

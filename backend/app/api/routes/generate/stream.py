@@ -1,11 +1,9 @@
 """SSE streaming pipeline endpoint (POST /pipeline/stream)."""
 import asyncio
 import traceback
-import structlog
-from datetime import datetime, timezone
-from typing import Dict, Any, List, AsyncGenerator
+from typing import Dict, Any, AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import get_current_user, check_billing_limit
@@ -20,14 +18,12 @@ from .helpers import (
     _validate_pipeline_input,
     _sse,
     _agent_sse,
-    _detail_sse,
     _extract_pipeline_html,
     _extract_keywords_from_jd,
     _quality_score_from_scores,
     _validation_issue_count,
     _build_evidence_summary,
     _format_response,
-    _sanitize_output_html,
     logger,
     CircuitBreakerOpen,
 )

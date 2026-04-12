@@ -2313,15 +2313,21 @@ export async function getDocumentLibrary(
   const resp = await fetch(`${AI_API_URL}/api/documents/library?${params.toString()}`, { headers });
   if (!resp.ok) throw new Error(`Failed to fetch document library (${resp.status})`);
   const json = await resp.json();
-  const data = json?.documents ?? {};
+  const data = json?.documents;
+  if (!data) return {};
+  // Backend returns an array when filtering by category, an object when returning grouped docs
   if (Array.isArray(data)) {
-    return { [category || "all"]: data.map(mapDocumentLibraryRow) };
+    const key = json?.category || category || "all";
+    return { [key]: data.map(mapDocumentLibraryRow) };
   }
-  const result: Record<string, DocumentLibraryItem[]> = {};
-  for (const [cat, docs] of Object.entries(data)) {
-    result[cat] = Array.isArray(docs) ? docs.map(mapDocumentLibraryRow) : [];
+  if (typeof data === "object" && data !== null) {
+    const result: Record<string, DocumentLibraryItem[]> = {};
+    for (const [cat, docs] of Object.entries(data)) {
+      result[cat] = Array.isArray(docs) ? (docs as any[]).map(mapDocumentLibraryRow) : [];
+    }
+    return result;
   }
-  return result;
+  return {};
 }
 
 export async function getDocumentLibrarySummary(

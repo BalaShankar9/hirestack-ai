@@ -62,7 +62,6 @@ export function isAllowedFileExtension(filename: string): boolean {
  */
 export function sanitizeHtml(html: string): string {
   if (!html) return "";
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const DOMPurify = require("dompurify");
   const purify = DOMPurify.default ?? DOMPurify;
   return purify.sanitize(html, {

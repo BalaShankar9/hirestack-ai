@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import structlog
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 logger = structlog.get_logger("hirestack.document_library")
@@ -184,7 +183,7 @@ class DocumentLibraryService:
     async def create_planned_documents(
         self,
         user_id: str,
-        application_id: str,
+        application_id: Optional[str],
         documents: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         """Create multiple planned documents at once (from planner output).
@@ -194,7 +193,7 @@ class DocumentLibraryService:
         for doc in documents:
             rows.append({
                 "user_id": user_id,
-                "application_id": application_id if doc.get("doc_category") != "fixed" else None,
+                "application_id": application_id if (application_id and doc.get("doc_category") != "fixed") else None,
                 "doc_type": doc["doc_type"],
                 "doc_category": doc.get("doc_category", "tailored"),
                 "label": doc.get("label", doc["doc_type"].replace("_", " ").title()),
@@ -251,7 +250,7 @@ class DocumentLibraryService:
                 })
 
         if new_docs:
-            created = await self.create_planned_documents(user_id, "", new_docs)
+            created = await self.create_planned_documents(user_id, None, new_docs)
             existing.extend(created)
 
         return existing

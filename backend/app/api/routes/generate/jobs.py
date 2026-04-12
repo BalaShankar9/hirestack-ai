@@ -1,17 +1,16 @@
 """DB-backed generation jobs: endpoints, infrastructure, runtime, and cleanup."""
 import asyncio
 import traceback
-import structlog
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import get_current_user, validate_uuid, check_billing_limit
+from app.api.deps import get_current_user, validate_uuid
 from app.core.security import limiter
 
-from .schemas import GenerationJobRequest, RetryModulesRequest, ALLOWED_JOB_MODULES
+from .schemas import GenerationJobRequest, RetryModulesRequest
 from .helpers import (
     _RUNTIME_AVAILABLE,
     _AGENT_PIPELINES_AVAILABLE,
@@ -20,7 +19,6 @@ from .helpers import (
     _extract_keywords_from_jd,
     _build_evidence_summary,
     _format_response,
-    _sanitize_output_html,
     _sse,
     _PIPELINE_NAMES,
     _STAGE_ORDER,
@@ -43,7 +41,7 @@ except ImportError:
     pass
 
 try:
-    from .helpers import (
+    from .helpers import (  # noqa: F401
         cv_generation_pipeline, cover_letter_pipeline,
         personal_statement_pipeline, portfolio_pipeline,
         PipelineResult,

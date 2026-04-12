@@ -42,7 +42,7 @@ except ImportError:
 
 # ── Conditional imports: Agent Pipelines ──
 try:
-    from ai_engine.agents.pipelines import (
+    from ai_engine.agents.pipelines import (  # noqa: F401
         resume_parse_pipeline,
         benchmark_pipeline,
         gap_analysis_pipeline,
@@ -51,8 +51,8 @@ try:
         personal_statement_pipeline,
         portfolio_pipeline,
     )
-    from ai_engine.agents.orchestrator import PipelineResult
-    from ai_engine.agents.workflow_runtime import (
+    from ai_engine.agents.orchestrator import PipelineResult  # noqa: F401
+    from ai_engine.agents.workflow_runtime import (  # noqa: F401
         WorkflowEventStore as _WorkflowEventStore,
         reconstruct_state as _reconstruct_state,
         get_completed_stages as _get_completed_stages,

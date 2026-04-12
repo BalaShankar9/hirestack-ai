@@ -1213,9 +1213,11 @@ class PipelineRuntime:
     ) -> None:
         """Persist all generated documents to the document_library table."""
         if "document_library" not in tables:
+            logger.warning("pipeline_runtime.persist_skipped", reason="document_library table not in TABLES config")
             return
         application_id = self.config.application_id
         if not application_id:
+            logger.warning("pipeline_runtime.persist_skipped", reason="no application_id in pipeline config")
             return
 
         try:

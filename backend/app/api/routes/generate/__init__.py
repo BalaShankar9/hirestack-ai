@@ -20,27 +20,27 @@ router.include_router(document_router)
 
 # ── Re-exports for backward compatibility ──
 # main.py imports these
-from .helpers import _RUNTIME_AVAILABLE  # noqa: F401
-from .jobs import (  # noqa: F401
+from .helpers import _RUNTIME_AVAILABLE  # noqa: E402, F401
+from .jobs import (  # noqa: E402, F401
     recover_inflight_generation_jobs,
     cleanup_stale_generation_jobs,
     cleanup_orphaned_generating_modules,
 )
 
 # Tests and other modules import these
-from .helpers import (  # noqa: F401
+from .helpers import (  # noqa: E402, F401
     _extract_pipeline_html,
     _classify_ai_error,
     _extract_retry_after_seconds,
     _validate_pipeline_input,
 )
-from .schemas import (  # noqa: F401
+from .schemas import (  # noqa: E402, F401
     GenerateDocumentRequest,
     PipelineRequest,
     GenerationJobRequest,
     RetryModulesRequest,
 )
-from .jobs import (  # noqa: F401
+from .jobs import (  # noqa: E402, F401
     _fetch_job_and_application,
     _normalize_requested_modules,
     _default_module_states,

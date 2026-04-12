@@ -1,6 +1,5 @@
 """On-demand single document generation endpoint (POST /document)."""
 import asyncio
-import structlog
 from typing import Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request

@@ -217,6 +217,15 @@ export default function ApplicationWorkspacePage() {
     if (tab === "library") fetchDocLibrary();
   }, [tab, fetchDocLibrary]);
 
+  // Poll while any document is still generating
+  useEffect(() => {
+    if (tab !== "library") return;
+    const hasGenerating = Object.values(docLibrary).flat().some(d => d.status === "generating");
+    if (!hasGenerating) return;
+    const interval = setInterval(fetchDocLibrary, 4000);
+    return () => clearInterval(interval);
+  }, [tab, docLibrary, fetchDocLibrary]);
+
   // Track workspace views
   useEffect(() => {
     if (!user || !appId) return;
@@ -1594,8 +1603,8 @@ export default function ApplicationWorkspacePage() {
                       try {
                         await generateDocumentInLibrary(doc.docType, doc.docCategory, appId, doc.label);
                         toast({ title: "Generation started", description: `Generating ${doc.label}…` });
-                        // Refresh after a delay
-                        setTimeout(fetchDocLibrary, 3000);
+                        // Immediate refresh — polling will continue while status is "generating"
+                        fetchDocLibrary();
                       } catch {
                         toast({ title: "Generation failed", variant: "error" });
                       }

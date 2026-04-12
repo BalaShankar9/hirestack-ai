@@ -203,12 +203,10 @@ async def _generate_document_async(
         from ai_engine.client import AIClient
         from ai_engine.chains.adaptive_document import AdaptiveDocumentChain
         from app.core.sanitize import sanitize_html
+        from app.services.document_library import DocumentLibraryService
 
         sb = get_supabase()
-        service_module = __import__(
-            "app.services.document_library", fromlist=["DocumentLibraryService"]
-        )
-        service = service_module.DocumentLibraryService(sb, TABLES)
+        service = DocumentLibraryService(sb, TABLES)
         ai = AIClient()
         chain = AdaptiveDocumentChain(ai)
 
@@ -270,11 +268,9 @@ async def _generate_document_async(
         logger.error("document_generate_async_failed", doc_id=doc_id, error=str(e)[:300])
         try:
             from app.core.database import get_supabase, TABLES
+            from app.services.document_library import DocumentLibraryService
             sb = get_supabase()
-            service_module = __import__(
-                "app.services.document_library", fromlist=["DocumentLibraryService"]
-            )
-            service = service_module.DocumentLibraryService(sb, TABLES)
+            service = DocumentLibraryService(sb, TABLES)
             await service.mark_error(user_id, doc_id, str(e)[:500])
-        except Exception:
-            pass
+        except Exception as mark_err:
+            logger.error("document_mark_error_failed", doc_id=doc_id, error=str(mark_err)[:200])
