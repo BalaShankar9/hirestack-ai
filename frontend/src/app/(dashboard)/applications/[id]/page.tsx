@@ -141,7 +141,7 @@ export default function ApplicationWorkspacePage() {
   const searchParams = useSearchParams();
   const { gatedDownload, showSignup, setShowSignup, onSignupSuccess } = useDownloadGate();
 
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const userId = user?.uid || user?.id || null;
   const { data: app, loading } = useApplication(appId);
   const { data: evidence = [] } = useEvidence(userId, 200);
@@ -1754,7 +1754,7 @@ export default function ApplicationWorkspacePage() {
             replayReport={agentState.replayReport}
             onRequestReplay={async (jobId) => {
               try {
-                const token = await user?.getIdToken();
+                const token = session?.access_token;
                 const res = await fetch(`/api/generate/jobs/${jobId}/replay`, {
                   headers: { Authorization: `Bearer ${token}` },
                 });

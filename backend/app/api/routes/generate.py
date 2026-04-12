@@ -2674,17 +2674,16 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         output_scores = {}
         try:
             from ai_engine.chains.output_scorer import OutputScorer
-            scorer = OutputScorer(ai_client)
-            user_profile = context.get("user_profile", {})
-            jd_text = context.get("jd_text") or context.get("job_description", "")
+            scorer = OutputScorer(ai)
+            profile_for_scoring = confirmed_facts
 
             cv_html = result.get("cv_html", "")
             cl_html = result.get("cover_letter_html", "")
 
-            if cv_html and jd_text:
-                output_scores["cv"] = await scorer.score("CV/Resume", cv_html, jd_text, user_profile)
-            if cl_html and jd_text:
-                output_scores["cover_letter"] = await scorer.score("Cover Letter", cl_html, jd_text, user_profile)
+            if cv_html and jd_text_val:
+                output_scores["cv"] = await scorer.score("CV/Resume", cv_html, jd_text_val, profile_for_scoring)
+            if cl_html and jd_text_val:
+                output_scores["cover_letter"] = await scorer.score("Cover Letter", cl_html, jd_text_val, profile_for_scoring)
         except Exception as score_err:
             logger.warning("output_scoring_failed", job_id=job_id, error=str(score_err)[:200])
 

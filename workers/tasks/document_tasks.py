@@ -34,10 +34,10 @@ def generate_document_async(self, user_id: str, document_type: str, data: dict):
         data: Document generation data
     """
     try:
-        from ai_engine.client import get_ai_client
+        from ai_engine.client import AIClient
 
         async def _generate():
-            client = get_ai_client()
+            client = AIClient()
 
             # Try pipeline-based generation first (full quality gates)
             try:
