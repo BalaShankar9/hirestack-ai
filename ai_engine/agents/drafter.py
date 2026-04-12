@@ -287,9 +287,15 @@ class DrafterAgent(BaseAgent):
             "company_info": "company_info",
             "projects": "projects",
         }
+        # Some chains use 'job_description' instead of 'jd_text'
+        alias_map = {
+            "jd_text": "job_description",
+        }
         for ctx_key, param_name in field_map.items():
             if ctx_key in context and param_name in accepted_params:
                 kwargs[param_name] = context[ctx_key]
+            elif ctx_key in context and ctx_key in alias_map and alias_map[ctx_key] in accepted_params:
+                kwargs[alias_map[ctx_key]] = context[ctx_key]
 
         return kwargs
 
