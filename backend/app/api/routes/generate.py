@@ -4060,3 +4060,74 @@ async def recover_inflight_generation_jobs() -> int:
     except Exception as e:
         logger.warning("recover_inflight_jobs_failed", error=str(e))
         return 0
+
+
+async def cleanup_orphaned_generating_modules() -> int:
+    """Sweep for application modules stuck in 'generating'/'queued' with no active job.
+
+    This catches cases where:
+    - The frontend set modules to 'generating' but the job POST failed
+    - A server restart cleaned up the job but missed the module states
+    - Any other edge case leaving modules orphaned
+
+    Safe to call on startup and periodically.
+    """
+    try:
+        from app.core.database import get_supabase, TABLES
+        import time
+
+        sb = get_supabase()
+
+        # Find all active (running/queued) generation jobs
+        jobs_resp = await asyncio.to_thread(
+            lambda: sb.table(TABLES["generation_jobs"])
+            .select("application_id")
+            .in_("status", ["running", "queued"])
+            .execute()
+        )
+        active_app_ids = {j["application_id"] for j in (jobs_resp.data or []) if j.get("application_id")}
+
+        # Find applications with modules in 'generating' or 'queued' state
+        # Supabase doesn't support JSON field queries well, so fetch recent apps
+        apps_resp = await asyncio.to_thread(
+            lambda: sb.table(TABLES["applications"])
+            .select("id,modules")
+            .order("updated_at", desc=True)
+            .limit(100)
+            .execute()
+        )
+
+        cleaned = 0
+        timestamp = int(time.time() * 1000)
+        for app in (apps_resp.data or []):
+            app_id = app["id"]
+            modules = app.get("modules") or {}
+
+            # Skip apps with active jobs — those are legitimately generating
+            if app_id in active_app_ids:
+                continue
+
+            has_stuck = False
+            for key, val in modules.items():
+                if isinstance(val, dict) and val.get("state") in ("generating", "queued"):
+                    has_stuck = True
+                    modules[key] = {
+                        "state": "error",
+                        "updatedAt": timestamp,
+                        "error": "Generation interrupted. Click Regenerate to retry.",
+                    }
+
+            if has_stuck:
+                await asyncio.to_thread(
+                    lambda aid=app_id, mods=modules: sb.table(TABLES["applications"])
+                    .update({"modules": mods})
+                    .eq("id", aid)
+                    .execute()
+                )
+                cleaned += 1
+                logger.info("orphan_module_cleanup", application_id=app_id)
+
+        return cleaned
+    except Exception as e:
+        logger.warning("orphan_module_cleanup_failed", error=str(e))
+        return 0

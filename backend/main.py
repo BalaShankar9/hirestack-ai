@@ -102,6 +102,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     except Exception as e:
         logger.warning("Failed to recover inflight generation jobs", error=str(e))
 
+    # Sweep for orphaned modules stuck in 'generating' with no active job
+    try:
+        from app.api.routes.generate import cleanup_orphaned_generating_modules
+
+        orphans = await asyncio.wait_for(cleanup_orphaned_generating_modules(), timeout=15)
+        if orphans:
+            logger.info("Cleaned up orphaned generating modules", count=orphans)
+    except asyncio.TimeoutError:
+        logger.warning("orphan module cleanup timed out after 15s — skipping")
+    except Exception as e:
+        logger.warning("Failed to clean up orphaned modules", error=str(e))
+
     # Check PipelineRuntime availability — fallback paths lack catalog integration
     try:
         from app.api.routes.generate import _RUNTIME_AVAILABLE
@@ -137,6 +149,11 @@ async def _periodic_stale_job_cleanup() -> None:
             cleaned = await cleanup_stale_generation_jobs()
             if cleaned:
                 logger.info("Stale job cleanup completed", cleaned_count=cleaned)
+            # Also sweep orphaned modules with no active job
+            from app.api.routes.generate import cleanup_orphaned_generating_modules
+            orphans = await cleanup_orphaned_generating_modules()
+            if orphans:
+                logger.info("Orphaned module cleanup completed", cleaned_count=orphans)
         except asyncio.CancelledError:
             break
         except Exception as e:
