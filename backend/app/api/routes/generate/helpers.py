@@ -1,0 +1,508 @@
+"""Shared helpers, constants, and conditional imports for the generation API."""
+import json
+import math
+import re
+import structlog
+from datetime import datetime, timezone
+from typing import Dict, Any, List, Optional
+
+from fastapi import HTTPException
+
+from app.core.sanitize import sanitize_html
+from app.core.circuit_breaker import CircuitBreakerOpen  # noqa: F401 – re-exported
+
+from .schemas import PipelineRequest
+
+logger = structlog.get_logger()
+
+# ── Constants ──
+MAX_JD_SIZE = 50_000       # 50KB — no JD is this long
+MAX_RESUME_SIZE = 100_000  # 100KB — generous for parsed text
+PIPELINE_TIMEOUT = 300     # 5 minutes — hard ceiling for the sync pipeline
+
+# ── Conditional imports: PipelineRuntime ──
+try:
+    from app.services.pipeline_runtime import (
+        PipelineRuntime as _PipelineRuntime,
+        RuntimeConfig as _RuntimeConfig,
+        ExecutionMode as _ExecutionMode,
+        CollectorSink as _CollectorSink,
+        SSESink as _SSESink,
+        DatabaseSink as _DatabaseSink,
+    )
+    _RUNTIME_AVAILABLE = True
+except ImportError:
+    _PipelineRuntime = None  # type: ignore[assignment,misc]
+    _RuntimeConfig = None  # type: ignore[assignment,misc]
+    _ExecutionMode = None  # type: ignore[assignment,misc]
+    _CollectorSink = None  # type: ignore[assignment,misc]
+    _SSESink = None  # type: ignore[assignment,misc]
+    _DatabaseSink = None  # type: ignore[assignment,misc]
+    _RUNTIME_AVAILABLE = False
+
+# ── Conditional imports: Agent Pipelines ──
+try:
+    from ai_engine.agents.pipelines import (
+        resume_parse_pipeline,
+        benchmark_pipeline,
+        gap_analysis_pipeline,
+        cv_generation_pipeline,
+        cover_letter_pipeline,
+        personal_statement_pipeline,
+        portfolio_pipeline,
+    )
+    from ai_engine.agents.orchestrator import PipelineResult
+    from ai_engine.agents.workflow_runtime import (
+        WorkflowEventStore as _WorkflowEventStore,
+        reconstruct_state as _reconstruct_state,
+        get_completed_stages as _get_completed_stages,
+        is_safely_resumable as _is_safely_resumable,
+    )
+    _AGENT_PIPELINES_AVAILABLE = True
+except ImportError:
+    _AGENT_PIPELINES_AVAILABLE = False
+
+_PIPELINE_NAMES = ["cv_generation", "cover_letter", "personal_statement", "portfolio"]
+_STAGE_ORDER = ["researcher", "drafter", "critic", "optimizer", "fact_checker", "validator"]
+
+
+# ── Utility functions ──
+
+def _sanitize_output_html(html: str) -> str:
+    """Sanitize AI-generated HTML before sending to frontend (XSS prevention)."""
+    if not html:
+        return ""
+    return sanitize_html(html)
+
+
+def _extract_pipeline_html(payload: Any) -> str:
+    """Return HTML from either raw pipeline content or a validator envelope."""
+    if isinstance(payload, str):
+        return payload
+    if not isinstance(payload, dict):
+        return ""
+
+    html = payload.get("html")
+    if isinstance(html, str):
+        return html
+
+    nested = payload.get("content")
+    if isinstance(nested, str):
+        return nested
+    if isinstance(nested, dict):
+        nested_html = nested.get("html")
+        if isinstance(nested_html, str):
+            return nested_html
+
+    return ""
+
+
+def _quality_score_from_scores(scores: Any) -> float:
+    """Collapse per-dimension critic scores into a single user-facing score."""
+    if not isinstance(scores, dict) or not scores:
+        return 0.0
+
+    overall = scores.get("overall")
+    if isinstance(overall, (int, float)):
+        return float(overall)
+
+    numeric_scores = [float(value) for value in scores.values() if isinstance(value, (int, float))]
+    if not numeric_scores:
+        return 0.0
+    return round(sum(numeric_scores) / len(numeric_scores), 1)
+
+
+def _validation_issue_count(report: Any) -> int:
+    if not isinstance(report, dict):
+        return 0
+    issues = report.get("issues")
+    return len(issues) if isinstance(issues, list) else 0
+
+
+def _build_evidence_summary(pipeline_result) -> Optional[Dict[str, Any]]:
+    """Build a compact evidence summary from a PipelineResult for the frontend."""
+    if not pipeline_result:
+        return None
+    ledger = getattr(pipeline_result, "evidence_ledger", None)
+    citations = getattr(pipeline_result, "citations", None) or []
+    if not ledger and not citations:
+        return None
+
+    tier_dist: Dict[str, int] = {}
+    total_items = 0
+    if isinstance(ledger, dict):
+        items = ledger.get("items", [])
+        total_items = len(items) if isinstance(items, list) else ledger.get("count", 0)
+        for item in (items if isinstance(items, list) else []):
+            tier = item.get("tier", "unknown") if isinstance(item, dict) else "unknown"
+            tier_dist[tier] = tier_dist.get(tier, 0) + 1
+
+    fabricated = sum(
+        1 for c in citations
+        if isinstance(c, dict) and c.get("classification") in ("fabricated", "unsupported")
+    )
+    unlinked = sum(
+        1 for c in citations
+        if isinstance(c, dict) and not c.get("evidence_ids")
+    )
+
+    return {
+        "evidence_count": total_items,
+        "tier_distribution": tier_dist,
+        "citation_count": len(citations),
+        "fabricated_count": fabricated,
+        "unlinked_count": unlinked,
+    }
+
+
+def _extract_retry_after_seconds(err: str) -> Optional[int]:
+    """Best-effort parse of provider retry hints into whole seconds."""
+    m = re.search(r"retry in\s+([0-9]+(?:\.[0-9]+)?)s", err, flags=re.IGNORECASE)
+    if m:
+        try:
+            return max(1, int(math.ceil(float(m.group(1)))))
+        except Exception:
+            pass
+
+    m = re.search(r"retryDelay'\s*:\s*'(\d+)s'", err)
+    if m:
+        try:
+            return max(1, int(m.group(1)))
+        except Exception:
+            pass
+
+    return None
+
+
+def _classify_ai_error(exc: Exception) -> Optional[Dict[str, Any]]:
+    """Classify an AI provider exception into a structured response for HTTP/SSE."""
+    err = str(exc).lower()
+    if (
+        "api key not valid" in err
+        or "api_key_invalid" in err
+        or "api keys are not supported" in err
+        or "expected oauth2 access token" in err
+        or "credentials_missing" in err
+    ):
+        return {
+            "code": 401,
+            "message": (
+                "Your Gemini credential isn't a valid API key for the Gemini API. "
+                "Create a Google AI Studio API key (usually starts with 'AIza…') and set GEMINI_API_KEY, "
+                "or configure Vertex AI by setting GEMINI_USE_VERTEXAI=true with OAuth credentials."
+            ),
+        }
+    if "permission denied" in err or "permission_denied" in err:
+        return {"code": 403, "message": "Gemini API permission denied. Check your API key and project settings."}
+    if "not found" in err and ("model" in err or "404" in err):
+        from app.core.config import settings as _s
+        return {"code": 404, "message": f"The AI model '{_s.gemini_model}' was not found. Check your GEMINI_MODEL setting."}
+    if "resource exhausted" in err or "rate limit" in err or "429" in err:
+        return {
+            "code": 429,
+            "message": "AI rate limit reached. Please wait a moment and try again.",
+            "retry_after_seconds": _extract_retry_after_seconds(str(exc)),
+        }
+
+    return None
+
+
+def _validate_pipeline_input(req: PipelineRequest) -> None:
+    """Reject oversized or empty inputs."""
+    if not req.job_title.strip():
+        raise HTTPException(status_code=400, detail="Job title is required")
+    if not req.jd_text.strip():
+        raise HTTPException(status_code=400, detail="Job description is required")
+    if len(req.jd_text) > MAX_JD_SIZE:
+        raise HTTPException(status_code=413, detail="Job description too large (max 50KB)")
+    if len(req.resume_text) > MAX_RESUME_SIZE:
+        raise HTTPException(status_code=413, detail="Resume text too large (max 100KB)")
+
+
+# ── SSE helpers ──
+
+def _sse(event: str, data: dict) -> str:
+    """Format a Server-Sent Event line."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+def _agent_sse(pipeline_name: str, stage: str, status: str, latency_ms: int = 0, message: str = "", quality_scores: dict | None = None) -> str:
+    """Emit an agent_status SSE event."""
+    data = {
+        "pipeline_name": pipeline_name,
+        "stage": stage,
+        "status": status,
+        "latency_ms": latency_ms,
+        "message": message,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if quality_scores:
+        data["quality_scores"] = quality_scores
+    return f"event: agent_status\ndata: {json.dumps(data)}\n\n"
+
+
+def _detail_sse(
+    agent: str,
+    message: str,
+    status: str = "info",
+    source: str | None = None,
+    url: str | None = None,
+    metadata: dict | None = None,
+) -> str:
+    """Emit a structured detail event for terminal-like live logs."""
+    data: Dict[str, Any] = {
+        "agent": agent,
+        "message": message,
+        "status": status,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if source:
+        data["source"] = source
+    if url:
+        data["url"] = url
+    if metadata:
+        data["metadata"] = metadata
+    return f"event: detail\ndata: {json.dumps(data)}\n\n"
+
+
+# ── Response formatter ──
+
+def _format_response(
+    benchmark_data: Dict[str, Any],
+    gap_analysis: Dict[str, Any],
+    roadmap: Dict[str, Any],
+    cv_html: str,
+    cl_html: str,
+    ps_html: str,
+    portfolio_html: str,
+    validation: Dict[str, Any],
+    keywords: List[str],
+    job_title: str,
+    benchmark_cv_html: str = "",
+) -> Dict[str, Any]:
+    """Transform chain outputs into the frontend's expected data shapes."""
+
+    # ── Benchmark ─────────────────────────────
+    ideal_profile = benchmark_data.get("ideal_profile", {})
+    ideal_skills = benchmark_data.get("ideal_skills", [])
+    ideal_experience = benchmark_data.get("ideal_experience", [])
+
+    summary_text = ""
+    if isinstance(ideal_profile, dict):
+        summary_text = ideal_profile.get("summary", "")
+    if not summary_text:
+        summary_text = f"AI-generated benchmark for {job_title}"
+
+    rubric: List[str] = []
+    for skill in ideal_skills[:10]:
+        if isinstance(skill, dict):
+            name = skill.get("name", "Unknown")
+            level = skill.get("level", "required")
+            importance = skill.get("importance", "important")
+            rubric.append(f"{name} — {level} level ({importance})")
+
+    benchmark = {
+        "summary": summary_text,
+        "keywords": keywords,
+        "rubric": rubric,
+        "idealProfile": ideal_profile if isinstance(ideal_profile, dict) else {},
+        "idealSkills": ideal_skills,
+        "idealExperience": ideal_experience,
+        "scoringWeights": benchmark_data.get("scoring_weights", {}),
+        "benchmarkCvHtml": _sanitize_output_html(benchmark_cv_html),
+        "createdAt": None,
+    }
+
+    # ── Gaps ──────────────────────────────────
+    compatibility = gap_analysis.get("compatibility_score", 50)
+    skill_gaps = gap_analysis.get("skill_gaps", [])
+    strengths_raw = gap_analysis.get("strengths", [])
+    recommendations_raw = gap_analysis.get("recommendations", [])
+    category_scores = gap_analysis.get("category_scores", {})
+    quick_wins = gap_analysis.get("quick_wins", [])
+
+    missing_kw = [
+        g.get("skill", "") for g in skill_gaps if isinstance(g, dict) and g.get("skill")
+    ]
+    strength_labels = [
+        s.get("area", s.get("description", ""))
+        for s in strengths_raw
+        if isinstance(s, dict)
+    ]
+    rec_labels = [
+        r.get("title", r.get("description", ""))
+        for r in recommendations_raw
+        if isinstance(r, dict)
+    ]
+
+    gaps = {
+        "missingKeywords": missing_kw,
+        "strengths": strength_labels,
+        "recommendations": rec_labels,
+        "gaps": [
+            {
+                "dimension": g.get("skill", ""),
+                "gap": f"{g.get('current_level', '?')} → {g.get('required_level', 'required')}",
+                "severity": _map_severity(g.get("gap_severity", "moderate")),
+                "suggestion": g.get("recommendation", ""),
+            }
+            for g in skill_gaps
+            if isinstance(g, dict)
+        ],
+        "summary": gap_analysis.get("executive_summary", ""),
+        "compatibility": compatibility,
+        "categoryScores": category_scores,
+        "quickWins": quick_wins,
+        "interviewReadiness": gap_analysis.get("interview_readiness", {}),
+    }
+
+    # ── Learning Plan ─────────────────────────
+    roadmap_data = roadmap.get("roadmap", {}) if isinstance(roadmap, dict) else {}
+    milestones = roadmap_data.get("milestones", [])
+    weekly_plans = roadmap_data.get("weekly_plans", [])
+    skill_dev = roadmap_data.get("skill_development", [])
+    project_recs = roadmap_data.get("project_recommendations", [])
+    lr_resources = roadmap.get("learning_resources", []) if isinstance(roadmap, dict) else []
+    quick_wins_roadmap = roadmap.get("quick_wins", []) if isinstance(roadmap, dict) else []
+
+    plan_items = []
+    if milestones:
+        for i, ms in enumerate(milestones[:12]):
+            if isinstance(ms, dict):
+                plan_items.append({
+                    "week": ms.get("week", i + 1),
+                    "theme": ms.get("title", f"Week {i + 1}"),
+                    "outcomes": ms.get("skills_gained", []),
+                    "tasks": ms.get("tasks", []),
+                    "goals": [ms.get("description", "")] if ms.get("description") else [],
+                })
+    elif weekly_plans:
+        for i, wp in enumerate(weekly_plans[:12]):
+            if isinstance(wp, dict):
+                plan_items.append({
+                    "week": wp.get("week", i + 1),
+                    "theme": wp.get("theme", f"Week {i + 1}"),
+                    "outcomes": wp.get("goals", []),
+                    "tasks": [
+                        a.get("activity", "")
+                        for a in wp.get("activities", [])
+                        if isinstance(a, dict)
+                    ],
+                    "goals": wp.get("goals", []),
+                })
+
+    learning_plan = {
+        "focus": [
+            s.get("skill", "")
+            for s in skill_dev[:6]
+            if isinstance(s, dict) and s.get("skill")
+        ],
+        "plan": plan_items,
+        "resources": [
+            {
+                "skill": r.get("skill_covered", r.get("skill", "")),
+                "title": r.get("title", ""),
+                "provider": r.get("provider", ""),
+                "timebox": r.get("duration", "Self-paced"),
+                "url": r.get("url"),
+            }
+            for r in lr_resources[:12]
+            if isinstance(r, dict)
+        ],
+        "projectRecommendations": [
+            {
+                "title": p.get("title", ""),
+                "description": p.get("description", ""),
+                "skills": p.get("skills_demonstrated", []),
+                "timeline": p.get("timeline", ""),
+            }
+            for p in project_recs[:6]
+            if isinstance(p, dict)
+        ],
+        "quickWins": quick_wins_roadmap,
+    }
+
+    # ── Scores ────────────────────────────────
+    match_score = min(100, max(0, compatibility))
+    ats_score = min(100, match_score + 15)
+    scan_score = min(100, match_score + 10)
+
+    scores = {
+        "match": match_score,
+        "atsReadiness": ats_score,
+        "recruiterScan": scan_score,
+        "evidenceStrength": 0,
+        "topFix": _derive_top_fix(missing_kw),
+        "benchmark": match_score,
+        "gaps": max(0, 100 - len(missing_kw) * 8),
+        "cv": min(100, match_score + 20),
+        "coverLetter": min(100, match_score + 15),
+        "overall": match_score,
+    }
+
+    scorecard = {
+        "overall": scores["overall"],
+        "dimensions": [
+            {"name": "Match", "score": scores["match"], "feedback": f"{scores['match']}% keyword alignment"},
+            {"name": "ATS Readiness", "score": scores["atsReadiness"], "feedback": f"{scores['atsReadiness']}% ATS-optimized"},
+            {"name": "Recruiter Scan", "score": scores["recruiterScan"], "feedback": f"{scores['recruiterScan']}% scan-friendly"},
+            {"name": "Evidence Strength", "score": scores["evidenceStrength"], "feedback": "Add evidence to boost this score"},
+        ],
+        "match": scores["match"],
+        "atsReadiness": scores["atsReadiness"],
+        "recruiterScan": scores["recruiterScan"],
+        "evidenceStrength": scores["evidenceStrength"],
+        "topFix": scores["topFix"],
+        "updatedAt": None,
+    }
+
+    return {
+        "benchmark": benchmark,
+        "gaps": gaps,
+        "learningPlan": learning_plan,
+        "cvHtml": _sanitize_output_html(cv_html),
+        "coverLetterHtml": _sanitize_output_html(cl_html),
+        "personalStatementHtml": _sanitize_output_html(ps_html),
+        "portfolioHtml": _sanitize_output_html(portfolio_html),
+        "validation": validation,
+        "scorecard": scorecard,
+        "scores": scores,
+    }
+
+
+def _map_severity(severity: str) -> str:
+    return {"critical": "high", "major": "high", "moderate": "medium", "minor": "low"}.get(
+        severity, "medium"
+    )
+
+
+def _derive_top_fix(missing: List[str]) -> str:
+    if missing:
+        return f'Add proof for "{missing[0]}" — include a concrete project or measurable result.'
+    return "Your profile is strong! Polish your summary and lead with your best proof point."
+
+
+def _extract_keywords_from_jd(jd_text: str) -> List[str]:
+    """Simple keyword extraction fallback."""
+    KNOWN = {
+        "javascript", "typescript", "python", "java", "go", "rust", "ruby", "php",
+        "swift", "kotlin", "react", "angular", "vue", "svelte", "next", "nuxt",
+        "node", "express", "django", "flask", "fastapi", "spring",
+        "sql", "postgres", "mysql", "mongodb", "redis", "elasticsearch",
+        "aws", "gcp", "azure", "docker", "kubernetes", "terraform",
+        "git", "github", "gitlab", "jenkins", "ci", "cd",
+        "graphql", "rest", "grpc", "microservices",
+        "tailwind", "css", "html", "sass",
+        "jest", "playwright", "cypress", "selenium",
+        "figma", "agile", "scrum", "kanban",
+        "machine", "learning", "ai", "ml", "nlp",
+        "linux", "bash", "shell",
+    }
+    words = jd_text.lower().split()
+    found, seen = [], set()
+    for w in words:
+        clean = w.strip(".,;:!?()[]{}\"'").lower()
+        if clean in KNOWN and clean not in seen:
+            seen.add(clean)
+            found.append(clean)
+    return found[:25]

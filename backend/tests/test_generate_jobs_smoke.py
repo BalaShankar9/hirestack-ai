@@ -255,9 +255,9 @@ async def test_create_job_returns_job_id(aclient):
 
     with (
         patch("app.core.database.get_supabase", return_value=fake_sb),
-        patch("app.api.routes.generate._ensure_generation_job_schema_ready", new_callable=AsyncMock),
-        patch("app.api.routes.generate._start_generation_job") as mock_start,
-        patch("app.api.routes.generate._set_application_modules_generating", new_callable=AsyncMock),
+        patch("app.api.routes.generate.jobs._ensure_generation_job_schema_ready", new_callable=AsyncMock),
+        patch("app.api.routes.generate.jobs._start_generation_job") as mock_start,
+        patch("app.api.routes.generate.jobs._set_application_modules_generating", new_callable=AsyncMock),
     ):
         resp = await aclient.post(
             "/api/generate/jobs",
@@ -279,7 +279,7 @@ async def test_create_job_rejects_unknown_application(aclient):
 
     with (
         patch("app.core.database.get_supabase", return_value=fake_sb),
-        patch("app.api.routes.generate._ensure_generation_job_schema_ready", new_callable=AsyncMock),
+        patch("app.api.routes.generate.jobs._ensure_generation_job_schema_ready", new_callable=AsyncMock),
     ):
         resp = await aclient.post(
             "/api/generate/jobs",
@@ -296,9 +296,9 @@ async def test_create_job_normalizes_empty_modules(aclient):
 
     with (
         patch("app.core.database.get_supabase", return_value=fake_sb),
-        patch("app.api.routes.generate._ensure_generation_job_schema_ready", new_callable=AsyncMock),
-        patch("app.api.routes.generate._start_generation_job"),
-        patch("app.api.routes.generate._set_application_modules_generating", new_callable=AsyncMock) as _mock_set_mods,
+        patch("app.api.routes.generate.jobs._ensure_generation_job_schema_ready", new_callable=AsyncMock),
+        patch("app.api.routes.generate.jobs._start_generation_job"),
+        patch("app.api.routes.generate.jobs._set_application_modules_generating", new_callable=AsyncMock) as _mock_set_mods,
     ):
         resp = await aclient.post(
             "/api/generate/jobs",
@@ -316,7 +316,7 @@ async def test_create_job_schema_not_ready_returns_503(aclient):
     with (
         patch("app.core.database.get_supabase", return_value=fake_sb),
         patch(
-            "app.api.routes.generate._ensure_generation_job_schema_ready",
+            "app.api.routes.generate.jobs._ensure_generation_job_schema_ready",
             new_callable=AsyncMock,
             side_effect=Exception("Schema not ready"),
         ),
@@ -331,7 +331,7 @@ async def test_create_job_schema_not_ready_returns_503(aclient):
     with (
         patch("app.core.database.get_supabase", return_value=fake_sb),
         patch(
-            "app.api.routes.generate._ensure_generation_job_schema_ready",
+            "app.api.routes.generate.jobs._ensure_generation_job_schema_ready",
             new_callable=AsyncMock,
             side_effect=HTTPException(status_code=503, detail="Schema not ready"),
         ),
@@ -527,7 +527,7 @@ async def test_job_runner_succeeds_with_legacy_chains():
 
     with (
         patch("app.core.database.get_supabase", return_value=fake_sb),
-        patch("app.api.routes.generate._AGENT_PIPELINES_AVAILABLE", False),
+        patch("app.api.routes.generate.jobs._AGENT_PIPELINES_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.company_intel.CompanyIntelChain") as MockIntel,
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
@@ -536,11 +536,11 @@ async def test_job_runner_succeeds_with_legacy_chains():
         patch("ai_engine.chains.document_generator.DocumentGeneratorChain") as MockDocGen,
         patch("ai_engine.chains.career_consultant.CareerConsultantChain") as MockConsultant,
         patch("ai_engine.chains.validator.ValidatorChain") as MockValidator,
-        patch("app.api.routes.generate._persist_generation_job_update", side_effect=fake_persist_update),
-        patch("app.api.routes.generate._persist_generation_job_event", side_effect=fake_persist_event),
-        patch("app.api.routes.generate._persist_generation_result_to_application", side_effect=fake_persist_result),
-        patch("app.api.routes.generate._mark_application_generation_finished", side_effect=fake_mark_finished),
-        patch("app.api.routes.generate._set_application_modules_generating", side_effect=fake_set_generating),
+        patch("app.api.routes.generate.jobs._persist_generation_job_update", side_effect=fake_persist_update),
+        patch("app.api.routes.generate.jobs._persist_generation_job_event", side_effect=fake_persist_event),
+        patch("app.api.routes.generate.jobs._persist_generation_result_to_application", side_effect=fake_persist_result),
+        patch("app.api.routes.generate.jobs._mark_application_generation_finished", side_effect=fake_mark_finished),
+        patch("app.api.routes.generate.jobs._set_application_modules_generating", side_effect=fake_set_generating),
     ):
         _wire_job_happy_path(MockIntel, MockProfiler, MockBenchmark, MockGap, MockDocGen, MockConsultant, MockValidator)
 
@@ -587,8 +587,8 @@ async def test_job_runner_fails_on_missing_jd():
 
     with (
         patch("app.core.database.get_supabase", return_value=fake_sb),
-        patch("app.api.routes.generate._persist_generation_job_update", side_effect=fake_persist_update),
-        patch("app.api.routes.generate._persist_generation_job_event", side_effect=fake_persist_event),
+        patch("app.api.routes.generate.jobs._persist_generation_job_update", side_effect=fake_persist_update),
+        patch("app.api.routes.generate.jobs._persist_generation_job_event", side_effect=fake_persist_event),
     ):
         from app.api.routes.generate import _run_generation_job_inner
         await _run_generation_job_inner(FAKE_JOB_ID, FAKE_USER["id"])
@@ -628,7 +628,7 @@ async def test_job_runner_survives_cv_failure():
 
     with (
         patch("app.core.database.get_supabase", return_value=fake_sb),
-        patch("app.api.routes.generate._AGENT_PIPELINES_AVAILABLE", False),
+        patch("app.api.routes.generate.jobs._AGENT_PIPELINES_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.company_intel.CompanyIntelChain") as MockIntel,
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
@@ -637,11 +637,11 @@ async def test_job_runner_survives_cv_failure():
         patch("ai_engine.chains.document_generator.DocumentGeneratorChain") as MockDocGen,
         patch("ai_engine.chains.career_consultant.CareerConsultantChain") as MockConsultant,
         patch("ai_engine.chains.validator.ValidatorChain") as MockValidator,
-        patch("app.api.routes.generate._persist_generation_job_update", side_effect=fake_persist_update),
-        patch("app.api.routes.generate._persist_generation_job_event", side_effect=fake_persist_event),
-        patch("app.api.routes.generate._persist_generation_result_to_application", side_effect=fake_persist_result),
-        patch("app.api.routes.generate._mark_application_generation_finished", side_effect=fake_mark_finished),
-        patch("app.api.routes.generate._set_application_modules_generating", side_effect=fake_set_generating),
+        patch("app.api.routes.generate.jobs._persist_generation_job_update", side_effect=fake_persist_update),
+        patch("app.api.routes.generate.jobs._persist_generation_job_event", side_effect=fake_persist_event),
+        patch("app.api.routes.generate.jobs._persist_generation_result_to_application", side_effect=fake_persist_result),
+        patch("app.api.routes.generate.jobs._mark_application_generation_finished", side_effect=fake_mark_finished),
+        patch("app.api.routes.generate.jobs._set_application_modules_generating", side_effect=fake_set_generating),
     ):
         _wire_job_happy_path(MockIntel, MockProfiler, MockBenchmark, MockGap, MockDocGen, MockConsultant, MockValidator)
         # CV generation FAILS
@@ -691,7 +691,7 @@ async def test_job_runner_handles_cancellation():
 
     with (
         patch("app.core.database.get_supabase", return_value=fake_sb),
-        patch("app.api.routes.generate._AGENT_PIPELINES_AVAILABLE", False),
+        patch("app.api.routes.generate.jobs._AGENT_PIPELINES_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.company_intel.CompanyIntelChain") as MockIntel,
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
@@ -700,10 +700,10 @@ async def test_job_runner_handles_cancellation():
         patch("ai_engine.chains.document_generator.DocumentGeneratorChain") as MockDocGen,
         patch("ai_engine.chains.career_consultant.CareerConsultantChain") as MockConsultant,
         patch("ai_engine.chains.validator.ValidatorChain") as MockValidator,
-        patch("app.api.routes.generate._persist_generation_job_update", side_effect=fake_persist_update),
-        patch("app.api.routes.generate._persist_generation_job_event", side_effect=fake_persist_event),
-        patch("app.api.routes.generate._mark_application_generation_finished", side_effect=fake_mark_finished),
-        patch("app.api.routes.generate._set_application_modules_generating", side_effect=fake_set_generating),
+        patch("app.api.routes.generate.jobs._persist_generation_job_update", side_effect=fake_persist_update),
+        patch("app.api.routes.generate.jobs._persist_generation_job_event", side_effect=fake_persist_event),
+        patch("app.api.routes.generate.jobs._mark_application_generation_finished", side_effect=fake_mark_finished),
+        patch("app.api.routes.generate.jobs._set_application_modules_generating", side_effect=fake_set_generating),
     ):
         _wire_job_happy_path(MockIntel, MockProfiler, MockBenchmark, MockGap, MockDocGen, MockConsultant, MockValidator)
 
@@ -741,7 +741,7 @@ async def test_job_runner_meta_has_company_intel():
 
     with (
         patch("app.core.database.get_supabase", return_value=fake_sb),
-        patch("app.api.routes.generate._AGENT_PIPELINES_AVAILABLE", False),
+        patch("app.api.routes.generate.jobs._AGENT_PIPELINES_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.company_intel.CompanyIntelChain") as MockIntel,
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
@@ -750,11 +750,11 @@ async def test_job_runner_meta_has_company_intel():
         patch("ai_engine.chains.document_generator.DocumentGeneratorChain") as MockDocGen,
         patch("ai_engine.chains.career_consultant.CareerConsultantChain") as MockConsultant,
         patch("ai_engine.chains.validator.ValidatorChain") as MockValidator,
-        patch("app.api.routes.generate._persist_generation_job_update", side_effect=fake_persist_update),
-        patch("app.api.routes.generate._persist_generation_job_event", side_effect=fake_persist_event),
-        patch("app.api.routes.generate._persist_generation_result_to_application", side_effect=fake_persist_result),
-        patch("app.api.routes.generate._mark_application_generation_finished", side_effect=fake_mark_finished),
-        patch("app.api.routes.generate._set_application_modules_generating", side_effect=fake_set_generating),
+        patch("app.api.routes.generate.jobs._persist_generation_job_update", side_effect=fake_persist_update),
+        patch("app.api.routes.generate.jobs._persist_generation_job_event", side_effect=fake_persist_event),
+        patch("app.api.routes.generate.jobs._persist_generation_result_to_application", side_effect=fake_persist_result),
+        patch("app.api.routes.generate.jobs._mark_application_generation_finished", side_effect=fake_mark_finished),
+        patch("app.api.routes.generate.jobs._set_application_modules_generating", side_effect=fake_set_generating),
     ):
         _wire_job_happy_path(MockIntel, MockProfiler, MockBenchmark, MockGap, MockDocGen, MockConsultant, MockValidator)
 
@@ -793,7 +793,7 @@ async def test_job_runner_emits_progress_events_in_order():
 
     with (
         patch("app.core.database.get_supabase", return_value=fake_sb),
-        patch("app.api.routes.generate._AGENT_PIPELINES_AVAILABLE", False),
+        patch("app.api.routes.generate.jobs._AGENT_PIPELINES_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.company_intel.CompanyIntelChain") as MockIntel,
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
@@ -802,11 +802,11 @@ async def test_job_runner_emits_progress_events_in_order():
         patch("ai_engine.chains.document_generator.DocumentGeneratorChain") as MockDocGen,
         patch("ai_engine.chains.career_consultant.CareerConsultantChain") as MockConsultant,
         patch("ai_engine.chains.validator.ValidatorChain") as MockValidator,
-        patch("app.api.routes.generate._persist_generation_job_update", side_effect=fake_persist_update),
-        patch("app.api.routes.generate._persist_generation_job_event", side_effect=fake_persist_event),
-        patch("app.api.routes.generate._persist_generation_result_to_application", side_effect=fake_persist_result),
-        patch("app.api.routes.generate._mark_application_generation_finished", side_effect=fake_mark_finished),
-        patch("app.api.routes.generate._set_application_modules_generating", side_effect=fake_set_generating),
+        patch("app.api.routes.generate.jobs._persist_generation_job_update", side_effect=fake_persist_update),
+        patch("app.api.routes.generate.jobs._persist_generation_job_event", side_effect=fake_persist_event),
+        patch("app.api.routes.generate.jobs._persist_generation_result_to_application", side_effect=fake_persist_result),
+        patch("app.api.routes.generate.jobs._mark_application_generation_finished", side_effect=fake_mark_finished),
+        patch("app.api.routes.generate.jobs._set_application_modules_generating", side_effect=fake_set_generating),
     ):
         _wire_job_happy_path(MockIntel, MockProfiler, MockBenchmark, MockGap, MockDocGen, MockConsultant, MockValidator)
 
@@ -846,8 +846,8 @@ async def test_finalize_orphaned_job():
 
     with (
         patch("app.core.database.get_supabase", return_value=fake_sb),
-        patch("app.api.routes.generate._persist_generation_job_update", side_effect=fake_persist_update),
-        patch("app.api.routes.generate._mark_application_generation_finished", side_effect=fake_mark_finished),
+        patch("app.api.routes.generate.jobs._persist_generation_job_update", side_effect=fake_persist_update),
+        patch("app.api.routes.generate.jobs._mark_application_generation_finished", side_effect=fake_mark_finished),
     ):
         from app.api.routes.generate import _finalize_orphaned_job
         await _finalize_orphaned_job(FAKE_JOB_ID, status="failed", error_message="Timed out")
@@ -870,7 +870,7 @@ async def test_finalize_orphaned_job_skips_already_terminal():
 
     with (
         patch("app.core.database.get_supabase", return_value=fake_sb),
-        patch("app.api.routes.generate._persist_generation_job_update", side_effect=fake_persist_update),
+        patch("app.api.routes.generate.jobs._persist_generation_job_update", side_effect=fake_persist_update),
     ):
         from app.api.routes.generate import _finalize_orphaned_job
         await _finalize_orphaned_job(FAKE_JOB_ID, status="failed", error_message="Timed out")
