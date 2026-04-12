@@ -3133,6 +3133,7 @@ async def _run_generation_job_inner_runtime(job_id: str, user_id: str) -> None:
     sink = _DatabaseSink(
         db=sb, tables=TABLES, job_id=job_id,
         user_id=user_id, application_id=application_id,
+        requested_modules=requested_modules,
     )
     config = _RuntimeConfig(
         mode=_ExecutionMode.JOB,

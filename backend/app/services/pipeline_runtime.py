@@ -134,13 +134,23 @@ class SSESink(EventSink):
 class DatabaseSink(EventSink):
     """Persists events to the generation_job_events table."""
 
-    def __init__(self, db: Any, tables: Dict[str, str], job_id: str, user_id: str, application_id: str) -> None:
+    def __init__(
+        self,
+        db: Any,
+        tables: Dict[str, str],
+        job_id: str,
+        user_id: str,
+        application_id: str,
+        requested_modules: Optional[List[str]] = None,
+    ) -> None:
         self._db = db
         self._tables = tables
         self._job_id = job_id
         self._user_id = user_id
         self._application_id = application_id
+        self._requested_modules = requested_modules or []
         self._sequence_no = 0
+        self._last_module_progress = -1  # track to avoid redundant DB writes
 
     async def emit(self, event: PipelineEvent) -> None:
         self._sequence_no += 1
@@ -168,6 +178,12 @@ class DatabaseSink(EventSink):
             logger.warning("db_sink.event_persist_failed",
                            job_id=self._job_id, seq=self._sequence_no, error=str(e)[:200])
 
+        # Also update the generation_jobs row so polling endpoints see progress
+        if event.event_type == "progress" and event.progress is not None:
+            await self.update_job_progress(event.progress)
+            # Update module-level progress so frontend module cards show real %
+            await self._update_module_progress(event.progress)
+
     async def update_job_progress(self, progress: int, status: str = "running") -> None:
         """Update the generation_jobs row with current progress."""
         try:
@@ -179,6 +195,38 @@ class DatabaseSink(EventSink):
             )
         except Exception as e:
             logger.warning("db_sink.job_update_failed", job_id=self._job_id, error=str(e)[:200])
+
+    async def _update_module_progress(self, progress: int) -> None:
+        """Push progress into applications.modules so module cards update in real-time."""
+        if not self._requested_modules or not self._application_id:
+            return
+        # Throttle: only write when progress changes by ≥5%
+        if abs(progress - self._last_module_progress) < 5:
+            return
+        self._last_module_progress = progress
+        try:
+            resp = await asyncio.to_thread(
+                lambda: self._db.table(self._tables["applications"])
+                .select("modules")
+                .eq("id", self._application_id)
+                .maybe_single()
+                .execute()
+            )
+            modules = (resp.data or {}).get("modules") or {}
+            timestamp = int(time.time() * 1000)
+            for mod in self._requested_modules:
+                cur = modules.get(mod) or {}
+                if cur.get("state") in ("generating", "queued"):
+                    modules[mod] = {**cur, "progress": progress, "updatedAt": timestamp}
+            await asyncio.to_thread(
+                lambda: self._db.table(self._tables["applications"])
+                .update({"modules": modules})
+                .eq("id", self._application_id)
+                .execute()
+            )
+        except Exception as e:
+            logger.warning("db_sink.module_progress_failed",
+                           application_id=self._application_id, error=str(e)[:200])
 
 
 # ═══════════════════════════════════════════════════════════════════════

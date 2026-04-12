@@ -62,6 +62,7 @@ import {
 } from "@/lib/firestore";
 import { useApplication, useEvidence, useTasks } from "@/lib/firestore";
 import type { ModuleKey } from "@/lib/firestore";
+import type { PipelineProgress } from "@/lib/firestore/ops";
 import { toast } from "@/hooks";
 import {
   downloadPdf,
@@ -177,6 +178,7 @@ export default function ApplicationWorkspacePage() {
   const [exporting, setExporting] = useState(false);
   const [regeneratingModule, setRegeneratingModule] = useState<string | null>(null);
   const [regeneratingAll, setRegeneratingAll] = useState(false);
+  const [liveProgress, setLiveProgress] = useState<number>(0);
   const [generatingDocKey, setGeneratingDocKey] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -437,15 +439,37 @@ export default function ApplicationWorkspacePage() {
       return;
     }
     setRegeneratingAll(true);
+    setLiveProgress(0);
     try {
-      await generateApplicationModules(appId, user.uid, app.confirmedFacts);
+      await generateApplicationModules(
+        appId,
+        user.uid,
+        app.confirmedFacts,
+        undefined,
+        (p: PipelineProgress) => setLiveProgress(p.progress ?? 0),
+      );
       toast.success("All modules regenerated! 🎉", "Your application has been refreshed with AI-generated content.");
     } catch (err: any) {
       toast.error("Regeneration failed", err?.message ?? "Make sure the backend is running and try again.");
     } finally {
       setRegeneratingAll(false);
+      setLiveProgress(0);
     }
   };
+
+  /** Merge live SSE progress into module status during regeneration. */
+  const modStatus = useCallback(
+    (key: ModuleKey) => {
+      const base = app?.modules?.[key];
+      if (!base) return { state: "idle" as const };
+      if (regeneratingAll && (base.state === "generating" || base.state === "queued") && liveProgress > 0) {
+        return { ...base, progress: liveProgress };
+      }
+      return base;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [app?.modules, regeneratingAll, liveProgress],
+  );
 
   const handleDeleteWorkspace = async () => {
     if (!user) return;
@@ -603,7 +627,7 @@ export default function ApplicationWorkspacePage() {
                 <ModuleCard
                   title="Benchmark"
                   description="Ideal candidate signal + rubric"
-                  status={app.modules.benchmark}
+                  status={modStatus("benchmark")}
                   icon={<Target className="h-5 w-5" />}
                   onOpen={() => setTab("benchmark")}
                   onRegenerate={() => regenerate("benchmark")}
@@ -611,7 +635,7 @@ export default function ApplicationWorkspacePage() {
                 <ModuleCard
                   title="Gap analysis"
                   description="Missing keywords + recommendations + tasks"
-                  status={app.modules.gaps}
+                  status={modStatus("gaps")}
                   icon={<Layers className="h-5 w-5" />}
                   onOpen={() => setTab("gaps")}
                   onRegenerate={() => regenerate("gaps")}
@@ -619,7 +643,7 @@ export default function ApplicationWorkspacePage() {
                 <ModuleCard
                   title="Learning plan"
                   description="Skill sprints + outcomes practice"
-                  status={app.modules.learningPlan}
+                  status={modStatus("learningPlan")}
                   icon={<GraduationCap className="h-5 w-5" />}
                   onOpen={() => setTab("learning")}
                   onRegenerate={() => regenerate("learningPlan")}
@@ -627,7 +651,7 @@ export default function ApplicationWorkspacePage() {
                 <ModuleCard
                   title="Tailored CV"
                   description="Edit, diff, version, iterate"
-                  status={app.modules.cv}
+                  status={modStatus("cv")}
                   icon={<FileText className="h-5 w-5" />}
                   onOpen={() => setTab("cv")}
                   onRegenerate={() => regenerate("cv")}
@@ -635,7 +659,7 @@ export default function ApplicationWorkspacePage() {
                 <ModuleCard
                   title="Cover Letter"
                   description="Evidence-first narrative"
-                  status={app.modules.coverLetter}
+                  status={modStatus("coverLetter")}
                   icon={<FileText className="h-5 w-5" />}
                   onOpen={() => setTab("cover")}
                   onRegenerate={() => regenerate("coverLetter")}
@@ -643,7 +667,7 @@ export default function ApplicationWorkspacePage() {
                 <ModuleCard
                   title="Personal Statement"
                   description="Compelling motivation narrative"
-                  status={app.modules.personalStatement}
+                  status={modStatus("personalStatement")}
                   icon={<PenTool className="h-5 w-5" />}
                   onOpen={() => setTab("statement")}
                   onRegenerate={() => regenerate("personalStatement")}
@@ -651,7 +675,7 @@ export default function ApplicationWorkspacePage() {
                 <ModuleCard
                   title="Portfolio & Evidence"
                   description="Proof of knowledge + projects"
-                  status={app.modules.portfolio}
+                  status={modStatus("portfolio")}
                   icon={<FolderOpen className="h-5 w-5" />}
                   onOpen={() => setTab("portfolio")}
                   onRegenerate={() => regenerate("portfolio")}
