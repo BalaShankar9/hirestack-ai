@@ -7,7 +7,7 @@ from app.core.security import limiter
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 
 from app.services.job import JobService
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, validate_uuid
 
 router = APIRouter()
 
@@ -43,6 +43,7 @@ async def get_job(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get a specific job description."""
+    validate_uuid(job_id, "job_id")
     service = JobService()
     job = await service.get_job(job_id, current_user["id"])
     if not job:
@@ -59,6 +60,7 @@ async def update_job(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Update a job description."""
+    validate_uuid(job_id, "job_id")
     service = JobService()
     job = await service.update_job(job_id, current_user["id"], job_data)
     if not job:
@@ -74,6 +76,7 @@ async def delete_job(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Delete a job description."""
+    validate_uuid(job_id, "job_id")
     service = JobService()
     deleted = await service.delete_job(job_id, current_user["id"])
     if not deleted:
@@ -88,6 +91,7 @@ async def parse_job(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Parse a job description with AI to extract requirements."""
+    validate_uuid(job_id, "job_id")
     service = JobService()
     job = await service.parse_job(job_id, current_user["id"])
     if not job:

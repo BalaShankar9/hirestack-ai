@@ -57,3 +57,44 @@ export class ErrorBoundary extends Component<Props, State> {
     return this.props.children;
   }
 }
+
+/**
+ * Lightweight section-level error boundary.
+ * Shows a compact inline error instead of crashing the whole page.
+ */
+export class SectionErrorBoundary extends Component<
+  { children: ReactNode; label?: string },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: ReactNode; label?: string }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error(`[SectionErrorBoundary${this.props.label ? `: ${this.props.label}` : ""}]`, error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="rounded-xl border border-red-200 bg-red-50/50 p-4 text-center">
+          <p className="text-xs text-red-600">
+            {this.props.label ? `${this.props.label}: ` : ""}Failed to render this section.
+          </p>
+          <button
+            className="mt-2 text-xs text-red-500 underline"
+            onClick={() => this.setState({ hasError: false, error: null })}
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}

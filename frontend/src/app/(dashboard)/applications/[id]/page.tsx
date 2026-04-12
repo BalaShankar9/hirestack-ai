@@ -84,6 +84,7 @@ import { VersionHistoryDrawer } from "@/components/workspace/version-history-dra
 import { DocEditorModule, ExportCard, EmptyState } from "@/components/workspace/doc-editor-module";
 import type { DocMode } from "@/components/workspace/diff-toggle";
 import { sanitizeHtml } from "@/lib/sanitize";
+import { SectionErrorBoundary } from "@/components/error-boundary";
 import { AgentProgress } from "@/components/workspace/agent-progress";
 import { AgentTimelineRail } from "@/components/workspace/agent-timeline-rail";
 import { EvidenceInspector } from "@/components/workspace/evidence-inspector";
@@ -486,7 +487,7 @@ export default function ApplicationWorkspacePage() {
     }
   };
 
-  if (loading || !app) {
+  if (loading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-40 w-full rounded-2xl" />
@@ -494,6 +495,23 @@ export default function ApplicationWorkspacePage() {
           <Skeleton className="h-[520px] w-full rounded-2xl" />
           <Skeleton className="h-[520px] w-full rounded-2xl" />
         </div>
+      </div>
+    );
+  }
+
+  if (!app) {
+    return (
+      <div className="flex min-h-[400px] flex-col items-center justify-center gap-4 text-center">
+        <FileText className="h-12 w-12 text-muted-foreground/50" />
+        <div>
+          <h2 className="text-lg font-semibold">Application not found</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            This application may have been deleted or you don&apos;t have access.
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => router.push("/dashboard")}>
+          Back to dashboard
+        </Button>
       </div>
     );
   }
@@ -577,6 +595,7 @@ export default function ApplicationWorkspacePage() {
             </TabsList>
 
             <TabsContent value="overview" className="mt-4">
+              <SectionErrorBoundary label="Overview">
               {/* AI intelligence trace */}
               <AITrace
                 variant="inline"
@@ -685,10 +704,12 @@ export default function ApplicationWorkspacePage() {
               <div className="mt-6">
                 <TaskQueue tasks={tasks} onToggle={onToggleTask} />
               </div>
+              </SectionErrorBoundary>
             </TabsContent>
 
             {/* ── Intel Tab ── */}
             <TabsContent value="intel" className="mt-4">
+              <SectionErrorBoundary label="Intel">
               {(() => {
                 const intel = (app as any)?.company_intel;
                 if (!intel || Object.keys(intel).length === 0) {
@@ -910,9 +931,11 @@ export default function ApplicationWorkspacePage() {
                   </div>
                 );
               })()}
+              </SectionErrorBoundary>
             </TabsContent>
 
             <TabsContent value="benchmark" className="mt-4">
+              <SectionErrorBoundary label="Benchmark">
               <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -1080,7 +1103,7 @@ export default function ApplicationWorkspacePage() {
                               <span className="text-[9px] text-emerald-500 font-mono">100%</span>
                             </summary>
                             <div className="border-t p-4 max-h-[400px] overflow-y-auto">
-                              <div className="prose prose-sm dark:prose-invert max-w-none text-xs" dangerouslySetInnerHTML={{ __html: html }} />
+                              <div className="prose prose-sm dark:prose-invert max-w-none text-xs" dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }} />
                             </div>
                           </details>
                         );
@@ -1089,9 +1112,11 @@ export default function ApplicationWorkspacePage() {
                   </div>
                 )}
               </div>
+              </SectionErrorBoundary>
             </TabsContent>
 
             <TabsContent value="gaps" className="mt-4">
+              <SectionErrorBoundary label="Gaps">
               <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -1183,9 +1208,11 @@ export default function ApplicationWorkspacePage() {
                   />
                 )}
               </div>
+              </SectionErrorBoundary>
             </TabsContent>
 
             <TabsContent value="learning" className="mt-4">
+              <SectionErrorBoundary label="Learning">
               <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -1270,6 +1297,7 @@ export default function ApplicationWorkspacePage() {
                   />
                 )}
               </div>
+              </SectionErrorBoundary>
             </TabsContent>
 
             <TabsContent value="cv" className="mt-4">
@@ -1406,7 +1434,7 @@ export default function ApplicationWorkspacePage() {
                       <div className="p-5">
                         <div
                           className="prose prose-sm dark:prose-invert max-w-none"
-                          dangerouslySetInnerHTML={{ __html: html }}
+                          dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
                         />
                       </div>
                     </div>
@@ -1422,7 +1450,7 @@ export default function ApplicationWorkspacePage() {
                         <div className="p-5">
                           <div
                             className="prose prose-sm dark:prose-invert max-w-none opacity-90"
-                            dangerouslySetInnerHTML={{ __html: benchmarkHtml }}
+                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(benchmarkHtml) }}
                           />
                         </div>
                       </details>

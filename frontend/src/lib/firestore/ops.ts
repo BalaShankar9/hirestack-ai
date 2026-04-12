@@ -275,26 +275,40 @@ export async function setModuleStatus(
   status: ModuleStatusState,
   errorMsg?: string
 ): Promise<void> {
-  // First get current modules
-  const { data, error: fetchErr } = await supabase
-    .from(TABLES.applications)
-    .select("modules")
-    .eq("id", appId)
-    .maybeSingle();
-
-  if (fetchErr) throw fetchErr;
-
-  const modules = data?.modules ?? { ...DEFAULT_MODULES };
-  modules[moduleKey] = {
+  // Atomic update via jsonb_set — avoids read-modify-write race condition
+  const patch: Record<string, unknown> = {
     state: status,
-    ...(errorMsg ? { error: errorMsg } : {}),
     updatedAt: Date.now(),
   };
+  if (errorMsg) patch.error = errorMsg;
 
-  const { error } = await supabase
-    .from(TABLES.applications)
-    .update({ modules })
-    .eq("id", appId);
+  const { error } = await supabase.rpc("jsonb_set_module_status", {
+    p_app_id: appId,
+    p_module_key: moduleKey,
+    p_status: patch,
+  });
+
+  // Fallback to read-modify-write if the RPC doesn't exist yet
+  if (error && (error.message?.includes("function") || error.code === "42883")) {
+    const { data, error: fetchErr } = await supabase
+      .from(TABLES.applications)
+      .select("modules")
+      .eq("id", appId)
+      .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+
+    const modules = data?.modules ?? { ...DEFAULT_MODULES };
+    modules[moduleKey] = patch;
+
+    const { error: updateErr } = await supabase
+      .from(TABLES.applications)
+      .update({ modules })
+      .eq("id", appId);
+
+    if (updateErr) throw updateErr;
+    return;
+  }
 
   if (error) throw error;
 }

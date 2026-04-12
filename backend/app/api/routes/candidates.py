@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from app.services.candidate import CandidateService
 from app.services.org import OrgService
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, validate_uuid
 import structlog
 
 logger = structlog.get_logger()
@@ -81,6 +81,7 @@ async def pipeline_stats(
 async def get_candidate(
     request: Request,
     candidate_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    validate_uuid(candidate_id, "candidate_id")
     org = await _get_user_org(current_user)
     service = CandidateService()
     c = await service.get(candidate_id, org["id"])
@@ -94,6 +95,7 @@ async def get_candidate(
 async def update_candidate(
     request: Request,
     candidate_id: str, data: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)):
+    validate_uuid(candidate_id, "candidate_id")
     org = await _get_user_org(current_user)
     service = CandidateService()
     updated = await service.update(candidate_id, org["id"], data)
@@ -108,6 +110,7 @@ async def move_candidate(
     request: Request,
     candidate_id: str, req: MoveStageRequest, current_user: Dict[str, Any] = Depends(get_current_user
 )):
+    validate_uuid(candidate_id, "candidate_id")
     org = await _get_user_org(current_user)
     service = CandidateService()
     try:
@@ -124,6 +127,7 @@ async def move_candidate(
 async def delete_candidate(
     request: Request,
     candidate_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    validate_uuid(candidate_id, "candidate_id")
     org = await _get_user_org(current_user)
     service = CandidateService()
     if not await service.delete(candidate_id, org["id"]):

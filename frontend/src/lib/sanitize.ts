@@ -57,11 +57,21 @@ export function isAllowedFileExtension(filename: string): boolean {
 }
 
 /**
- * Sanitize HTML for safe rendering. Strips script tags and event handlers
- * while preserving formatting tags used in generated documents.
+ * Sanitize HTML for safe rendering using DOMPurify.
+ * Falls back to regex stripping on the server where DOM is unavailable.
  */
 export function sanitizeHtml(html: string): string {
   if (!html) return "";
+  if (typeof window !== "undefined") {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const DOMPurify = require("dompurify");
+    const purify = DOMPurify.default ?? DOMPurify;
+    return purify.sanitize(html, {
+      ADD_TAGS: ["style"],
+      ADD_ATTR: ["target", "rel", "class"],
+    });
+  }
+  // SSR fallback — best-effort regex strip
   return html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
     .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")

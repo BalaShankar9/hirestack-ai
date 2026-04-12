@@ -97,7 +97,7 @@ async def get_daily_briefing(
 
         # Get app stats
         apps = await db.query(TABLES["applications"], filters=[("user_id", "==", current_user["id"])])
-        avg_match = round(sum(a.get("scores", {}).get("match", 0) for a in apps) / max(len(apps), 1))
+        avg_match = round(sum((a.get("scores") or {}).get("match", 0) for a in apps) / max(len(apps), 1))
 
         evidence = await db.query(TABLES["evidence"], filters=[("user_id", "==", current_user["id"])])
 

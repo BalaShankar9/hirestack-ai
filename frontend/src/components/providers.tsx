@@ -74,21 +74,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session with a hard timeout of 5s to prevent DNS hang
-    Promise.race([
-      supabase.auth.getSession(),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 5000))
-    ])
-      .then(({ data: { session: s } }) => {
-        supabase.realtime.setAuth(s?.access_token ?? "");
-        setSession(s);
-        setUser(mapUser(s?.user ?? null));
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Supabase getSession failed:", err);
-        setLoading(false); // Do not block the app forever
-      });
+    // Get initial session with timeout + retry
+    let cancelled = false;
+
+    async function loadSession() {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const { data: { session: s } } = await Promise.race([
+            supabase.auth.getSession(),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("Timeout")), attempt === 0 ? 5000 : 8000)
+            ),
+          ]);
+          if (cancelled) return;
+          supabase.realtime.setAuth(s?.access_token ?? "");
+          setSession(s);
+          setUser(mapUser(s?.user ?? null));
+          setLoading(false);
+          return;
+        } catch (err) {
+          if (cancelled) return;
+          if (attempt === 0) {
+            console.warn("Supabase getSession attempt 1 failed, retrying…", err);
+            continue;
+          }
+          console.error("Supabase getSession failed after retry:", err);
+          setLoading(false);
+        }
+      }
+    }
+
+    loadSession();
 
     // Listen for auth state changes
     const {
@@ -101,6 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => {
+      cancelled = true;
       subscription.unsubscribe();
     };
   }, []);

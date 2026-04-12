@@ -28,8 +28,25 @@ export function useRole() {
 
   /** Check if user can access a given admin feature */
   function canAccess(feature: "pipeline" | "settings" | "members" | "billing" | "audit" | "api_keys"): boolean {
-    // TESTING MODE: all features unlocked — re-enable for production
-    return true;
+    // Global admins bypass all checks
+    if (isGlobalAdmin) return true;
+
+    switch (feature) {
+      case "pipeline":
+        return isOrgRecruiter; // recruiter+ can access pipeline
+      case "settings":
+        return isOrgAdmin; // admin+ can access settings
+      case "members":
+        return isOrgAdmin; // admin+ can manage members
+      case "billing":
+        return isOrgOwner; // only owner can access billing
+      case "audit":
+        return isOrgAdmin; // admin+ can view audit logs
+      case "api_keys":
+        return isOrgOwner; // only owner can manage API keys
+      default:
+        return false;
+    }
   }
 
   return {

@@ -56,7 +56,8 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
         const match = saved ? orgList.find((o: Org) => o.id === saved) : null;
         setCurrentOrg(match || orgList[0]);
       }
-    } catch {
+    } catch (err) {
+      console.error("refreshOrgs failed:", err);
       setOrgs([]);
     }
     setLoading(false);
@@ -82,7 +83,9 @@ export function OrgProvider({ children }: { children: React.ReactNode }) {
         setCurrentOrg(org);
         return org;
       }
-    } catch {}
+    } catch (err) {
+      console.error("createOrg failed:", err);
+    }
     return null;
   };
 

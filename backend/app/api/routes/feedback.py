@@ -9,11 +9,12 @@ import structlog
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, field_validator
 
 from app.api.deps import get_current_user
 from app.core.database import get_supabase, TABLES
+from app.core.security import limiter
 
 logger = structlog.get_logger("hirestack.feedback")
 
@@ -77,7 +78,9 @@ class ABTestResultRequest(BaseModel):
 # ═══════════════════════════════════════════════════════════════════════
 
 @router.post("/application")
+@limiter.limit("10/minute")
 async def submit_application_feedback(
+    request: Request,
     req: ApplicationFeedbackRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -152,7 +155,9 @@ async def submit_application_feedback(
 
 
 @router.post("/ab-test")
+@limiter.limit("10/minute")
 async def record_ab_test_result(
+    request: Request,
     req: ABTestResultRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -187,7 +192,9 @@ async def record_ab_test_result(
 
 
 @router.get("/ab-test/stats")
+@limiter.limit("30/minute")
 async def get_ab_test_stats(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get A/B test comparison analytics for the current user.
@@ -242,7 +249,9 @@ async def get_ab_test_stats(
 
 
 @router.get("/stats")
+@limiter.limit("30/minute")
 async def get_feedback_stats(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get aggregated feedback stats for the current user."""

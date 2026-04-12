@@ -9,21 +9,24 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co";
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "placeholder";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
-const IS_CONFIGURED = !!(
-  process.env.NEXT_PUBLIC_SUPABASE_URL &&
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
+const IS_CONFIGURED = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 
 if (!IS_CONFIGURED && typeof window !== "undefined") {
-  console.warn(
-    "[HireStack] NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY not set — Supabase calls will fail."
+  console.error(
+    "[HireStack] CRITICAL: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY not set — app cannot function."
   );
 }
 
 function createSupabaseClient(): SupabaseClient {
+  if (!IS_CONFIGURED) {
+    // Use dummy values to avoid crash — all operations will fail gracefully
+    return createClient("https://placeholder.supabase.co", "placeholder", {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  }
   return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
       persistSession: true,

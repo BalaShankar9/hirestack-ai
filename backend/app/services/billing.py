@@ -194,7 +194,11 @@ class BillingService:
 
     async def _activate_subscription(self, org_id: str, plan: str, data: Dict):
         """Activate a subscription after successful checkout."""
-        plan_info = PLANS.get(plan, PLANS["pro"])
+        plan_info = PLANS.get(plan)
+        if not plan_info:
+            logger.error("billing_unknown_plan", plan=plan, org_id=org_id)
+            plan_info = PLANS["free"]
+            plan = "free"
         stripe_sub_id = data.get("subscription", "")
         stripe_customer_id = data.get("customer", "")
 

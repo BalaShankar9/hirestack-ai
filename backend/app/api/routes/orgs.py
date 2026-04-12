@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 
 from app.services.org import OrgService
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, validate_uuid
 from app.core.database import TABLES
 import structlog
 
@@ -68,6 +68,7 @@ async def get_org(
     request: Request,
     org_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get org details (must be a member)."""
+    validate_uuid(org_id, "org_id")
     service = OrgService()
     membership = await service.get_membership(org_id, current_user["id"])
     if not membership:
@@ -85,6 +86,7 @@ async def update_org(
     request: Request,
     org_id: str, data: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)):
     """Update org settings (admin+ only)."""
+    validate_uuid(org_id, "org_id")
     service = OrgService()
     membership = await service.get_membership(org_id, current_user["id"])
     if not membership or membership["role"] not in ("owner", "admin"):
@@ -98,6 +100,7 @@ async def delete_org(
     request: Request,
     org_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Delete org (owner only)."""
+    validate_uuid(org_id, "org_id")
     service = OrgService()
     membership = await service.get_membership(org_id, current_user["id"])
     if not membership or membership["role"] != "owner":
@@ -112,6 +115,7 @@ async def delete_org(
 async def list_members(
     request: Request,
     org_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    validate_uuid(org_id, "org_id")
     service = OrgService()
     membership = await service.get_membership(org_id, current_user["id"])
     if not membership:
@@ -126,6 +130,7 @@ async def invite_member(
     org_id: str, req: InviteMemberRequest, current_user: Dict[str, Any] = Depends(get_current_user
 )):
     """Invite a new member to the org."""
+    validate_uuid(org_id, "org_id")
     service = OrgService()
     membership = await service.get_membership(org_id, current_user["id"])
     if not membership or membership["role"] not in ("owner", "admin"):
@@ -140,6 +145,8 @@ async def change_member_role(
     request: Request,
     org_id: str, user_id: str, req: ChangeRoleRequest, current_user: Dict[str, Any] = Depends(get_current_user
 )):
+    validate_uuid(org_id, "org_id")
+    validate_uuid(user_id, "user_id")
     service = OrgService()
     membership = await service.get_membership(org_id, current_user["id"])
     if not membership or membership["role"] not in ("owner", "admin"):
@@ -157,6 +164,8 @@ async def change_member_role(
 async def remove_member(
     request: Request,
     org_id: str, user_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    validate_uuid(org_id, "org_id")
+    validate_uuid(user_id, "user_id")
     service = OrgService()
     membership = await service.get_membership(org_id, current_user["id"])
     if not membership or membership["role"] not in ("owner", "admin"):
@@ -188,6 +197,7 @@ async def accept_invitation(
 async def get_audit_logs(
     request: Request,
     org_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    validate_uuid(org_id, "org_id")
     service = OrgService()
     membership = await service.get_membership(org_id, current_user["id"])
     if not membership or membership["role"] not in ("owner", "admin"):
@@ -200,6 +210,7 @@ async def get_audit_logs(
 async def get_usage(
     request: Request,
     org_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    validate_uuid(org_id, "org_id")
     service = OrgService()
     membership = await service.get_membership(org_id, current_user["id"])
     if not membership or membership["role"] not in ("owner", "admin"):
