@@ -282,14 +282,16 @@ class DrafterAgent(BaseAgent):
             "jd_text": "jd_text",
             "gap_analysis": "gap_analysis",
             "resume_text": "resume_text",
+            "benchmark": "benchmark",
             "benchmark_data": "benchmark_data",
             "strengths": "strengths",
             "company_info": "company_info",
             "projects": "projects",
         }
-        # Some chains use 'job_description' instead of 'jd_text'
+        # Some chains use different parameter names for the same context data
         alias_map = {
             "jd_text": "job_description",
+            "benchmark_data": "benchmark",
         }
         for ctx_key, param_name in field_map.items():
             if ctx_key in context and param_name in accepted_params:
