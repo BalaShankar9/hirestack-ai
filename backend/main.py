@@ -94,9 +94,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     try:
         from app.api.routes.generate import recover_inflight_generation_jobs
 
-        recovered = await recover_inflight_generation_jobs()
+        recovered = await asyncio.wait_for(recover_inflight_generation_jobs(), timeout=15)
         if recovered:
             logger.info("Recovered inflight generation jobs", count=recovered)
+    except asyncio.TimeoutError:
+        logger.warning("recover_inflight_jobs timed out after 15s — skipping")
     except Exception as e:
         logger.warning("Failed to recover inflight generation jobs", error=str(e))
 
@@ -246,13 +248,16 @@ async def global_exception_handler(
 @app.get("/health", tags=["Health"])
 async def health_check():
     """Health check endpoint."""
-    supabase_status = {"ok": False}
+    supabase_status = {"connected": False}
     try:
         client = get_supabase()
-        client.table("users").select("id").limit(1).execute()
-        supabase_status = {"ok": True}
+        await asyncio.wait_for(
+            asyncio.to_thread(lambda: client.table("users").select("id").limit(1).execute()),
+            timeout=5,
+        )
+        supabase_status = {"connected": True}
     except Exception as e:
-        supabase_status = {"ok": False, "error": str(e)}
+        supabase_status = {"connected": False, "error": str(e)}
 
     # Check AI provider (Gemini only)
     ai_status = {"provider": "gemini", "ok": bool(getattr(settings, "gemini_api_key", "")) or getattr(settings, "gemini_use_vertexai", False)}
@@ -281,9 +286,7 @@ async def health_check():
         "status": "healthy",
         "version": settings.app_version,
         "environment": settings.environment,
-        "supabase": {
-            "connected": supabase_status.get("ok", False),
-        },
+        "supabase": supabase_status,
         "ai": {
             "provider": ai_status.get("provider", "unknown"),
             "ok": ai_status.get("ok", False),
