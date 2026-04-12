@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import {
   ArrowRight, Sparkles, Clock, Target, ShieldCheck, ScanEye, Award,
   Plus, Briefcase, TrendingUp, Trash2, Zap, FileSearch, MessageSquare,
-  DollarSign, BookOpen, BarChart3, Brain,
+  DollarSign, BookOpen, BarChart3, Brain, Flame,
   Bot, Activity, CheckCircle2, User,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
@@ -105,6 +105,7 @@ export default function DashboardPage() {
   const [deleting, setDeleting] = useState(false);
   const [briefing, setBriefing] = useState<any>(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
+  const [streak, setStreak] = useState<{ current_streak: number; longest_streak: number; total_points: number; level: number } | null>(null);
 
   const openTasks = useMemo(() => tasks.filter((t) => t.status === "todo"), [tasks]);
   const topApps = useMemo(() => apps.slice(0, 8), [apps]);
@@ -136,6 +137,18 @@ export default function DashboardPage() {
       .catch(() => { setBriefing(null); })
       .finally(() => setBriefingLoading(false));
   }, [userId, briefing, authSession?.access_token]);
+
+  // Load learning streak
+  useEffect(() => {
+    if (!userId) return;
+    const token = authSession?.access_token;
+    if (!token) return;
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+    fetch(`${API_URL}/api/learning/streak`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setStreak(d))
+      .catch(() => {});
+  }, [userId, authSession?.access_token]);
 
   const handleDelete = async () => {
     if (!deleteTarget || !userId) return;
@@ -504,6 +517,24 @@ export default function DashboardPage() {
               <ArrowRight className="h-4 w-4 text-muted-foreground" />
             </div>
           </Link>
+
+          {/* Learning Streak */}
+          {streak && (streak.current_streak > 0 || streak.total_points > 0) && (
+            <Link href="/learning" className="block rounded-2xl border bg-gradient-to-br from-amber-500/5 to-orange-500/5 p-4 hover:border-amber-500/20 hover:shadow-soft-sm transition-all">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10"><Flame className="h-4 w-4 text-amber-500" /></div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold">Learning Streak</p>
+                  <div className="flex items-center gap-3 mt-0.5">
+                    <span className="text-[11px] text-muted-foreground"><span className="font-bold text-amber-500">{streak.current_streak}</span> day streak</span>
+                    <span className="text-[11px] text-muted-foreground">Lv.{streak.level}</span>
+                    <span className="text-[11px] text-muted-foreground">{streak.total_points} pts</span>
+                  </div>
+                </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </Link>
+          )}
         </div>
       </div>
 

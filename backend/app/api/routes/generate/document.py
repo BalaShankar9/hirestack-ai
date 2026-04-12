@@ -85,6 +85,53 @@ async def generate_on_demand_document(
     doc_pack_plan = app_data.get("doc_pack_plan") or {}
     doc_label = req.doc_label or req.doc_key.replace("_", " ").title()
 
+    # Fetch evidence items for this application/user
+    evidence_summary = ""
+    try:
+        ev_resp = await asyncio.to_thread(
+            lambda: sb.table(TABLES.get("evidence", "evidence"))
+            .select("title, type, description, skills")
+            .eq("user_id", user_id)
+            .limit(15)
+            .execute()
+        )
+        ev_items = ev_resp.data or []
+        if ev_items:
+            evidence_summary = "\n".join(
+                f"- {e.get('title', '')} ({e.get('type', '')}): {(e.get('description') or '')[:120]}"
+                + (f" | Skills: {', '.join(e['skills'])}" if e.get('skills') else "")
+                for e in ev_items
+            )
+    except Exception:
+        pass  # Evidence is optional enrichment
+
+    # Fetch latest ATS scan feedback for this application
+    ats_feedback = ""
+    try:
+        ats_resp = await asyncio.to_thread(
+            lambda: sb.table(TABLES.get("ats_scans", "ats_scans"))
+            .select("ats_score, missing_keywords, recommendations")
+            .eq("user_id", user_id)
+            .eq("application_id", req.application_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .maybe_single()
+            .execute()
+        )
+        if ats_resp.data:
+            scan = ats_resp.data
+            missing = scan.get("missing_keywords") or []
+            recs = scan.get("recommendations") or []
+            parts = []
+            if missing:
+                parts.append(f"Missing keywords: {', '.join(str(k) for k in missing[:10])}")
+            if recs:
+                parts.append(f"Suggestions: {'; '.join(str(r) for r in recs[:5])}")
+            if parts:
+                ats_feedback = " | ".join(parts)
+    except Exception:
+        pass  # ATS feedback is optional enrichment
+
     context = {
         "profile": user_profile,
         "job_title": job_title,
@@ -97,6 +144,8 @@ async def generate_on_demand_document(
         "benchmark_keywords": benchmark_keywords,
         "company_intel": company_intel,
         "key_themes": doc_pack_plan.get("key_themes", []),
+        "evidence_context": evidence_summary,
+        "ats_feedback": ats_feedback,
     }
 
     ai = AIClient()
