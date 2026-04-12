@@ -40,7 +40,7 @@ class RuntimeConfig:
     """Controls execution behavior per mode."""
     mode: ExecutionMode = ExecutionMode.SYNC
     timeout: float = 300.0          # seconds
-    phase_timeout: float = 60.0     # per-phase timeout
+    phase_timeout: float = 90.0     # per-phase timeout
     user_id: str = ""
     job_id: str = ""                # only for JOB mode
     application_id: str = ""        # only for JOB mode
@@ -471,16 +471,20 @@ class PipelineRuntime:
 
         user_profile: dict = {}
         if resume_text.strip():
-            pipe = resume_parse_pipeline(
-                ai_client=ai, on_stage_update=stage_callback,
-                db=sb, tables=tables, user_id=user_id,
-            )
-            parse_result: PipelineResult = await asyncio.wait_for(
-                pipe.execute({"user_id": user_id, "resume_text": resume_text}),
-                timeout=self.config.phase_timeout * 2,
-            )
-            await flush_events()
-            user_profile = parse_result.content if isinstance(parse_result.content, dict) else {}
+            try:
+                pipe = resume_parse_pipeline(
+                    ai_client=ai, on_stage_update=stage_callback,
+                    db=sb, tables=tables, user_id=user_id,
+                )
+                parse_result: PipelineResult = await asyncio.wait_for(
+                    pipe.execute({"user_id": user_id, "resume_text": resume_text}),
+                    timeout=self.config.phase_timeout * 2,
+                )
+                await flush_events()
+                user_profile = parse_result.content if isinstance(parse_result.content, dict) else {}
+            except Exception as rp_err:
+                logger.warning("pipeline_runtime.resume_parse_failed", error=str(rp_err)[:200])
+                self._failed_modules.append({"module": "resume_parse", "error": str(rp_err)[:200]})
 
         # ── Phase 1b: Benchmark ───────────────────────────────────────
         await self.sink.emit(PipelineEvent(
@@ -488,21 +492,28 @@ class PipelineRuntime:
             message="Agent: building candidate benchmark…",
         ))
 
-        bench_pipe = benchmark_pipeline(
-            ai_client=ai, on_stage_update=stage_callback,
-            db=sb, tables=tables, user_id=user_id,
-        )
-        bench_result: PipelineResult = await asyncio.wait_for(
-            bench_pipe.execute({
-                "user_id": user_id,
-                "job_title": job_title,
-                "company": company,
-                "jd_text": jd_text,
-            }),
-            timeout=self.config.phase_timeout * 2,
-        )
-        await flush_events()
-        benchmark_data = bench_result.content if isinstance(bench_result.content, dict) else {}
+        bench_result = None
+        benchmark_data: dict = {}
+        try:
+            bench_pipe = benchmark_pipeline(
+                ai_client=ai, on_stage_update=stage_callback,
+                db=sb, tables=tables, user_id=user_id,
+            )
+            bench_result = await asyncio.wait_for(
+                bench_pipe.execute({
+                    "user_id": user_id,
+                    "job_title": job_title,
+                    "company": company,
+                    "jd_text": jd_text,
+                }),
+                timeout=self.config.phase_timeout * 3,
+            )
+            await flush_events()
+            benchmark_data = bench_result.content if isinstance(bench_result.content, dict) else {}
+        except Exception as bench_err:
+            logger.warning("pipeline_runtime.benchmark_failed", error=str(bench_err)[:200])
+            self._failed_modules.append({"module": "benchmark", "error": str(bench_err)[:200]})
+            await flush_events()
 
         ideal_skills = benchmark_data.get("ideal_skills", [])
         keywords = [s.get("name", "") for s in ideal_skills if isinstance(s, dict) and s.get("name")]
@@ -532,22 +543,29 @@ class PipelineRuntime:
             message="Agent: analyzing skill gaps…",
         ))
 
-        gap_pipe = gap_analysis_pipeline(
-            ai_client=ai, on_stage_update=stage_callback,
-            db=sb, tables=tables, user_id=user_id,
-        )
-        gap_result: PipelineResult = await asyncio.wait_for(
-            gap_pipe.execute({
-                "user_id": user_id,
-                "user_profile": user_profile,
-                "benchmark": benchmark_data,
-                "job_title": job_title,
-                "company": company,
-            }),
-            timeout=self.config.phase_timeout,
-        )
-        await flush_events()
-        gap_analysis = gap_result.content if isinstance(gap_result.content, dict) else {}
+        gap_result = None
+        gap_analysis: dict = {}
+        try:
+            gap_pipe = gap_analysis_pipeline(
+                ai_client=ai, on_stage_update=stage_callback,
+                db=sb, tables=tables, user_id=user_id,
+            )
+            gap_result = await asyncio.wait_for(
+                gap_pipe.execute({
+                    "user_id": user_id,
+                    "user_profile": user_profile,
+                    "benchmark": benchmark_data,
+                    "job_title": job_title,
+                    "company": company,
+                }),
+                timeout=self.config.phase_timeout * 2,
+            )
+            await flush_events()
+            gap_analysis = gap_result.content if isinstance(gap_result.content, dict) else {}
+        except Exception as gap_err:
+            logger.warning("pipeline_runtime.gap_analysis_failed", error=str(gap_err)[:200])
+            self._failed_modules.append({"module": "gap_analysis", "error": str(gap_err)[:200]})
+            await flush_events()
 
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="cipher", progress=45,
@@ -920,20 +938,25 @@ class PipelineRuntime:
         ))
 
         # Phase 1: Parse + benchmark
-        if resume_text.strip():
-            user_profile, benchmark_data = await asyncio.wait_for(
-                asyncio.gather(
-                    profiler.parse_resume(resume_text),
+        user_profile = {}
+        benchmark_data = {}
+        try:
+            if resume_text.strip():
+                user_profile, benchmark_data = await asyncio.wait_for(
+                    asyncio.gather(
+                        profiler.parse_resume(resume_text),
+                        benchmark_chain.create_ideal_profile(job_title, company, jd_text),
+                    ),
+                    timeout=self.config.phase_timeout * 3,
+                )
+            else:
+                benchmark_data = await asyncio.wait_for(
                     benchmark_chain.create_ideal_profile(job_title, company, jd_text),
-                ),
-                timeout=self.config.phase_timeout * 2,
-            )
-        else:
-            user_profile = {}
-            benchmark_data = await asyncio.wait_for(
-                benchmark_chain.create_ideal_profile(job_title, company, jd_text),
-                timeout=self.config.phase_timeout,
-            )
+                    timeout=self.config.phase_timeout * 2,
+                )
+        except Exception as phase1_err:
+            logger.warning("pipeline_runtime.legacy_phase1_failed", error=str(phase1_err)[:200])
+            self._failed_modules.append({"module": "benchmark", "error": str(phase1_err)[:200]})
 
         ideal_skills = benchmark_data.get("ideal_skills", [])
         keywords = [s.get("name", "") for s in ideal_skills if isinstance(s, dict) and s.get("name")]
@@ -961,10 +984,15 @@ class PipelineRuntime:
         ))
 
         gap_chain = GapAnalyzerChain(ai)
-        gap_analysis = await asyncio.wait_for(
-            gap_chain.analyze_gaps(user_profile, benchmark_data, job_title, company),
-            timeout=self.config.phase_timeout,
-        )
+        gap_analysis = {}
+        try:
+            gap_analysis = await asyncio.wait_for(
+                gap_chain.analyze_gaps(user_profile, benchmark_data, job_title, company),
+                timeout=self.config.phase_timeout * 2,
+            )
+        except Exception as gap_err:
+            logger.warning("pipeline_runtime.legacy_gap_failed", error=str(gap_err)[:200])
+            self._failed_modules.append({"module": "gap_analysis", "error": str(gap_err)[:200]})
 
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="cipher", progress=45,
