@@ -48,7 +48,7 @@ SUPABASE_JWT_SECRET=your-jwt-secret
 # AI Provider (Gemini only)
 AI_PROVIDER=gemini
 GEMINI_API_KEY=your-gemini-key
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-2.5-pro
 GEMINI_MAX_TOKENS=8192
 
 # Rate Limiting

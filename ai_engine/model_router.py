@@ -17,16 +17,16 @@ _DEFAULT_ROUTES = {
     "reasoning":          "gemini-2.5-pro",
     "research":           "gemini-2.5-pro",
     "fact_checking":      "gemini-2.5-pro",
-    # Structured output / classification — fast model
-    "structured_output":  "gemini-2.5-flash",
-    "validation":         "gemini-2.5-flash",
-    "optimization":       "gemini-2.5-flash",
-    # Creative generation — balanced model
+    # Structured output / classification
+    "structured_output":  "gemini-2.5-pro",
+    "validation":         "gemini-2.5-pro",
+    "optimization":       "gemini-2.5-pro",
+    # Creative generation
     "creative":           "gemini-2.5-pro",
     "drafting":           "gemini-2.5-pro",
-    "critique":           "gemini-2.5-flash",
+    "critique":           "gemini-2.5-pro",
     # General / fallback
-    "general":            "gemini-2.5-flash",
+    "general":            "gemini-2.5-pro",
 }
 
 _routes: Optional[dict] = None

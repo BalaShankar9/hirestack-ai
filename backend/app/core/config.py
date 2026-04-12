@@ -52,7 +52,7 @@ class Settings(BaseSettings):
 
     # Gemini
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-2.5-pro"
     gemini_max_tokens: int = 8192
 
     # Gemini via Vertex AI (optional)

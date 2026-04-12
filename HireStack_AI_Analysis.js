@@ -438,7 +438,7 @@ children.push(para("The AI engine supports three providers with automatic fallba
 children.push(statusTable(
   ["Setting", "Value"],
   [
-    ["Primary Provider", "Gemini (gemini-2.5-flash)"],
+    ["Primary Provider", "Gemini (gemini-2.5-pro)"],
     ["Gemini Max Tokens", "8,192"],
     ["Gemini Throttle", "3,500ms between requests (avoids 429s on free tier)"],
     ["OpenAI Fallback", "GPT-5.2 (4,096 max tokens)"],
