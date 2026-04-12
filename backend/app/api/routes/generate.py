@@ -328,6 +328,12 @@ async def generate_planned_pipeline(
 
     if not req.user_request.strip():
         raise HTTPException(status_code=400, detail="user_request is required")
+    if len(req.user_request) > 10_000:
+        raise HTTPException(status_code=413, detail="user_request too large (max 10KB)")
+    if len(req.jd_text) > MAX_JD_SIZE:
+        raise HTTPException(status_code=413, detail="Job description too large (max 50KB)")
+    if len(req.resume_text) > MAX_RESUME_SIZE:
+        raise HTTPException(status_code=413, detail="Resume text too large (max 100KB)")
 
     try:
         return await asyncio.wait_for(
@@ -3322,7 +3328,9 @@ async def create_generation_job(
 
 
 @router.get("/jobs/{job_id}/stream")
+@limiter.limit("30/minute")
 async def stream_generation_job(
+    request: Request,
     job_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -3525,7 +3533,9 @@ async def replay_generation_job(
 # ── Job status polling (P2-04) ────────────────────────────────────────
 
 @router.get("/jobs/{job_id}/status")
+@limiter.limit("60/minute")
 async def get_generation_job_status(
+    request: Request,
     job_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):

@@ -74,7 +74,9 @@ async def scan_document(
 
 
 @router.get("")
+@limiter.limit("30/minute")
 async def list_scans(
+    request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """List all user's ATS scans."""
@@ -83,7 +85,9 @@ async def list_scans(
 
 
 @router.get("/{scan_id}")
+@limiter.limit("30/minute")
 async def get_scan(
+    request: Request,
     scan_id: str,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):

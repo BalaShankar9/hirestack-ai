@@ -4,7 +4,7 @@ Collaborative Review routes - Shareable links, comments, and AI feedback (Supaba
 import uuid as _uuid
 from typing import Dict, Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.services.review import ReviewService
@@ -20,6 +20,13 @@ def _validate_uuid(value: str, field_name: str = "id") -> str:
     except (ValueError, AttributeError):
         raise HTTPException(status_code=422, detail=f"Invalid {field_name}: must be a valid UUID")
     return value
+
+
+async def _verify_session_access(service: ReviewService, session_id: str, share_token: str):
+    """Verify the share_token is valid and corresponds to this session."""
+    session = await service.get_session_by_token(share_token)
+    if not session or session.get("id") != session_id:
+        raise HTTPException(status_code=403, detail="Invalid or expired share token")
 
 
 class CreateReviewRequest(BaseModel):
@@ -74,10 +81,12 @@ async def add_comment(
     request: Request,
     session_id: str,
     body: AddCommentRequest,
+    share_token: str = Query(..., max_length=500),
 ):
-    """Add a comment to a review session (public endpoint)."""
+    """Add a comment to a review session (requires valid share token)."""
     _validate_uuid(session_id, "session_id")
     service = ReviewService()
+    await _verify_session_access(service, session_id, share_token)
     return await service.add_comment(
         session_id=session_id,
         reviewer_name=body.reviewer_name,
@@ -90,10 +99,15 @@ async def add_comment(
 
 @router.get("/{session_id}/comments")
 @limiter.limit("30/minute")
-async def get_comments(request: Request, session_id: str):
-    """Get all comments for a review session."""
+async def get_comments(
+    request: Request,
+    session_id: str,
+    share_token: str = Query(..., max_length=500),
+):
+    """Get all comments for a review session (requires valid share token)."""
     _validate_uuid(session_id, "session_id")
     service = ReviewService()
+    await _verify_session_access(service, session_id, share_token)
     return await service.get_comments(session_id)
 
 
