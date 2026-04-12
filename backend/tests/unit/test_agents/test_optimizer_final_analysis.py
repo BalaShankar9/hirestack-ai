@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from ai_engine.agents.base import AgentResult
 from ai_engine.agents.optimizer import OptimizerAgent
-from ai_engine.agents.orchestrator import AgentPipeline, PipelinePolicy, PipelineResult
+from ai_engine.agents.orchestrator import AgentPipeline, PipelineResult
 from ai_engine.agents.contracts import (
     validate_optimizer_final_analysis_output,
     validate_stage_output,

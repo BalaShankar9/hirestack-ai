@@ -5,7 +5,6 @@ Tests the complete HTTP → chain → response path with mocked AI
 responses so we can run without API keys.
 """
 import asyncio
-import json
 import pytest
 from unittest.mock import AsyncMock, patch
 

@@ -12,7 +12,6 @@ Tests covering the 10 agentic gaps:
   Gap 10: Distributed lock manager
 """
 import asyncio
-import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -313,7 +312,7 @@ class TestDynamicRerouting:
             **agents,
         )
 
-        result = await pipeline.execute({"user_profile": {}, "jd_text": "test"})
+        _result = await pipeline.execute({"user_profile": {}, "jd_text": "test"})
         # Researcher should have been called twice (initial + reroute)
         assert agents["researcher"].run.call_count == 2
         # Drafter should have been called twice (initial + reroute re-draft)
@@ -388,7 +387,7 @@ class TestWorkerPipelineIntegration:
         import ast
         import pathlib
         src = pathlib.Path(__file__).resolve().parents[4] / "workers" / "tasks" / "document_tasks.py"
-        tree = ast.parse(src.read_text())
+        _tree = ast.parse(src.read_text())
         source_code = src.read_text()
         assert "build_pipeline" in source_code or "pipeline" in source_code.lower()
 
@@ -435,7 +434,7 @@ class TestHumanInTheLoop:
             **agents,
         )
 
-        result = await pipeline.execute({"user_profile": {}, "jd_text": "test"})
+        _result = await pipeline.execute({"user_profile": {}, "jd_text": "test"})
         callback.assert_called_once()
         call_arg = callback.call_args[0][0]
         assert call_arg["stage"] == "drafter"
@@ -578,7 +577,7 @@ class TestMemoryFeedback:
         pipeline = AgentPipeline(name="cv_generation", **agents)
         pipeline.memory = mock_memory
 
-        result = await pipeline.execute({"user_id": "u1", "user_profile": {}, "jd_text": "test"})
+        _result = await pipeline.execute({"user_id": "u1", "user_profile": {}, "jd_text": "test"})
 
         # afeedback should be called for each recalled memory
         assert mock_memory.afeedback.call_count == 2
@@ -604,7 +603,7 @@ class TestMemoryFeedback:
         pipeline = AgentPipeline(name="cv_generation", **agents)
         pipeline.memory = mock_memory
 
-        result = await pipeline.execute({"user_id": "u1", "user_profile": {}, "jd_text": "test"})
+        _result = await pipeline.execute({"user_id": "u1", "user_profile": {}, "jd_text": "test"})
 
         # With avg ~41.25, should NOT be useful (< 70)
         mock_memory.afeedback.assert_called_once_with("mem1", False)

@@ -12,10 +12,12 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-from functools import lru_cache
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, TYPE_CHECKING
 
 import structlog
+
+if TYPE_CHECKING:
+    from ai_engine.chains.document_pack_planner import DocumentPackPlan
 
 logger = structlog.get_logger("hirestack.document_catalog")
 
@@ -330,7 +332,7 @@ async def discover_and_observe(
 
     Returns the DocumentPackPlan on success, or None on failure.
     """
-    from ai_engine.chains.document_pack_planner import DocumentPackPlanner, DocumentPackPlan
+    from ai_engine.chains.document_pack_planner import DocumentPackPlanner
 
     try:
         await ensure_catalog_seeded(db, tables)

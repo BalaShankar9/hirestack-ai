@@ -9,11 +9,8 @@ Tests the complete HTTP → DB → job-runner → response path with mocked
 AI responses and a fake Supabase layer so we can run without real
 infrastructure.
 """
-import asyncio
-import json
 import uuid
 from copy import deepcopy
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -301,7 +298,7 @@ async def test_create_job_normalizes_empty_modules(aclient):
         patch("app.core.database.get_supabase", return_value=fake_sb),
         patch("app.api.routes.generate._ensure_generation_job_schema_ready", new_callable=AsyncMock),
         patch("app.api.routes.generate._start_generation_job"),
-        patch("app.api.routes.generate._set_application_modules_generating", new_callable=AsyncMock) as mock_set_mods,
+        patch("app.api.routes.generate._set_application_modules_generating", new_callable=AsyncMock) as _mock_set_mods,
     ):
         resp = await aclient.post(
             "/api/generate/jobs",
@@ -510,8 +507,8 @@ async def test_job_runner_succeeds_with_legacy_chains():
     updates: List[Dict] = []
     events: List[Dict] = []
 
-    original_persist_update = None
-    original_persist_event = None
+    _original_persist_update = None
+    _original_persist_event = None
 
     async def fake_persist_update(sb, tables, job_id, patch_data):
         updates.append({"job_id": job_id, **patch_data})

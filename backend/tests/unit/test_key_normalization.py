@@ -1,12 +1,9 @@
 """Tests for key normalization, _format_response, and related generate.py helpers."""
 from __future__ import annotations
 
-import importlib
 import sys
 from pathlib import Path
-from typing import List, Optional
 
-import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
@@ -15,14 +12,14 @@ BACKEND_ROOT = ROOT / "backend"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.api.routes.generate import (
+from app.api.routes.generate import (  # noqa: E402
     _CAMEL_TO_SNAKE,
     _DEFAULT_REQUESTED_MODULES,
     _IDENTITY_KEYS,
     _SNAKE_TO_CAMEL,
     _normalize_requested_modules,
 )
-from app.services.pipeline_runtime import PipelineRuntime
+from app.services.pipeline_runtime import PipelineRuntime  # noqa: E402
 
 
 # ═══════════════════════════════════════════════════════════════════════

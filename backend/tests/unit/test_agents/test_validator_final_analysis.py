@@ -1,7 +1,7 @@
 # backend/tests/unit/test_agents/test_validator_final_analysis.py
 """Tests for validator consumption of final_analysis data."""
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 from ai_engine.agents.schema_validator import ValidatorAgent
 

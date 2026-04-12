@@ -15,7 +15,6 @@ import asyncio
 import logging
 import time
 from enum import Enum
-from typing import Optional
 
 logger = logging.getLogger("hirestack.circuit_breaker")
 

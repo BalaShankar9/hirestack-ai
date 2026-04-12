@@ -111,7 +111,7 @@ async def get_current_user_optional(
         return None
 
 
-import structlog as _structlog
+import structlog as _structlog  # noqa: E402
 _billing_logger = _structlog.get_logger()
 
 

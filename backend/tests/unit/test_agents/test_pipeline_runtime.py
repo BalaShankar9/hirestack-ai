@@ -1,11 +1,10 @@
 """Tests for PipelineRuntime, EventSink implementations, and error classification."""
 from __future__ import annotations
 
-import asyncio
 import json
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -22,10 +21,9 @@ if str(BACKEND_ROOT) not in sys.path:
 #  Imports under test
 # ═══════════════════════════════════════════════════════════════════════
 
-from app.services.pipeline_runtime import (
+from app.services.pipeline_runtime import (  # noqa: E402
     CollectorSink,
     DatabaseSink,
-    EventSink,
     ExecutionMode,
     NullSink,
     PipelineEvent,

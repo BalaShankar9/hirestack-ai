@@ -7,7 +7,6 @@ Tests for:
 - cleanup_stale_generation_jobs: sweep for stuck jobs
 - OutputScorer: 4-dimension quality scoring
 """
-import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -455,7 +454,6 @@ class TestOutputScorer:
 
     def test_composite_score_calculation(self):
         """Verify composite is a weighted average * 10."""
-        from ai_engine.chains.output_scorer import OutputScorer
 
         # Weights: relevance=0.3, formatting=0.15, keyword_coverage=0.3, readability=0.25
         # (8*0.3 + 7*0.15 + 6*0.3 + 9*0.25) * 10 = (2.4+1.05+1.8+2.25)*10 = 75.0

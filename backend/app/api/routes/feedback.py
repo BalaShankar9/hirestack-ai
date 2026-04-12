@@ -50,7 +50,7 @@ class ApplicationFeedbackRequest(BaseModel):
     def validate_outcome(cls, v: Optional[str]) -> Optional[str]:
         allowed = {"callback", "offer", "rejected", "ghosted", None}
         if v not in allowed:
-            raise ValueError(f"Outcome must be one of: callback, offer, rejected, ghosted")
+            raise ValueError("Outcome must be one of: callback, offer, rejected, ghosted")
         return v
 
 

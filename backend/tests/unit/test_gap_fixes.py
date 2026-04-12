@@ -14,13 +14,13 @@ BACKEND_ROOT = ROOT / "backend"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from ai_engine.chains.document_pack_planner import (
+from ai_engine.chains.document_pack_planner import (  # noqa: E402
     CORE_DOCS,
     DocumentPackPlan,
     DocumentPackPlanner,
     PLANNER_PROMPT,
 )
-from app.services.document_catalog import discover_and_observe
+from app.services.document_catalog import discover_and_observe  # noqa: E402
 
 TABLES = {
     "document_type_catalog": "document_type_catalog",
@@ -69,7 +69,7 @@ class TestDiscoverAndObserve:
 
     @pytest.mark.asyncio
     async def test_returns_doc_pack_plan_on_success(self):
-        plan = DocumentPackPlan(
+        _plan = DocumentPackPlan(
             core=list(CORE_DOCS),
             required=[{"key": "executive_summary", "label": "Exec Summary", "priority": "high", "reason": "Senior role"}],
             optional=[{"key": "ninety_day_plan", "label": "90-Day Plan", "priority": "medium", "reason": "Good to have"}],
@@ -283,7 +283,7 @@ class TestPlannerCompanyIntel:
 
         assert result is not None
         # Empty dict should not produce COMPANY INTELLIGENCE section (only confidence line)
-        prompt = ai.complete_json.call_args.kwargs.get("prompt", "")
+        _prompt = ai.complete_json.call_args.kwargs.get("prompt", "")
         # Empty intel produces only "Intel confidence: unknown" but still includes the section
         assert result.core is not None
 
@@ -302,7 +302,7 @@ class TestPlannerCompanyIntel:
         })
 
         planner = DocumentPackPlanner(ai_client=ai, catalog=SAMPLE_CATALOG)
-        result = await planner.plan(
+        _result = await planner.plan(
             jd_text="VP of Engineering",
             job_title="VP Engineering",
             company="FinCorp",

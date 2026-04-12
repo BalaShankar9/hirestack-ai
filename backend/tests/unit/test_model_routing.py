@@ -1,8 +1,7 @@
 # backend/tests/unit/test_model_routing.py
 """Tests for real model routing — verifies resolved models reach the provider."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
-import asyncio
+from unittest.mock import MagicMock, patch
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -2862,7 +2862,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         # ── Phase 3b: Catalog-driven document planning ───────────────
         from app.services.document_catalog import discover_and_observe
 
-        doc_pack_plan_job = await discover_and_observe(
+        _doc_pack_plan_job = await discover_and_observe(
             db=sb, tables=TABLES, ai_client=ai,
             jd_text=jd_text_val, job_title=job_title,
             company=company_str, user_profile=user_profile,
@@ -3191,10 +3191,11 @@ async def _run_generation_job_inner_runtime(job_id: str, user_id: str) -> None:
         logger.info("job_runtime.complete", job_id=job_id)
 
     except Exception as e:
-        logger.error("job_runtime.failed", job_id=job_id, error=str(e)[:300])
+        _err_msg = str(e)
+        logger.error("job_runtime.failed", job_id=job_id, error=_err_msg[:300])
         await asyncio.to_thread(
             lambda: sb.table(TABLES["generation_jobs"])
-            .update({"status": "failed", "progress": 0, "message": str(e)[:500]})
+            .update({"status": "failed", "progress": 0, "message": _err_msg[:500]})
             .eq("id", job_id).execute()
         )
         raise
@@ -3774,7 +3775,7 @@ async def generate_on_demand_document(
     job_title = confirmed_facts.get("jobTitle") or confirmed_facts.get("job_title") or ""
     company = confirmed_facts.get("company") or ""
     jd_text = confirmed_facts.get("jdText") or confirmed_facts.get("jd_text") or ""
-    resume_data = confirmed_facts.get("resume") or {}
+    _resume_data = confirmed_facts.get("resume") or {}
     user_profile = app_data.get("user_profile") or {}
 
     if not job_title:
@@ -3871,7 +3872,7 @@ async def cleanup_stale_generation_jobs() -> int:
         from app.core.database import get_supabase, TABLES
 
         sb = get_supabase()
-        cutoff = datetime.now(timezone.utc).isoformat()
+        _cutoff = datetime.now(timezone.utc).isoformat()
 
         # Fetch jobs that are still running/queued
         resp = await asyncio.to_thread(
@@ -3959,7 +3960,7 @@ async def recover_inflight_generation_jobs() -> int:
         recovered_count = 0
         for job in inflight_jobs:
             job_id = job["id"]
-            user_id = job.get("user_id", "")
+            _user_id = job.get("user_id", "")
 
             # Try event-based recovery if agent pipelines + event store available
             if _AGENT_PIPELINES_AVAILABLE:

@@ -7,30 +7,21 @@ to ensure all improvements are captured and no regressions occur.
 import pytest
 from ai_engine.agents.tools import (
     _parse_jd,
-    _extract_profile_evidence,
     _compute_keyword_overlap,
     _compute_readability,
     _extract_claims,
     _match_claims_to_evidence,
 )
 from ai_engine.agents.schemas import (
-    CRITIC_SCHEMA,
     FACT_CHECKER_SCHEMA,
-    OPTIMIZER_SCHEMA,
-    VALIDATOR_SCHEMA,
-    RESEARCHER_SCHEMA,
 )
 from ai_engine.agents.eval import (
     FactCheckerEval,
-    OptimizerEval,
     ValidatorEval,
 )
 from ai_engine.agents.orchestrator import (
     POLICY_STRICT,
-    POLICY_LIGHT,
-    POLICY_FULL,
     DEFAULT_POLICIES,
-    PipelinePolicy,
 )
 
 

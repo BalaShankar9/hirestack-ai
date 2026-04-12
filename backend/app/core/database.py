@@ -442,9 +442,9 @@ class AuthServiceUnavailable(RuntimeError):
 # Keyed by a truncated SHA-256 hash of the token (not the token itself).
 # Expires entries when the JWT's `exp` claim has passed.
 
-import hashlib
-import time as _time
-from collections import OrderedDict
+import hashlib  # noqa: E402
+import time as _time  # noqa: E402
+from collections import OrderedDict  # noqa: E402
 
 _TOKEN_CACHE_MAX_SIZE = 256
 

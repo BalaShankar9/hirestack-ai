@@ -14,7 +14,7 @@ BACKEND_ROOT = ROOT / "backend"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from ai_engine.chains.document_pack_planner import (
+from ai_engine.chains.document_pack_planner import (  # noqa: E402
     CORE_DOCS,
     DocumentPackPlan,
     DocumentPackPlanner,

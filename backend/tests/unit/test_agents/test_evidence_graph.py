@@ -5,16 +5,14 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ai_engine.agents.evidence import EvidenceItem, EvidenceLedger, EvidenceSource, EvidenceTier
-from ai_engine.agents.evidence_graph import (
+from ai_engine.agents.evidence import EvidenceLedger  # noqa: E402
+from ai_engine.agents.evidence_graph import (  # noqa: E402
     CanonicalNode,
-    Contradiction,
     ContradictionType,
     EvidenceGraphBuilder,
     EvidenceGraphStats,
@@ -115,7 +113,7 @@ class TestCanonicalize:
             ("verbatim", "profile", "experience", "Same text", 0.9),
         )
         nodes_a = builder.canonicalize(ledger)
-        nodes_b = builder.canonicalize(ledger)
+        _nodes_b = builder.canonicalize(ledger)
         # IDs should be based on content hash
         assert len(nodes_a) >= 1
 

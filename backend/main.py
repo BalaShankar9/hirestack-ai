@@ -2,6 +2,7 @@
 HireStack AI - FastAPI Application
 Main entry point for the backend API
 """
+import asyncio
 import sys
 from pathlib import Path
 
@@ -190,7 +191,7 @@ app.add_middleware(
 )
 
 # Request-ID tracing (runs BEFORE security headers so the ID is available everywhere)
-from app.core.security import SecurityHeadersMiddleware
+from app.core.security import SecurityHeadersMiddleware  # noqa: E402
 
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)

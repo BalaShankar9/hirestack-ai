@@ -7,9 +7,7 @@ path with mocked AI so we can run without API keys.
 The SSE stream is the frontend's fallback when the DB-backed /jobs
 flow is unavailable. Both code paths must emit correct SSE events.
 """
-import asyncio
 import json
-import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -438,7 +436,7 @@ def _agent_pipeline_mocks():
     )
 
 
-from contextlib import ExitStack
+from contextlib import ExitStack  # noqa: E402
 
 def _enter_agent_mocks():
     """Enter all agent pipeline mocks and configure chain return values."""

@@ -18,9 +18,8 @@ in Gemini API usage and takes 30-120 seconds.
 import asyncio
 import json
 import os
-import time
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import httpx
 import pytest
@@ -325,7 +324,7 @@ async def test_real_sync_pipeline(real_settings, access_token):
     benchmark = data.get("benchmark", {})
     gaps = data.get("gaps", {})
 
-    print(f"\n  Sync pipeline results:")
+    print("\n  Sync pipeline results:")
     print(f"    CV: {len(cv_html)} chars")
     print(f"    Cover letter: {len(cl_html)} chars")
     print(f"    Score: {scores.get('overall', 'N/A')}")
@@ -340,7 +339,7 @@ async def test_real_sync_pipeline(real_settings, access_token):
         f"AI output too short — CV={len(cv_html)}, CL={len(cl_html)} chars"
     )
 
-    print(f"\n  ═══ SYNC PIPELINE E2E PASSED ═══")
+    print("\n  ═══ SYNC PIPELINE E2E PASSED ═══")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -439,7 +438,7 @@ async def test_real_generation_jobs_flow(real_settings, access_token, e2e_applic
     print(f"  Phases seen: {phases_seen}")
     print(f"  Max progress: {max_progress}%")
 
-    print(f"\n  ═══ JOBS FLOW E2E PASSED ═══")
+    print("\n  ═══ JOBS FLOW E2E PASSED ═══")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -500,4 +499,4 @@ async def test_real_sse_stream_events(real_settings, access_token, e2e_applicati
     event_types = [e["event"] for e in events]
     print(f"\n  SSE events received: {event_types}")
     assert "progress" in event_types, f"No progress events in SSE stream. Got: {event_types}"
-    print(f"  ═══ SSE STREAM E2E PASSED ═══")
+    print("  ═══ SSE STREAM E2E PASSED ═══")

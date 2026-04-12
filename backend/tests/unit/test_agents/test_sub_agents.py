@@ -1,8 +1,6 @@
 # backend/tests/unit/test_agents/test_sub_agents.py
 """Tests for sub-agent base infrastructure, all specialist sub-agents, and new tools."""
-import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from ai_engine.agents.sub_agents.base import (
     SubAgent,
@@ -10,13 +8,9 @@ from ai_engine.agents.sub_agents.base import (
     SubAgentCoordinator,
 )
 from ai_engine.agents.sub_agents.jd_analyst import JDAnalystSubAgent
-from ai_engine.agents.sub_agents.company_intel_agent import CompanyIntelSubAgent
 from ai_engine.agents.sub_agents.profile_match_agent import ProfileMatchSubAgent
-from ai_engine.agents.sub_agents.market_intel_agent import MarketIntelSubAgent
 from ai_engine.agents.sub_agents.history_agent import HistorySubAgent
 from ai_engine.agents.sub_agents.section_drafter import SectionDrafterSubAgent
-from ai_engine.agents.sub_agents.tone_calibrator import ToneCalibratorSubAgent
-from ai_engine.agents.sub_agents.keyword_strategist import KeywordStrategistSubAgent
 from ai_engine.agents.sub_agents.critic_specialists import (
     ImpactCriticSubAgent,
     ClarityCriticSubAgent,
@@ -26,7 +20,6 @@ from ai_engine.agents.sub_agents.critic_specialists import (
 from ai_engine.agents.sub_agents.fact_checker_specialists import (
     ClaimExtractorSubAgent,
     EvidenceMatcherSubAgent,
-    CrossRefCheckerSubAgent,
 )
 from ai_engine.agents.sub_agents.optimizer_specialists import (
     ATSOptimizerSubAgent,
@@ -222,7 +215,7 @@ async def test_history_no_db():
 #  New Research Tools (deterministic)
 # ═══════════════════════════════════════════════════════════════════════
 
-from ai_engine.agents.tools import _analyze_jd_sentiment
+from ai_engine.agents.tools import _analyze_jd_sentiment  # noqa: E402
 
 
 @pytest.mark.asyncio
@@ -293,7 +286,7 @@ async def test_jd_sentiment_team_size():
 #  Tool Registry — new tools registered
 # ═══════════════════════════════════════════════════════════════════════
 
-from ai_engine.agents.tools import build_researcher_tools
+from ai_engine.agents.tools import build_researcher_tools  # noqa: E402
 
 
 def test_researcher_tools_include_new_deep_research_tools():
@@ -422,7 +415,7 @@ async def test_section_drafter_no_section():
 #  Evidence Ledger enhancements
 # ═══════════════════════════════════════════════════════════════════════
 
-from ai_engine.agents.evidence import EvidenceLedger, EvidenceSource, EvidenceTier
+from ai_engine.agents.evidence import EvidenceLedger, EvidenceSource, EvidenceTier  # noqa: E402
 
 
 def test_evidence_add_with_confidence():
@@ -471,7 +464,7 @@ def test_evidence_to_dict_from_dict_roundtrip():
 #  ResearchDepth
 # ═══════════════════════════════════════════════════════════════════════
 
-from ai_engine.agents.researcher import ResearchDepth, _DEPTH_CONFIG
+from ai_engine.agents.researcher import ResearchDepth, _DEPTH_CONFIG  # noqa: E402
 
 
 def test_research_depth_configs():

@@ -664,7 +664,6 @@ class TestValidatorEvidenceEnforcement:
 
     def test_fabricated_citations_flagged(self):
         """Validator should flag fabricated citations as high severity."""
-        from ai_engine.agents.schema_validator import ValidatorAgent, _PLACEHOLDER_PATTERNS
 
         # Simulate context with fabricated citations
         context = {
@@ -1236,7 +1235,7 @@ class TestResumeFromStageConsumption:
             "job_id": "",
             "resume_from_stage": "critic",
         }
-        result = await pipeline.execute(ctx)
+        _result = await pipeline.execute(ctx)
 
         # Researcher and drafter should NOT have been called
         mock_researcher.run.assert_not_called()
@@ -1718,7 +1717,7 @@ class TestArtifactBackedResume:
             "user_profile": {"name": "Test User"},
             "resume_from_stage": "validator",
         }
-        result = await pipeline.execute(ctx)
+        _result = await pipeline.execute(ctx)
 
         # Drafter should NOT have been called (it was resumed past)
         mock_drafter.run.assert_not_called()

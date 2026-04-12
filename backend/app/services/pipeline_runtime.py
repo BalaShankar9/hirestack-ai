@@ -17,7 +17,7 @@ import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import structlog
 
@@ -187,8 +187,6 @@ class DatabaseSink(EventSink):
 
 def classify_ai_error(exc: Exception) -> Optional[Dict[str, Any]]:
     """Classify an AI provider exception into a structured response."""
-    import math
-    import re
 
     err = str(exc).lower()
 
@@ -370,7 +368,7 @@ class PipelineRuntime:
         from ai_engine.chains.adaptive_document import AdaptiveDocumentChain
 
         # Pipeline registry: doc_key → factory function (for dedicated pipelines)
-        PIPELINE_REGISTRY = {
+        _PIPELINE_REGISTRY = {
             "cv": cv_generation_pipeline,
             "cover_letter": cover_letter_pipeline,
             "personal_statement": personal_statement_pipeline,

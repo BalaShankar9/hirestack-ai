@@ -9,7 +9,6 @@ Tests for:
 - Partial evidence persistence on pipeline failure
 """
 import asyncio
-from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
