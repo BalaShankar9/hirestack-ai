@@ -3199,6 +3199,18 @@ async def _run_generation_job_inner_runtime(job_id: str, user_id: str) -> None:
             .update({"status": "failed", "progress": 0, "message": _err_msg[:500]})
             .eq("id", job_id).execute()
         )
+        # Reset application modules from "generating" → "error" so UI isn't stuck
+        try:
+            await _mark_application_generation_finished(
+                sb, TABLES,
+                application_id=application_id,
+                application_row=None,
+                requested_modules=requested_modules,
+                status="failed",
+                error_message=f"{_err_msg[:200]}. Click Regenerate to retry.",
+            )
+        except Exception as mark_err:
+            logger.warning("job_runtime.mark_failed_error", error=str(mark_err)[:200])
         raise
 
 
