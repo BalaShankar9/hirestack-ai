@@ -1,7 +1,7 @@
 [build]
   base = "frontend"
   command = "npm ci && npm run build"
-  publish = "frontend/.next"
+  publish = ".next"
 
 [build.environment]
   NEXT_PUBLIC_SUPABASE_URL = "https://dkfmcnfhvbqwsgpkgoag.supabase.co"
