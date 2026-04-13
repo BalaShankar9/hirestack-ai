@@ -18,13 +18,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from urllib.parse import urlparse
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.database import init_supabase, get_supabase
-from app.core.tracing import RequestIDMiddleware, request_id_var
+from app.core.tracing import RequestIDMiddleware, AccessLogMiddleware, MaxBodySizeMiddleware, request_id_var
 from app.api.routes import router as api_router
 
 # ── Sentry Error Monitoring ────────────────────────────────────────────
@@ -67,7 +66,8 @@ structlog.configure(
 
 logger = structlog.get_logger()
 
-limiter = Limiter(key_func=get_remote_address)
+# Import the shared per-user limiter from security module
+from app.core.security import limiter  # noqa: E402
 
 
 @asynccontextmanager
@@ -78,11 +78,37 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     init_supabase()
     logger.info("Supabase client initialized")
 
+    # Eagerly initialize Redis cache connection
+    try:
+        from app.core.database import get_redis
+        r = get_redis()
+        if r:
+            logger.info("Redis cache ready")
+            # Pre-create the consumer group for the job queue so workers
+            # can connect immediately.
+            try:
+                from app.core.queue import _ensure_group
+                _ensure_group(r)
+                logger.info("Redis Streams consumer group ready")
+            except Exception as grp_err:
+                logger.warning("Queue consumer group init skipped", error=str(grp_err)[:200])
+        else:
+            logger.info("Redis unavailable — using in-memory cache fallback")
+    except Exception as redis_err:
+        logger.warning("Redis init failed", error=str(redis_err)[:200])
+
     # Validate critical configuration
+    _is_prod = settings.environment == "production"
     if not settings.supabase_url or settings.supabase_url == "https://placeholder.supabase.co":
-        logger.warning("SUPABASE_URL is not configured — database operations will fail")
+        msg = "SUPABASE_URL is not configured — database operations will fail"
+        if _is_prod:
+            raise RuntimeError(msg)
+        logger.warning(msg)
     if not settings.supabase_service_role_key:
-        logger.warning("SUPABASE_SERVICE_ROLE_KEY is not configured — backend DB access will fail")
+        msg = "SUPABASE_SERVICE_ROLE_KEY is not configured — backend DB access will fail"
+        if _is_prod:
+            raise RuntimeError(msg)
+        logger.warning(msg)
 
     ai_configured = bool(settings.gemini_api_key) or settings.gemini_use_vertexai
     if not ai_configured:
@@ -101,6 +127,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         logger.warning("recover_inflight_jobs timed out after 15s — skipping")
     except Exception as e:
         logger.warning("Failed to recover inflight generation jobs", error=str(e))
+
+    # Hydrate cost optimizer quality observations from DB
+    try:
+        from ai_engine.model_router import hydrate_quality_observations
+        loaded = hydrate_quality_observations()
+        if loaded:
+            logger.info("Quality observations hydrated", count=loaded)
+    except Exception as e:
+        logger.debug("Quality observations hydration skipped", error=str(e))
 
     # Sweep for orphaned modules stuck in 'generating' with no active job
     try:
@@ -129,15 +164,53 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Start periodic stale job cleanup (every 10 minutes)
     _stale_cleanup_task = asyncio.create_task(_periodic_stale_job_cleanup())
 
+    # Register SIGTERM handler for graceful shutdown (Railway sends SIGTERM)
+    import signal
+
+    _shutting_down = asyncio.Event()
+    app.state._shutting_down = _shutting_down
+
+    def _handle_sigterm(*_: object) -> None:
+        logger.info("SIGTERM received — beginning graceful shutdown")
+        _shutting_down.set()
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.add_signal_handler(signal.SIGTERM, _handle_sigterm)
+    except (NotImplementedError, RuntimeError):
+        pass  # Windows / no running loop
+
     yield
 
-    # Shutdown
+    # Shutdown — wait briefly for in-flight requests to finish
+    logger.info("Draining in-flight requests (up to 10s)…")
+    await asyncio.sleep(2)  # give a short grace period for inflight work
+
+    # Cancel active generation tasks gracefully
+    try:
+        from app.api.routes.generate import _ACTIVE_GENERATION_TASKS
+        if _ACTIVE_GENERATION_TASKS:
+            logger.info("Cancelling active generation tasks", count=len(_ACTIVE_GENERATION_TASKS))
+            for task_id, task in list(_ACTIVE_GENERATION_TASKS.items()):
+                task.cancel()
+            # Wait for cancellation to propagate
+            await asyncio.gather(
+                *_ACTIVE_GENERATION_TASKS.values(),
+                return_exceptions=True,
+            )
+            logger.info("All generation tasks drained")
+    except Exception as e:
+        logger.warning("Generation task drain failed", error=str(e))
+
     _stale_cleanup_task.cancel()
     try:
         await _stale_cleanup_task
     except asyncio.CancelledError:
         pass
-    logger.info("Shutting down HireStack AI")
+    # Release database client
+    from app.core.database import close_supabase
+    close_supabase()
+    logger.info("Shutting down HireStack AI — goodbye")
 
 
 async def _periodic_stale_job_cleanup() -> None:
@@ -213,6 +286,8 @@ app.add_middleware(
 from app.core.security import SecurityHeadersMiddleware  # noqa: E402
 
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(AccessLogMiddleware)
+app.add_middleware(MaxBodySizeMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
 
@@ -251,7 +326,7 @@ async def global_exception_handler(
     )
     body: dict = {
         "detail": "An unexpected error occurred",
-        "error": str(exc) if settings.debug else "Internal server error",
+        "error": "Internal server error",
     }
     if rid:
         body["request_id"] = rid
@@ -261,10 +336,14 @@ async def global_exception_handler(
     )
 
 
-# Health check
+# Health check — unauthenticated, so only expose operational status, not internals
 @app.get("/health", tags=["Health"])
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint — returns operational status.
+    
+    Internal diagnostics (circuit breakers, model health, metrics, queue depth)
+    are only returned when DEBUG=true or ENVIRONMENT != production.
+    """
     supabase_status = {"connected": False}
     try:
         client = get_supabase()
@@ -279,6 +358,17 @@ async def health_check():
     # Check AI provider (Gemini only)
     ai_status = {"provider": "gemini", "ok": bool(getattr(settings, "gemini_api_key", "")) or getattr(settings, "gemini_use_vertexai", False)}
 
+    # Redis cache health
+    redis_status = {"connected": False}
+    try:
+        from app.core.database import get_redis
+        r = get_redis()
+        if r is not None:
+            await asyncio.wait_for(asyncio.to_thread(r.ping), timeout=2)
+            redis_status = {"connected": True}
+    except Exception as e:
+        redis_status = {"connected": False, "error": str(e)[:200]}
+
     # Circuit breaker state
     breaker_status = {}
     try:
@@ -291,6 +381,14 @@ async def health_check():
     except Exception:
         pass
 
+    # Model health (cascade failover router)
+    model_health = {}
+    try:
+        from ai_engine.model_router import get_model_health
+        model_health = get_model_health()
+    except Exception:
+        pass
+
     # Pipeline metrics summary
     metrics_summary = {}
     try:
@@ -299,19 +397,79 @@ async def health_check():
     except Exception:
         pass
 
-    return {
-        "status": "healthy",
+    # Job queue depth
+    queue_info = {}
+    try:
+        from app.core.queue import queue_depth
+        depth = queue_depth()
+        queue_info = {"pending": depth, "backend": "redis_streams" if depth >= 0 else "in_process"}
+    except Exception:
+        queue_info = {"backend": "in_process"}
+
+    # Determine overall health – Supabase down = degraded
+    degraded = not supabase_status.get("connected", False)
+    overall = "degraded" if degraded else "healthy"
+    code = status.HTTP_503_SERVICE_UNAVAILABLE if degraded else status.HTTP_200_OK
+
+    # Base response — safe for public exposure
+    content: dict = {
+        "status": overall,
         "version": settings.app_version,
-        "environment": settings.environment,
-        "supabase": supabase_status,
-        "ai": {
-            "provider": ai_status.get("provider", "unknown"),
-            "ok": ai_status.get("ok", False),
-        },
-        "sentry": bool(settings.sentry_dsn),
-        "circuit_breakers": breaker_status,
-        "metrics": metrics_summary,
     }
+
+    # Detailed internals only in non-production or debug mode
+    _show_internals = settings.debug or settings.environment != "production"
+    if _show_internals:
+        content.update({
+            "environment": settings.environment,
+            "supabase": supabase_status,
+            "ai": {
+                "provider": ai_status.get("provider", "unknown"),
+                "ok": ai_status.get("ok", False),
+            },
+            "redis": redis_status,
+            "circuit_breakers": breaker_status,
+            "model_health": model_health,
+            "metrics": metrics_summary,
+            "queue": queue_info,
+        })
+
+    return JSONResponse(
+        status_code=code,
+        content=content,
+    )
+
+
+# ── Frontend error collector ───────────────────────────────────────────
+from pydantic import BaseModel, Field  # noqa: E402
+from typing import List  # noqa: E402
+
+
+class _FEError(BaseModel):
+    message: str = Field(..., max_length=500)
+    stack: str | None = Field(None, max_length=2000)
+    componentStack: str | None = Field(None, max_length=1000)
+    url: str = Field("", max_length=500)
+    timestamp: str = Field("", max_length=40)
+    userAgent: str = Field("", max_length=300)
+
+
+class _FEErrorBatch(BaseModel):
+    errors: List[_FEError] = Field(..., max_length=20)
+
+
+@app.post("/api/frontend-errors", status_code=204, tags=["Observability"])
+async def collect_frontend_errors(batch: _FEErrorBatch) -> None:
+    """Receive client-side error reports and log them server-side."""
+    for err in batch.errors:
+        logger.warning(
+            "frontend_error",
+            message=err.message,
+            url=err.url,
+            timestamp=err.timestamp,
+            stack=err.stack,
+            component_stack=err.componentStack,
+        )
 
 
 # Include API routes

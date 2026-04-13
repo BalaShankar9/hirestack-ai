@@ -2,10 +2,11 @@
 Billing routes — Stripe checkout, portal, webhooks, plan info
 """
 from typing import Dict, Any
+from urllib.parse import urlparse
 
 from app.core.security import limiter
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 import os as _os
 
@@ -19,10 +20,27 @@ router = APIRouter()
 # Dynamic frontend URL: prefer FRONTEND_URL env, fall back to first CORS origin
 _FRONTEND_URL = _os.getenv("FRONTEND_URL", "https://hirestack.tech")
 
+# Allowed redirect domains for checkout URLs (prevents open redirect attacks)
+_ALLOWED_REDIRECT_HOSTS = {
+    urlparse(_FRONTEND_URL).hostname or "hirestack.tech",
+    "hirestack.tech",
+    "www.hirestack.tech",
+}
+
 class CheckoutRequest(BaseModel):
     plan: str  # "pro" | "enterprise"
     success_url: str = f"{_FRONTEND_URL}/settings/billing?success=true"
     cancel_url: str = f"{_FRONTEND_URL}/settings/billing?canceled=true"
+
+    @field_validator("success_url", "cancel_url")
+    @classmethod
+    def validate_redirect_url(cls, v: str) -> str:
+        parsed = urlparse(v)
+        if parsed.scheme not in ("https", "http"):
+            raise ValueError("Redirect URL must use http or https")
+        if parsed.hostname not in _ALLOWED_REDIRECT_HOSTS:
+            raise ValueError(f"Redirect URL must be on an allowed domain")
+        return v
 
 
 @limiter.limit("20/minute")
@@ -39,10 +57,10 @@ async def get_billing_status(
     except Exception:
         orgs = []
     if not orgs:
-        # TESTING MODE: return pro-like defaults so nothing is gated
+        # No org yet — return free defaults (conservative limits)
         return {
-            "plan": "pro", "plan_name": "Pro (Testing)",
-            "usage": {}, "limits": {"applications": -1, "exports": -1, "ats_scans": -1, "ai_calls": -1, "members": -1, "candidates": -1},
+            "plan": "free", "plan_name": "Free",
+            "usage": {}, "limits": {"applications": 3, "exports": 5, "ats_scans": 5, "ai_calls": 20, "members": 1, "candidates": 10},
             "status": "active",
         }
 
@@ -51,8 +69,8 @@ async def get_billing_status(
         return await billing.get_plan_info(orgs[0]["id"])
     except Exception:
         return {
-            "plan": "pro", "plan_name": "Pro (Testing)",
-            "usage": {}, "limits": {"applications": -1, "exports": -1, "ats_scans": -1, "ai_calls": -1, "members": -1, "candidates": -1},
+            "plan": "free", "plan_name": "Free",
+            "usage": {}, "limits": {"applications": 3, "exports": 5, "ats_scans": 5, "ai_calls": 20, "members": 1, "candidates": 10},
             "status": "active",
         }
 
@@ -98,13 +116,13 @@ async def create_portal(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No organization found")
 
     billing = BillingService()
-    url = await billing.create_portal_session(orgs[0]["id"], "http://localhost:3002/settings/billing")
+    url = await billing.create_portal_session(orgs[0]["id"], f"{_FRONTEND_URL}/settings/billing")
     if not url:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Billing portal unavailable")
     return {"url": url}
 
 
-@limiter.limit("20/minute")
+@limiter.limit("100/minute")
 @router.post("/webhook")
 async def stripe_webhook(request: Request):
     """Handle Stripe webhook events."""
@@ -117,8 +135,7 @@ async def stripe_webhook(request: Request):
     stripe = billing._get_stripe()
 
     if not stripe or not webhook_secret:
-        # Accept but don't process if Stripe not configured
-        return {"status": "ignored"}
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Billing not configured")
 
     try:
         event = stripe.Webhook.construct_event(payload, sig, webhook_secret)

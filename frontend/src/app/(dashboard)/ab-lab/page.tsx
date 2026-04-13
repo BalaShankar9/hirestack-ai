@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { useAuth } from "@/components/providers";
 import api from "@/lib/api";
 import type { DocVariant } from "@/types";
@@ -226,6 +227,19 @@ export default function ABLabPage() {
               <p className="text-sm text-muted-foreground">{comparison.summary || JSON.stringify(comparison)}</p>
             </div>
           )}
+
+          {/* Cross-link: apply the best variant */}
+          <div className="rounded-2xl border border-dashed bg-card/50 p-4 flex items-center justify-between gap-4">
+            <p className="text-sm text-muted-foreground">
+              <strong className="text-foreground">Like a variant?</strong>{" "}
+              Use it in a full application workspace.
+            </p>
+            <Link href="/new">
+              <Button size="sm" variant="outline" className="rounded-xl shrink-0 gap-1.5">
+                <ArrowLeftRight className="h-3.5 w-3.5" /> New Application
+              </Button>
+            </Link>
+          </div>
         </div>
       )}
     </div>

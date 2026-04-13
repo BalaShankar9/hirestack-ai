@@ -161,6 +161,37 @@ class SocialConnector:
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
 
+        # SSRF protection: block requests to private/internal networks
+        from urllib.parse import urlparse as _urlparse
+        import socket
+        from ipaddress import ip_address, ip_network
+
+        _BLOCKED_NETWORKS = [
+            ip_network("127.0.0.0/8"),
+            ip_network("10.0.0.0/8"),
+            ip_network("172.16.0.0/12"),
+            ip_network("192.168.0.0/16"),
+            ip_network("169.254.0.0/16"),  # AWS metadata
+            ip_network("::1/128"),
+            ip_network("fc00::/7"),
+        ]
+
+        parsed = _urlparse(url)
+        hostname = parsed.hostname or ""
+        if not hostname:
+            raise ValueError("Invalid URL")
+
+        try:
+            # Resolve hostname to check the actual IP
+            addr_info = socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
+            for family, _type, proto, canonname, sockaddr in addr_info:
+                ip = ip_address(sockaddr[0])
+                for network in _BLOCKED_NETWORKS:
+                    if ip in network:
+                        raise ValueError("URL resolves to a private/internal network address")
+        except socket.gaierror:
+            raise ValueError("Could not resolve hostname")
+
         try:
             async with httpx.AsyncClient(timeout=CONNECT_TIMEOUT, follow_redirects=True) as client:
                 resp = await client.get(url, headers={

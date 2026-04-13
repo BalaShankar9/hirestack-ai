@@ -38,7 +38,7 @@ export function ScoreExplanation({
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-3 p-3 text-left hover:bg-muted/30 transition-colors rounded-xl"
+        className="flex w-full items-center gap-3 p-3 text-left hover:bg-muted/30 transition-all rounded-xl"
       >
         <HelpCircle className="h-4 w-4 text-muted-foreground/60 shrink-0" />
         <span className="text-xs text-muted-foreground flex-1">

@@ -91,9 +91,11 @@ async def get_current_user(
     except HTTPException:
         raise
     except Exception as e:
+        import structlog
+        structlog.get_logger().error("auth_failed", error=str(e)[:200])
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Authentication failed: {str(e)}",
+            detail="Authentication failed",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional
 
 from app.core.security import limiter
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.services.candidate import CandidateService
 from app.services.org import OrgService
@@ -90,15 +90,30 @@ async def get_candidate(
     return c
 
 
+class UpdateCandidateRequest(BaseModel):
+    name: Optional[str] = Field(None, max_length=500)
+    email: Optional[str] = Field(None, max_length=500)
+    phone: Optional[str] = Field(None, max_length=50)
+    location: Optional[str] = Field(None, max_length=500)
+    client_company: Optional[str] = Field(None, max_length=500)
+    pipeline_stage: Optional[str] = Field(None, max_length=100)
+    tags: Optional[list] = None
+    notes: Optional[str] = Field(None, max_length=10000)
+    assigned_recruiter: Optional[str] = Field(None, max_length=500)
+    resume_text: Optional[str] = Field(None, max_length=100000)
+    skills: Optional[list] = None
+    status: Optional[str] = Field(None, max_length=50)
+
+
 @limiter.limit("30/minute")
 @router.put("/{candidate_id}")
 async def update_candidate(
     request: Request,
-    candidate_id: str, data: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)):
+    candidate_id: str, data: UpdateCandidateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     validate_uuid(candidate_id, "candidate_id")
     org = await _get_user_org(current_user)
     service = CandidateService()
-    updated = await service.update(candidate_id, org["id"], data)
+    updated = await service.update(candidate_id, org["id"], data.model_dump(exclude_none=True))
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
     return updated

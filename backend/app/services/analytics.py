@@ -62,23 +62,23 @@ class AnalyticsService:
             ats_scans = await self.db.query(TABLES["ats_scans"], filters=[("user_id", "==", user_id)], limit=100)
             ats_count = len(ats_scans)
         except Exception:
-            pass
+            logger.warning("analytics_ats_query_failed", user_id=user_id)
         try:
             salary_items = await self.db.query(TABLES["salary_analyses"], filters=[("user_id", "==", user_id)], limit=100)
             salary_count = len(salary_items)
         except Exception:
-            pass
+            logger.warning("analytics_salary_query_failed", user_id=user_id)
         try:
             sessions = await self.db.query(TABLES["interview_sessions"], filters=[("user_id", "==", user_id)], limit=100)
             interview_count = len(sessions)
         except Exception:
-            pass
+            logger.warning("analytics_interview_query_failed", user_id=user_id)
         try:
             streaks = await self.db.query(TABLES["learning_streaks"], filters=[("user_id", "==", user_id)], limit=1)
             if streaks:
                 learning_streak = streaks[0].get("current_streak", 0)
         except Exception:
-            pass
+            logger.warning("analytics_learning_query_failed", user_id=user_id)
 
         return {
             "applications": len(applications),

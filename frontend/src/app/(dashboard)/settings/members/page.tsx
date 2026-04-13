@@ -12,6 +12,7 @@ import { Users, Plus, Loader2, Mail, Shield, Crown, UserX, ArrowLeft } from "luc
 import { toast } from "@/hooks/use-toast";
 import Link from "next/link";
 import { RoleGate } from "@/components/role-gate";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 const ROLE_COLORS: Record<string, string> = {
   owner: "bg-violet-500/10 text-violet-500 border-violet-500/20",
@@ -29,6 +30,7 @@ export default function MembersPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
   const [inviting, setInviting] = useState(false);
+  const [removeTargetId, setRemoveTargetId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!session?.access_token) return;
@@ -65,12 +67,13 @@ export default function MembersPage() {
   };
 
   const removeMember = async (userId: string) => {
-    if (!org || !confirm("Remove this member?")) return;
+    if (!org) return;
     try {
       await api.request(`/orgs/${org.id}/members/${userId}`, { method: "DELETE" });
       setMembers((prev) => prev.filter((m) => m.user_id !== userId));
       toast({ title: "Member removed" });
     } catch (e: any) { toast({ title: "Failed", description: e.message }); }
+    finally { setRemoveTargetId(null); }
   };
 
   return (
@@ -131,7 +134,7 @@ export default function MembersPage() {
                       <SelectItem value="viewer">Viewer</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeMember(m.user_id)}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => setRemoveTargetId(m.user_id)}>
                     <UserX className="h-3 w-3" />
                   </Button>
                 </div>
@@ -141,6 +144,16 @@ export default function MembersPage() {
         </div>
       )}
     </div>
+
+    <ConfirmDialog
+      open={!!removeTargetId}
+      onOpenChange={(open) => { if (!open) setRemoveTargetId(null); }}
+      title="Remove team member?"
+      description="They will lose access to this organization immediately."
+      confirmLabel="Remove"
+      variant="destructive"
+      onConfirm={() => removeMember(removeTargetId!)}
+    />
     </RoleGate>
   );
 }

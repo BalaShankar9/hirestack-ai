@@ -176,7 +176,7 @@ async def record_ab_test_result(
     }
 
     await asyncio.to_thread(
-        lambda: sb.table("ab_test_results")
+        lambda: sb.table(TABLES["ab_test_results"])
         .insert(row)
         .execute()
     )
@@ -207,7 +207,7 @@ async def get_ab_test_stats(
 
     try:
         resp = await asyncio.to_thread(
-            lambda: sb.table("ab_test_results")
+            lambda: sb.table(TABLES["ab_test_results"])
             .select("*")
             .eq("user_id", user_id)
             .execute()

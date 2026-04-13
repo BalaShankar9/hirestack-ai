@@ -161,6 +161,23 @@ const config: Config = {
           from: { opacity: "0", transform: "translateX(-4px)" },
           to: { opacity: "1", transform: "translateX(0)" },
         },
+        /* ── Futuristic keyframes ── */
+        "morph": {
+          "0%, 100%": { borderRadius: "60% 40% 30% 70% / 60% 30% 70% 40%" },
+          "50%": { borderRadius: "30% 60% 70% 40% / 50% 60% 30% 60%" },
+        },
+        "float-3d": {
+          "0%, 100%": { transform: "translateY(0) rotateX(0)" },
+          "50%": { transform: "translateY(-8px) rotateX(2deg)" },
+        },
+        "pulse-ring": {
+          "0%": { transform: "scale(0.8)", opacity: "1" },
+          "100%": { transform: "scale(2.5)", opacity: "0" },
+        },
+        "text-shimmer": {
+          "0%": { backgroundPosition: "150% center" },
+          "100%": { backgroundPosition: "-50% center" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -179,6 +196,15 @@ const config: Config = {
         "agent-border-glow": "agent-border-glow 2.5s ease-in-out infinite",
         "timeline-pulse": "timeline-pulse 2s ease-in-out infinite",
         "log-line-in": "log-line-in 0.2s ease-out",
+        /* ── Futuristic animations ── */
+        "morph": "morph 8s ease-in-out infinite",
+        "float-3d": "float-3d 6s ease-in-out infinite",
+        "pulse-ring": "pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite",
+        "text-shimmer": "text-shimmer 3s ease-in-out infinite",
+      },
+      transitionTimingFunction: {
+        spring: "var(--spring-bounce)",
+        "spring-snappy": "var(--spring-snappy)",
       },
     },
   },

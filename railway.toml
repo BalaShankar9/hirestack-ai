@@ -7,3 +7,11 @@ healthcheckPath = "/health"
 healthcheckTimeout = 120
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
+
+# Separate worker service for generation job processing.
+# Deploy as a second Railway service pointing to the same repo
+# with RAILWAY_SERVICE=worker env var.
+# [deploy.worker]
+# startCommand = "cd /app/backend && PYTHONPATH=/app python -m app.worker"
+# restartPolicyType = "on_failure"
+# restartPolicyMaxRetries = 5

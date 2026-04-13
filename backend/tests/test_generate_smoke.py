@@ -138,7 +138,7 @@ def _wire_happy_path_mocks(
 async def test_generate_pipeline_returns_structured_response(aclient):
     """POST /api/generate/pipeline returns all expected fields when AI succeeds."""
     with (
-        patch("app.api.routes.generate._RUNTIME_AVAILABLE", False),
+        patch("app.api.routes.generate.sync_pipeline._RUNTIME_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
         patch("ai_engine.chains.benchmark_builder.BenchmarkBuilderChain") as MockBenchmark,
@@ -215,13 +215,32 @@ async def test_generate_pipeline_rejects_oversized_jd(aclient):
 @pytest.mark.asyncio
 async def test_stream_endpoint_returns_sse(aclient):
     """POST /api/generate/pipeline/stream returns text/event-stream."""
-    with patch("app.api.routes.generate._RUNTIME_AVAILABLE", False):
+    with (
+        patch("app.api.routes.generate.stream._RUNTIME_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._AGENT_PIPELINES_AVAILABLE", False),
+        patch("ai_engine.client.AIClient"),
+        patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
+        patch("ai_engine.chains.benchmark_builder.BenchmarkBuilderChain") as MockBenchmark,
+        patch("ai_engine.chains.gap_analyzer.GapAnalyzerChain") as MockGap,
+        patch("ai_engine.chains.document_generator.DocumentGeneratorChain") as MockDocGen,
+        patch("ai_engine.chains.career_consultant.CareerConsultantChain") as MockConsultant,
+        patch("ai_engine.chains.validator.ValidatorChain") as MockValidator,
+        patch("ai_engine.chains.document_discovery.DocumentDiscoveryChain") as MockDiscovery,
+        patch("ai_engine.chains.adaptive_document.AdaptiveDocumentChain"),
+        patch("ai_engine.chains.company_intel.CompanyIntelChain") as MockIntel,
+    ):
+        _wire_happy_path_mocks(
+            MockProfiler, MockBenchmark, MockGap, MockDocGen,
+            MockConsultant, MockValidator, MockDiscovery, MockIntel,
+        )
+
         resp = await aclient.post(
             "/api/generate/pipeline/stream",
             json={
                 "job_title": "Designer",
                 "company": "DesignCo",
                 "jd_text": "Looking for a UX designer with Figma experience...",
+                "resume_text": "I am a UX designer with 5 years of Figma experience...",
             },
         )
         # Should start streaming (200) or may error from AI (500 wrapped)
@@ -235,7 +254,7 @@ async def test_stream_endpoint_returns_sse(aclient):
 async def test_generate_pipeline_survives_partial_failure(aclient):
     """If cover letter generation fails, CV should still be returned."""
     with (
-        patch("app.api.routes.generate._RUNTIME_AVAILABLE", False),
+        patch("app.api.routes.generate.sync_pipeline._RUNTIME_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
         patch("ai_engine.chains.benchmark_builder.BenchmarkBuilderChain") as MockBenchmark,
@@ -391,7 +410,7 @@ def test_extract_retry_after_seconds():
 async def test_pipeline_timeout_returns_504(aclient):
     """Pipeline that exceeds PIPELINE_TIMEOUT returns 504."""
     with (
-        patch("app.api.routes.generate._RUNTIME_AVAILABLE", False),
+        patch("app.api.routes.generate.sync_pipeline._RUNTIME_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
         patch("ai_engine.chains.benchmark_builder.BenchmarkBuilderChain") as MockBenchmark,
@@ -402,7 +421,7 @@ async def test_pipeline_timeout_returns_504(aclient):
         patch("ai_engine.chains.document_discovery.DocumentDiscoveryChain") as MockDiscovery,
         patch("ai_engine.chains.adaptive_document.AdaptiveDocumentChain"),
         patch("ai_engine.chains.company_intel.CompanyIntelChain") as MockIntel,
-        patch("app.api.routes.generate.PIPELINE_TIMEOUT", 0.01),  # 10ms timeout
+        patch("app.api.routes.generate.sync_pipeline.PIPELINE_TIMEOUT", 0.01),  # 10ms timeout
     ):
         # Discovery succeeds fast
         MockDiscovery.return_value.discover = AsyncMock(return_value={
@@ -434,7 +453,7 @@ async def test_pipeline_timeout_returns_504(aclient):
 async def test_partial_failure_reports_failed_modules(aclient):
     """When cover letter fails, response includes failedModules metadata."""
     with (
-        patch("app.api.routes.generate._RUNTIME_AVAILABLE", False),
+        patch("app.api.routes.generate.sync_pipeline._RUNTIME_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
         patch("ai_engine.chains.benchmark_builder.BenchmarkBuilderChain") as MockBenchmark,

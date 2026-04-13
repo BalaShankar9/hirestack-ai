@@ -45,9 +45,6 @@ export default function JobBoardPage() {
   const router = useRouter();
   const { user, session: authSession } = useAuth();
 
-  // Set auth token for API calls
-  useEffect(() => { if (authSession?.access_token) api.setToken(authSession.access_token); }, [authSession?.access_token]);
-
   const [alerts, setAlerts] = useState<JobAlert[]>([]);
   const [matches, setMatches] = useState<JobMatch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,7 +59,13 @@ export default function JobBoardPage() {
   const [salaryMin, setSalaryMin] = useState("");
   const [creating, setCreating] = useState(false);
 
-  useEffect(() => { loadData(); }, []);
+  // Set token and load data only when auth is ready
+  useEffect(() => {
+    if (authSession?.access_token) {
+      api.setToken(authSession.access_token);
+      loadData();
+    }
+  }, [authSession?.access_token]);
 
   const loadData = async () => {
     setLoading(true);
@@ -90,7 +93,9 @@ export default function JobBoardPage() {
     try {
       await api.jobSync.updateMatchStatus(id, status);
       setMatches((prev) => prev.map((m) => m.id === id ? { ...m, status: status as any } : m));
-    } catch {}
+    } catch (e: any) {
+      toast({ title: "Failed to update status", description: e.message, variant: "error" });
+    }
   };
 
   const applyToJob = (match: JobMatch) => {

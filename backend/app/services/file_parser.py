@@ -3,6 +3,7 @@ File Parser Utility
 Extracts text from PDF, DOCX, DOC, and TXT files with high accuracy.
 Handles edge cases: multi-column layouts, tables, headers/footers, encoding issues.
 """
+import asyncio
 import io
 import re
 from typing import List
@@ -38,6 +39,10 @@ class FileParser:
 
     async def _extract_pdf(self, file_contents: bytes) -> str:
         """Extract text from PDF file with layout-aware extraction."""
+        return await asyncio.to_thread(self._extract_pdf_sync, file_contents)
+
+    def _extract_pdf_sync(self, file_contents: bytes) -> str:
+        """Synchronous PDF extraction (runs in thread pool)."""
         text_parts: List[str] = []
 
         try:
@@ -103,6 +108,10 @@ class FileParser:
 
     async def _extract_docx(self, file_contents: bytes) -> str:
         """Extract text from DOCX file including paragraphs, tables, headers."""
+        return await asyncio.to_thread(self._extract_docx_sync, file_contents)
+
+    def _extract_docx_sync(self, file_contents: bytes) -> str:
+        """Synchronous DOCX extraction (runs in thread pool)."""
         try:
             doc = DocxDocument(io.BytesIO(file_contents))
         except Exception as e:

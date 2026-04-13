@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Toaster } from "@/components/ui/toaster";
@@ -30,13 +31,13 @@ export const metadata: Metadata = {
     siteName: "HireStack AI",
     title: "HireStack AI — Stop Applying. Start Landing.",
     description: "6 AI agents build your perfect application package. ATS-optimized CV, tailored cover letter, company intel, gap analysis.",
-    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "HireStack AI" }],
+    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "HireStack AI" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "HireStack AI — AI-Powered Career Intelligence",
     description: "Build interview-winning applications with 6 AI agents. Get started today.",
-    images: ["/og-image.png"],
+    images: ["/opengraph-image"],
   },
   robots: {
     index: true,
@@ -78,7 +79,7 @@ export default function RootLayout({
                   "@type": "Organization",
                   "name": "HireStack AI",
                   "url": "https://hirestack.tech",
-                  "logo": "https://hirestack.tech/og-image.png",
+                  "logo": "https://hirestack.tech/opengraph-image",
                 },
               ],
             }),
@@ -92,6 +93,19 @@ export default function RootLayout({
             <Toaster />
           </Providers>
         </ErrorBoundary>
+        <Script id="card-spotlight" strategy="afterInteractive">{`
+          document.addEventListener('mousemove',function(e){
+            var t=e.target;while(t&&t!==document){
+              if(t.classList&&t.classList.contains('card-spotlight')){
+                var r=t.getBoundingClientRect();
+                t.style.setProperty('--spotlight-x',(e.clientX-r.left)+'px');
+                t.style.setProperty('--spotlight-y',(e.clientY-r.top)+'px');
+                return;
+              }
+              t=t.parentElement;
+            }
+          });
+        `}</Script>
       </body>
     </html>
   );

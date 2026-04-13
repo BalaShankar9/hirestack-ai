@@ -231,7 +231,7 @@ export default function NewApplicationPage() {
           setUseNexus(true);
         }
       })
-      .catch(() => {})
+      .catch((e) => console.error("Failed to load nexus profile", e))
       .finally(() => setNexusLoading(false));
   }, [userId]);
 
@@ -316,11 +316,16 @@ export default function NewApplicationPage() {
     if (paramCompany && !company) setCompany(paramCompany);
     if (paramJdText && !jdText) setJdText(paramJdText);
 
-    let stored: { appId?: string; jobId?: string; step?: Step } | null = null;
+    let stored: { appId?: string; jobId?: string; step?: Step; savedAt?: number } | null = null;
     if (typeof window !== "undefined") {
       try {
         const raw = window.sessionStorage.getItem(GENERATION_SESSION_KEY);
         stored = raw ? JSON.parse(raw) : null;
+        // Expire sessions older than 2 hours to avoid ghost IDs
+        if (stored?.savedAt && Date.now() - stored.savedAt > 2 * 60 * 60 * 1000) {
+          window.sessionStorage.removeItem(GENERATION_SESSION_KEY);
+          stored = null;
+        }
       } catch {
         stored = null;
       }
@@ -702,7 +707,7 @@ export default function NewApplicationPage() {
       </div>
 
       {step === "job" && (
-        <div className="surface-premium rounded-2xl p-6">
+        <div className="surface-premium rounded-2xl p-6 card-spotlight">
           <h3 className="text-base font-bold">Paste the Job Description</h3>
           <p className="mt-1 text-xs text-muted-foreground">We’ll extract keywords and build a quality signal.</p>
           <div className="mt-5 space-y-4">
@@ -730,7 +735,12 @@ export default function NewApplicationPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="job-description">Job Description</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="job-description">Job Description</Label>
+                <span className={`text-[11px] tabular-nums ${jdText.trim().length > 20 ? "text-muted-foreground" : "text-amber-500"}`}>
+                  {jdText.trim().length > 0 ? `${jdText.trim().split(/\s+/).length} words` : ""}
+                </span>
+              </div>
               <Textarea
                 id="job-description"
                 rows={12}
@@ -739,6 +749,9 @@ export default function NewApplicationPage() {
                 value={jdText}
                 onChange={(e) => setJdText(e.target.value)}
               />
+              {jdText.trim().length > 0 && jdText.trim().length <= 20 && (
+                <p className="text-[11px] text-amber-500">Add more detail — a full JD produces much better results.</p>
+              )}
             </div>
 
             {keywords.length > 0 && (
@@ -760,7 +773,7 @@ export default function NewApplicationPage() {
       )}
 
       {step === "resume" && (
-        <div className="surface-premium rounded-2xl p-6">
+        <div className="surface-premium rounded-2xl p-6 card-spotlight">
           <h3 className="text-base font-bold">Upload Your Resume</h3>
           <p className="mt-1 text-xs text-muted-foreground">Optional but helps generate more accurate analysis.</p>
           <div className="mt-5 space-y-4">
@@ -872,7 +885,7 @@ export default function NewApplicationPage() {
       )}
 
       {step === "review" && (
-        <div className="surface-premium rounded-2xl p-6">
+        <div className="surface-premium rounded-2xl p-6 card-spotlight">
           <h3 className="text-base font-bold">Review Confirmed Facts</h3>
           <p className="mt-1 text-xs text-muted-foreground">Everything looks right? Let’s generate your modules.</p>
           <div className="mt-5 space-y-4">
@@ -978,6 +991,7 @@ export default function NewApplicationPage() {
 
       {/* Navigation buttons */}
       {step !== "generate" && (
+        <>
         <div className="flex items-center justify-between">
           <Button
             variant="outline"
@@ -989,7 +1003,7 @@ export default function NewApplicationPage() {
             Back
           </Button>
 
-          <Button className="rounded-xl" onClick={nextStep} disabled={!canAdvance()}>
+          <Button className="rounded-xl btn-glow" onClick={nextStep} disabled={!canAdvance()}>
             {step === "review" ? (
               <>
                 <Sparkles className="mr-2 h-4 w-4" />
@@ -1003,6 +1017,12 @@ export default function NewApplicationPage() {
             )}
           </Button>
         </div>
+        {step === "job" && !canAdvance() && (jobTitle.trim().length > 0 || jdText.trim().length > 0) && (
+          <p className="text-center text-[11px] text-muted-foreground -mt-2">
+            {jobTitle.trim().length === 0 ? "Enter a job title to continue" : "Add a more detailed job description to continue"}
+          </p>
+        )}
+        </>
       )}
     </div>
   );

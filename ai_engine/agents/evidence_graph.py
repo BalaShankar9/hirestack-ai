@@ -125,13 +125,15 @@ class EvidenceGraphBuilder:
                 updated_nodes.append(match)
             else:
                 # Create new canonical node
+                # Use fresh_confidence (age-decayed) so stale inferred/user_stated
+                # evidence enters the graph with appropriately low confidence.
                 node = CanonicalNode(
                     id=self._canonical_id(item),
                     canonical_text=item.text,
                     tier=item.tier.value if isinstance(item.tier, EvidenceTier) else item.tier,
                     source=item.source.value if hasattr(item.source, "value") else str(item.source),
                     source_field=item.source_field,
-                    confidence=item.confidence,
+                    confidence=item.fresh_confidence,
                     first_seen_job_id=job_id,
                     metadata=item.metadata.copy(),
                 )

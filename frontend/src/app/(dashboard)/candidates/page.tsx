@@ -59,7 +59,9 @@ export default function CandidatesPage() {
       ]);
       setCandidates(Array.isArray(c) ? c : []);
       setStats(s || {});
-    } catch {} finally { setLoading(false); }
+    } catch (e: any) {
+      toast({ title: "Failed to load candidates", description: e.message, variant: "error" });
+    } finally { setLoading(false); }
   };
 
   const addCandidate = async () => {
@@ -83,7 +85,9 @@ export default function CandidatesPage() {
       await api.request(`/candidates/${id}/move`, { method: "POST", body: { stage } });
       setCandidates((prev) => prev.map((c) => c.id === id ? { ...c, pipeline_stage: stage } : c));
       toast({ title: `Moved to ${stage}` });
-    } catch {}
+    } catch (e: any) {
+      toast({ title: "Failed to move candidate", description: e.message, variant: "error" });
+    }
   };
 
   const filtered = candidates.filter((c) => {
@@ -120,7 +124,7 @@ export default function CandidatesPage() {
       {/* Stats row */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {STAGES.map((stage) => (
-          <div key={stage.key} className={cn("rounded-lg border px-3 py-1.5 text-center min-w-[100px]", stage.lightColor)}>
+          <div key={stage.key} className={cn("rounded-lg border px-3 py-1.5 text-center min-w-[100px] transition-all duration-200 hover:shadow-soft-sm", stage.lightColor)}>
             <p className="text-lg font-bold tabular-nums">{stats[stage.key] || 0}</p>
             <p className="text-[10px] text-muted-foreground">{stage.label}</p>
           </div>
@@ -174,7 +178,7 @@ export default function CandidatesPage() {
                 {/* Cards */}
                 <div className="space-y-2">
                   {stageCards.map((c) => (
-                    <div key={c.id} className="rounded-xl border bg-card p-3 shadow-soft-sm hover:shadow-soft-md transition-shadow group">
+                    <div key={c.id} className="rounded-xl border bg-card p-3 shadow-soft-sm hover:shadow-soft-md hover:-translate-y-0.5 transition-all duration-300 group">
                       <div className="flex items-start justify-between gap-1">
                         <div className="min-w-0">
                           <p className="text-sm font-semibold truncate">{c.name}</p>

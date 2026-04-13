@@ -31,9 +31,9 @@ const Toast = React.forwardRef<
     <ToastPrimitives.Root
       ref={ref}
       className={cn(
-        "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-6 pr-8 shadow-lg transition-all",
+        "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-2xl border p-5 pr-8 shadow-soft-lg backdrop-blur-xl transition-all",
         "data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full data-[state=open]:sm:slide-in-from-bottom-full",
-        "bg-white border-gray-200",
+        "bg-card border-border",
         className
       )}
       {...props}
@@ -49,7 +49,7 @@ const ToastClose = React.forwardRef<
   <ToastPrimitives.Close
     ref={ref}
     className={cn(
-      "absolute right-2 top-2 rounded-md p-1 text-gray-500 opacity-0 transition-opacity hover:text-gray-900 focus:opacity-100 focus:outline-none focus:ring-2 group-hover:opacity-100",
+      "absolute right-2 top-2 rounded-lg p-1 text-muted-foreground opacity-0 transition-all hover:text-foreground focus:opacity-100 focus:outline-none focus:ring-2 group-hover:opacity-100",
       className
     )}
     toast-close=""
@@ -78,7 +78,7 @@ const ToastDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ToastPrimitives.Description
     ref={ref}
-    className={cn("text-sm text-gray-500", className)}
+    className={cn("text-sm text-muted-foreground", className)}
     {...props}
   />
 ));
@@ -88,10 +88,10 @@ export function Toaster() {
   const { toasts, dismiss } = useToast();
 
   const variantStyles: Record<string, string> = {
-    default: "bg-white border-gray-200",
-    success: "bg-green-50 border-green-300",
-    error: "bg-red-50 border-red-300",
-    warning: "bg-amber-50 border-amber-300",
+    default: "bg-card border-border",
+    success: "bg-emerald-50 border-emerald-300 dark:bg-emerald-950/50 dark:border-emerald-800",
+    error: "bg-red-50 border-red-300 dark:bg-red-950/50 dark:border-red-800",
+    warning: "bg-amber-50 border-amber-300 dark:bg-amber-950/50 dark:border-amber-800",
   };
 
   return (

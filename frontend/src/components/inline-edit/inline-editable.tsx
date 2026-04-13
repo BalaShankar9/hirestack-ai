@@ -69,7 +69,7 @@ export const InlineEditable = memo(function InlineEditable({
       tabIndex={0}
       onClick={() => { setDraft(value); setEditing(true); }}
       onKeyDown={(e) => { if (e.key === "Enter") { setDraft(value); setEditing(true); } }}
-      className={cn("cursor-pointer transition-colors hover:bg-primary/5 hover:rounded hover:px-1 hover:-mx-1", className)}
+      className={cn("cursor-pointer transition-colors hover:bg-primary/5 hover:rounded hover:px-1 hover:-mx-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded", className)}
     >
       {value || <span className="text-muted-foreground italic">{placeholder}</span>}
     </span>

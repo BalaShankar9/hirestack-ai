@@ -3,6 +3,7 @@
 import { useMemo, useState, useRef } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Plus,
   Upload,
@@ -97,6 +98,7 @@ export default function EvidenceVaultPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
 
@@ -223,17 +225,18 @@ export default function EvidenceVaultPage() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("Delete this evidence item?")) return;
-    setDeletingId(id);
+  async function confirmDelete() {
+    if (!deleteTargetId) return;
+    setDeletingId(deleteTargetId);
     try {
-      await deleteEvidence(id);
-      removeItem(id);
+      await deleteEvidence(deleteTargetId);
+      removeItem(deleteTargetId);
       toast({ title: "Evidence deleted" });
     } catch (err) {
       toast({ title: "Delete failed", description: "Please try again.", variant: "error" });
     } finally {
       setDeletingId(null);
+      setDeleteTargetId(null);
     }
   }
 
@@ -251,6 +254,7 @@ export default function EvidenceVaultPage() {
   }
 
   return (
+    <>
     <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -438,7 +442,7 @@ export default function EvidenceVaultPage() {
             const TypeIcon = typeConfig.icon;
 
             return (
-              <div key={ev.id} className="relative group rounded-2xl border bg-card shadow-soft-sm hover:shadow-soft-md transition-all duration-300 overflow-hidden">
+              <div key={ev.id} className="relative group rounded-2xl border bg-card shadow-soft-sm hover:shadow-soft-md hover:-translate-y-0.5 transition-all duration-300 overflow-hidden card-spotlight">
                 {/* Type indicator strip */}
                 <div className={cn("h-1 w-full", typeConfig.color.split(" ")[0])} />
 
@@ -476,7 +480,7 @@ export default function EvidenceVaultPage() {
                         size="icon"
                         className="h-7 w-7 text-destructive"
                         disabled={deletingId === ev.id}
-                        onClick={() => handleDelete(ev.id)}
+                        onClick={() => setDeleteTargetId(ev.id)}
                       >
                         {deletingId === ev.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                       </Button>
@@ -504,5 +508,16 @@ export default function EvidenceVaultPage() {
         </div>
       )}
     </motion.div>
+
+    <ConfirmDialog
+      open={!!deleteTargetId}
+      onOpenChange={(open) => { if (!open) setDeleteTargetId(null); }}
+      title="Delete evidence item?"
+      description="This item will be permanently removed. This cannot be undone."
+      confirmLabel="Delete"
+      variant="destructive"
+      onConfirm={confirmDelete}
+    />
+    </>
   );
 }

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from app.services.gap import GapService
 from app.api.deps import get_current_user, check_billing_limit
 from app.api.response import success_response
+from pydantic import BaseModel, Field
 import structlog
 
 logger = structlog.get_logger()
@@ -16,21 +17,23 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+class GapAnalysisRequest(BaseModel):
+    profile_id: str = Field(..., min_length=1, max_length=100)
+    benchmark_id: str = Field(..., min_length=1, max_length=100)
+
+
 @limiter.limit("3/minute")
 @router.post("/analyze")
 async def analyze_gaps(
-    request: Dict[str, Any],
+    request: Request,
+    body: GapAnalysisRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Perform gap analysis comparing profile to benchmark."""
     await check_billing_limit("ai_calls", current_user)
     service = GapService()
-    profile_id = request.get("profile_id")
-    benchmark_id = request.get("benchmark_id")
-    if not profile_id or not benchmark_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="profile_id and benchmark_id are required")
     try:
-        report = await service.analyze_gaps(user_id=current_user["id"], profile_id=profile_id, benchmark_id=benchmark_id)
+        report = await service.analyze_gaps(user_id=current_user["id"], profile_id=body.profile_id, benchmark_id=body.benchmark_id)
         return success_response(report)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))

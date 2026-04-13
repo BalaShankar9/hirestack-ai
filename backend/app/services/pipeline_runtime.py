@@ -462,6 +462,29 @@ class PipelineRuntime:
                          mode=self.config.mode.value, elapsed_ms=elapsed_ms,
                          score=result.get("scores", {}).get("overall", 0))
 
+            # ── Pipeline Telemetry — persist runtime-level cost + token summary ─
+            try:
+                if user_id:
+                    from app.services.career_analytics import PipelineTelemetryService
+                    tel = PipelineTelemetryService()
+                    tu = ai.token_usage
+                    await tel.record_telemetry(
+                        user_id=user_id,
+                        job_id=self.config.job_id or "runtime",
+                        pipeline_name=f"runtime_{self.config.mode.value}",
+                        model_used=getattr(ai, "model", ""),
+                        total_latency_ms=elapsed_ms,
+                        token_usage={
+                            "prompt_tokens": tu.get("prompt_tokens", 0),
+                            "completion_tokens": tu.get("completion_tokens", 0),
+                            "total_tokens": tu.get("total_tokens", 0),
+                            "call_count": tu.get("call_count", 0),
+                        },
+                        cost_usd_cents=tu.get("estimated_cost_usd_cents", 0),
+                    )
+            except Exception as tel_err:
+                logger.warning("pipeline_runtime.telemetry_failed", error=str(tel_err)[:200])
+
             await self.sink.emit(PipelineEvent(
                 event_type="complete", phase="nova", progress=100,
                 message="All pipelines completed",

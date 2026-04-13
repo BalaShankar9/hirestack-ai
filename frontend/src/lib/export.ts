@@ -178,7 +178,15 @@ export async function exportToPdf(
   // Create a container for rendering
   const container = document.createElement("div");
   container.className = "pdf-container";
-  container.innerHTML = htmlContent;
+  container.textContent = "";  // Clear safely
+  // Parse HTML through DOMParser for safe insertion (no script execution)
+  const parser = new DOMParser();
+  const parsed = parser.parseFromString(htmlContent, "text/html");
+  // Remove any script tags from parsed content
+  parsed.querySelectorAll("script").forEach(el => el.remove());
+  while (parsed.body.firstChild) {
+    container.appendChild(parsed.body.firstChild);
+  }
 
   // Add professional branded styling based on document type
   const styleSheet = document.createElement("style");
@@ -418,7 +426,14 @@ export async function downloadImage(
   // Create a container for rendering
   const container = document.createElement("div");
   container.className = "pdf-container";
-  container.innerHTML = htmlContent;
+  container.textContent = "";  // Clear safely
+  // Parse HTML through DOMParser for safe insertion (no script execution)
+  const imgParser = new DOMParser();
+  const imgParsed = imgParser.parseFromString(htmlContent, "text/html");
+  imgParsed.querySelectorAll("script").forEach(el => el.remove());
+  while (imgParsed.body.firstChild) {
+    container.appendChild(imgParsed.body.firstChild);
+  }
 
   const styleSheet = document.createElement("style");
   const docStyles = PROFESSIONAL_STYLES[opts.documentType ?? "cv"] || PROFESSIONAL_STYLES.cv;

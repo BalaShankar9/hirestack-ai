@@ -1,7 +1,9 @@
 """
 Export routes - PDF/DOCX generation (Firestore)
 """
+import re
 from typing import Dict, Any, List, Optional
+from urllib.parse import quote
 
 from app.core.security import limiter
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
@@ -89,10 +91,12 @@ async def download_export(
     service = ExportService()
     try:
         file_content, filename, content_type = await service.download_export(export_id, current_user["id"])
+        # Sanitize filename to prevent header injection
+        safe_name = re.sub(r'[^\w\s\-.]', '', filename or 'export')[:200]
         return StreamingResponse(
             iter([file_content]),
             media_type=content_type,
-            headers={"Content-Disposition": f"attachment; filename={filename}"},
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(safe_name)}"},
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
@@ -139,11 +143,12 @@ async def export_docx(
 
     try:
         docx_bytes = generate_docx_from_html(body.content, body.document_type)
-        filename = f"{body.document_type}.docx"
+        safe_type = re.sub(r'[^\w\s\-]', '', body.document_type or 'document')[:100]
+        filename = f"{safe_type}.docx"
         return Response(
             content=docx_bytes,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
         )
     except Exception as e:
         logger.error("unexpected_error", error=str(e), endpoint="export_docx")

@@ -49,7 +49,8 @@ async def create_org(
     except Exception as e:
         if "unique" in str(e).lower() or "duplicate" in str(e).lower():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Organization slug already taken")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)[:200])
+        logger.error("create_org_failed", error=str(e), user_id=current_user["id"])
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create organization")
 
 
 @limiter.limit("30/minute")

@@ -7,9 +7,13 @@ from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
+import structlog
+
 from app.services.evidence_mapper import EvidenceMapperService
 from app.api.deps import get_current_user
 from app.core.security import limiter
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -58,6 +62,7 @@ async def auto_map_evidence(
     except ValueError:
         raise HTTPException(status_code=400, detail="Evidence mapping failed. Please check your inputs.")
     except Exception:
+        logger.error("evidence_mapping_failed", user_id=current_user["id"])
         raise HTTPException(status_code=500, detail="Evidence mapping failed. Please try again.")
 
 

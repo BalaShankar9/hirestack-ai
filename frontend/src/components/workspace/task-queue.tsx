@@ -67,10 +67,10 @@ export function TaskQueue({
         <div className="rounded-xl border border-border/70 bg-muted/35 p-4">
           <div className="flex items-center gap-2 text-sm font-medium">
             <Sparkles className="h-4 w-4 text-primary" />
-            No tasks in this view.
+            No actions generated yet
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            When you generate gaps/learning plan, tasks will appear here automatically.
+            Generate gap analysis or learning recommendations to unlock your improvement queue.
           </div>
         </div>
       ) : (

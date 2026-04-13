@@ -349,7 +349,7 @@ class ProfileService:
         try:
             await self.db.update(TABLES["profiles"], profile["id"], {"resume_worth_score": score})
         except Exception:
-            pass
+            logger.warning("resume_worth_score_cache_failed", profile_id=profile["id"])
 
         return {"score": score, "breakdown": breakdown, "label": label}
 
@@ -516,7 +516,7 @@ class ProfileService:
                             cached["from_cache"] = True
                             return cached
                     except Exception:
-                        pass
+                        logger.warning("market_intel_cache_parse_failed", profile_id=profile["id"])
 
         skills = profile.get("skills") or []
         skill_names = [s.get("name", "") for s in skills if isinstance(s, dict)][:20]
@@ -549,7 +549,7 @@ class ProfileService:
         try:
             await self.db.update(TABLES["profiles"], profile["id"], {"contact_info": contact})
         except Exception:
-            pass
+            logger.warning("market_intel_cache_store_failed", profile_id=profile["id"])
 
         return result
 

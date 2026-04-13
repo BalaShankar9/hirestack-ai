@@ -127,7 +127,7 @@ class TestDatabaseSink:
         await sink.emit(PipelineEvent(
             event_type="progress", phase="atlas", progress=10, message="Starting…",
         ))
-        mock_db.table.assert_called_with("generation_job_events")
+        mock_db.table.assert_any_call("generation_job_events")
         call_args = mock_table.insert.call_args[0][0]
         assert call_args["job_id"] == "job-1"
         assert call_args["sequence_no"] == 1

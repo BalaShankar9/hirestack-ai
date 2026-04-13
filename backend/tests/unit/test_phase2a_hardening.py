@@ -12,6 +12,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from starlette.testclient import TestClient
+from starlette.requests import Request as StarletteRequest
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +122,10 @@ class TestJobStatusPolling:
 
         with patch("app.core.database.get_supabase", return_value=sb), \
              patch("app.api.routes.generate.jobs.validate_uuid"):
+            scope = {"type": "http", "method": "GET", "path": "/jobs/job-1/status", "query_string": b"", "headers": []}
+            mock_request = StarletteRequest(scope)
             result = await get_generation_job_status(
+                request=mock_request,
                 job_id="job-1",
                 current_user=mock_user,
             )
@@ -140,8 +145,11 @@ class TestJobStatusPolling:
 
         with patch("app.core.database.get_supabase", return_value=sb), \
              patch("app.api.routes.generate.jobs.validate_uuid"):
+            scope = {"type": "http", "method": "GET", "path": "/jobs/x/status", "query_string": b"", "headers": []}
+            mock_request = StarletteRequest(scope)
             with pytest.raises(HTTPException) as exc_info:
                 await get_generation_job_status(
+                    request=mock_request,
                     job_id="nonexistent",
                     current_user={"id": "user-1"},
                 )

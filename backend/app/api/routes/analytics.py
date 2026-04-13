@@ -5,11 +5,17 @@ from typing import Dict, Any
 
 from app.core.security import limiter
 from fastapi import APIRouter, Depends, Query, Request
+from pydantic import BaseModel, Field
 
 from app.services.analytics import AnalyticsService
 from app.api.deps import get_current_user
 
 router = APIRouter()
+
+
+class TrackEventRequest(BaseModel):
+    event_type: str = Field(..., max_length=100)
+    event_data: Dict[str, Any] = Field(default_factory=dict)
 
 
 @limiter.limit("30/minute")
@@ -51,15 +57,15 @@ async def get_progress(
 @router.post("/track")
 async def track_event(
     request: Request,
-    body: Dict[str, Any],
+    body: TrackEventRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Track an analytics event."""
     service = AnalyticsService()
     await service.track_event(
         user_id=current_user["id"],
-        event_type=body.get("event_type", "unknown"),
-        event_data=body.get("event_data", {}),
+        event_type=body.event_type,
+        event_data=body.event_data,
     )
     return {"status": "tracked"}
 

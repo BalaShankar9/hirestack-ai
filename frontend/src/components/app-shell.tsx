@@ -5,8 +5,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Home,
-  Briefcase,
-  GraduationCap,
   ShieldCheck,
   LogOut,
   Menu,
@@ -15,22 +13,10 @@ import {
   Sparkles,
   ChevronLeft,
   Loader2,
-  Moon,
-  Sun,
-  FileSearch,
-  MessageSquare,
-  DollarSign,
-  BarChart3,
-  BookOpen,
-  FlaskConical,
-  Fingerprint,
   Settings,
   Users,
   Search,
   ArrowRight,
-  TrendingUp,
-  FolderOpen,
-  GitCompare,
   User,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
@@ -45,6 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "@/components/command-palette/command-palette";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 type NavItem = {
   href: string;
@@ -75,24 +62,6 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    title: "Tools",
-    items: [
-      { href: "/ats-scanner", label: "ATS Check", icon: FileSearch, description: "Scan for ATS compatibility" },
-      { href: "/interview", label: "Interview Prep", icon: MessageSquare, description: "Practice with AI" },
-      { href: "/salary", label: "Salary Coach", icon: DollarSign, description: "Negotiate with confidence" },
-      { href: "/career", label: "Improvement", icon: TrendingUp, description: "Close gaps & grow skills" },
-      { href: "/career-analytics", label: "Progress", icon: BarChart3, description: "Track your readiness" },
-    ],
-  },
-  {
-    title: "More",
-    items: [
-      { href: "/job-board", label: "Job Board", icon: Briefcase, description: "Find opportunities" },
-      { href: "/learning", label: "Daily Learn", icon: BookOpen, description: "Skill challenges" },
-      { href: "/ab-lab", label: "Compare Versions", icon: GitCompare, description: "Test document variants" },
-    ],
-  },
-  {
     title: "Admin",
     items: [
       { href: "/candidates", label: "Pipeline", icon: Users, description: "Candidate tracking", roleRequired: "enterprise" },
@@ -108,7 +77,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState(false);
   const [signingOut, setSigningOut] = React.useState(false);
-  const [theme, setTheme] = React.useState<"light" | "dark">("light");
   const [navSearch, setNavSearch] = React.useState("");
 
   // Role-based nav filtering: hide enterprise items unless user has that role
@@ -142,33 +110,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     })).filter((g) => g.items.length > 0);
   }, [navSearch, userRole]);
 
-  React.useEffect(() => {
-    const stored =
-      typeof window !== "undefined" &&
-      window.localStorage &&
-      typeof window.localStorage.getItem === "function"
-        ? window.localStorage.getItem("hirestack_theme")
-        : null;
-    const systemPrefersDark =
-      typeof window !== "undefined"
-        ? window.matchMedia?.("(prefers-color-scheme: dark)")?.matches
-        : false;
-    const next = stored === "dark" || (!stored && systemPrefersDark) ? "dark" : "light";
-    setTheme(next);
-    document.documentElement.classList.toggle("dark", next === "dark");
-  }, []);
-
-  const toggleTheme = () => {
-    setTheme((prev) => {
-      const next = prev === "dark" ? "light" : "dark";
-      document.documentElement.classList.toggle("dark", next === "dark");
-      if (window.localStorage && typeof window.localStorage.setItem === "function") {
-        window.localStorage.setItem("hirestack_theme", next);
-      }
-      return next;
-    });
-  };
-
   const handleSignOut = async () => {
     setSigningOut(true);
     try {
@@ -189,7 +130,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     : user?.email?.slice(0, 2).toUpperCase() ?? "?";
 
   return (
-    <div className="app-frame flex min-h-screen bg-transparent">
+    <div className="app-frame noise-overlay flex min-h-screen bg-transparent">
+      {/* Living aurora background */}
+      <div className="aurora-bg" aria-hidden="true" />
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] rounded-lg bg-card px-3 py-2 text-sm font-medium shadow-soft-md ring-2 ring-ring ring-offset-2 ring-offset-background"
@@ -219,15 +162,16 @@ export function AppShell({ children }: { children: ReactNode }) {
         {!collapsed && (
           <div className="px-3 pt-3">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" aria-hidden="true" />
               <input
                 type="text"
                 placeholder="Search…"
                 value={navSearch}
                 onChange={(e) => setNavSearch(e.target.value)}
+                aria-label="Search navigation"
                 className="flex h-8 w-full rounded-lg border border-border/60 bg-muted/40 pl-8 pr-14 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40 transition-colors"
               />
-              <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 hidden sm:inline-flex items-center gap-0.5 rounded border bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/70">
+              <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 hidden sm:inline-flex items-center gap-0.5 rounded border bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/70" aria-hidden="true">
                 ⌘K
               </kbd>
             </div>
@@ -235,7 +179,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
 
         {/* Nav links */}
-        <nav className="flex-1 overflow-y-auto px-3 py-3">
+        <nav className="flex-1 overflow-y-auto px-3 py-3" aria-label="Main navigation">
           {filteredGroups.map((group, gi) => (
             <div key={group.title}>
               {gi > 0 && <div className="my-2 border-t border-border/50" />}
@@ -285,6 +229,14 @@ export function AppShell({ children }: { children: ReactNode }) {
           {filteredGroups.length === 0 && !collapsed && (
             <p className="px-3 py-6 text-center text-xs text-muted-foreground/60">No results</p>
           )}
+          {!collapsed && !navSearch.trim() && (
+            <div className="mt-3 mx-3 rounded-lg border border-dashed border-border/50 p-2.5 text-center">
+              <p className="text-[10px] text-muted-foreground/60">
+                More tools via{" "}
+                <kbd className="inline-flex items-center gap-0.5 rounded border bg-muted/60 px-1 py-0.5 text-[10px] font-medium text-muted-foreground/70">⌘K</kbd>
+              </p>
+            </div>
+          )}
         </nav>
 
         {/* Collapse toggle */}
@@ -292,6 +244,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button
             onClick={() => setCollapsed(!collapsed)}
             className="flex w-full items-center justify-center rounded-lg p-2 text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             <ChevronLeft className={cn("h-4 w-4 transition-transform duration-300", collapsed && "rotate-180")} />
           </button>
@@ -366,7 +319,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   HireStack <span className="text-primary">AI</span>
                 </span>
               </div>
-              <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)} className="rounded-lg">
+              <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)} className="rounded-lg" aria-label="Close navigation menu">
                 <X className="h-5 w-5" />
               </Button>
             </div>
@@ -374,18 +327,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             {/* Mobile search */}
             <div className="px-3 pt-3">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" aria-hidden="true" />
                 <input
                   type="text"
                   placeholder="Search…"
                   value={navSearch}
                   onChange={(e) => setNavSearch(e.target.value)}
+                  aria-label="Search navigation"
                   className="flex h-8 w-full rounded-lg border border-border/60 bg-muted/40 pl-8 pr-3 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40 transition-colors"
                 />
               </div>
             </div>
 
-            <nav className="flex-1 overflow-y-auto p-3">
+            <nav className="flex-1 overflow-y-auto p-3" aria-label="Mobile navigation">
               {filteredGroups.map((group, gi) => (
                 <div key={group.title}>
                   {gi > 0 && <div className="my-2 border-t border-border/50" />}
@@ -460,31 +414,50 @@ export function AppShell({ children }: { children: ReactNode }) {
             size="icon"
             className="lg:hidden rounded-lg"
             onClick={() => setSidebarOpen(true)}
+            aria-label="Open navigation menu"
           >
             <Menu className="h-5 w-5" />
           </Button>
 
           {/* Breadcrumb / title area */}
-          <div className="flex-1" />
+          {(() => {
+            const PAGE_LABELS: Record<string, string> = {
+              "/dashboard": "Overview",
+              "/new": "New Application",
+              "/evidence": "Evidence",
+              "/nexus": "Profile",
+              "/settings": "Settings",
+              "/candidates": "Pipeline",
+              "/ats-scanner": "ATS Scanner",
+              "/interview": "Interview Prep",
+              "/salary": "Salary Coach",
+              "/career": "Career Improvement",
+              "/career-analytics": "Career Analytics",
+              "/job-board": "Job Board",
+              "/learning": "Daily Learn",
+              "/ab-lab": "Compare Versions",
+              "/api-keys": "API Keys",
+            };
+            const label = PAGE_LABELS[pathname] || (pathname.startsWith("/applications/") ? "Workspace" : null);
+            if (!label) return <div className="flex-1" />;
+            return (
+              <div className="flex-1 min-w-0">
+                <span className="text-sm font-medium text-muted-foreground truncate">{label}</span>
+              </div>
+            );
+          })()}
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="rounded-lg"
-            onClick={toggleTheme}
-            aria-label="Toggle theme"
-          >
-            {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-          </Button>
+          <ThemeToggle />
 
           {/* Quick action */}
           <Button
             size="sm"
-            className="hidden sm:flex gap-2 rounded-xl bg-primary shadow-glow-sm hover:shadow-glow-md transition-shadow"
+            className="flex gap-2 rounded-xl bg-primary btn-glow hover:shadow-glow-md transition-shadow"
             onClick={() => router.push("/new")}
+            aria-label="New Application"
           >
             <Plus className="h-4 w-4" />
-            New Application
+            <span className="hidden sm:inline">New Application</span>
           </Button>
 
           {/* Mobile user menu */}

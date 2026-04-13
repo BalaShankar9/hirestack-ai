@@ -7,6 +7,7 @@ import type { APIKey } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Key, Loader2, Plus, Trash2, Copy, Check, Eye, EyeOff, BarChart3 } from "lucide-react";
 import { RoleGate } from "@/components/role-gate";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 export default function APIKeysPage() {
   const { user } = useAuth();
@@ -21,6 +22,7 @@ export default function APIKeysPage() {
   const [creating, setCreating] = useState(false);
   const [newKeySecret, setNewKeySecret] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [revokeTargetId, setRevokeTargetId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -60,12 +62,13 @@ export default function APIKeysPage() {
   };
 
   const revokeKey = async (id: string) => {
-    if (!confirm("Revoke this API key? This cannot be undone.")) return;
     try {
       await api.apiKeys.revoke(id);
       loadData();
     } catch (e: any) {
       setError(e.message || "Revoke failed");
+    } finally {
+      setRevokeTargetId(null);
     }
   };
 
@@ -194,7 +197,7 @@ export default function APIKeysPage() {
                   </div>
                 </div>
                 {k.is_active && (
-                  <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700" onClick={() => revokeKey(k.id)}>
+                  <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700" onClick={() => setRevokeTargetId(k.id)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 )}
@@ -204,6 +207,16 @@ export default function APIKeysPage() {
         )}
       </div>
     </div>
+
+    <ConfirmDialog
+      open={!!revokeTargetId}
+      onOpenChange={(open) => { if (!open) setRevokeTargetId(null); }}
+      title="Revoke API key?"
+      description="This key will stop working immediately. This cannot be undone."
+      confirmLabel="Revoke Key"
+      variant="destructive"
+      onConfirm={() => revokeKey(revokeTargetId!)}
+    />
     </RoleGate>
   );
 }

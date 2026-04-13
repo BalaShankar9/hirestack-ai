@@ -53,6 +53,17 @@ router = APIRouter()
 
 _ACTIVE_GENERATION_TASKS: Dict[str, asyncio.Task] = {}
 _JOB_TOTAL_STEPS = 7
+
+
+def _get_model_health_summary() -> Dict[str, Any]:
+    """Best-effort model health for job status responses."""
+    try:
+        from ai_engine.model_router import get_model_health
+        return get_model_health()
+    except Exception:
+        return {}
+
+
 _DEFAULT_REQUESTED_MODULES = [
     "benchmark",
     "gaps",
@@ -1478,6 +1489,34 @@ def _start_generation_job(job_id: str, user_id: str) -> None:
     if job_id in _ACTIVE_GENERATION_TASKS:
         return
 
+    # Try to enqueue to Redis Streams for the dedicated worker process.
+    # Falls back to in-process asyncio.create_task when Redis is unavailable.
+    try:
+        from app.core.queue import enqueue_generation_job
+
+        # enqueue_generation_job is async — schedule it and let the coroutine
+        # decide whether Redis accepted the job.
+        async def _try_enqueue() -> None:
+            enqueued = await enqueue_generation_job(job_id, user_id)
+            if enqueued:
+                logger.info("generation_job_enqueued", job_id=job_id)
+                return
+            # Redis unavailable — fall back to in-process
+            _start_generation_job_inprocess(job_id, user_id)
+
+        asyncio.create_task(_try_enqueue())
+    except Exception:
+        # Import or other failure — fall back
+        _start_generation_job_inprocess(job_id, user_id)
+
+
+def _start_generation_job_inprocess(job_id: str, user_id: str) -> None:
+    """Execute the generation job in the web process (fallback when no worker)."""
+    if job_id in _ACTIVE_GENERATION_TASKS:
+        return
+
+    logger.info("generation_job_inprocess_fallback", job_id=job_id)
+
     # Prefer PipelineRuntime-backed execution when available
     if _RUNTIME_AVAILABLE:
         task = asyncio.create_task(_run_generation_job_via_runtime(job_id, user_id))
@@ -1836,6 +1875,7 @@ async def get_generation_job_status(
             "sequence_no": latest_event.get("sequence_no"),
         } if latest_event else None,
         "is_active": job_id in _ACTIVE_GENERATION_TASKS,
+        "model_health": _get_model_health_summary(),
     }
 
 

@@ -2,6 +2,7 @@
 
 import React, { Component, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { reportError } from "@/lib/error-reporting";
 
 interface Props {
   children: ReactNode;
@@ -25,6 +26,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("[ErrorBoundary]", error, errorInfo);
+    reportError(error, errorInfo.componentStack ?? undefined);
   }
 
   private handleReset = () => {
@@ -77,6 +79,7 @@ export class SectionErrorBoundary extends Component<
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error(`[SectionErrorBoundary${this.props.label ? `: ${this.props.label}` : ""}]`, error, errorInfo);
+    reportError(error, errorInfo.componentStack ?? undefined);
   }
 
   render() {

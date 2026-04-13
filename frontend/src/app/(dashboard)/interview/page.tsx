@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
 import { useAuth } from "@/components/providers";
 import { toast } from "@/hooks/use-toast";
 import api from "@/lib/api";
@@ -134,7 +135,7 @@ export default function InterviewSimulatorPage() {
       setProfileSkills(skills);
       setProfileSummary(`${p.title || ""} with skills: ${skills.slice(0, 300)}`);
       setJobTitle(prev => p.title && !prev ? p.title : prev);
-    }).catch(() => {});
+    }).catch((e) => console.error("Failed to load profile for interview", e));
   }, [authSession?.access_token]);
 
   // Setup
@@ -151,6 +152,7 @@ export default function InterviewSimulatorPage() {
   const [answers, setAnswers] = useState<InterviewAnswer[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [error, setError] = useState("");
   const [elapsed, setElapsed] = useState(0);
 
@@ -185,7 +187,8 @@ export default function InterviewSimulatorPage() {
 
   // Auto-submit on time out
   useEffect(() => {
-    if (timeLeft === 0 && mode === "timed" && phase === "active" && !submitting) {
+    if (timeLeft === 0 && mode === "timed" && phase === "active" && !submittingRef.current) {
+      toast({ title: "Time's up!", description: "Your answer has been submitted automatically.", variant: "warning" });
       submitAnswer();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -220,8 +223,7 @@ export default function InterviewSimulatorPage() {
   const submitAnswer = async () => {
     if (!session) return;
     const answerText = answer.trim() || "(No answer provided — time ran out)";
-    setSubmitting(true);
-    try {
+    setSubmitting(true);    submittingRef.current = true;    try {
       const result = await api.interview.submitAnswer(session.id, {
         question_id: questions[currentIdx]?.id ?? String(currentIdx),
         answer: answerText,
@@ -239,6 +241,7 @@ export default function InterviewSimulatorPage() {
       setError(e.message || "Submit failed");
     } finally {
       setSubmitting(false);
+      submittingRef.current = false;
     }
   };
 
@@ -538,6 +541,27 @@ export default function InterviewSimulatorPage() {
                 </div>
               </motion.details>
             ))}
+          </motion.div>
+
+          {/* Cross-link: Build a full application */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
+            className="rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/[0.04] to-transparent p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 shrink-0">
+                  <Zap className="h-4 w-4 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">Ready to apply?</p>
+                  <p className="text-xs text-muted-foreground">Create a full application workspace with tailored documents and gap analysis.</p>
+                </div>
+              </div>
+              <Link href="/new">
+                <Button size="sm" className="gap-2 rounded-xl shrink-0 whitespace-nowrap">
+                  New Application
+                </Button>
+              </Link>
+            </div>
           </motion.div>
         </motion.div>
       )}

@@ -349,9 +349,7 @@ export async function setModuleStatus(
 /*  GENERATION PIPELINE — AI-powered via backend                       */
 /* ================================================================== */
 
-// Prefer IPv4 loopback to avoid environments where `localhost` resolves to IPv6 (::1)
-// while the backend is bound to 127.0.0.1.
-const AI_API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const AI_API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 /** Progress event emitted by the SSE streaming pipeline */
 export interface PipelineProgress {

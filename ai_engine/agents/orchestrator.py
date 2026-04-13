@@ -1382,6 +1382,99 @@ class AgentPipeline:
             ) / 4.0
             AdaptivePolicyTracker.record_outcome(self.name, avg_q)
 
+        # ── Pipeline Telemetry — persist cost, token, and quality data ─
+        try:
+            if self.db and user_id and user_id != "unknown":
+                from app.services.career_analytics import PipelineTelemetryService
+                telemetry_svc = PipelineTelemetryService()
+                token_data = {}
+                cost_cents = 0
+                cascade_count = 0
+                if self._ai_client:
+                    tu = self._ai_client.token_usage
+                    token_data = {
+                        "prompt_tokens": tu.get("prompt_tokens", 0),
+                        "completion_tokens": tu.get("completion_tokens", 0),
+                        "total_tokens": tu.get("total_tokens", 0),
+                        "call_count": tu.get("call_count", 0),
+                    }
+                    cost_cents = tu.get("estimated_cost_usd_cents", 0)
+                stage_lat = {s["stage"]: s["latency_ms"] for s in tracer.stages}
+                q_scores = critic_result.quality_scores if critic_result else {}
+                ev_stats = {
+                    "total_items": len(ledger),
+                    "cited_count": len(cited_ids),
+                    "tier_distribution": tier_dist,
+                }
+                _job = job_id or pipeline_id
+                await telemetry_svc.record_telemetry(
+                    user_id=user_id,
+                    job_id=_job,
+                    pipeline_name=self.name,
+                    model_used=getattr(self._ai_client, "model", "") if self._ai_client else "",
+                    research_depth=str(getattr(self.policy, "research_depth", "")),
+                    iterations_used=iterations_used,
+                    total_latency_ms=total_latency,
+                    stage_latencies=stage_lat,
+                    token_usage=token_data,
+                    quality_scores=q_scores,
+                    evidence_stats=ev_stats,
+                    cost_usd_cents=cost_cents,
+                    cascade_failovers=cascade_count,
+                    pipeline_config={
+                        "skip_research": self.policy.skip_research,
+                        "skip_critique": self.policy.skip_critique,
+                        "skip_fact_check": self.policy.skip_fact_check,
+                        "confidence_threshold": self.policy.confidence_threshold,
+                        "max_iterations": self.policy.max_iterations or self.max_iterations,
+                    },
+                )
+        except Exception as tel_err:
+            logger.warning("pipeline_telemetry_failed", error=str(tel_err)[:200])
+
+        # ── Smart Cost Optimizer — feed quality data to model router ──
+        try:
+            if critic_result and critic_result.quality_scores:
+                from ai_engine.model_router import record_quality_observation
+                qs = critic_result.quality_scores
+                avg_q = sum(
+                    qs.get(d, 0)
+                    for d in ("impact", "clarity", "tone_match", "completeness")
+                ) / 4.0
+                # Record for all task types this pipeline used
+                model_used = getattr(self._ai_client, "model", "gemini-2.5-pro") if self._ai_client else "gemini-2.5-pro"
+                for task_type in ("drafting", "critique", "research", "reasoning"):
+                    record_quality_observation(task_type, model_used, avg_q)
+        except Exception:
+            pass  # best-effort, never crash pipeline
+
+        # ── Outcome-Aware Memory — write pipeline success patterns ────
+        try:
+            if self.memory and user_id and user_id != "unknown":
+                model_name = getattr(self._ai_client, "model", "") if self._ai_client else ""
+                avg_quality = 0.0
+                if critic_result and critic_result.quality_scores:
+                    qs = critic_result.quality_scores
+                    avg_quality = sum(
+                        qs.get(d, 0)
+                        for d in ("impact", "clarity", "tone_match", "completeness")
+                    ) / 4.0
+                if avg_quality >= 75:
+                    await self.memory.astore(
+                        user_id, "pipeline_strategy",
+                        f"winning_config:{self.name}",
+                        {
+                            "pipeline": self.name,
+                            "model": model_name,
+                            "iterations": iterations_used,
+                            "quality": round(avg_quality, 1),
+                            "evidence_count": len(ledger),
+                            "pattern": "high_quality_run",
+                        },
+                    )
+        except Exception:
+            pass  # best-effort
+
         return PipelineResult(
             content=final_content,
             quality_scores=critic_result.quality_scores if critic_result else {},

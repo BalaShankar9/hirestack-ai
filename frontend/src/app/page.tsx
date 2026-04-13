@@ -167,9 +167,12 @@ function DemoAgentTimeline() {
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background noise-overlay">
+      {/* Living aurora background */}
+      <div className="aurora-bg" aria-hidden="true" />
+
       {/* ── Header ── */}
-      <header className="fixed top-0 z-50 w-full border-b bg-background/80 backdrop-blur-xl">
+      <header className="fixed top-0 z-50 w-full border-b border-transparent bg-background/60 backdrop-blur-2xl elevation-on-scroll">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
           <Link href="/" className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 shadow-glow-sm">
@@ -186,7 +189,7 @@ export default function HomePage() {
             <Link href="/login" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               Sign In
             </Link>
-            <Link href="/login?mode=register&redirect=/new" className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-glow-sm hover:shadow-glow-md transition-all hover:brightness-110">
+            <Link href="/login?mode=register&redirect=/new" className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground btn-glow hover:shadow-glow-md transition-all hover:brightness-110">
               Get Started <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
@@ -209,7 +212,7 @@ export default function HomePage() {
 
           <h1 className="mx-auto max-w-4xl text-3xl font-bold tracking-tight sm:text-5xl md:text-6xl lg:text-7xl animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100 fill-mode-both">
             Turn any job description into a{" "}
-            <span className="gradient-text">proof-backed application</span>
+            <span className="gradient-text-animated">proof-backed application</span>
           </h1>
 
           <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground leading-relaxed animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200 fill-mode-both">
@@ -219,7 +222,7 @@ export default function HomePage() {
           </p>
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300 fill-mode-both">
-            <Link href="/login?mode=register&redirect=/new" className="group inline-flex items-center gap-2 rounded-2xl bg-primary px-8 py-4 text-base font-semibold text-primary-foreground shadow-glow-md hover:shadow-glow-lg transition-all hover:brightness-110">
+            <Link href="/login?mode=register&redirect=/new" className="group inline-flex items-center gap-2 rounded-2xl bg-primary px-8 py-4 text-base font-semibold text-primary-foreground btn-glow hover:shadow-glow-lg transition-all hover:brightness-110 hover:scale-[1.02]">
               Start Your Application
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
@@ -350,7 +353,7 @@ export default function HomePage() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.05 }}
-                className="rounded-2xl border bg-card p-5"
+                className="rounded-2xl border bg-card p-5 hover:shadow-soft-sm hover:-translate-y-0.5 transition-all duration-300 card-spotlight"
               >
                 <h3 className="text-sm font-semibold">{item.title}</h3>
                 <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
@@ -422,7 +425,7 @@ export default function HomePage() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.05 }}
-                className="group rounded-2xl border bg-card p-6 shadow-soft-sm hover:shadow-soft-md transition-all duration-300 hover:-translate-y-0.5"
+                className="group rounded-2xl border bg-card p-6 shadow-soft-sm hover:shadow-soft-md transition-all duration-300 hover:-translate-y-0.5 card-spotlight glow-border-hover"
               >
                 <div className={`mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${f.gradient}`}>
                   <div className={f.iconColor}>{f.icon}</div>
@@ -459,7 +462,7 @@ export default function HomePage() {
                 desc: "Documents are structured and formatted to pass automated screening systems, with keyword density, section headers, and formatting that ATS software expects.",
               },
             ].map((item, i) => (
-              <div key={i} className="rounded-xl border bg-card p-5">
+              <div key={i} className="rounded-xl border bg-card p-5 hover:shadow-soft-sm hover:-translate-y-0.5 transition-all duration-300">
                 <h3 className="text-sm font-semibold">{item.title}</h3>
                 <p className="mt-2 text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
               </div>
@@ -490,7 +493,7 @@ export default function HomePage() {
                 Paste a job description, add your resume, and let AI build a
                 tailored, proof-backed application package.
               </p>
-              <Link href="/login?mode=register&redirect=/new" className="mt-8 inline-flex items-center gap-2 rounded-2xl bg-white px-8 py-4 text-base font-semibold text-primary shadow-soft-lg hover:shadow-soft-xl transition-all hover:scale-[1.02]">
+              <Link href="/login?mode=register&redirect=/new" className="mt-8 inline-flex items-center gap-2 rounded-2xl bg-white px-8 py-4 text-base font-semibold text-primary shadow-soft-lg hover:shadow-soft-xl transition-all hover:scale-[1.03] ease-spring duration-500">
                 Start Your Application
                 <ArrowRight className="h-4 w-4" />
               </Link>
@@ -513,9 +516,9 @@ export default function HomePage() {
               <span className="text-sm font-bold">HireStack <span className="text-primary">AI</span></span>
             </div>
             <div className="flex items-center gap-6 text-xs text-muted-foreground">
-              <Link href="/#how-it-works" className="hover:text-foreground transition-colors">How It Works</Link>
-              <Link href="/login" className="hover:text-foreground transition-colors">Sign In</Link>
-              <Link href="/login?mode=register&redirect=/new" className="hover:text-foreground transition-colors">Get Started</Link>
+              <Link href="/#how-it-works" className="link-hover-line hover:text-foreground transition-colors">How It Works</Link>
+              <Link href="/login" className="link-hover-line hover:text-foreground transition-colors">Sign In</Link>
+              <Link href="/login?mode=register&redirect=/new" className="link-hover-line hover:text-foreground transition-colors">Get Started</Link>
             </div>
             <p className="text-xs text-muted-foreground">
               &copy; {new Date().getFullYear()} HireStack AI

@@ -8,7 +8,7 @@ import {
   ArrowRight, Sparkles, Clock, Target, ShieldCheck, ScanEye, Award,
   Plus, Briefcase, TrendingUp, Trash2, Zap, FileSearch, FileText, MessageSquare,
   DollarSign, BookOpen, BarChart3, Brain, Flame,
-  Bot, Activity, CheckCircle2, User,
+  Bot, Activity, CheckCircle2, User, Bell, Gauge,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import { computeEvidenceStrengthScore, useApplications, useEvidence, useTasks } from "@/lib/firestore";
@@ -24,6 +24,8 @@ import { TaskQueue } from "@/components/workspace/task-queue";
 import { AITrace } from "@/components/ui/ai-trace";
 import { cn } from "@/lib/utils";
 import { useOnboarding } from "@/contexts/onboarding-context";
+import api from "@/lib/api";
+import type { Profile } from "@/types";
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
@@ -73,7 +75,7 @@ function CareerPulse({ value }: { value: number }) {
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-3xl font-bold tabular-nums text-white">{value}</span>
-        <span className="text-[9px] text-white/50 uppercase tracking-widest">Career Pulse</span>
+        <span className="text-[9px] text-white/50 uppercase tracking-widest shimmer-text">Career Pulse</span>
       </div>
     </div>
   );
@@ -106,9 +108,26 @@ export default function DashboardPage() {
   const [briefing, setBriefing] = useState<any>(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
   const [streak, setStreak] = useState<{ current_streak: number; longest_streak: number; total_points: number; level: number } | null>(null);
+  const [hasProfile, setHasProfile] = useState(false);
+  const [funnel, setFunnel] = useState<{ funnel: Record<string, number>; conversion_rates: Record<string, number>; total_signals: number } | null>(null);
+  const [telemetry, setTelemetry] = useState<{ total_runs: number; total_cost_usd_cents: number; total_tokens: number; by_pipeline: Record<string, any> } | null>(null);
+  const [pipelineHealth, setPipelineHealth] = useState<{ health_score: number; status: string; alerts: Array<{ type: string; severity: string; message: string }> } | null>(null);
+  const [tuning, setTuning] = useState<{ recommendation: string; confidence: string; reason: string; config: Record<string, any>; stats?: Record<string, any> } | null>(null);
+  const [predictions, setPredictions] = useState<Record<string, { prediction: number; confidence: string }>>({});
+  const [alertSummary, setAlertSummary] = useState<{ total: number; unread: number; by_severity: Record<string, number>; by_type: Record<string, number> } | null>(null);
+  const [momentum, setMomentum] = useState<{ score: number; trend: string; components: Record<string, number> } | null>(null);
 
+  // Fetch profile to check onboarding step 2
+  useEffect(() => {
+    if (!userId) return;
+    api.profile.get()
+      .then((p: Profile) => { if (p?.raw_resume_text) setHasProfile(true); })
+      .catch(() => {});
+  }, [userId]);
+
+  const [showAllApps, setShowAllApps] = useState(false);
   const openTasks = useMemo(() => tasks.filter((t) => t.status === "todo"), [tasks]);
-  const topApps = useMemo(() => apps.slice(0, 8), [apps]);
+  const topApps = useMemo(() => showAllApps ? apps : apps.slice(0, 8), [apps, showAllApps]);
 
   const stats = useMemo(() => {
     const active = apps.filter((a) => a.status !== "archived").length;
@@ -128,7 +147,7 @@ export default function DashboardPage() {
     const token = authSession?.access_token;
     if (!token) return;
     setBriefingLoading(true);
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
     fetch(`${API_URL}/api/analytics/daily-briefing`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -143,12 +162,52 @@ export default function DashboardPage() {
     if (!userId) return;
     const token = authSession?.access_token;
     if (!token) return;
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
     fetch(`${API_URL}/api/learning/streak`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
       .then(d => d && setStreak(d))
-      .catch(() => {});
+      .catch((e) => console.error("Failed to load learning streak", e));
   }, [userId, authSession?.access_token]);
+
+  // Load conversion funnel + pipeline telemetry + health + tuning
+  useEffect(() => {
+    if (!userId) return;
+    api.career.conversionFunnel()
+      .then((d: any) => d && setFunnel(d))
+      .catch(() => {});
+    api.career.telemetrySummary(30)
+      .then((d: any) => d && setTelemetry(d))
+      .catch(() => {});
+    api.career.pipelineHealth()
+      .then((d: any) => d && setPipelineHealth(d))
+      .catch(() => {});
+    api.career.tuningRecommendation()
+      .then((d: any) => d && setTuning(d))
+      .catch(() => {});
+    api.career.alertSummary()
+      .then((d: any) => d && setAlertSummary(d))
+      .catch(() => {});
+    api.career.careerMomentum()
+      .then((d: any) => d && setMomentum(d))
+      .catch(() => {});
+  }, [userId]);
+
+  // Load interview predictions for visible apps (max 8 to avoid request storms)
+  useEffect(() => {
+    if (!userId || apps.length === 0) return;
+    const toPredict = apps.slice(0, 8);
+    toPredict.forEach((a) => {
+      if (predictions[a.id]) return; // already fetched
+      api.career.predictInterview(a.id)
+        .then((d: any) => {
+          if (d && typeof d.prediction === "number") {
+            setPredictions((prev) => ({ ...prev, [a.id]: { prediction: d.prediction, confidence: d.confidence } }));
+          }
+        })
+        .catch(() => {});
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, apps.length]);
 
   const handleDelete = async () => {
     if (!deleteTarget || !userId) return;
@@ -169,10 +228,11 @@ export default function DashboardPage() {
     if (!appsLoading && !evidenceLoading) {
       updateCounts({
         applications: apps.length,
+        hasProfile,
         hasEvidence: evidence.length > 0,
       });
     }
-  }, [apps.length, evidence.length, appsLoading, evidenceLoading, updateCounts]);
+  }, [apps.length, evidence.length, appsLoading, evidenceLoading, hasProfile, updateCounts]);
 
   const isNewUser = !appsLoading && apps.length === 0;
 
@@ -229,22 +289,22 @@ export default function DashboardPage() {
                 step: 1,
                 title: "Paste a job description",
                 desc: "Drop in any JD — AI extracts every requirement, keyword, and expectation.",
-                done: false,
+                done: apps.length > 0,
                 href: "/new",
               },
               {
                 step: 2,
                 title: "Add your resume or profile",
                 desc: "Upload a resume or set up your profile so documents are tailored to your experience.",
-                done: false,
+                done: hasProfile,
                 href: "/nexus",
               },
               {
                 step: 3,
                 title: "Review your application workspace",
                 desc: "Get fit analysis, tailored documents, gap report, and evidence suggestions.",
-                done: false,
-                href: null,
+                done: apps.some((a: any) => a.modules?.cv?.state === "ready"),
+                href: apps.length > 0 ? `/applications/${apps[0].id}` : null,
               },
             ].map((item) => (
               <div
@@ -291,7 +351,7 @@ export default function DashboardPage() {
           <p className="text-xs text-muted-foreground mb-4">
             Each application generates a complete workspace with these outputs:
           </p>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 animate-stagger">
             {[
               { icon: Target, label: "Fit Analysis", desc: "Match score vs job requirements", color: "text-emerald-500 bg-emerald-500/10" },
               { icon: FileSearch, label: "ATS Optimization", desc: "Keyword coverage & format fixes", color: "text-blue-500 bg-blue-500/10" },
@@ -300,7 +360,7 @@ export default function DashboardPage() {
               { icon: TrendingUp, label: "Gap Report", desc: "What to improve before applying", color: "text-amber-500 bg-amber-500/10" },
               { icon: MessageSquare, label: "Interview Prep", desc: "Predicted questions & answers", color: "text-rose-500 bg-rose-500/10" },
             ].map((item) => (
-              <div key={item.label} className="flex items-start gap-3 rounded-xl bg-muted/20 p-3">
+              <div key={item.label} className="flex items-start gap-3 rounded-xl bg-muted/20 p-3 card-spotlight scroll-reveal">
                 <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", item.color)}>
                   <item.icon className="h-4 w-4" />
                 </div>
@@ -376,7 +436,7 @@ export default function DashboardPage() {
             { icon: ScanEye, label: "Completed", value: tasks.filter(t => t.status === "done").length },
             { icon: Activity, label: "Career Pulse", value: `${stats.pulse}%` },
           ].map((s) => (
-            <div key={s.label} className={cn("rounded-xl border border-white/10 bg-white/10 p-3 backdrop-blur-sm", s.accent && "border-white/20 bg-white/15")}>
+            <div key={s.label} className={cn("rounded-xl border border-white/10 bg-white/10 p-3 backdrop-blur-sm glass-depth", s.accent && "border-white/20 bg-white/15")}>
               <div className="flex items-center gap-1.5 text-[10px] text-white/50">
                 <s.icon className="h-3 w-3" /> {s.label}
               </div>
@@ -395,7 +455,7 @@ export default function DashboardPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 + i * 0.05 }}
           >
-            <Link href={a.href} className="group flex flex-col items-center gap-2 rounded-xl border bg-card p-3 hover:border-primary/20 hover:shadow-soft-sm transition-all">
+            <Link href={a.href} className="group flex flex-col items-center gap-2 rounded-xl border bg-card p-3 hover:border-primary/20 hover:shadow-soft-sm hover:-translate-y-0.5 transition-all duration-300 card-spotlight glow-border-hover">
               <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg transition-transform group-hover:scale-110", a.color)}>
                 <a.icon className="h-4 w-4" />
               </div>
@@ -443,15 +503,24 @@ export default function DashboardPage() {
                   : (a.scores?.evidenceStrength ?? 0);
 
                 return (
-                  <div key={a.id} className="group relative rounded-2xl border bg-card p-4 shadow-soft-sm hover:shadow-soft-md hover:border-primary/20 transition-all">
+                  <div key={a.id} className="group relative rounded-2xl border bg-card p-4 shadow-soft-sm hover:shadow-soft-md hover:border-primary/20 hover:-translate-y-0.5 transition-all duration-300 card-spotlight">
                     <button type="button" onClick={(e) => { e.preventDefault(); setDeleteTarget({ id: a.id, title }); }}
-                      className="absolute right-3 top-3 z-10 h-6 w-6 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all">
+                      aria-label={`Delete ${title}`}
+                      className="absolute right-3 top-3 z-10 h-6 w-6 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       <Trash2 className="h-3 w-3" />
                     </button>
                     <Link href={`/applications/${a.id}`} className="block">
                       <div className="flex items-start justify-between gap-2 pr-6">
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold truncate group-hover:text-primary transition-colors">{title}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm font-semibold truncate group-hover:text-primary transition-colors">{title}</p>
+                            {a.status === "draft" && (
+                              <Badge variant="secondary" className="text-[9px] px-1.5 py-0 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20">Draft</Badge>
+                            )}
+                            {a.status === "archived" && (
+                              <Badge variant="secondary" className="text-[9px] px-1.5 py-0 bg-muted text-muted-foreground border-border">Archived</Badge>
+                            )}
+                          </div>
                           {company && <p className="text-xs text-muted-foreground truncate mt-0.5">{company}</p>}
                         </div>
                         <Badge className={cn("border text-[11px] shrink-0 tabular-nums",
@@ -461,6 +530,18 @@ export default function DashboardPage() {
                           "bg-rose-500/10 text-rose-500 border-rose-500/20"
                         )} variant="secondary">{match}%</Badge>
                       </div>
+                      {/* Interview Prediction Badge */}
+                      {predictions[a.id] && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <Sparkles className="h-2.5 w-2.5 text-violet-400" />
+                          <span className={cn("text-[10px] font-medium tabular-nums",
+                            predictions[a.id].prediction >= 60 ? "text-emerald-500" :
+                            predictions[a.id].prediction >= 30 ? "text-amber-500" : "text-rose-400"
+                          )}>
+                            {predictions[a.id].prediction}% interview likelihood
+                          </span>
+                        </div>
+                      )}
                       <div className="mt-2.5 h-1 rounded-full bg-muted overflow-hidden">
                         <div className={cn("h-full rounded-full transition-all", scoreBg(match))} style={{ width: `${match}%` }} />
                       </div>
@@ -498,7 +579,18 @@ export default function DashboardPage() {
               })}
             </div>
           )}
-          {apps.length > 8 && <div className="text-center"><Button variant="ghost" size="sm" className="text-xs text-muted-foreground">View all {apps.length}</Button></div>}
+          {apps.length > 8 && (
+            <div className="text-center">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-muted-foreground"
+                onClick={() => setShowAllApps(!showAllApps)}
+              >
+                {showAllApps ? "Show less" : `View all ${apps.length} applications`}
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Right sidebar */}
@@ -506,7 +598,7 @@ export default function DashboardPage() {
           <TaskQueue tasks={openTasks.slice(0, 12)} onOpenWorkspace={(id) => router.push(`/applications/${id}`)}
             onToggle={async (t) => { try { await setTaskStatus(userId!, t.id, t.status === "done" ? "todo" : "done"); } catch {} }} compact />
 
-          <Link href="/evidence" className="block rounded-2xl border bg-card p-4 hover:border-violet-500/20 hover:shadow-soft-sm transition-all">
+          <Link href="/evidence" className="block rounded-2xl border bg-card p-4 hover:border-violet-500/20 hover:shadow-soft-sm hover:-translate-y-0.5 transition-all duration-300 glow-border-hover">
             <div className="flex items-center gap-2.5">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/10"><ShieldCheck className="h-4 w-4 text-violet-500" /></div>
               <div className="flex-1"><p className="text-sm font-semibold">Evidence</p><p className="text-[11px] text-muted-foreground">{evidence.length} proof items collected</p></div>
@@ -514,7 +606,7 @@ export default function DashboardPage() {
             </div>
           </Link>
 
-          <Link href="/nexus" className="block rounded-2xl border bg-card p-4 hover:border-teal-500/20 hover:shadow-soft-sm transition-all">
+          <Link href="/nexus" className="block rounded-2xl border bg-card p-4 hover:border-teal-500/20 hover:shadow-soft-sm hover:-translate-y-0.5 transition-all duration-300 glow-border-hover">
             <div className="flex items-center gap-2.5">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-500/10"><User className="h-4 w-4 text-teal-500" /></div>
               <div className="flex-1"><p className="text-sm font-semibold">Profile</p><p className="text-[11px] text-muted-foreground">Your career identity & resume</p></div>
@@ -522,7 +614,7 @@ export default function DashboardPage() {
             </div>
           </Link>
 
-          <Link href="/career-analytics" className="block rounded-2xl border bg-card p-4 hover:border-blue-500/20 hover:shadow-soft-sm transition-all">
+          <Link href="/career-analytics" className="block rounded-2xl border bg-card p-4 hover:border-blue-500/20 hover:shadow-soft-sm hover:-translate-y-0.5 transition-all duration-300 glow-border-hover">
             <div className="flex items-center gap-2.5">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10"><BarChart3 className="h-4 w-4 text-blue-500" /></div>
               <div className="flex-1"><p className="text-sm font-semibold">Progress</p><p className="text-[11px] text-muted-foreground">Track readiness over time</p></div>
@@ -530,9 +622,262 @@ export default function DashboardPage() {
             </div>
           </Link>
 
+          {/* Conversion Funnel — closed-loop tracking */}
+          {funnel && funnel.total_signals > 0 && (
+            <div className="rounded-2xl border bg-card p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10"><TrendingUp className="h-3.5 w-3.5 text-emerald-500" /></div>
+                <p className="text-sm font-semibold">Outcome Funnel</p>
+              </div>
+              <div className="space-y-1.5">
+                {(["exported", "applied", "screened", "interview", "offer", "accepted"] as const).map((stage) => {
+                  const count = funnel.funnel[stage] || 0;
+                  const maxCount = Math.max(1, funnel.funnel["exported"] || 1);
+                  const pct = Math.round((count / maxCount) * 100);
+                  return (
+                    <div key={stage} className="flex items-center gap-2 text-[11px]">
+                      <span className="w-16 text-muted-foreground capitalize">{stage}</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div className="h-full rounded-full bg-emerald-500/70 transition-all duration-700" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="w-6 text-right tabular-nums font-medium">{count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {funnel.conversion_rates.exported_to_applied > 0 && (
+                <p className="text-[10px] text-muted-foreground">
+                  Apply rate: <span className="font-semibold text-emerald-500">{funnel.conversion_rates.exported_to_applied}%</span>
+                  {funnel.conversion_rates.interview_to_offer > 0 && (
+                    <> · Offer rate: <span className="font-semibold text-emerald-500">{funnel.conversion_rates.interview_to_offer}%</span></>
+                  )}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Pipeline Telemetry Summary */}
+          {telemetry && telemetry.total_runs > 0 && (
+            <div className="rounded-2xl border bg-card p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/10"><Activity className="h-3.5 w-3.5 text-cyan-500" /></div>
+                <p className="text-sm font-semibold">AI Usage (30d)</p>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <p className="text-lg font-bold tabular-nums">{telemetry.total_runs}</p>
+                  <p className="text-[10px] text-muted-foreground">Runs</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold tabular-nums">{(telemetry.total_tokens / 1000).toFixed(0)}k</p>
+                  <p className="text-[10px] text-muted-foreground">Tokens</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold tabular-nums">${(telemetry.total_cost_usd_cents / 100).toFixed(2)}</p>
+                  <p className="text-[10px] text-muted-foreground">Cost</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Pipeline Health Monitor */}
+          {pipelineHealth && (
+            <div className={cn(
+              "rounded-2xl border bg-card p-4 space-y-2",
+              pipelineHealth.status === "unhealthy" && "border-rose-500/30",
+              pipelineHealth.status === "degraded" && "border-amber-500/30",
+            )}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-lg",
+                    pipelineHealth.status === "healthy" ? "bg-emerald-500/10" :
+                    pipelineHealth.status === "degraded" ? "bg-amber-500/10" : "bg-rose-500/10",
+                  )}>
+                    <Activity className={cn(
+                      "h-3.5 w-3.5",
+                      pipelineHealth.status === "healthy" ? "text-emerald-500" :
+                      pipelineHealth.status === "degraded" ? "text-amber-500" : "text-rose-500",
+                    )} />
+                  </div>
+                  <p className="text-sm font-semibold">Pipeline Health</p>
+                </div>
+                <Badge variant="secondary" className={cn(
+                  "text-[10px] px-1.5 py-0",
+                  pipelineHealth.status === "healthy" ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
+                  pipelineHealth.status === "degraded" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
+                  "bg-rose-500/10 text-rose-500 border-rose-500/20",
+                )}>
+                  {pipelineHealth.health_score}%
+                </Badge>
+              </div>
+              {pipelineHealth.alerts.length > 0 ? (
+                <div className="space-y-1">
+                  {pipelineHealth.alerts.slice(0, 3).map((alert, i) => (
+                    <div key={i} className={cn(
+                      "text-[11px] rounded-lg px-2 py-1",
+                      alert.severity === "high" ? "bg-rose-500/10 text-rose-400" : "bg-amber-500/10 text-amber-400",
+                    )}>
+                      {alert.message}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">All systems nominal — no regressions detected.</p>
+              )}
+            </div>
+          )}
+
+          {/* Self-Tuning Recommendation */}
+          {tuning && tuning.recommendation === "tuned" && (
+            <div className="rounded-2xl border bg-gradient-to-br from-violet-500/5 to-indigo-500/5 p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10"><Brain className="h-3.5 w-3.5 text-violet-500" /></div>
+                <p className="text-sm font-semibold">AI Self-Tuning</p>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-violet-500/10 text-violet-500 border-violet-500/20 ml-auto">
+                  {tuning.confidence}
+                </Badge>
+              </div>
+              <p className="text-[11px] text-muted-foreground">{tuning.reason}</p>
+              {tuning.config && Object.keys(tuning.config).length > 0 && (
+                <div className="grid grid-cols-3 gap-1 text-center">
+                  {tuning.config.model && (
+                    <div className="rounded-lg bg-muted/30 p-1.5">
+                      <p className="text-[9px] text-muted-foreground">Model</p>
+                      <p className="text-[11px] font-medium truncate">{tuning.config.model.replace("gemini-2.5-", "")}</p>
+                    </div>
+                  )}
+                  {tuning.config.research_depth && (
+                    <div className="rounded-lg bg-muted/30 p-1.5">
+                      <p className="text-[9px] text-muted-foreground">Depth</p>
+                      <p className="text-[11px] font-medium capitalize">{tuning.config.research_depth}</p>
+                    </div>
+                  )}
+                  {tuning.config.max_iterations && (
+                    <div className="rounded-lg bg-muted/30 p-1.5">
+                      <p className="text-[9px] text-muted-foreground">Iterations</p>
+                      <p className="text-[11px] font-medium">{tuning.config.max_iterations}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {tuning.stats && (
+                <p className="text-[10px] text-muted-foreground">
+                  Avg outcome: <span className="font-semibold text-violet-500">{tuning.stats.avg_outcome_score}</span>
+                  {" · "}Configs tested: <span className="font-semibold">{tuning.stats.configs_evaluated}</span>
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Career Alerts */}
+          {alertSummary && alertSummary.total > 0 && (
+            <div className={cn(
+              "rounded-2xl border bg-card p-4 space-y-2",
+              (alertSummary.by_severity?.critical ?? 0) > 0 && "border-rose-500/30",
+              (alertSummary.by_severity?.warning ?? 0) > 0 && !(alertSummary.by_severity?.critical) && "border-amber-500/30",
+            )}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-lg",
+                    (alertSummary.by_severity?.critical ?? 0) > 0 ? "bg-rose-500/10" : "bg-amber-500/10",
+                  )}>
+                    <Bell className={cn(
+                      "h-3.5 w-3.5",
+                      (alertSummary.by_severity?.critical ?? 0) > 0 ? "text-rose-500" : "text-amber-500",
+                    )} />
+                  </div>
+                  <p className="text-sm font-semibold">Career Alerts</p>
+                </div>
+                <div className="flex items-center gap-1">
+                  {alertSummary.unread > 0 && (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-primary/10 text-primary border-primary/20">
+                      {alertSummary.unread} new
+                    </Badge>
+                  )}
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                    {alertSummary.total} total
+                  </Badge>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-1 text-center">
+                {(alertSummary.by_severity?.critical ?? 0) > 0 && (
+                  <div className="rounded-lg bg-rose-500/10 p-1.5">
+                    <p className="text-[9px] text-rose-400">Critical</p>
+                    <p className="text-sm font-bold text-rose-500">{alertSummary.by_severity.critical}</p>
+                  </div>
+                )}
+                {(alertSummary.by_severity?.warning ?? 0) > 0 && (
+                  <div className="rounded-lg bg-amber-500/10 p-1.5">
+                    <p className="text-[9px] text-amber-400">Warning</p>
+                    <p className="text-sm font-bold text-amber-500">{alertSummary.by_severity.warning}</p>
+                  </div>
+                )}
+                {(alertSummary.by_severity?.info ?? 0) > 0 && (
+                  <div className="rounded-lg bg-blue-500/10 p-1.5">
+                    <p className="text-[9px] text-blue-400">Info</p>
+                    <p className="text-sm font-bold text-blue-500">{alertSummary.by_severity.info}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Career Momentum */}
+          {momentum && (
+            <div className="rounded-2xl border bg-gradient-to-br from-teal-500/5 to-emerald-500/5 p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-teal-500/10">
+                    <Gauge className="h-3.5 w-3.5 text-teal-500" />
+                  </div>
+                  <p className="text-sm font-semibold">Career Momentum</p>
+                </div>
+                <Badge variant="secondary" className={cn(
+                  "text-[10px] px-1.5 py-0",
+                  momentum.trend === "accelerating" ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
+                  momentum.trend === "steady" ? "bg-teal-500/10 text-teal-500 border-teal-500/20" :
+                  momentum.trend === "decelerating" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
+                  "bg-rose-500/10 text-rose-500 border-rose-500/20"
+                )}>
+                  {momentum.trend}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="relative h-12 w-12">
+                  <svg width={48} height={48} className="-rotate-90">
+                    <circle cx={24} cy={24} r={18} strokeWidth={4} fill="none" className="stroke-white/10" />
+                    <circle cx={24} cy={24} r={18} strokeWidth={4} fill="none" strokeLinecap="round"
+                      strokeDasharray={2 * Math.PI * 18}
+                      strokeDashoffset={2 * Math.PI * 18 - (momentum.score / 100) * 2 * Math.PI * 18}
+                      className={cn("transition-all duration-700",
+                        momentum.score >= 70 ? "stroke-emerald-500" : momentum.score >= 40 ? "stroke-teal-500" : "stroke-amber-500"
+                      )} />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-sm font-bold tabular-nums">{momentum.score}</span>
+                  </div>
+                </div>
+                {momentum.components && (
+                  <div className="flex-1 space-y-1">
+                    {Object.entries(momentum.components).slice(0, 4).map(([key, val]) => (
+                      <div key={key} className="flex items-center gap-2">
+                        <p className="text-[9px] text-muted-foreground w-20 truncate capitalize">{key.replace(/_/g, " ")}</p>
+                        <div className="flex-1 h-1 rounded-full bg-muted/30">
+                          <div className="h-full rounded-full bg-teal-500/60 transition-all" style={{ width: `${Math.min(100, ((val as number) / 20) * 100)}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Learning Streak */}
           {streak && (streak.current_streak > 0 || streak.total_points > 0) && (
-            <Link href="/learning" className="block rounded-2xl border bg-gradient-to-br from-amber-500/5 to-orange-500/5 p-4 hover:border-amber-500/20 hover:shadow-soft-sm transition-all">
+            <Link href="/learning" className="block rounded-2xl border bg-gradient-to-br from-amber-500/5 to-orange-500/5 p-4 hover:border-amber-500/20 hover:shadow-soft-sm hover:-translate-y-0.5 transition-all duration-300 glow-border-hover">
               <div className="flex items-center gap-2.5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10"><Flame className="h-4 w-4 text-amber-500" /></div>
                 <div className="flex-1">

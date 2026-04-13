@@ -210,8 +210,8 @@ async def test_stream_rejects_oversized_jd(aclient):
 async def test_legacy_stream_returns_sse_with_events(aclient):
     """Legacy stream returns SSE content-type and emits progress + complete events."""
     with (
-        patch("app.api.routes.generate._RUNTIME_AVAILABLE", False),
-        patch("app.api.routes.generate._AGENT_PIPELINES_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._RUNTIME_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._AGENT_PIPELINES_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
         patch("ai_engine.chains.benchmark_builder.BenchmarkBuilderChain") as MockBenchmark,
@@ -238,7 +238,7 @@ async def test_legacy_stream_returns_sse_with_events(aclient):
 @pytest.mark.asyncio
 async def test_legacy_stream_progress_phases_in_order(aclient):
     """Legacy stream emits progress phases in the expected pipeline order."""
-    with (        patch("app.api.routes.generate._RUNTIME_AVAILABLE", False),        patch("app.api.routes.generate._AGENT_PIPELINES_AVAILABLE", False),
+    with (        patch("app.api.routes.generate.stream._RUNTIME_AVAILABLE", False),        patch("app.api.routes.generate.stream._AGENT_PIPELINES_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
         patch("ai_engine.chains.benchmark_builder.BenchmarkBuilderChain") as MockBenchmark,
@@ -273,8 +273,8 @@ async def test_legacy_stream_progress_phases_in_order(aclient):
 async def test_legacy_stream_complete_has_result(aclient):
     """Legacy stream complete event contains the full generation result."""
     with (
-        patch("app.api.routes.generate._RUNTIME_AVAILABLE", False),
-        patch("app.api.routes.generate._AGENT_PIPELINES_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._RUNTIME_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._AGENT_PIPELINES_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
         patch("ai_engine.chains.benchmark_builder.BenchmarkBuilderChain") as MockBenchmark,
@@ -304,8 +304,8 @@ async def test_legacy_stream_complete_has_result(aclient):
 async def test_legacy_stream_progress_increases_monotonically(aclient):
     """Progress percentages in SSE events should increase monotonically."""
     with (
-        patch("app.api.routes.generate._RUNTIME_AVAILABLE", False),
-        patch("app.api.routes.generate._AGENT_PIPELINES_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._RUNTIME_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._AGENT_PIPELINES_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
         patch("ai_engine.chains.benchmark_builder.BenchmarkBuilderChain") as MockBenchmark,
@@ -335,8 +335,8 @@ async def test_legacy_stream_progress_increases_monotonically(aclient):
 async def test_legacy_stream_survives_cv_failure(aclient):
     """If CV generation fails in legacy stream, cover letter should still be in the result."""
     with (
-        patch("app.api.routes.generate._RUNTIME_AVAILABLE", False),
-        patch("app.api.routes.generate._AGENT_PIPELINES_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._RUNTIME_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._AGENT_PIPELINES_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
         patch("ai_engine.chains.benchmark_builder.BenchmarkBuilderChain") as MockBenchmark,
@@ -367,8 +367,8 @@ async def test_legacy_stream_survives_cv_failure(aclient):
 async def test_legacy_stream_error_event_on_total_failure(aclient):
     """If the entire pipeline fails, stream emits an error SSE event."""
     with (
-        patch("app.api.routes.generate._RUNTIME_AVAILABLE", False),
-        patch("app.api.routes.generate._AGENT_PIPELINES_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._RUNTIME_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._AGENT_PIPELINES_AVAILABLE", False),
         patch("ai_engine.client.AIClient", side_effect=Exception("AI client init failed")),
     ):
         resp = await aclient.post("/api/generate/pipeline/stream", json=VALID_STREAM_REQUEST)
@@ -386,8 +386,8 @@ async def test_legacy_stream_error_event_on_total_failure(aclient):
 async def test_legacy_stream_no_resume_still_works(aclient):
     """Legacy stream succeeds when no resume text is provided (JD-only mode)."""
     with (
-        patch("app.api.routes.generate._RUNTIME_AVAILABLE", False),
-        patch("app.api.routes.generate._AGENT_PIPELINES_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._RUNTIME_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._AGENT_PIPELINES_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
         patch("ai_engine.chains.benchmark_builder.BenchmarkBuilderChain") as MockBenchmark,
@@ -421,16 +421,16 @@ def _agent_pipeline_mocks():
     inside _stream_agent_pipeline, so they must be patched at their source modules.
     """
     return (
-        patch("app.api.routes.generate._RUNTIME_AVAILABLE", False),
-        patch("app.api.routes.generate._AGENT_PIPELINES_AVAILABLE", True),
+        patch("app.api.routes.generate.stream._RUNTIME_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._AGENT_PIPELINES_AVAILABLE", True),
         patch("ai_engine.client.AIClient"),
-        patch("app.api.routes.generate.resume_parse_pipeline", return_value=_make_fake_pipeline(SAMPLE_PROFILE)),
-        patch("app.api.routes.generate.benchmark_pipeline", return_value=_make_fake_pipeline(SAMPLE_BENCHMARK)),
-        patch("app.api.routes.generate.gap_analysis_pipeline", return_value=_make_fake_pipeline(SAMPLE_GAP_ANALYSIS)),
-        patch("app.api.routes.generate.cv_generation_pipeline", return_value=_make_fake_pipeline({"html": SAMPLE_CV_HTML})),
-        patch("app.api.routes.generate.cover_letter_pipeline", return_value=_make_fake_pipeline({"html": SAMPLE_CL_HTML})),
-        patch("app.api.routes.generate.personal_statement_pipeline", return_value=_make_fake_pipeline({"html": "<p>Statement</p>"})),
-        patch("app.api.routes.generate.portfolio_pipeline", return_value=_make_fake_pipeline({"html": "<p>Portfolio</p>"})),
+        patch("app.api.routes.generate.stream.resume_parse_pipeline", return_value=_make_fake_pipeline(SAMPLE_PROFILE)),
+        patch("app.api.routes.generate.stream.benchmark_pipeline", return_value=_make_fake_pipeline(SAMPLE_BENCHMARK)),
+        patch("app.api.routes.generate.stream.gap_analysis_pipeline", return_value=_make_fake_pipeline(SAMPLE_GAP_ANALYSIS)),
+        patch("app.api.routes.generate.stream.cv_generation_pipeline", return_value=_make_fake_pipeline({"html": SAMPLE_CV_HTML})),
+        patch("app.api.routes.generate.stream.cover_letter_pipeline", return_value=_make_fake_pipeline({"html": SAMPLE_CL_HTML})),
+        patch("app.api.routes.generate.stream.personal_statement_pipeline", return_value=_make_fake_pipeline({"html": "<p>Statement</p>"})),
+        patch("app.api.routes.generate.stream.portfolio_pipeline", return_value=_make_fake_pipeline({"html": "<p>Portfolio</p>"})),
         patch("ai_engine.chains.career_consultant.CareerConsultantChain"),
         patch("ai_engine.chains.benchmark_builder.BenchmarkBuilderChain"),
     )
@@ -517,7 +517,7 @@ async def test_agent_stream_survives_pipeline_failure(aclient):
     stack, entered = _enter_agent_mocks()
     with stack:
         # Override just the cv_generation_pipeline to return the failing pipe
-        with patch("app.api.routes.generate.cv_generation_pipeline", return_value=failing_cv_pipe):
+        with patch("app.api.routes.generate.stream.cv_generation_pipeline", return_value=failing_cv_pipe):
             resp = await aclient.post("/api/generate/pipeline/stream", json=VALID_STREAM_REQUEST)
 
     assert resp.status_code == 200
@@ -539,8 +539,8 @@ async def test_agent_stream_survives_pipeline_failure(aclient):
 async def test_sse_format_is_valid(aclient):
     """Every SSE line follows the 'event: ...' / 'data: ...' format."""
     with (
-        patch("app.api.routes.generate._RUNTIME_AVAILABLE", False),
-        patch("app.api.routes.generate._AGENT_PIPELINES_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._RUNTIME_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._AGENT_PIPELINES_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
         patch("ai_engine.chains.benchmark_builder.BenchmarkBuilderChain") as MockBenchmark,
@@ -571,8 +571,8 @@ async def test_sse_format_is_valid(aclient):
 async def test_sse_data_lines_are_valid_json(aclient):
     """Every data: line should contain valid JSON."""
     with (
-        patch("app.api.routes.generate._RUNTIME_AVAILABLE", False),
-        patch("app.api.routes.generate._AGENT_PIPELINES_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._RUNTIME_AVAILABLE", False),
+        patch("app.api.routes.generate.stream._AGENT_PIPELINES_AVAILABLE", False),
         patch("ai_engine.client.AIClient"),
         patch("ai_engine.chains.role_profiler.RoleProfilerChain") as MockProfiler,
         patch("ai_engine.chains.benchmark_builder.BenchmarkBuilderChain") as MockBenchmark,

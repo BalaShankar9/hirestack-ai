@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   Fingerprint, Upload, FileText, Brain, ShieldCheck, Settings,
   Linkedin, Github, Globe, Mail, Phone, MapPin, Plus, Pencil, Trash2,
@@ -21,7 +22,9 @@ import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { sanitizeHtml } from "@/lib/sanitize";
+import { getDocumentCSS } from "@/lib/document-styles";
 import api from "@/lib/api";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { exportToPdf } from "@/lib/export";
 import type {
   Profile, ProfileCompleteness, ResumeWorthScore, AggregateGapAnalysis,
@@ -102,7 +105,6 @@ function ResumeWorthGauge({ data }: { data: ResumeWorthScore | null }) {
 
 function PaperContainer({ html, title, documentType }: { html: string; title: string; documentType?: string }) {
   const cssType = documentType || "resume";
-  const { getDocumentCSS } = require("@/lib/document-styles");
   const css = getDocumentCSS(cssType);
 
   return (
@@ -129,7 +131,7 @@ function AccordionSection({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-2xl border bg-card shadow-soft-sm">
+    <div className="rounded-2xl border bg-card shadow-soft-sm glow-border-hover">
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/30 rounded-2xl transition-colors">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-500/10">
@@ -191,6 +193,7 @@ const SOCIAL_PLATFORMS = [
 
 export default function CareerNexusPage() {
   const { user, session } = useAuth();
+  const router = useRouter();
   const token = session?.access_token ?? null;
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -208,6 +211,7 @@ export default function CareerNexusPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [intelligenceErrors, setIntelligenceErrors] = useState<string[]>([]);
+  const [showDeleteProfile, setShowDeleteProfile] = useState(false);
 
   // Social links state (empty state)
   const [onboardingLinks, setOnboardingLinks] = useState<Record<string, string>>({});
@@ -429,7 +433,7 @@ export default function CareerNexusPage() {
         )}
 
         {/* Hero Card — empty state */}
-        <div className="rounded-2xl border bg-card shadow-soft-sm overflow-hidden">
+        <div className="rounded-2xl border bg-card shadow-soft-sm overflow-hidden glow-border-hover">
           <div className="h-1 bg-gradient-to-r from-teal-500 via-cyan-500 to-teal-600" />
           <div className="p-6 flex flex-col lg:flex-row gap-6">
             <div className="flex items-center gap-4 flex-1">
@@ -615,7 +619,7 @@ export default function CareerNexusPage() {
       )}
 
       {/* Hero Card */}
-      <div className="rounded-2xl border bg-card shadow-soft-sm overflow-hidden">
+      <div className="rounded-2xl border bg-card shadow-soft-sm overflow-hidden glow-border-hover">
         {/* Accent bar */}
         <div className="h-1 bg-gradient-to-r from-teal-500 via-cyan-500 to-teal-600" />
         <div className="p-6">
@@ -1588,7 +1592,7 @@ export default function CareerNexusPage() {
                 As you create applications for different jobs, we analyze skill gaps across all of them.
                 You&apos;ll see which skills are most in-demand, your strongest areas, and a personalized growth roadmap.
               </p>
-              <Button variant="outline" size="sm" className="mt-5 gap-2 rounded-xl" onClick={() => window.location.href = "/new"}>
+              <Button variant="outline" size="sm" className="mt-5 gap-2 rounded-xl" onClick={() => router.push("/new")}>
                 <Plus className="h-3.5 w-3.5" /> Create Your First Application
               </Button>
             </div>
@@ -1602,7 +1606,7 @@ export default function CareerNexusPage() {
               <h3 className="font-semibold">Evidence Mirror</h3>
               <p className="text-xs text-muted-foreground">Certifications and projects from your evidence library, mapped to your profile.</p>
             </div>
-            <Button variant="outline" size="sm" className="text-xs gap-2" onClick={() => window.location.href = "/evidence"}>
+            <Button variant="outline" size="sm" className="text-xs gap-2" onClick={() => router.push("/evidence")}>
               <ShieldCheck className="h-3.5 w-3.5" /> Open Evidence
             </Button>
           </div>
@@ -1642,7 +1646,7 @@ export default function CareerNexusPage() {
                 Add certifications, projects, and courses as evidence. They&apos;ll appear here
                 and strengthen your career documents.
               </p>
-              <Button variant="outline" size="sm" className="mt-4 gap-2" onClick={() => window.location.href = "/evidence"}>
+              <Button variant="outline" size="sm" className="mt-4 gap-2" onClick={() => router.push("/evidence")}>
                 <Plus className="h-3.5 w-3.5" /> Add Evidence
               </Button>
             </div>
@@ -1696,23 +1700,31 @@ export default function CareerNexusPage() {
                 <p className="font-medium text-sm text-destructive">Delete Profile</p>
                 <p className="text-xs text-muted-foreground">Permanently remove your profile and all associated data. Cannot be undone.</p>
               </div>
-              <Button variant="destructive" size="sm" onClick={async () => {
-                if (confirm("Are you sure you want to delete your profile? This cannot be undone.")) {
-                  await api.profile.delete(profile.id);
-                  setProfile(null);
-                  setCompleteness(null);
-                  setResumeWorth(null);
-                  setAggregateGaps(null);
-                  setMarketIntel(null);
-                  setEvidence({});
-                }
-              }}>
+              <Button variant="destructive" size="sm" onClick={() => setShowDeleteProfile(true)}>
                 <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
               </Button>
             </div>
           </Card>
         </TabsContent>
       </Tabs>
+
+      <ConfirmDialog
+        open={showDeleteProfile}
+        onOpenChange={setShowDeleteProfile}
+        title="Delete your profile?"
+        description="This will permanently remove your profile and all associated data. This cannot be undone."
+        confirmLabel="Delete Profile"
+        variant="destructive"
+        onConfirm={async () => {
+          await api.profile.delete(profile!.id);
+          setProfile(null);
+          setCompleteness(null);
+          setResumeWorth(null);
+          setAggregateGaps(null);
+          setMarketIntel(null);
+          setEvidence({});
+        }}
+      />
     </div>
   );
 }

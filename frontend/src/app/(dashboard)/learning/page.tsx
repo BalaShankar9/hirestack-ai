@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { useAuth } from "@/components/providers";
 import api from "@/lib/api";
 import type { LearningChallenge, LearningStreak } from "@/types";
@@ -62,6 +63,7 @@ export default function LearningPage() {
   const { user, session: authSession } = useAuth();
   const [streak, setStreak] = useState<LearningStreak | null>(null);
   const [profileSkills, setProfileSkills] = useState<string[]>([]);
+  const [profileReady, setProfileReady] = useState(false);
 
   // Load profile skills for personalized challenges
   useEffect(() => {
@@ -69,9 +71,12 @@ export default function LearningPage() {
     if (!token) return;
     api.setToken(token);
     api.profile.get().then((p: any) => {
-      if (!p?.skills) return;
-      setProfileSkills(p.skills.map((s: any) => typeof s === "string" ? s : s.name).filter(Boolean).slice(0, 10));
-    }).catch(() => {});
+      if (p?.skills) {
+        setProfileSkills(p.skills.map((s: any) => typeof s === "string" ? s : s.name).filter(Boolean).slice(0, 10));
+      }
+    }).catch(() => {
+      toast({ title: "Profile not loaded", description: "Challenges won't be personalized to your skills.", variant: "warning" });
+    }).finally(() => setProfileReady(true));
   }, [authSession?.access_token]);
   const [challenges, setChallenges] = useState<LearningChallenge[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -83,7 +88,10 @@ export default function LearningPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => { loadData(); }, []);
+  // Load data only after auth token is set (profile useEffect above handles setToken)
+  useEffect(() => {
+    if (authSession?.access_token) loadData();
+  }, [authSession?.access_token]);
 
   const loadData = async () => {
     setLoading(true);
@@ -178,9 +186,9 @@ export default function LearningPage() {
           </div>
           <h3 className="font-semibold">Ready for today&apos;s challenges?</h3>
           <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">AI generates personalized challenges based on your skill gaps and career goals.</p>
-          <Button className="mt-4 rounded-xl gap-2" onClick={generateChallenges} disabled={generating}>
-            {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-            {generating ? "Generating..." : "Generate Today's Challenges"}
+          <Button className="mt-4 rounded-xl gap-2" onClick={generateChallenges} disabled={generating || !profileReady}>
+            {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : !profileReady ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+            {generating ? "Generating..." : !profileReady ? "Loading profile..." : "Generate Today's Challenges"}
           </Button>
         </div>
       )}
@@ -270,6 +278,11 @@ export default function LearningPage() {
             <Button variant="outline" className="rounded-xl gap-2" onClick={generateChallenges} disabled={generating}>
               <RefreshCw className={cn("h-4 w-4", generating && "animate-spin")} /> More Challenges
             </Button>
+            <Link href="/new">
+              <Button variant="outline" className="rounded-xl gap-2">
+                <ArrowRight className="h-4 w-4" /> Start an Application
+              </Button>
+            </Link>
           </div>
         </div>
       )}

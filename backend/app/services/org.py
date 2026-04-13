@@ -163,7 +163,7 @@ class OrgService:
                 "changes": changes or {},
             })
         except Exception:
-            pass  # Audit logging should never break main flow
+            logger.warning("audit_log_failed", org_id=org_id, action=action)
 
     async def get_audit_logs(self, org_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         return await self.db.query(TABLES["audit_logs"], filters=[("org_id", "==", org_id)], order_by="created_at", order_direction="DESCENDING", limit=limit)

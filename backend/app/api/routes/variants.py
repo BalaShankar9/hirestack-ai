@@ -7,9 +7,13 @@ from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+import structlog
+
 from app.services.doc_variant import DocVariantService
 from app.api.deps import get_current_user
 from app.core.security import limiter
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -51,6 +55,7 @@ async def generate_variants(
             tones=body.tones,
         )
     except Exception:
+        logger.error("variant_generation_failed", user_id=current_user["id"])
         raise HTTPException(status_code=500, detail="Variant generation failed. Please try again.")
 
 

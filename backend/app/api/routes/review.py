@@ -63,7 +63,7 @@ async def create_review_session(
 
 
 @router.get("/token/{share_token}")
-@limiter.limit("30/minute")
+@limiter.limit("10/minute")
 async def get_session_by_token(request: Request, share_token: str):
     """Get a review session by share token (public endpoint)."""
     if len(share_token) > 500:

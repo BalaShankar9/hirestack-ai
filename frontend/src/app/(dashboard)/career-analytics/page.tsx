@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { useAuth } from "@/components/providers";
 import api from "@/lib/api";
 import type { CareerSnapshot } from "@/types";
@@ -18,15 +19,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function CareerAnalyticsPage() {
   const { user, session: authSession } = useAuth();
 
-  useEffect(() => { if (authSession?.access_token) api.setToken(authSession.access_token); }, [authSession?.access_token]);
-
   const [timeline, setTimeline] = useState<CareerSnapshot[]>([]);
   const [portfolio, setPortfolio] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => { loadData(); }, []);
+  // Set token and load data only when auth is ready
+  useEffect(() => {
+    if (authSession?.access_token) {
+      api.setToken(authSession.access_token);
+      loadData();
+    }
+  }, [authSession?.access_token]);
 
   const loadData = async () => {
     setLoading(true);
@@ -187,6 +192,21 @@ export default function CareerAnalyticsPage() {
               <Button className="mt-4 rounded-xl gap-2" onClick={captureSnapshot} disabled={capturing}>
                 <Camera className="h-4 w-4" /> Capture First Snapshot
               </Button>
+            </div>
+          )}
+
+          {/* Cross-link */}
+          {timeline.length > 0 && (
+            <div className="rounded-2xl border border-dashed bg-card/50 p-4 flex items-center justify-between gap-4">
+              <p className="text-sm text-muted-foreground">
+                <strong className="text-foreground">Improve your score.</strong>{" "}
+                Start a new application to raise your career metrics.
+              </p>
+              <Link href="/new">
+                <Button size="sm" variant="outline" className="rounded-xl shrink-0 gap-1.5">
+                  <TrendingUp className="h-3.5 w-3.5" /> New Application
+                </Button>
+              </Link>
             </div>
           )}
         </>

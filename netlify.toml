@@ -4,8 +4,9 @@
   publish = ".next"
 
 [build.environment]
-  NEXT_PUBLIC_SUPABASE_URL = "https://dkfmcnfhvbqwsgpkgoag.supabase.co"
-  NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrZm1jbmZodmJxd3NncGtnb2FnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0OTY0MjEsImV4cCI6MjA4NzA3MjQyMX0._kUDmWamD-77Pkf817W08EfRz3UxQ_Mwygpi18uEUWc"
+  # NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set in
+  # Netlify dashboard → Site settings → Environment variables.
+  # DO NOT hardcode secrets here — this file is committed to version control.
   NEXT_PUBLIC_API_URL = "https://hirestack-ai-production.up.railway.app"
   NEXT_PUBLIC_AI_ENABLED = "true"
   NODE_VERSION = "20"

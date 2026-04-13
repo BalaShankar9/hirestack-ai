@@ -28,6 +28,12 @@ from typing import Any, Optional
 from uuid import uuid4
 
 
+def _now_iso() -> str:
+    """Return current UTC time as ISO-8601 string."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
 class EvidenceTier(str, Enum):
     """Strength of evidence, from strongest to weakest."""
     VERBATIM = "verbatim"       # Exact source text
@@ -75,6 +81,9 @@ class EvidenceItem:
                     higher confidence.  Defaults based on tier.
         confirmed_by: List of sub-agent names that independently confirmed
                       this evidence item.  Used for cross-source boosting.
+        created_at: ISO-8601 timestamp when this evidence was first captured.
+                    Used for freshness scoring — older inferred/user_stated
+                    evidence decays in confidence.
     """
     id: str
     tier: EvidenceTier
@@ -84,6 +93,26 @@ class EvidenceItem:
     metadata: dict = field(default_factory=dict)
     confidence: float = 0.7
     confirmed_by: list[str] = field(default_factory=list)
+    created_at: str = field(default_factory=lambda: _now_iso())
+
+    @property
+    def fresh_confidence(self) -> float:
+        """Confidence adjusted for age — decays inferred/user_stated evidence.
+
+        Verbatim and derived evidence don't decay (source text is stable).
+        Inferred/user_stated evidence loses 0.01 confidence per day, floored
+        at 0.10, because unverified claims go stale.
+        """
+        if self.tier in (EvidenceTier.VERBATIM, EvidenceTier.DERIVED):
+            return self.confidence
+        try:
+            from datetime import datetime, timezone
+            created = datetime.fromisoformat(self.created_at.replace("Z", "+00:00"))
+            age_days = (datetime.now(timezone.utc) - created).total_seconds() / 86400
+            decay = age_days * 0.01
+            return max(0.10, round(self.confidence - decay, 3))
+        except Exception:
+            return self.confidence
 
     def to_dict(self) -> dict:
         return {
@@ -94,7 +123,9 @@ class EvidenceItem:
             "text": self.text,
             "metadata": self.metadata,
             "confidence": self.confidence,
+            "fresh_confidence": self.fresh_confidence,
             "confirmed_by": self.confirmed_by,
+            "created_at": self.created_at,
         }
 
     @classmethod
@@ -108,6 +139,7 @@ class EvidenceItem:
             metadata=d.get("metadata", {}),
             confidence=d.get("confidence", 0.7),
             confirmed_by=d.get("confirmed_by", []),
+            created_at=d.get("created_at", _now_iso()),
         )
 
 

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
 import { useAuth } from "@/components/providers";
 import { parseResumeText } from "@/lib/firestore/ops";
 import { Button } from "@/components/ui/button";
@@ -153,7 +154,7 @@ export default function ATSScannerPage() {
     setError("");
     setScan(null);
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
       const token = authSession?.access_token;
       const res = await fetch(`${API_URL}/api/ats/scan`, {
         method: "POST",
@@ -460,6 +461,33 @@ export default function ATSScannerPage() {
         </motion.div>
       )}
       </AnimatePresence>
+
+      {/* Cross-link: Create full application */}
+      {scan && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/[0.04] to-transparent p-4"
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 shrink-0">
+                <Sparkles className="h-4 w-4 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">Want a full application package?</p>
+                <p className="text-xs text-muted-foreground truncate">Generate a tailored CV, cover letter, gap analysis, and more in one click.</p>
+              </div>
+            </div>
+            <Link href={jdText ? `/new?jdText=${encodeURIComponent(jdText.slice(0, 2000))}` : "/new"}>
+              <Button size="sm" className="gap-2 rounded-xl shrink-0">
+                Create Application <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            </Link>
+          </div>
+        </motion.div>
+      )}
 
       {/* Pre-scan guidance */}
       {!scan && !loading && (

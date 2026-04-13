@@ -126,9 +126,9 @@ function TipTapEditor({
   }
 
   return (
-    <div className={cn("border rounded-lg overflow-hidden", className)}>
+    <div className={cn("border rounded-xl overflow-hidden", className)}>
       {editable && (
-        <div className="flex flex-wrap items-center gap-1 p-2 border-b bg-muted/50">
+        <div className="flex flex-wrap items-center gap-1 p-2 border-b bg-muted/30">
           <Toggle
             size="sm"
             pressed={editor.isActive("bold")}

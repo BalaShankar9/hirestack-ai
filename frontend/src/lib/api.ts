@@ -13,7 +13,10 @@ import type {
   RoadmapGenerateRequest,
 } from "@/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
+if (typeof window !== "undefined" && !process.env.NEXT_PUBLIC_API_URL) {
+  console.error("[HireStack] NEXT_PUBLIC_API_URL is not set — API calls will fail in production.");
+}
 
 interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE";
@@ -59,7 +62,18 @@ class APIClient {
 
     let lastError: Error | null = null;
     for (let attempt = 1; attempt <= APIClient.MAX_RETRIES; attempt++) {
-      const response = await fetch(`${this.baseUrl}/api${endpoint}`, config);
+      let response: Response;
+      try {
+        response = await fetch(`${this.baseUrl}/api${endpoint}`, config);
+      } catch (networkErr) {
+        // Network-level failure (offline, DNS, CORS preflight) — retryable
+        lastError = networkErr instanceof Error ? networkErr : new Error("Network error");
+        if (attempt < APIClient.MAX_RETRIES) {
+          await new Promise((r) => setTimeout(r, attempt * 2000));
+          continue;
+        }
+        throw lastError;
+      }
 
       if (response.ok) {
         if (response.status === 204) return {} as T;
@@ -373,6 +387,53 @@ class APIClient {
     timeline: async () => this.request("/career/timeline"),
     portfolio: async () => this.request("/career/portfolio"),
     snapshot: async () => this.request("/career/snapshot", { method: "POST" }),
+    // Outcome tracking — closed-loop quality learning
+    recordOutcome: async (data: { application_id: string; signal_type: string; signal_data?: Record<string, unknown> }) =>
+      this.request("/career/outcomes", { method: "POST", body: data }),
+    conversionFunnel: async () => this.request("/career/outcomes/funnel"),
+    strategyEffectiveness: async () => this.request("/career/outcomes/effectiveness"),
+    // Pipeline telemetry — cost and quality dashboards
+    telemetrySummary: async (days = 30) => this.request(`/career/telemetry/summary?days=${days}`),
+    telemetryTrend: async (pipelineName: string, limit = 20) =>
+      this.request(`/career/telemetry/trend/${encodeURIComponent(pipelineName)}?limit=${limit}`),
+    // Production replay — reconstruct pipeline state from event log
+    replayState: async (jobId: string) => this.request(`/career/replay/${jobId}`),
+    // Self-tuning engine — optimal pipeline config recommendation
+    tuningRecommendation: async () => this.request("/career/tuning/recommendation"),
+    // Interview prediction — statistical likelihood scoring
+    predictInterview: async (applicationId: string) =>
+      this.request(`/career/predict/${encodeURIComponent(applicationId)}`),
+    // Pipeline health — regression and anomaly detection
+    pipelineHealth: async () => this.request("/career/telemetry/health"),
+    // Evidence graph — canonical nodes + contradictions
+    evidenceGraph: async () => this.request("/career/evidence-graph"),
+    // Autonomous career monitor — proactive alerts
+    triggerScan: async () => this.request("/career/monitor/scan", { method: "POST" }),
+    alerts: async (limit = 20) => this.request(`/career/alerts?limit=${limit}`),
+    alertSummary: async () => this.request("/career/alerts/summary"),
+    dismissAlert: async (alertId: string) =>
+      this.request(`/career/alerts/${encodeURIComponent(alertId)}/dismiss`, { method: "POST" }),
+    markAlertRead: async (alertId: string) =>
+      this.request(`/career/alerts/${encodeURIComponent(alertId)}/read`, { method: "POST" }),
+    // Document evolution — semantic diff tracking
+    analyzeEvolution: async (data: {
+      document_id: string; old_content: string; new_content: string;
+      version_from: number; version_to: number;
+      application_id?: string; target_keywords?: string[];
+    }) => this.request("/career/document-evolution", { method: "POST", body: data }),
+    evolutionTimeline: async (documentId?: string, applicationId?: string, limit = 20) => {
+      const params = new URLSearchParams();
+      if (documentId) params.set("document_id", documentId);
+      if (applicationId) params.set("application_id", applicationId);
+      params.set("limit", String(limit));
+      return this.request(`/career/document-evolution/timeline?${params}`);
+    },
+    improvementTrend: async (limit = 30) =>
+      this.request(`/career/document-evolution/trend?limit=${limit}`),
+    // Predictive career forecaster — enhanced predictions
+    predictOffer: async (applicationId: string) =>
+      this.request(`/career/predict/offer/${encodeURIComponent(applicationId)}`),
+    careerMomentum: async () => this.request("/career/momentum"),
   };
 
   learning = {

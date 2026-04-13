@@ -97,6 +97,9 @@
   * {
     @apply border-border;
   }
+  html {
+    scroll-behavior: smooth;
+  }
   body {
     @apply bg-background text-foreground antialiased;
     background-image:
@@ -285,13 +288,13 @@
 /* ── Glass card utility ──────────────────────────────── */
 @layer components {
   .glass {
-    @apply bg-white/70 backdrop-blur-xl border border-white/20;
+    @apply bg-background/70 backdrop-blur-xl border border-border/20;
   }
   .glass-card {
-    @apply bg-white/80 backdrop-blur-xl border border-white/30 rounded-2xl shadow-soft-md;
+    @apply bg-card/80 backdrop-blur-xl border border-border/30 rounded-2xl shadow-soft-md;
   }
   .glass-panel {
-    @apply bg-white/60 backdrop-blur-lg border border-white/20 rounded-xl;
+    @apply bg-card/60 backdrop-blur-lg border border-border/20 rounded-xl;
   }
   .gradient-text {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-violet-500 to-indigo-500;
@@ -310,6 +313,7 @@
   }
   .animate-stagger > * {
     @apply animate-fade-up;
+    animation-fill-mode: both;
   }
   .animate-stagger > *:nth-child(1) { animation-delay: 0ms; }
   .animate-stagger > *:nth-child(2) { animation-delay: 60ms; }
@@ -380,6 +384,46 @@
 .animate-check-pop { animation: check-pop 0.3s ease-out; }
 .animate-bounce-sm { animation: bounce-sm 0.4s ease-out; }
 
+/* ── Tab content fade ────────────────────────────────── */
+@keyframes tab-content-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-tab-enter {
+  animation: tab-content-enter 0.25s ease-out;
+}
+
+/* ── Score reveal animation ──────────────────────────── */
+@keyframes score-reveal {
+  from { opacity: 0; transform: scale(0.8); filter: blur(4px); }
+  to   { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+.animate-score-reveal {
+  animation: score-reveal 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ── Success celebration pulse ───────────────────────── */
+@keyframes success-ring {
+  0% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4); }
+  70% { box-shadow: 0 0 0 8px hsl(var(--primary) / 0); }
+  100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0); }
+}
+.animate-success-ring {
+  animation: success-ring 0.6s ease-out;
+}
+
+/* ── Interactive link underline ──────────────────────── */
+.link-hover-line {
+  @apply relative;
+}
+.link-hover-line::after {
+  content: "";
+  @apply absolute inset-x-0 bottom-0 h-px scale-x-0 bg-current transition-transform duration-300 origin-left;
+}
+.link-hover-line:hover::after {
+  @apply scale-x-100;
+}
+
 details, details > summary { outline: none; }
 details:focus, details > summary:focus { outline: none; }
 
@@ -426,4 +470,267 @@ details:focus, details > summary:focus { outline: none; }
   .chip-premium {
     @apply inline-flex items-center rounded-full border border-border/70 bg-background/70 px-2.5 py-1 text-[11px] font-medium;
   }
+}
+
+/* ══════════════════════════════════════════════════════════
+   FUTURISTIC LAYER — years-ahead visual system
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Animated aurora mesh background ─────────────────── */
+@keyframes aurora-drift {
+  0%   { background-position: 0% 50%, 100% 50%, 50% 0%; }
+  25%  { background-position: 100% 0%, 0% 100%, 80% 20%; }
+  50%  { background-position: 50% 100%, 50% 0%, 20% 80%; }
+  75%  { background-position: 0% 0%, 100% 100%, 60% 40%; }
+  100% { background-position: 0% 50%, 100% 50%, 50% 0%; }
+}
+
+.aurora-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 80%, hsl(var(--primary) / 0.15), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 20%, hsl(250 80% 60% / 0.12), transparent),
+    radial-gradient(ellipse 50% 60% at 50% 50%, hsl(280 70% 50% / 0.08), transparent);
+  background-size: 200% 200%, 200% 200%, 150% 150%;
+  animation: aurora-drift 20s ease-in-out infinite;
+  filter: blur(80px) saturate(1.5);
+}
+.dark .aurora-bg {
+  opacity: 0.35;
+  filter: blur(100px) saturate(2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .aurora-bg { animation: none; }
+}
+
+/* ── Noise texture overlay for depth ─────────────────── */
+.noise-overlay::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+  mix-blend-mode: overlay;
+}
+.dark .noise-overlay::after {
+  opacity: 0.04;
+}
+
+/* ── Animated gradient border ("Apple silicon" glow) ──── */
+@keyframes border-rotate {
+  0%   { --border-angle: 0deg; }
+  100% { --border-angle: 360deg; }
+}
+
+@property --border-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.glow-border {
+  position: relative;
+  border-radius: 1rem;
+  overflow: hidden;
+}
+.glow-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--border-angle, 0deg),
+    hsl(var(--primary) / 0.5),
+    hsl(250 80% 60% / 0.3),
+    hsl(280 70% 50% / 0.4),
+    hsl(var(--primary) / 0.5)
+  );
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+  pointer-events: none;
+  animation: border-rotate 4s linear infinite;
+}
+
+/* Only animate on hover for performance */
+.glow-border-hover::before {
+  animation-play-state: paused;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.glow-border-hover:hover::before {
+  animation-play-state: running;
+  opacity: 1;
+}
+
+/* ── Cursor-reactive glow on cards ───────────────────── */
+.card-spotlight {
+  position: relative;
+  overflow: hidden;
+}
+.card-spotlight::before {
+  content: "";
+  position: absolute;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(circle, hsl(var(--primary) / 0.12), transparent 70%);
+  pointer-events: none;
+  transform: translate(var(--spotlight-x, -300px), var(--spotlight-y, -300px)) translate(-50%, -50%);
+  transition: opacity 0.5s;
+  opacity: 0;
+  z-index: 0;
+}
+.card-spotlight:hover::before {
+  opacity: 1;
+}
+.card-spotlight > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Spring easing (CSS linear() spring) ─────────────── */
+:root {
+  --spring-bounce: linear(
+    0, 0.004, 0.016, 0.035, 0.063, 0.098, 0.141, 0.191, 0.25,
+    0.316, 0.391 36.8%, 0.563, 0.65, 0.726 52.1%, 0.813,
+    0.878, 0.929 68.2%, 0.966, 0.988 79.2%, 1.002, 1.007,
+    1.004, 0.998 100%
+  );
+  --spring-snappy: linear(
+    0, 0.009, 0.035 2.1%, 0.141, 0.281 6.7%, 0.723 12.9%,
+    0.938 16.7%, 1.017, 1.077 22%, 1.121, 1.149 27.3%,
+    1.159, 1.151 32%, 1.017 45.7%, 0.991, 1.005 79.7%, 1
+  );
+}
+
+/* ── Animated gradient text ──────────────────────────── */
+@keyframes gradient-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.gradient-text-animated {
+  background: linear-gradient(
+    135deg,
+    hsl(var(--primary)),
+    hsl(250 80% 60%),
+    hsl(280 70% 55%),
+    hsl(320 70% 50%),
+    hsl(250 80% 60%),
+    hsl(var(--primary))
+  );
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-shift 6s ease-in-out infinite;
+}
+
+/* ── Scroll-driven reveal ────────────────────────────── */
+@supports (animation-timeline: view()) {
+  .scroll-reveal {
+    animation: scroll-fade-up linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 30%;
+  }
+  @keyframes scroll-fade-up {
+    from { opacity: 0; transform: translateY(20px) scale(0.98); filter: blur(4px); }
+    to   { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+  }
+}
+
+/* ── Glow button halo ────────────────────────────────── */
+@keyframes btn-halo {
+  0%, 100% { box-shadow: 0 0 15px -3px hsl(var(--primary) / 0.3), 0 0 6px -1px hsl(var(--primary) / 0.15); }
+  50%      { box-shadow: 0 0 25px -3px hsl(var(--primary) / 0.45), 0 0 10px -1px hsl(var(--primary) / 0.25); }
+}
+.btn-glow {
+  animation: btn-halo 3s ease-in-out infinite;
+}
+.btn-glow:hover {
+  animation: none;
+  box-shadow: 0 0 30px -3px hsl(var(--primary) / 0.5), 0 0 12px -1px hsl(var(--primary) / 0.3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-glow { animation: none; }
+}
+
+/* ── Frosted glass with depth layers ─────────────────── */
+@layer components {
+  .glass-depth {
+    @apply bg-card/40 backdrop-blur-2xl border border-white/10;
+    box-shadow:
+      0 1px 0 hsl(0 0% 100% / 0.06) inset,
+      0 -1px 0 hsl(0 0% 0% / 0.06) inset,
+      0 16px 40px -12px hsl(var(--foreground) / 0.15);
+  }
+  .dark .glass-depth {
+    @apply bg-card/30;
+    box-shadow:
+      0 1px 0 hsl(0 0% 100% / 0.04) inset,
+      0 -1px 0 hsl(0 0% 0% / 0.1) inset,
+      0 16px 40px -12px hsl(0 0% 0% / 0.5);
+  }
+}
+
+/* ── Focus glow ring (replaces basic ring) ───────────── */
+.focus-glow:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px hsl(var(--background)),
+    0 0 0 4px hsl(var(--primary) / 0.5),
+    0 0 12px -2px hsl(var(--primary) / 0.3);
+}
+
+/* ── Elevation on scroll (sticky headers) ────────────── */
+@supports (animation-timeline: scroll()) {
+  .elevation-on-scroll {
+    animation: elevate-header linear both;
+    animation-timeline: scroll();
+    animation-range: 0px 100px;
+  }
+  @keyframes elevate-header {
+    from {
+      backdrop-filter: blur(8px);
+      box-shadow: 0 0 0 0 transparent;
+      border-bottom-color: transparent;
+    }
+    to {
+      backdrop-filter: blur(20px);
+      box-shadow: 0 4px 30px -8px hsl(var(--foreground) / 0.08);
+      border-bottom-color: hsl(var(--border));
+    }
+  }
+}
+
+/* ── Shimmer text – scanning shine on premium labels ─── */
+@keyframes shimmer-text {
+  from { background-position: -200% center; }
+  to   { background-position: 200% center; }
+}
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    currentColor 30%,
+    hsl(var(--primary) / 0.6) 50%,
+    currentColor 70%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer-text 4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text { animation: none; color: currentColor; background: none; }
 }

@@ -609,11 +609,10 @@ class TestDefaultConfigs:
     """Tests for default stage timeouts and retries."""
 
     def test_stage_timeouts_defined(self):
-        assert "researcher" in DEFAULT_STAGE_TIMEOUTS
-        assert "drafter" in DEFAULT_STAGE_TIMEOUTS
-        assert "validator" in DEFAULT_STAGE_TIMEOUTS
-        # Researcher has a reasonable timeout
-        assert 30 <= DEFAULT_STAGE_TIMEOUTS["researcher"] <= 300
+        # Per-stage timeouts were intentionally removed — variable document
+        # generation times make fixed timeouts counterproductive.
+        # DEFAULT_STAGE_TIMEOUTS is now an empty dict by design.
+        assert isinstance(DEFAULT_STAGE_TIMEOUTS, dict)
 
     def test_stage_retries_defined(self):
         assert "researcher" in DEFAULT_STAGE_RETRIES

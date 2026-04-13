@@ -1,14 +1,14 @@
 """
 Career Consultant routes - Roadmaps and recommendations (Firestore)
 """
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Literal
 
 from app.core.security import limiter
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 
 from app.services.roadmap import RoadmapService
 from app.api.deps import get_current_user, validate_uuid
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import structlog
 
 logger = structlog.get_logger()
@@ -16,10 +16,21 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+class GenerateRoadmapRequest(BaseModel):
+    gap_report_id: Optional[str] = Field(None, max_length=100)
+    title: Optional[str] = Field(None, max_length=300)
+
+
+class UpdateProgressRequest(BaseModel):
+    milestone_id: str = Field(..., min_length=1, max_length=100)
+    status: Literal["pending", "in_progress", "completed"] = "pending"
+
+
 @limiter.limit("5/minute")
 @router.post("/roadmap")
 async def generate_roadmap(
-    request: Dict[str, Any],
+    request: Request,
+    body: GenerateRoadmapRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Generate a career improvement roadmap."""
@@ -27,8 +38,8 @@ async def generate_roadmap(
     try:
         return await service.generate_roadmap(
             user_id=current_user["id"],
-            gap_report_id=request.get("gap_report_id"),
-            title=request.get("title"),
+            gap_report_id=body.gap_report_id,
+            title=body.title,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
@@ -67,15 +78,16 @@ async def get_roadmap(
 @limiter.limit("5/minute")
 @router.put("/roadmap/{roadmap_id}/progress")
 async def update_progress(
+    request: Request,
     roadmap_id: str,
-    request: Dict[str, Any],
+    body: UpdateProgressRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Update milestone progress in a roadmap."""
     validate_uuid(roadmap_id, "roadmap_id")
     service = RoadmapService()
     updated = await service.update_milestone_progress(
-        roadmap_id, current_user["id"], request.get("milestone_id", ""), request.get("status", "")
+        roadmap_id, current_user["id"], body.milestone_id, body.status
     )
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Roadmap or milestone not found")

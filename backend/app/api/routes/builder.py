@@ -105,17 +105,23 @@ async def get_document(
     return document
 
 
+class UpdateDocumentRequest(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=500)
+    content: Optional[str] = Field(None, max_length=200000)
+    status: Optional[str] = Field(None, max_length=50)
+
+
 @limiter.limit("30/minute")
 @router.put("/documents/{document_id}")
 async def update_document(
     request: Request,
     document_id: str,
-    update_data: Dict[str, Any],
+    update_data: UpdateDocumentRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Update a document."""
     service = DocumentService()
-    document = await service.update_document(document_id, current_user["id"], update_data)
+    document = await service.update_document(document_id, current_user["id"], update_data.model_dump(exclude_none=True))
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     return document

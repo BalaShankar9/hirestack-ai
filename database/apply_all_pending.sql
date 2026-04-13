@@ -429,3 +429,317 @@ CREATE INDEX IF NOT EXISTS idx_evidence_org ON public.evidence(org_id);
 -- ═══════ DONE ════════════════════════════════════════════════════════
 -- All tables, columns, RLS policies, and indexes have been applied.
 -- HireStack AI is now enterprise-ready at the database level.
+
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- Outcome Signals + Pipeline Telemetry tables
+-- Closes the feedback loop: export → apply → interview → offer
+-- and tracks per-run AI cost, token, and quality data.
+-- ═══════════════════════════════════════════════════════════════════════
+
+-- 1. outcome_signals — progressive funnel signals per application
+CREATE TABLE IF NOT EXISTS public.outcome_signals (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    application_id      uuid NOT NULL REFERENCES public.applications(id) ON DELETE CASCADE,
+    generation_job_id   uuid REFERENCES public.generation_jobs(id) ON DELETE SET NULL,
+    signal_type         text NOT NULL CHECK (signal_type IN (
+                            'exported', 'applied', 'screened', 'interview',
+                            'interview_done', 'offer', 'accepted', 'rejected'
+                        )),
+    signal_data         jsonb NOT NULL DEFAULT '{}'::jsonb,
+    pipeline_config     jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.outcome_signals ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Users own outcome_signals" ON public.outcome_signals FOR ALL USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Service role full access on outcome_signals" ON public.outcome_signals FOR ALL USING (auth.role() = 'service_role');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_outcome_signals_user       ON public.outcome_signals(user_id);
+CREATE INDEX IF NOT EXISTS idx_outcome_signals_app        ON public.outcome_signals(application_id);
+CREATE INDEX IF NOT EXISTS idx_outcome_signals_type       ON public.outcome_signals(signal_type);
+CREATE INDEX IF NOT EXISTS idx_outcome_signals_job        ON public.outcome_signals(generation_job_id);
+CREATE INDEX IF NOT EXISTS idx_outcome_signals_created    ON public.outcome_signals(created_at DESC);
+
+
+-- 2. pipeline_telemetry — per-run cost, token, and quality metrics
+CREATE TABLE IF NOT EXISTS public.pipeline_telemetry (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    job_id              text NOT NULL,
+    pipeline_name       text NOT NULL,
+    model_used          text NOT NULL DEFAULT '',
+    research_depth      text NOT NULL DEFAULT '',
+    iterations_used     integer NOT NULL DEFAULT 0,
+    total_latency_ms    integer NOT NULL DEFAULT 0,
+    stage_latencies     jsonb NOT NULL DEFAULT '{}'::jsonb,
+    token_usage         jsonb NOT NULL DEFAULT '{}'::jsonb,
+    quality_scores      jsonb NOT NULL DEFAULT '{}'::jsonb,
+    evidence_stats      jsonb NOT NULL DEFAULT '{}'::jsonb,
+    cost_usd_cents      integer NOT NULL DEFAULT 0,
+    cascade_failovers   integer NOT NULL DEFAULT 0,
+    pipeline_config     jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.pipeline_telemetry ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Users own pipeline_telemetry" ON public.pipeline_telemetry FOR ALL USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Service role full access on pipeline_telemetry" ON public.pipeline_telemetry FOR ALL USING (auth.role() = 'service_role');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_pipeline_telemetry_user      ON public.pipeline_telemetry(user_id);
+CREATE INDEX IF NOT EXISTS idx_pipeline_telemetry_job       ON public.pipeline_telemetry(job_id);
+CREATE INDEX IF NOT EXISTS idx_pipeline_telemetry_pipeline  ON public.pipeline_telemetry(pipeline_name);
+CREATE INDEX IF NOT EXISTS idx_pipeline_telemetry_created   ON public.pipeline_telemetry(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pipeline_telemetry_user_pipe ON public.pipeline_telemetry(user_id, pipeline_name);
+
+
+-- 3. agent_traces — searchable agent execution traces
+CREATE TABLE IF NOT EXISTS public.agent_traces (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    job_id              text NOT NULL,
+    pipeline_name       text NOT NULL,
+    stages              jsonb NOT NULL DEFAULT '[]'::jsonb,
+    total_latency_ms    integer NOT NULL DEFAULT 0,
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.agent_traces ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Users own agent_traces" ON public.agent_traces FOR ALL USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Service role full access on agent_traces" ON public.agent_traces FOR ALL USING (auth.role() = 'service_role');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_agent_traces_user    ON public.agent_traces(user_id);
+CREATE INDEX IF NOT EXISTS idx_agent_traces_job     ON public.agent_traces(job_id);
+CREATE INDEX IF NOT EXISTS idx_agent_traces_created ON public.agent_traces(created_at DESC);
+
+
+-- 4. pipeline_plans — adaptive planner plan artifacts
+CREATE TABLE IF NOT EXISTS public.pipeline_plans (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    job_id              text NOT NULL,
+    plan                jsonb NOT NULL DEFAULT '{}'::jsonb,
+    risk_mode           text NOT NULL DEFAULT 'standard',
+    jd_quality_score    real NOT NULL DEFAULT 0,
+    profile_quality_score real NOT NULL DEFAULT 0,
+    evidence_score      real NOT NULL DEFAULT 0,
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.pipeline_plans ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Users own pipeline_plans" ON public.pipeline_plans FOR ALL USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Service role full access on pipeline_plans" ON public.pipeline_plans FOR ALL USING (auth.role() = 'service_role');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_pipeline_plans_user    ON public.pipeline_plans(user_id);
+CREATE INDEX IF NOT EXISTS idx_pipeline_plans_job     ON public.pipeline_plans(job_id);
+CREATE INDEX IF NOT EXISTS idx_pipeline_plans_created ON public.pipeline_plans(created_at DESC);
+
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- Wave 3 — Autonomous Intelligence Tables
+-- ═══════════════════════════════════════════════════════════════════════
+
+-- 5. user_evidence_nodes — canonical cross-job evidence nodes
+CREATE TABLE IF NOT EXISTS public.user_evidence_nodes (
+    id                  text PRIMARY KEY,
+    user_id             uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    canonical_text      text NOT NULL,
+    tier                text NOT NULL CHECK (tier IN ('verbatim', 'derived', 'inferred', 'user_stated')),
+    source              text NOT NULL,
+    source_field        text NOT NULL DEFAULT '',
+    confidence          real NOT NULL DEFAULT 0.5 CHECK (confidence >= 0 AND confidence <= 1),
+    first_seen_job_id   text,
+    metadata            jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.user_evidence_nodes ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Users own evidence_nodes" ON public.user_evidence_nodes FOR ALL USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Service role full access on evidence_nodes" ON public.user_evidence_nodes FOR ALL USING (auth.role() = 'service_role');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_evidence_nodes_user     ON public.user_evidence_nodes(user_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_nodes_tier     ON public.user_evidence_nodes(tier);
+CREATE INDEX IF NOT EXISTS idx_evidence_nodes_conf     ON public.user_evidence_nodes(confidence DESC);
+
+
+-- 6. user_evidence_aliases — alias text for canonical nodes
+CREATE TABLE IF NOT EXISTS public.user_evidence_aliases (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    canonical_node_id   text NOT NULL REFERENCES public.user_evidence_nodes(id) ON DELETE CASCADE,
+    alias_text          text NOT NULL,
+    similarity_score    real NOT NULL DEFAULT 0.85,
+    source_job_id       text,
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.user_evidence_aliases ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Users own evidence_aliases" ON public.user_evidence_aliases FOR ALL USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Service role full access on evidence_aliases" ON public.user_evidence_aliases FOR ALL USING (auth.role() = 'service_role');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_evidence_aliases_user ON public.user_evidence_aliases(user_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_aliases_node ON public.user_evidence_aliases(canonical_node_id);
+
+
+-- 7. evidence_contradictions — detected conflicts between evidence nodes
+CREATE TABLE IF NOT EXISTS public.evidence_contradictions (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    node_a_id           text NOT NULL REFERENCES public.user_evidence_nodes(id) ON DELETE CASCADE,
+    node_b_id           text NOT NULL REFERENCES public.user_evidence_nodes(id) ON DELETE CASCADE,
+    contradiction_type  text NOT NULL CHECK (contradiction_type IN (
+        'company_name', 'title_conflict', 'date_overlap',
+        'certification_conflict', 'metric_conflict'
+    )),
+    severity            text NOT NULL DEFAULT 'medium' CHECK (severity IN ('low', 'medium', 'high', 'critical', 'resolved')),
+    description         text NOT NULL DEFAULT '',
+    resolved_at         timestamptz,
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.evidence_contradictions ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Users own evidence_contradictions" ON public.evidence_contradictions FOR ALL USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Service role full access on evidence_contradictions" ON public.evidence_contradictions FOR ALL USING (auth.role() = 'service_role');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_evidence_contradictions_user     ON public.evidence_contradictions(user_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_contradictions_unresolved ON public.evidence_contradictions(user_id) WHERE resolved_at IS NULL;
+
+
+-- 8. career_alerts — proactive autonomous career monitoring alerts
+CREATE TABLE IF NOT EXISTS public.career_alerts (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    alert_type          text NOT NULL CHECK (alert_type IN (
+        'profile_stale', 'evidence_decay', 'skill_trending',
+        'market_shift', 'document_outdated', 'quality_regression',
+        'opportunity_match', 'interview_prep_reminder'
+    )),
+    severity            text NOT NULL DEFAULT 'info' CHECK (severity IN ('info', 'warning', 'critical')),
+    title               text NOT NULL,
+    description         text NOT NULL DEFAULT '',
+    action_url          text,
+    metadata            jsonb NOT NULL DEFAULT '{}'::jsonb,
+    read_at             timestamptz,
+    dismissed_at        timestamptz,
+    expires_at          timestamptz,
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.career_alerts ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Users own career_alerts" ON public.career_alerts FOR ALL USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Service role full access on career_alerts" ON public.career_alerts FOR ALL USING (auth.role() = 'service_role');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_career_alerts_user        ON public.career_alerts(user_id);
+CREATE INDEX IF NOT EXISTS idx_career_alerts_active      ON public.career_alerts(user_id, created_at DESC) WHERE dismissed_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_career_alerts_type        ON public.career_alerts(alert_type);
+CREATE INDEX IF NOT EXISTS idx_career_alerts_expires     ON public.career_alerts(expires_at) WHERE expires_at IS NOT NULL;
+
+
+-- 9. document_evolution — semantic diff tracking between document versions
+CREATE TABLE IF NOT EXISTS public.document_evolution (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    document_id         uuid NOT NULL,
+    application_id      uuid,
+    version_from        integer NOT NULL,
+    version_to          integer NOT NULL,
+    diff_type           text NOT NULL CHECK (diff_type IN ('content', 'structure', 'tone', 'keyword', 'evidence')),
+    change_summary      text NOT NULL DEFAULT '',
+    improvement_score   real CHECK (improvement_score >= -100 AND improvement_score <= 100),
+    sections_changed    jsonb NOT NULL DEFAULT '[]'::jsonb,
+    keywords_added      jsonb NOT NULL DEFAULT '[]'::jsonb,
+    keywords_removed    jsonb NOT NULL DEFAULT '[]'::jsonb,
+    evidence_delta      jsonb NOT NULL DEFAULT '{}'::jsonb,
+    metadata            jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.document_evolution ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Users own document_evolution" ON public.document_evolution FOR ALL USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY "Service role full access on document_evolution" ON public.document_evolution FOR ALL USING (auth.role() = 'service_role');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_doc_evolution_user     ON public.document_evolution(user_id);
+CREATE INDEX IF NOT EXISTS idx_doc_evolution_doc      ON public.document_evolution(document_id);
+CREATE INDEX IF NOT EXISTS idx_doc_evolution_app      ON public.document_evolution(application_id) WHERE application_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_doc_evolution_created  ON public.document_evolution(created_at DESC);
+
+
+-- 10. quality_observations — persist model quality data across restarts
+CREATE TABLE IF NOT EXISTS public.quality_observations (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_type           text NOT NULL,
+    model               text NOT NULL,
+    quality_score       real NOT NULL CHECK (quality_score >= 0 AND quality_score <= 100),
+    pipeline_name       text,
+    user_id             uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+    job_id              text,
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+
+-- No RLS on quality_observations — service-level table only
+ALTER TABLE public.quality_observations ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "Service role full access on quality_observations" ON public.quality_observations FOR ALL USING (auth.role() = 'service_role');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_quality_obs_task_model ON public.quality_observations(task_type, model);
+CREATE INDEX IF NOT EXISTS idx_quality_obs_created    ON public.quality_observations(created_at DESC);
+-- Keep only recent observations (cleanup via cron or app logic)
+CREATE INDEX IF NOT EXISTS idx_quality_obs_recent     ON public.quality_observations(task_type, model, created_at DESC);

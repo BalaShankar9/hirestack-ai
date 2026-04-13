@@ -240,18 +240,18 @@ class TestTokenCache:
 # ═══════════════════════════════════════════════════════════════════════
 
 class TestAIClientCircuitBreaker:
-    """Test that AIClient uses the circuit breaker."""
+    """Test that AIClient uses per-model circuit breakers."""
 
     def test_client_has_breaker(self):
-        from ai_engine.client import AIClient
-        client = AIClient()
-        assert client._breaker is not None
-        assert client._breaker.name == "ai_provider"
+        from ai_engine.client import _get_model_breaker
+        breaker = _get_model_breaker("gemini-2.5-pro")
+        assert breaker is not None
+        assert "gemini" in breaker.name
 
     def test_breaker_failure_threshold(self):
-        from ai_engine.client import AIClient
-        client = AIClient()
-        assert client._breaker.failure_threshold == 5
+        from ai_engine.client import _get_model_breaker
+        breaker = _get_model_breaker("gemini-2.5-flash")
+        assert breaker.failure_threshold == 5
 
 
 # ═══════════════════════════════════════════════════════════════════════

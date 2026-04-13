@@ -41,6 +41,19 @@ export default function CareerLabPage() {
 
   // Auth-disabled mode: render even without user
 
+  // Full-page skeleton while initial data loads
+  if (appsLoading && tasksLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-40 rounded-2xl" />
+        <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
+          <Skeleton className="h-64 rounded-2xl" />
+          <Skeleton className="h-64 rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="rounded-2xl border bg-card p-6 shadow-soft-sm">

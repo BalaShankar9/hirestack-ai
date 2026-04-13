@@ -47,6 +47,9 @@ import {
   FileSearch,
   CheckCircle2,
   Library,
+  Archive,
+  CircleDot,
+  ChevronDown,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import {
@@ -78,10 +81,14 @@ import {
   buildLearningPlanHtml,
 } from "@/lib/export";
 
-import { ScoreboardHeader } from "@/components/workspace/scoreboard-header";
 import { CoachPanel } from "@/components/workspace/coach-panel";
 import { ModuleCard } from "@/components/workspace/module-card";
 import { TaskQueue } from "@/components/workspace/task-queue";
+import { CommandSummary } from "@/components/workspace/command-summary";
+import { NextBestAction } from "@/components/workspace/next-best-action";
+import { DiagnosticScorecards } from "@/components/workspace/diagnostic-scorecards";
+import { IntelligencePanel } from "@/components/workspace/intelligence-panel";
+import { ReadinessTimeline } from "@/components/workspace/readiness-timeline";
 import { KeywordChips } from "@/components/workspace/keyword-chips";
 import { EvidencePicker } from "@/components/workspace/evidence-picker";
 import { VersionHistoryDrawer } from "@/components/workspace/version-history-drawer";
@@ -101,13 +108,20 @@ import { useDownloadGate } from "@/hooks/use-download-gate";
 import { ATSScorePanel } from "@/components/workspace/ats-score-panel";
 import { DocumentLibraryView } from "@/components/workspace/document-library-view";
 import { SignupModal } from "@/components/auth/signup-modal";
-import { AITrace } from "@/components/ui/ai-trace";
+import { cn } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import {
   Dialog,
@@ -164,6 +178,7 @@ export default function ApplicationWorkspacePage() {
   const clEditorRef = useRef<any>(null);
   const psEditorRef = useRef<any>(null);
   const portfolioEditorRef = useRef<any>(null);
+  const replayRef = useRef<HTMLDivElement>(null);
   const [cvEditor, setCvEditor] = useState<any>(null);
   const [clEditor, setClEditor] = useState<any>(null);
   const [psEditor, setPsEditor] = useState<any>(null);
@@ -200,6 +215,19 @@ export default function ApplicationWorkspacePage() {
       return () => clearTimeout(t);
     }
   }, [saveStatus]);
+
+  // ⌘D keyboard shortcut for download
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "d") {
+        e.preventDefault();
+        const dlBtn = document.querySelector("[data-download-all]") as HTMLButtonElement | null;
+        if (dlBtn && !dlBtn.disabled) dlBtn.click();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // Fetch document library when the library tab is selected
   const fetchDocLibrary = useCallback(async () => {
@@ -340,7 +368,7 @@ export default function ApplicationWorkspacePage() {
         return { ...a, onClick: () => setTab("cv") };
       }
       if (a.kind === "replay") {
-        return { ...a, onClick: () => { /* scroll to replay drawer */ } };
+        return { ...a, onClick: () => { replayRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); } };
       }
       return { ...a, onClick: () => {
         setVersionsTarget("cv");
@@ -521,11 +549,28 @@ export default function ApplicationWorkspacePage() {
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-40 w-full rounded-2xl" />
-        <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-          <Skeleton className="h-[520px] w-full rounded-2xl" />
-          <Skeleton className="h-[520px] w-full rounded-2xl" />
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-8 w-48 rounded-xl" />
+            <Skeleton className="h-6 w-16 rounded-full" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-9 w-28 rounded-xl" />
+            <Skeleton className="h-9 w-9 rounded-xl" />
+          </div>
+        </div>
+        <Skeleton className="h-28 w-full rounded-2xl" />
+        <Skeleton className="h-10 w-96 rounded-xl" />
+        <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+          <div className="space-y-4">
+            <Skeleton className="h-[240px] w-full rounded-2xl" />
+            <Skeleton className="h-[180px] w-full rounded-2xl" />
+          </div>
+          <div className="space-y-3">
+            <Skeleton className="h-[160px] w-full rounded-2xl" />
+            <Skeleton className="h-[120px] w-full rounded-2xl" />
+          </div>
         </div>
       </div>
     );
@@ -552,12 +597,94 @@ export default function ApplicationWorkspacePage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
-          <ScoreboardHeader title={title} subtitle={subtitle} scorecard={app.scores} />
+          <CommandSummary
+            title={title}
+            subtitle={subtitle}
+            scores={app.scores}
+            gapCount={missing.length}
+            evidenceCount={evidence.length}
+            modulesCompleted={
+              (["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "personalStatement", "portfolio"] as const)
+                .filter((k) => app.modules[k]?.state === "ready").length
+            }
+            modulesTotal={7}
+            factsLocked={!!app.factsLocked}
+            updatedAt={app.updatedAt}
+          />
         </div>
         <div className="flex items-center gap-3 shrink-0">
           {saveStatus === "saving" && <span className="text-xs text-muted-foreground animate-pulse">Saving…</span>}
           {saveStatus === "saved" && <span className="text-xs text-emerald-500">Saved</span>}
           {saveStatus === "error" && <span className="text-xs text-destructive">Save failed</span>}
+
+          {/* Status dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5 rounded-xl text-xs" aria-label="Application status">
+                <CircleDot className={cn("h-3 w-3",
+                  app.status === "active" ? "text-emerald-500" :
+                  app.status === "draft" ? "text-amber-500" :
+                  "text-muted-foreground"
+                )} />
+                {app.status === "active" ? "Active" : app.status === "draft" ? "Draft" : "Archived"}
+                <ChevronDown className="h-3 w-3 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              {(["draft", "active", "archived"] as const).filter(s => s !== app.status).map(s => (
+                <DropdownMenuItem key={s} onClick={async () => {
+                  try {
+                    await patchApplication(appId, { status: s });
+                    toast({ title: `Marked as ${s}` });
+                  } catch {
+                    toast({ title: "Failed to update status", variant: "error" });
+                  }
+                }}>
+                  <CircleDot className={cn("mr-2 h-3.5 w-3.5",
+                    s === "active" ? "text-emerald-500" :
+                    s === "draft" ? "text-amber-500" :
+                    "text-muted-foreground"
+                  )} />
+                  {s === "active" ? "Mark Active" : s === "draft" ? "Mark Draft" : "Archive"}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Button
+            variant="default"
+            size="sm"
+            className="gap-2 rounded-xl shadow-glow-sm"
+            disabled={exporting}
+            data-download-all
+            aria-label="Download all application documents as ZIP"
+            onClick={async () => {
+              if (!user) return;
+              setExporting(true);
+              try {
+                await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "zip_all", source: "header" } });
+                await downloadAllAsZip({
+                  jobTitle: app.confirmedFacts?.jobTitle || "Role",
+                  company: app.confirmedFacts?.company || "Company",
+                  cvHtml: cvLocal || undefined,
+                  coverLetterHtml: clLocal || undefined,
+                  personalStatementHtml: psLocal || undefined,
+                  portfolioHtml: portfolioLocal || undefined,
+                  learningPlanHtml: app.learningPlan ? buildLearningPlanHtml(app.learningPlan) : undefined,
+                  benchmarkHtml: app.benchmark ? buildBenchmarkHtml(app.benchmark, app.confirmedFacts?.jobTitle || "") : undefined,
+                  gapAnalysisHtml: app.gaps ? buildGapAnalysisHtml(app.gaps) : undefined,
+                });
+                toast({ title: "Documents downloaded", description: "Your application package is ready to submit." });
+              } catch {
+                toast({ title: "Export failed", description: "Could not generate ZIP.", variant: "error" });
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Download All
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -582,160 +709,243 @@ export default function ApplicationWorkspacePage() {
               router.replace(nextUrl);
             }}
           >
-            <TabsList className="w-full justify-start overflow-x-auto h-auto flex-wrap gap-1 bg-muted/50 p-1.5 rounded-xl">
-              <TabsTrigger value="overview" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><LayoutGrid className="h-3.5 w-3.5" />Overview</TabsTrigger>
-              <TabsTrigger value="intel" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><Search className="h-3.5 w-3.5" />Intel</TabsTrigger>
-              <TabsTrigger value="benchmark" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><Target className="h-3.5 w-3.5" />Benchmark</TabsTrigger>
-              <TabsTrigger value="gaps" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><BarChart3 className="h-3.5 w-3.5" />Gaps</TabsTrigger>
-              <TabsTrigger value="learning" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><GraduationCap className="h-3.5 w-3.5" />Learning</TabsTrigger>
-              <TabsTrigger value="cv" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><FileText className="h-3.5 w-3.5" />CV</TabsTrigger>
-              <TabsTrigger value="cover" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><FileText className="h-3.5 w-3.5" />Cover Letter</TabsTrigger>
-              <TabsTrigger value="statement" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><PenTool className="h-3.5 w-3.5" />Statement</TabsTrigger>
-              <TabsTrigger value="portfolio" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><FolderOpen className="h-3.5 w-3.5" />Portfolio</TabsTrigger>
-              {/* Dynamic extra document tabs from Document Discovery */}
-              {app.generatedDocuments && Object.keys(app.generatedDocuments).length > 0 && (
-                Object.entries(app.generatedDocuments).map(([key, html]) => {
-                  if (!html) return null;
-                  // Find the label from discoveredDocuments
-                  const docInfo = (app.discoveredDocuments || []).find((d: any) => d.key === key);
-                  const label = docInfo?.label || key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
-                  return (
-                    <TabsTrigger key={key} value={`extra-${key}`} className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm">
-                      <Sparkles className="h-3 w-3 text-teal-500" />
-                      <span className="text-xs">{label}</span>
-                    </TabsTrigger>
-                  );
-                })
-              )}
-              {/* Optional documents tab — shown when ungenerated discovered docs exist */}
-              {(() => {
-                const generated = app.generatedDocuments || {};
-                const coreKeys = new Set(["cv", "cover_letter", "personal_statement", "portfolio"]);
-                const hasUngenerated = (app.discoveredDocuments || []).some(
-                  (d: any) => d.key && !generated[d.key] && !coreKeys.has(d.key)
-                );
-                if (!hasUngenerated) return null;
-                return (
-                  <TabsTrigger value="optional-docs" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm">
-                    <Sparkles className="h-3 w-3 text-amber-500" />
-                    <span className="text-xs">Optional Docs</span>
-                  </TabsTrigger>
-                );
-              })()}
-              <TabsTrigger value="ats" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><FileSearch className="h-3.5 w-3.5" />ATS Score</TabsTrigger>
-              <TabsTrigger value="library" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><Library className="h-3.5 w-3.5" />Library</TabsTrigger>
-              <TabsTrigger value="export" className="gap-1.5 rounded-lg data-[state=active]:shadow-soft-sm"><Package className="h-3.5 w-3.5" />Export</TabsTrigger>
-            </TabsList>
+            {/* ── Grouped Tab Navigation ── */}
+            {(() => {
+              const analysisTabs = ["overview", "intel", "benchmark", "gaps", "learning"];
+              const docTabKeys = ["cv", "cover", "statement", "portfolio"];
+              const extraDocKeys = app.generatedDocuments ? Object.keys(app.generatedDocuments).filter(k => app.generatedDocuments![k]) : [];
+              const generated = app.generatedDocuments || {};
+              const coreKeys = new Set(["cv", "cover_letter", "personal_statement", "portfolio"]);
+              const hasUngenerated = (app.discoveredDocuments || []).some(
+                (d: any) => d.key && !generated[d.key] && !coreKeys.has(d.key)
+              );
+              const allDocTabs = [
+                ...docTabKeys,
+                ...extraDocKeys.map(k => `extra-${k}`),
+                ...(hasUngenerated ? ["optional-docs"] : []),
+              ];
+              const toolsTabs = ["ats", "library", "export"];
+
+              const getCategory = (t: string) => {
+                if (analysisTabs.includes(t)) return "analysis";
+                if (allDocTabs.includes(t)) return "documents";
+                if (toolsTabs.includes(t)) return "tools";
+                return "analysis";
+              };
+              const activeCategory = getCategory(tab);
+
+              const catStyle = (cat: string) =>
+                `px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 cursor-pointer ${
+                  activeCategory === cat
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                }`;
+
+              return (
+                <div className="space-y-2">
+                  {/* Primary category row */}
+                  <div className="flex gap-1 bg-muted/50 p-1 rounded-xl">
+                    <button type="button" className={catStyle("analysis")} onClick={() => setTab("overview")}>
+                      <span className="flex items-center gap-1.5"><Search className="h-3.5 w-3.5" />Analysis</span>
+                    </button>
+                    <button type="button" className={catStyle("documents")} onClick={() => setTab("cv")}>
+                      <span className="flex items-center gap-1.5"><FileText className="h-3.5 w-3.5" />Documents</span>
+                    </button>
+                    <button type="button" className={catStyle("tools")} onClick={() => setTab("ats")}>
+                      <span className="flex items-center gap-1.5"><Package className="h-3.5 w-3.5" />Tools</span>
+                    </button>
+                  </div>
+                  {/* Secondary sub-tabs for active category */}
+                  <TabsList className="w-full justify-start overflow-x-auto h-auto gap-1 bg-transparent p-0">
+                    {activeCategory === "analysis" && (
+                      <>
+                        <TabsTrigger value="overview" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><LayoutGrid className="h-3.5 w-3.5" />Overview</TabsTrigger>
+                        <TabsTrigger value="intel" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><Search className="h-3.5 w-3.5" />Intel</TabsTrigger>
+                        <TabsTrigger value="benchmark" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><Target className="h-3.5 w-3.5" />Benchmark</TabsTrigger>
+                        <TabsTrigger value="gaps" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><BarChart3 className="h-3.5 w-3.5" />Gaps</TabsTrigger>
+                        <TabsTrigger value="learning" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><GraduationCap className="h-3.5 w-3.5" />Learning</TabsTrigger>
+                      </>
+                    )}
+                    {activeCategory === "documents" && (
+                      <>
+                        <TabsTrigger value="cv" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><FileText className="h-3.5 w-3.5" />CV</TabsTrigger>
+                        <TabsTrigger value="cover" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><FileText className="h-3.5 w-3.5" />Cover Letter</TabsTrigger>
+                        <TabsTrigger value="statement" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><PenTool className="h-3.5 w-3.5" />Statement</TabsTrigger>
+                        <TabsTrigger value="portfolio" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><FolderOpen className="h-3.5 w-3.5" />Portfolio</TabsTrigger>
+                        {extraDocKeys.map((key) => {
+                          const docInfo = (app.discoveredDocuments || []).find((d: any) => d.key === key);
+                          const label = docInfo?.label || key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+                          return (
+                            <TabsTrigger key={key} value={`extra-${key}`} className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                              <Sparkles className="h-3 w-3 text-teal-500" />
+                              <span className="text-xs">{label}</span>
+                            </TabsTrigger>
+                          );
+                        })}
+                        {hasUngenerated && (
+                          <TabsTrigger value="optional-docs" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                            <Sparkles className="h-3 w-3 text-amber-500" />
+                            <span className="text-xs">Optional Docs</span>
+                          </TabsTrigger>
+                        )}
+                      </>
+                    )}
+                    {activeCategory === "tools" && (
+                      <>
+                        <TabsTrigger value="ats" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><FileSearch className="h-3.5 w-3.5" />ATS Score</TabsTrigger>
+                        <TabsTrigger value="library" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><Library className="h-3.5 w-3.5" />Library</TabsTrigger>
+                        <TabsTrigger value="export" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><Package className="h-3.5 w-3.5" />Export</TabsTrigger>
+                      </>
+                    )}
+                  </TabsList>
+                </div>
+              );
+            })()}
 
             <TabsContent value="overview" className="mt-4">
-              <SectionErrorBoundary label="Overview">
-              {/* AI intelligence trace */}
-              <AITrace
-                variant="inline"
-                className="mb-4"
-                items={[
-                  { label: `${keywords.length} keywords extracted`, done: true },
-                  { label: `${missing.length} gaps identified`, done: true },
-                  { label: `${tasks.length} tasks generated`, done: true },
-                  { label: `${evidence.length} evidence items available`, done: true },
-                ]}
-              />
-              {/* Module completion progress */}
+              <SectionErrorBoundary label="Mission Control">
+              <div className="space-y-5">
+
+              {/* ── Next Best Action ── */}
               {(() => {
-                const moduleKeys = ["benchmark", "gaps", "learningPlan", "cv", "coverLetter", "personalStatement", "portfolio"] as const;
-                const completed = moduleKeys.filter((k) => app.modules[k]?.state === "ready").length;
-                const pct = Math.round((completed / moduleKeys.length) * 100);
+                const sc = app.scores ?? {};
+                const dims = [
+                  { name: "Match", score: sc.match ?? 0 },
+                  { name: "ATS Readiness", score: sc.atsReadiness ?? 0 },
+                  { name: "6-Second Scan", score: sc.recruiterScan ?? 0 },
+                  { name: "Evidence Strength", score: sc.evidenceStrength ?? 0 },
+                ];
+                const weakest = dims.filter(d => d.score > 0).sort((a, b) => a.score - b.score)[0];
                 return (
-                  <div className="mb-4 rounded-2xl border bg-gradient-to-r from-primary/5 via-violet-500/5 to-transparent p-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 shrink-0">
-                          <Sparkles className="h-5 w-5 text-primary" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold">{completed}/{moduleKeys.length} modules complete</p>
-                          <div className="mt-1.5 flex items-center gap-3">
-                            <div className="h-1.5 flex-1 max-w-[200px] rounded-full bg-muted overflow-hidden">
-                              <div className={`h-full rounded-full transition-all duration-500 ${pct === 100 ? "bg-emerald-500" : "bg-primary"}`} style={{ width: `${pct}%` }} />
-                            </div>
-                            <span className="text-xs font-medium tabular-nums text-muted-foreground">{pct}%</span>
-                          </div>
-                        </div>
-                      </div>
-                      <Button
-                        className="gap-2 rounded-xl shrink-0"
-                        onClick={regenerateAll}
-                        disabled={regeneratingAll || !!regeneratingModule}
-                        loading={regeneratingAll}
-                      >
-                        {regeneratingAll ? "Regenerating…" : <><RefreshCw className="h-4 w-4" /> Regenerate All</>}
-                      </Button>
-                    </div>
-                  </div>
+                  <NextBestAction
+                    topFix={typeof sc.topFix === "string" ? sc.topFix : undefined}
+                    gapCount={missing.length}
+                    weakestDimension={weakest?.name}
+                    weakestScore={weakest?.score}
+                    onNavigate={(t) => setTab(t)}
+                  />
                 );
               })()}
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <ModuleCard
-                  title="Benchmark"
-                  description="Ideal candidate signal + rubric"
-                  status={modStatus("benchmark")}
-                  icon={<Target className="h-5 w-5" />}
-                  onOpen={() => setTab("benchmark")}
-                  onRegenerate={() => regenerate("benchmark")}
+              {/* ── Diagnostic Scorecards ── */}
+              <DiagnosticScorecards
+                scores={app.scores}
+                gaps={app.gaps}
+                benchmark={app.benchmark}
+                onNavigate={(t) => setTab(t)}
+              />
+
+              {/* ── Intelligence Panel + Readiness Timeline side by side on larger screens ── */}
+              <div className="grid gap-4 lg:grid-cols-2">
+                <IntelligencePanel
+                  app={app}
+                  keywordCount={keywords.length}
+                  missingCount={missing.length}
+                  evidenceCount={evidence.length}
                 />
-                <ModuleCard
-                  title="Gap analysis"
-                  description="Missing keywords + recommendations + tasks"
-                  status={modStatus("gaps")}
-                  icon={<Layers className="h-5 w-5" />}
-                  onOpen={() => setTab("gaps")}
-                  onRegenerate={() => regenerate("gaps")}
-                />
-                <ModuleCard
-                  title="Learning plan"
-                  description="Skill sprints + outcomes practice"
-                  status={modStatus("learningPlan")}
-                  icon={<GraduationCap className="h-5 w-5" />}
-                  onOpen={() => setTab("learning")}
-                  onRegenerate={() => regenerate("learningPlan")}
-                />
-                <ModuleCard
-                  title="Tailored CV"
-                  description="Edit, diff, version, iterate"
-                  status={modStatus("cv")}
-                  icon={<FileText className="h-5 w-5" />}
-                  onOpen={() => setTab("cv")}
-                  onRegenerate={() => regenerate("cv")}
-                />
-                <ModuleCard
-                  title="Cover Letter"
-                  description="Evidence-first narrative"
-                  status={modStatus("coverLetter")}
-                  icon={<FileText className="h-5 w-5" />}
-                  onOpen={() => setTab("cover")}
-                  onRegenerate={() => regenerate("coverLetter")}
-                />
-                <ModuleCard
-                  title="Personal Statement"
-                  description="Compelling motivation narrative"
-                  status={modStatus("personalStatement")}
-                  icon={<PenTool className="h-5 w-5" />}
-                  onOpen={() => setTab("statement")}
-                  onRegenerate={() => regenerate("personalStatement")}
-                />
-                <ModuleCard
-                  title="Portfolio & Evidence"
-                  description="Proof of knowledge + projects"
-                  status={modStatus("portfolio")}
-                  icon={<FolderOpen className="h-5 w-5" />}
-                  onOpen={() => setTab("portfolio")}
-                  onRegenerate={() => regenerate("portfolio")}
-                />
+                <ReadinessTimeline app={app} evidenceCount={evidence.length} />
               </div>
 
-              <div className="mt-6">
-                <TaskQueue tasks={tasks} onToggle={onToggleTask} />
+              {/* ── Strategic Module Groups ── */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Modules</h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 rounded-xl"
+                    onClick={regenerateAll}
+                    disabled={regeneratingAll || !!regeneratingModule}
+                  >
+                    {regeneratingAll ? (
+                      <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Regenerating…</>
+                    ) : (
+                      <><RefreshCw className="h-3.5 w-3.5" /> Regenerate All</>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Diagnose */}
+                <div>
+                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Diagnose</div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <ModuleCard
+                      title="Benchmark"
+                      description="Ideal candidate signal + rubric"
+                      status={modStatus("benchmark")}
+                      icon={<Target className="h-5 w-5" />}
+                      onOpen={() => setTab("benchmark")}
+                      onRegenerate={() => regenerate("benchmark")}
+                    />
+                    <ModuleCard
+                      title="Gap Analysis"
+                      description="Missing keywords + recommendations"
+                      status={modStatus("gaps")}
+                      icon={<Layers className="h-5 w-5" />}
+                      onOpen={() => setTab("gaps")}
+                      onRegenerate={() => regenerate("gaps")}
+                    />
+                  </div>
+                </div>
+
+                {/* Build */}
+                <div>
+                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Build</div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <ModuleCard
+                      title="Tailored CV"
+                      description="Edit, diff, version, iterate"
+                      status={modStatus("cv")}
+                      icon={<FileText className="h-5 w-5" />}
+                      onOpen={() => setTab("cv")}
+                      onRegenerate={() => regenerate("cv")}
+                    />
+                    <ModuleCard
+                      title="Cover Letter"
+                      description="Evidence-first narrative"
+                      status={modStatus("coverLetter")}
+                      icon={<FileText className="h-5 w-5" />}
+                      onOpen={() => setTab("cover")}
+                      onRegenerate={() => regenerate("coverLetter")}
+                    />
+                    <ModuleCard
+                      title="Personal Statement"
+                      description="Compelling motivation narrative"
+                      status={modStatus("personalStatement")}
+                      icon={<PenTool className="h-5 w-5" />}
+                      onOpen={() => setTab("statement")}
+                      onRegenerate={() => regenerate("personalStatement")}
+                    />
+                    <ModuleCard
+                      title="Portfolio & Evidence"
+                      description="Proof of knowledge + projects"
+                      status={modStatus("portfolio")}
+                      icon={<FolderOpen className="h-5 w-5" />}
+                      onOpen={() => setTab("portfolio")}
+                      onRegenerate={() => regenerate("portfolio")}
+                    />
+                  </div>
+                </div>
+
+                {/* Improve */}
+                <div>
+                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Improve</div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <ModuleCard
+                      title="Learning Plan"
+                      description="Skill sprints + outcomes practice"
+                      status={modStatus("learningPlan")}
+                      icon={<GraduationCap className="h-5 w-5" />}
+                      onOpen={() => setTab("learning")}
+                      onRegenerate={() => regenerate("learningPlan")}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Action Queue ── */}
+              <TaskQueue tasks={tasks} onToggle={onToggleTask} />
+
               </div>
               </SectionErrorBoundary>
             </TabsContent>
@@ -1873,6 +2083,7 @@ export default function ApplicationWorkspacePage() {
           )}
 
           {/* Replay Drawer — for failed or weak jobs */}
+          <div ref={replayRef}>
           <ReplayDrawer
             jobId={app?.id ?? null}
             jobStatus={regeneratingAll ? "running" : null}
@@ -1891,8 +2102,31 @@ export default function ApplicationWorkspacePage() {
               }
             }}
           />
+          </div>
 
-          <CoachPanel actions={coachActions} statusLine={`${taskStats.remaining} open tasks · ${evidence.length} evidence`} />
+          <CoachPanel
+            actions={coachActions}
+            statusLine={`${taskStats.remaining} open tasks · ${evidence.length} evidence`}
+            warning={(() => {
+              const sc = app.scores ?? {};
+              const dims = [
+                { name: "Match", score: sc.match ?? 0 },
+                { name: "ATS Readiness", score: sc.atsReadiness ?? 0 },
+                { name: "6-Second Scan", score: sc.recruiterScan ?? 0 },
+                { name: "Evidence Strength", score: sc.evidenceStrength ?? 0 },
+              ].filter(d => d.score > 0);
+              if (dims.length === 0) return undefined;
+              const weakest = dims.sort((a, b) => a.score - b.score)[0];
+              if (weakest.score >= 60) return undefined;
+              return `${weakest.name} is at ${weakest.score}% — this is dragging down your overall readiness.`;
+            })()}
+            suggestion={(() => {
+              const recs = app.gaps?.recommendations ?? [];
+              if (recs.length > 0) return typeof recs[0] === "string" ? recs[0] : undefined;
+              const topFix = app.scores?.topFix;
+              return typeof topFix === "string" ? topFix : undefined;
+            })()}
+          />
         </div>
       </div>
 

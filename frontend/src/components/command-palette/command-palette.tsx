@@ -14,26 +14,29 @@ export function CommandPalette() {
         e.preventDefault();
         setOpen((o) => !o);
       }
+      if (e.key === "Escape" && open) {
+        setOpen(false);
+      }
     };
     document.addEventListener("keydown", down);
     return () => document.removeEventListener("keydown", down);
-  }, []);
+  }, [open]);
 
   if (!open) return null;
 
-  const categories = ["recent", "actions", "navigate"] as const;
+  const categories = ["recent", "actions", "navigate", "tools"] as const;
 
   return (
-    <div className="fixed inset-0 z-50" onClick={() => setOpen(false)}>
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
-      <div className="fixed top-[20%] left-1/2 -translate-x-1/2 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Command palette" onClick={() => setOpen(false)}>
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" aria-hidden="true" />
+      <div className="fixed top-[20%] left-1/2 -translate-x-1/2 w-full max-w-lg animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-200" onClick={(e) => e.stopPropagation()}>
         <Cmdk
-          className="glass-panel rounded-xl border border-white/20 shadow-2xl overflow-hidden"
+          className="rounded-2xl border border-border/30 bg-card/90 backdrop-blur-2xl shadow-2xl overflow-hidden"
           label="Command palette"
         >
           <Cmdk.Input
             placeholder="Type a command or search..."
-            className="w-full px-4 py-3 text-sm bg-transparent border-b border-white/10 outline-none placeholder:text-muted-foreground"
+            className="w-full px-4 py-3.5 text-sm bg-transparent border-b border-border/30 outline-none placeholder:text-muted-foreground/60"
             autoFocus
           />
           <Cmdk.List className="max-h-72 overflow-y-auto p-2">
@@ -57,7 +60,7 @@ export function CommandPalette() {
                         cmd.onSelect();
                         setOpen(false);
                       }}
-                      className="flex items-center justify-between px-3 py-2 text-sm rounded-lg cursor-pointer aria-selected:bg-primary/10 aria-selected:text-primary"
+                      className="flex items-center justify-between px-3 py-2.5 text-sm rounded-xl cursor-pointer transition-colors aria-selected:bg-primary/10 aria-selected:text-primary hover:bg-muted/50"
                     >
                       <span>{cmd.label}</span>
                       {cmd.shortcut && (

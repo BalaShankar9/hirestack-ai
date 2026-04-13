@@ -15,13 +15,19 @@ export type CoachAction = {
 export function CoachPanel({
   actions = [],
   statusLine,
+  warning,
+  suggestion,
 }: {
   actions?: CoachAction[];
   statusLine?: string;
+  /** Contextual warning derived from lowest-scoring dimension */
+  warning?: string;
+  /** High-impact suggestion derived from gaps or topFix */
+  suggestion?: string;
 }) {
   return (
     <aside className="lg:sticky lg:top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
-      <div className="rounded-2xl border bg-card p-4 shadow-soft-sm">
+      <div className="rounded-2xl border bg-card p-4 shadow-soft-sm glow-border-hover">
         <div className="flex items-center gap-2">
           <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-violet-600 text-white flex items-center justify-center">
             <Lightbulb className="h-4 w-4" />
@@ -44,15 +50,17 @@ export function CoachPanel({
             </div>
           ) : (
             actions.slice(0, 3).map((a, idx) => (
-              <div key={`${a.kind}:${idx}`} className="rounded-xl border p-3">
+              <div key={`${a.kind}:${idx}`} className="rounded-xl border p-3 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-soft-sm">
                 <div className="flex items-start gap-2">
                   <div
                     className={cn(
                       "mt-0.5 h-6 w-6 rounded-md flex items-center justify-center",
-                      a.kind === "fix" && "bg-amber-500/10 text-amber-700",
-                      a.kind === "collect" && "bg-violet-500/10 text-violet-700",
-                      a.kind === "write" && "bg-blue-500/10 text-blue-700",
-                      a.kind === "review" && "bg-slate-500/10 text-slate-700"
+                      a.kind === "fix" && "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+                      a.kind === "collect" && "bg-violet-500/10 text-violet-700 dark:text-violet-400",
+                      a.kind === "write" && "bg-blue-500/10 text-blue-700 dark:text-blue-400",
+                      a.kind === "review" && "bg-slate-500/10 text-slate-700 dark:text-slate-400",
+                      a.kind === "danger" && "bg-rose-500/10 text-rose-700 dark:text-rose-400",
+                      a.kind === "replay" && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                     )}
                   >
                     <CheckCircle2 className="h-4 w-4" />
@@ -80,10 +88,28 @@ export function CoachPanel({
           )}
         </div>
 
-        <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-3">
+        {warning && (
+          <div className="mt-4 rounded-xl border border-amber-300/40 bg-amber-500/5 p-3">
+            <div className="text-xs font-semibold text-amber-700 dark:text-amber-400">Current warning</div>
+            <div className="mt-1 text-xs text-muted-foreground leading-snug">
+              {warning}
+            </div>
+          </div>
+        )}
+
+        {suggestion && (
+          <div className="mt-3 rounded-xl border border-emerald-300/40 bg-emerald-500/5 p-3">
+            <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">High-impact suggestion</div>
+            <div className="mt-1 text-xs text-muted-foreground leading-snug">
+              {suggestion}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
           <div className="text-xs font-semibold text-primary">Coach principle</div>
           <div className="mt-1 text-xs text-muted-foreground leading-snug">
-            Don’t “spray keywords”. Each keyword must be backed by evidence and tied to an outcome.
+            Don&apos;t &ldquo;spray keywords&rdquo;. Each keyword must be backed by evidence and tied to an outcome.
           </div>
         </div>
       </div>

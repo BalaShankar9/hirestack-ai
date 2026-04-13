@@ -70,7 +70,7 @@ export function ModuleCard({
   };
 
   return (
-    <div className="surface-premium group relative overflow-hidden rounded-2xl p-4 transition-all duration-300 hover:border-primary/20 hover:shadow-soft-lg">
+    <div className="surface-premium group relative overflow-hidden rounded-2xl p-4 transition-all duration-300 hover:border-primary/20 hover:shadow-soft-lg hover:-translate-y-0.5 card-spotlight">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-r from-primary/12 via-violet-500/8 to-transparent" />
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-start gap-3 min-w-0">

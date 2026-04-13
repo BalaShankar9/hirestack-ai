@@ -9,7 +9,9 @@ import React, {
   type ReactNode,
 } from "react";
 import type { User, Session } from "@supabase/supabase-js";
+import { ThemeProvider } from "next-themes";
 import { supabase } from "@/lib/supabase";
+import { installGlobalErrorHandler } from "@/lib/error-reporting";
 
 /* ------------------------------------------------------------------ */
 /*  Auth context types                                                */
@@ -74,6 +76,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    installGlobalErrorHandler();
+  }, []);
+
+  useEffect(() => {
     // Get initial session with timeout + retry
     let cancelled = false;
 
@@ -109,11 +115,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Listen for auth state changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, s) => {
+    } = supabase.auth.onAuthStateChange((event, s) => {
       supabase.realtime.setAuth(s?.access_token ?? "");
       setSession(s);
       setUser(mapUser(s?.user ?? null));
       setLoading(false);
+
+      // Handle session expiry — redirect to login when signed out unexpectedly
+      if (event === "SIGNED_OUT" && typeof window !== "undefined") {
+        // Only redirect if we're on a protected page (not login or landing)
+        const path = window.location.pathname;
+        if (path !== "/" && path !== "/login" && !path.startsWith("/auth")) {
+          window.location.href = "/login?expired=1";
+        }
+      }
+
+      // Handle token refresh failure — session is now invalid
+      if (event === "TOKEN_REFRESHED" && !s) {
+        setUser(null);
+        setSession(null);
+        if (typeof window !== "undefined") {
+          const path = window.location.pathname;
+          if (path !== "/" && path !== "/login" && !path.startsWith("/auth")) {
+            window.location.href = "/login?expired=1";
+          }
+        }
+      }
     });
 
     return () => {
@@ -170,20 +197,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        session,
-        loading,
-        signIn,
-        signUp,
-        signOut,
-        signInWithGoogle,
-        signInWithGitHub,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+      <AuthContext.Provider
+        value={{
+          user,
+          session,
+          loading,
+          signIn,
+          signUp,
+          signOut,
+          signInWithGoogle,
+          signInWithGitHub,
+        }}
+      >
+        {children}
+      </AuthContext.Provider>
+    </ThemeProvider>
   );
 }
 

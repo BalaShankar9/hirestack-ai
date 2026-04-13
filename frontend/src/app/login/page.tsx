@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Sparkles, ArrowRight, Loader2 } from "lucide-react";
+import { Sparkles, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +36,7 @@ function LoginContent() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<"google" | "github" | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const { toast } = useToast();
 
   // Read ?mode=register from URL so "Get Started" links land on sign-up
@@ -43,7 +44,16 @@ function LoginContent() {
     if (searchParams.get("mode") === "register") {
       setIsRegister(true);
     }
-  }, [searchParams]);
+    // Show session expired message if redirected from auth expiry
+    if (searchParams.get("expired") === "1") {
+      setError("Your session has expired. Please sign in again.");
+      toast({
+        title: "Session Expired",
+        description: "Your session has expired. Please sign in again.",
+        variant: "error",
+      });
+    }
+  }, [searchParams, toast]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -107,6 +117,8 @@ function LoginContent() {
     <div className="flex min-h-screen">
       {/* ── Left: Branding Panel ──────────────────── */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-primary via-violet-600 to-indigo-700">
+        {/* Aurora ambient background */}
+        <div className="aurora-bg" aria-hidden="true" />
         {/* Background decoration */}
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute -right-20 -top-20 h-[400px] w-[400px] rounded-full border-[50px] border-white/5" />
@@ -136,15 +148,15 @@ function LoginContent() {
 
             {/* Social proof */}
             <div className="mt-10 grid grid-cols-3 gap-4">
-              <div className="rounded-xl bg-white/10 p-3 backdrop-blur-sm">
+              <div className="rounded-xl bg-white/10 p-3 backdrop-blur-sm glass-depth">
                 <div className="text-2xl font-bold text-white">6</div>
                 <div className="text-[11px] text-white/60">AI modules</div>
               </div>
-              <div className="rounded-xl bg-white/10 p-3 backdrop-blur-sm">
+              <div className="rounded-xl bg-white/10 p-3 backdrop-blur-sm glass-depth">
                 <div className="text-2xl font-bold text-white">94%</div>
                 <div className="text-[11px] text-white/60">keyword coverage</div>
               </div>
-              <div className="rounded-xl bg-white/10 p-3 backdrop-blur-sm">
+              <div className="rounded-xl bg-white/10 p-3 backdrop-blur-sm glass-depth">
                 <div className="text-2xl font-bold text-white">5 min</div>
                 <div className="text-[11px] text-white/60">to first result</div>
               </div>
@@ -158,10 +170,10 @@ function LoginContent() {
       </div>
 
       {/* ── Right: Auth Form ──────────────────────── */}
-      <div className="flex w-full flex-col items-center justify-center px-4 lg:w-1/2">
+      <div className="flex w-full flex-col items-center justify-center px-4 lg:w-1/2 noise-overlay">
         {/* Mobile logo */}
         <Link href="/" className="mb-8 flex items-center gap-2.5 lg:hidden">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 shadow-glow-sm">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 btn-glow">
             <Sparkles className="h-4 w-4 text-white" />
           </div>
           <span className="text-lg font-bold tracking-tight">
@@ -274,14 +286,24 @@ function LoginContent() {
                   </button>
                 )}
               </div>
+              <div className="relative">
               <Input
                 id="password"
-                type="password"
+                type={showPassword ? "text" : "password"}
                 placeholder="••••••••"
-                className="rounded-xl h-11"
+                className="rounded-xl h-11 pr-10"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
+              <button
+                type="button"
+                tabIndex={-1}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+              </div>
             </div>
 
             {error && (
@@ -296,7 +318,7 @@ function LoginContent() {
 
             <Button
               type="submit"
-              className="w-full h-11 rounded-xl gap-2 bg-primary shadow-glow-sm hover:shadow-glow-md transition-all"
+              className="w-full h-11 rounded-xl gap-2 bg-primary btn-glow transition-all"
               disabled={loading || oauthLoading !== null}
             >
               {loading ? (

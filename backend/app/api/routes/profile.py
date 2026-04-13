@@ -1,17 +1,33 @@
 """
 Profile routes - Resume upload, parsing, career intelligence, and universal documents
 """
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from app.core.security import limiter
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.services.profile import ProfileService
 from app.api.deps import get_current_user, validate_uuid
 import structlog
 
 logger = structlog.get_logger()
+
+
+class UpdateProfileRequest(BaseModel):
+    name: Optional[str] = Field(None, max_length=500)
+    title: Optional[str] = Field(None, max_length=500)
+    summary: Optional[str] = Field(None, max_length=10000)
+    contact_info: Optional[Dict[str, Any]] = None
+    skills: Optional[list] = None
+    experience: Optional[list] = None
+    education: Optional[list] = None
+    certifications: Optional[list] = None
+    projects: Optional[list] = None
+    languages: Optional[list] = None
+    achievements: Optional[list] = None
+    social_links: Optional[Dict[str, Any]] = None
+    is_primary: Optional[bool] = None
 
 router = APIRouter()
 
@@ -60,6 +76,10 @@ async def upload_resume(
             file_type=file_ext,
             is_primary=is_primary,
         )
+        from app.core.database import cache_invalidate_prefix
+        await cache_invalidate_prefix(f"profiles:{current_user['id']}")
+        await cache_invalidate_prefix(f"profiles:list:{current_user['id']}")
+        await cache_invalidate_prefix(f"profiles:primary:{current_user['id']}")
         return profile
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
@@ -89,8 +109,15 @@ async def list_profiles(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
     """List all user's profiles."""
+    from app.core.database import cache_get, cache_set
+    cache_key = f"profiles:list:{current_user['id']}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return cached
     service = ProfileService()
-    return await service.get_user_profiles(current_user["id"])
+    result = await service.get_user_profiles(current_user["id"])
+    await cache_set(cache_key, result, ttl=120)
+    return result
 
 
 @limiter.limit("30/minute")
@@ -99,10 +126,16 @@ async def get_primary_profile(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get user's primary profile."""
+    from app.core.database import cache_get, cache_set
+    cache_key = f"profiles:primary:{current_user['id']}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return cached
     service = ProfileService()
     profile = await service.get_primary_profile(current_user["id"])
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No primary profile found. Please upload a resume.")
+    await cache_set(cache_key, profile, ttl=120)
     return profile
 
 
@@ -124,12 +157,16 @@ async def get_profile(
 @router.put("/{profile_id}")
 async def update_profile(
     request: Request,
-    profile_id: str, profile_data: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)):
+    profile_id: str, profile_data: UpdateProfileRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Update a profile."""
     service = ProfileService()
-    profile = await service.update_profile(profile_id=profile_id, user_id=current_user["id"], update_data=profile_data)
+    profile = await service.update_profile(profile_id=profile_id, user_id=current_user["id"], update_data=profile_data.model_dump(exclude_none=True))
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    from app.core.database import cache_invalidate_prefix
+    await cache_invalidate_prefix(f"profiles:{current_user['id']}")
+    await cache_invalidate_prefix(f"profiles:list:{current_user['id']}")
+    await cache_invalidate_prefix(f"profiles:primary:{current_user['id']}")
     return profile
 
 
@@ -143,6 +180,10 @@ async def delete_profile(
     deleted = await service.delete_profile(profile_id, current_user["id"])
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    from app.core.database import cache_invalidate_prefix
+    await cache_invalidate_prefix(f"profiles:{current_user['id']}")
+    await cache_invalidate_prefix(f"profiles:list:{current_user['id']}")
+    await cache_invalidate_prefix(f"profiles:primary:{current_user['id']}")
 
 
 @limiter.limit("30/minute")
@@ -155,6 +196,10 @@ async def set_primary_profile(
     profile = await service.set_primary(profile_id, current_user["id"])
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    from app.core.database import cache_invalidate_prefix
+    await cache_invalidate_prefix(f"profiles:{current_user['id']}")
+    await cache_invalidate_prefix(f"profiles:list:{current_user['id']}")
+    await cache_invalidate_prefix(f"profiles:primary:{current_user['id']}")
     return profile
 
 

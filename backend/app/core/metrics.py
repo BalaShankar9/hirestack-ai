@@ -86,6 +86,8 @@ class MetricsCollector:
         self._active_jobs: int = 0
         self._error_counts: Dict[str, int] = defaultdict(int)
         self._breaker_transitions: List[Dict[str, Any]] = []
+        self._model_failovers: int = 0
+        self._model_failover_log: List[Dict[str, Any]] = []
 
     @classmethod
     def get(cls) -> "MetricsCollector":
@@ -163,6 +165,25 @@ class MetricsCollector:
     def job_finished(self) -> None:
         self._active_jobs = max(0, self._active_jobs - 1)
 
+    def record_model_failover(self, failed_model: str, next_model: str, error: str) -> None:
+        """Record a model cascade failover event."""
+        self._model_failovers += 1
+        entry = {
+            "failed_model": failed_model,
+            "next_model": next_model,
+            "error": error[:200],
+            "timestamp": time.time(),
+        }
+        self._model_failover_log.append(entry)
+        if len(self._model_failover_log) > 100:
+            self._model_failover_log = self._model_failover_log[-50:]
+        logger.warning(
+            "pipeline.metrics.model_failover",
+            failed_model=failed_model,
+            next_model=next_model,
+            error=error[:200],
+        )
+
     # ── Querying ──────────────────────────────────────────────────────
 
     def get_stats(self, pipeline_name: Optional[str] = None) -> Dict[str, Any]:
@@ -180,6 +201,8 @@ class MetricsCollector:
             "active_jobs": self._active_jobs,
             "error_counts": dict(self._error_counts),
             "recent_breaker_transitions": self._breaker_transitions[-10:],
+            "model_failovers_total": self._model_failovers,
+            "recent_model_failovers": self._model_failover_log[-10:],
         }
 
     def _compute_stats(self, name: str, runs: List[PipelineRunMetric]) -> Dict[str, Any]:

@@ -6,6 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import List
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,7 +36,13 @@ class Settings(BaseSettings):
     port: int = 8000
 
     # CORS
-    cors_origins: List[str] = ["http://localhost:3000", "http://localhost:3002"]
+    cors_origins: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:3002",
+        "https://hirestack.tech",
+        "https://www.hirestack.tech",
+        "https://hirestack-ai-production.up.railway.app",
+    ]
     allowed_origins: str = "http://localhost:3002"
 
     # Supabase
@@ -44,8 +51,10 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = ""
     supabase_jwt_secret: str = ""
 
-    # Redis (optional - for caching)
+    # Redis (optional - for caching and job queue)
     redis_url: str = "redis://localhost:6379"
+    cache_ttl_seconds: int = 300  # default TTL for cached responses
+    cache_enabled: bool = True  # can disable caching globally
 
     # AI Provider — Gemini only (legacy OpenAI/Ollama settings removed)
     ai_provider: str = "gemini"
@@ -72,6 +81,15 @@ class Settings(BaseSettings):
     # Rate Limiting
     rate_limit_requests: int = 100
     rate_limit_window: int = 60  # seconds
+
+    @field_validator("supabase_url", "supabase_anon_key", "supabase_service_role_key")
+    @classmethod
+    def _require_in_production(cls, v: str, info) -> str:
+        """Warn loudly if critical Supabase values are empty."""
+        import os
+        if not v and os.getenv("ENVIRONMENT", "development") == "production":
+            raise ValueError(f"{info.field_name} must be set in production")
+        return v
 
 
 @lru_cache

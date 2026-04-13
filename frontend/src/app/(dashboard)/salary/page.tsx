@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { useAuth } from "@/components/providers";
 import api from "@/lib/api";
 import type { SalaryAnalysis } from "@/types";
@@ -54,14 +55,14 @@ export default function SalaryCoachPage() {
           let years = 0;
           for (const e of p.experience) {
             if (e?.start_date) {
-              try { years += Math.max(0, (parseInt(String(e.end_date || "2026").slice(0, 4)) - parseInt(String(e.start_date).slice(0, 4)))); } catch {}
+              try { years += Math.max(0, (parseInt(String(e.end_date || String(new Date().getFullYear())).slice(0, 4)) - parseInt(String(e.start_date).slice(0, 4)))); } catch {}
             }
           }
           if (years > 0) return String(years);
         }
         return prev;
       });
-    }).catch(() => {});
+    }).catch((e) => console.error("Failed to load profile for salary", e));
   }, [authSession?.access_token]);
 
   const analyze = async () => {
@@ -308,6 +309,21 @@ export default function SalaryCoachPage() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Cross-link: nudge to full application */}
+      {analysis && (
+        <div className="rounded-2xl border border-dashed bg-card/50 p-4 flex items-center justify-between gap-4">
+          <p className="text-sm text-muted-foreground">
+            <strong className="text-foreground">Ready to apply?</strong>{" "}
+            Use this salary intel in a full application package.
+          </p>
+          <Link href={`/new${jobTitle ? `?title=${encodeURIComponent(jobTitle)}` : ""}`}>
+            <Button size="sm" variant="outline" className="rounded-xl shrink-0">
+              <Briefcase className="h-3.5 w-3.5 mr-1.5" /> Create Application
+            </Button>
+          </Link>
         </div>
       )}
 

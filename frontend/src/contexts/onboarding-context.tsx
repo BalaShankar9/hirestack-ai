@@ -73,7 +73,10 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         setApplicationCount(data.applicationCount ?? 0);
         setHasProfile(data.hasProfile ?? false);
         setHasEvidence(data.hasEvidence ?? false);
-      } catch {}
+      } catch (e) {
+        console.warn("Corrupt onboarding cache, resetting", e);
+        localStorage.removeItem(`hirestack_onboarding_${user.uid}`);
+      }
     }
     setLoading(false);
   }, [user]);

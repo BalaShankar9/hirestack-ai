@@ -25,11 +25,45 @@ from app.core.config import settings
 logger = logging.getLogger("hirestack.ai_client")
 
 
-# ── Circuit breaker for AI provider ───────────────────────────────────
-def _get_ai_breaker():
-    """Lazy import to avoid circular dependency at module load."""
+# ── Prompt-injection guardrails ────────────────────────────────────────
+# These patterns are stripped from user-supplied content before it enters LLM prompts.
+# They defend against common prompt injection attacks where adversarial JD/resume
+# content tries to override system instructions.
+import re as _re
+
+_INJECTION_PATTERNS = _re.compile(
+    r"(?i)"
+    r"(?:ignore\s+(?:all\s+)?(?:previous|above|prior)\s+instructions)"
+    r"|(?:you\s+are\s+now\s+(?:a|an)\s+)"
+    r"|(?:disregard\s+(?:all\s+)?(?:previous|system)\s+)"
+    r"|(?:forget\s+(?:all\s+)?(?:your|previous)\s+instructions)"
+    r"|(?:override\s+(?:system|safety)\s+)"
+    r"|(?:new\s+instructions?:)"
+    r"|(?:system\s*:\s*you\s+are)"
+)
+
+
+def _sanitize_prompt_input(text: str) -> str:
+    """Strip known prompt-injection phrases from user-supplied text.
+
+    Does NOT alter legitimate content — only removes adversarial override
+    attempts. Applied to user-supplied fields (JD text, resume text) before
+    they're interpolated into prompts.
+    """
+    if not text:
+        return text
+    cleaned = _INJECTION_PATTERNS.sub("[FILTERED]", text)
+    if cleaned != text:
+        logger.warning("prompt_injection_attempt_detected", original_length=len(text))
+    return cleaned
+
+
+# ── Per-model circuit breakers ─────────────────────────────────────────
+def _get_model_breaker(model_name: str):
+    """Return a per-model circuit breaker (lazy import to avoid circular dep)."""
     from app.core.circuit_breaker import get_breaker_sync
-    return get_breaker_sync("ai_provider", failure_threshold=5, recovery_timeout=60.0)
+    safe_name = model_name.replace("/", "_").replace(".", "_")
+    return get_breaker_sync(f"ai_model_{safe_name}", failure_threshold=5, recovery_timeout=60.0)
 
 # ── Provider-agnostic retry logic ──────────────────────────────────────
 
@@ -312,7 +346,6 @@ class AIClient:
         self.provider_name = "gemini"
         self.model = self._provider.model_name
         self.max_tokens = self._provider.max_tokens
-        self._breaker = _get_ai_breaker()
         self._prompt_tokens = 0
         self._completion_tokens = 0
         self._call_count = 0
@@ -379,6 +412,15 @@ class AIClient:
             return resolved
         return None
 
+    def _resolve_cascade(self, task_type: Optional[str], model: Optional[str]) -> List[str]:
+        """Resolve ordered list of models to try (with failover)."""
+        if model:
+            return [model]
+        if task_type:
+            from ai_engine.model_router import resolve_cascade
+            return resolve_cascade(task_type, self._provider.model_name)
+        return [self._provider.model_name]
+
     @property
     def default_model(self) -> str:
         """The configured default model name."""
@@ -389,15 +431,46 @@ class AIClient:
                        response_format: str = "text",
                        task_type: Optional[str] = None,
                        model: Optional[str] = None) -> str:
-        resolved = self._resolve_model(task_type, model)
-        async with self._breaker:
-            result = await self._provider.complete(
-                prompt=prompt, system=system, max_tokens=max_tokens,
-                temperature=temperature, response_format=response_format,
-                model=resolved,
-            )
-            self._track_usage(prompt + (system or ""), result)
-            return result
+        prompt = _sanitize_prompt_input(prompt)
+        from ai_engine.model_router import record_model_success, record_model_failure
+        from app.core.circuit_breaker import CircuitBreakerOpen
+        models = self._resolve_cascade(task_type, model)
+        last_exc: Optional[Exception] = None
+        for i, candidate_model in enumerate(models):
+            breaker = _get_model_breaker(candidate_model)
+            try:
+                async with breaker:
+                    result = await self._provider.complete(
+                        prompt=prompt, system=system, max_tokens=max_tokens,
+                        temperature=temperature, response_format=response_format,
+                        model=candidate_model,
+                    )
+                    self._track_usage(prompt + (system or ""), result)
+                    record_model_success(candidate_model)
+                    return result
+            except CircuitBreakerOpen:
+                # Breaker open for this model — skip to next without counting as provider failure
+                logger.info("model_breaker_open: skipping=%s", candidate_model)
+                if i < len(models) - 1:
+                    continue
+                raise
+            except Exception as exc:
+                last_exc = exc
+                record_model_failure(candidate_model)
+                if i < len(models) - 1:
+                    logger.warning(
+                        "model_cascade_failover: failed=%s next=%s error=%s",
+                        candidate_model, models[i + 1], str(exc)[:200],
+                    )
+                    try:
+                        from app.core.metrics import MetricsCollector
+                        MetricsCollector.get().record_model_failover(candidate_model, models[i + 1], str(exc))
+                    except Exception:
+                        pass
+                    continue
+                raise
+
+        raise last_exc  # unreachable but satisfies type checker
 
     async def complete_json(self, prompt: str, system: Optional[str] = None,
                             max_tokens: Optional[int] = None,
@@ -405,29 +478,93 @@ class AIClient:
                             schema: Optional[Dict[str, Any]] = None,
                             task_type: Optional[str] = None,
                             model: Optional[str] = None) -> Dict[str, Any]:
-        resolved = self._resolve_model(task_type, model)
-        async with self._breaker:
-            result = await self._provider.complete_json(
-                prompt=prompt, system=system, max_tokens=max_tokens,
-                temperature=temperature, schema=schema, model=resolved,
-            )
-            self._track_usage(prompt + (system or ""), json.dumps(result))
-            return result
+        prompt = _sanitize_prompt_input(prompt)
+        from ai_engine.model_router import record_model_success, record_model_failure
+        from app.core.circuit_breaker import CircuitBreakerOpen
+        models = self._resolve_cascade(task_type, model)
+        last_exc: Optional[Exception] = None
+        for i, candidate_model in enumerate(models):
+            breaker = _get_model_breaker(candidate_model)
+            try:
+                async with breaker:
+                    result = await self._provider.complete_json(
+                        prompt=prompt, system=system, max_tokens=max_tokens,
+                        temperature=temperature, schema=schema, model=candidate_model,
+                    )
+                    self._track_usage(prompt + (system or ""), json.dumps(result))
+                    record_model_success(candidate_model)
+                    return result
+            except CircuitBreakerOpen:
+                logger.info("model_breaker_open: skipping=%s", candidate_model)
+                if i < len(models) - 1:
+                    continue
+                raise
+            except Exception as exc:
+                last_exc = exc
+                record_model_failure(candidate_model)
+                if i < len(models) - 1:
+                    logger.warning(
+                        "model_cascade_failover_json: failed=%s next=%s error=%s",
+                        candidate_model, models[i + 1], str(exc)[:200],
+                    )
+                    try:
+                        from app.core.metrics import MetricsCollector
+                        MetricsCollector.get().record_model_failover(candidate_model, models[i + 1], str(exc))
+                    except Exception:
+                        pass
+                    continue
+                raise
+
+        raise last_exc
 
     async def chat(self, messages: List[Dict[str, str]], system: Optional[str] = None,
                    max_tokens: Optional[int] = None,
                    temperature: float = 0.7,
                    task_type: Optional[str] = None,
                    model: Optional[str] = None) -> str:
-        resolved = self._resolve_model(task_type, model)
+        # Sanitize user-role messages only (system messages are trusted)
+        messages = [
+            {**m, "content": _sanitize_prompt_input(m.get("content", ""))} if m.get("role") == "user" else m
+            for m in messages
+        ]
+        from ai_engine.model_router import record_model_success, record_model_failure
+        from app.core.circuit_breaker import CircuitBreakerOpen
+        models = self._resolve_cascade(task_type, model)
         all_text = " ".join(m.get("content", "") for m in messages)
-        async with self._breaker:
-            result = await self._provider.chat(
-                messages=messages, system=system, max_tokens=max_tokens,
-                temperature=temperature, model=resolved,
-            )
-            self._track_usage(all_text + (system or ""), result)
-            return result
+        last_exc: Optional[Exception] = None
+        for i, candidate_model in enumerate(models):
+            breaker = _get_model_breaker(candidate_model)
+            try:
+                async with breaker:
+                    result = await self._provider.chat(
+                        messages=messages, system=system, max_tokens=max_tokens,
+                        temperature=temperature, model=candidate_model,
+                    )
+                    self._track_usage(all_text + (system or ""), result)
+                    record_model_success(candidate_model)
+                    return result
+            except CircuitBreakerOpen:
+                logger.info("model_breaker_open: skipping=%s", candidate_model)
+                if i < len(models) - 1:
+                    continue
+                raise
+            except Exception as exc:
+                last_exc = exc
+                record_model_failure(candidate_model)
+                if i < len(models) - 1:
+                    logger.warning(
+                        "model_cascade_failover_chat: failed=%s next=%s error=%s",
+                        candidate_model, models[i + 1], str(exc)[:200],
+                    )
+                    try:
+                        from app.core.metrics import MetricsCollector
+                        MetricsCollector.get().record_model_failover(candidate_model, models[i + 1], str(exc))
+                    except Exception:
+                        pass
+                    continue
+                raise
+
+        raise last_exc
 
 
 # ── JSON helpers ───────────────────────────────────────────────────────
