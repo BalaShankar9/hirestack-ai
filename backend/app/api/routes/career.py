@@ -193,7 +193,7 @@ async def replay_pipeline_state(
         }
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="Failed to reconstruct pipeline state")
 
 
@@ -324,7 +324,7 @@ async def get_evidence_graph(
                 for c in contradictions[:50]  # Cap at 50
             ],
         }
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="Failed to load evidence graph")
 
 

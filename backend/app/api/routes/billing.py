@@ -39,7 +39,7 @@ class CheckoutRequest(BaseModel):
         if parsed.scheme not in ("https", "http"):
             raise ValueError("Redirect URL must use http or https")
         if parsed.hostname not in _ALLOWED_REDIRECT_HOSTS:
-            raise ValueError(f"Redirect URL must be on an allowed domain")
+            raise ValueError("Redirect URL must be on an allowed domain")
         return v
 
 

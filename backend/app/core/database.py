@@ -657,7 +657,6 @@ def init_firebase():
 # Falls back to in-memory LRU when Redis is unavailable.
 
 import json as _json  # noqa: E402
-import functools  # noqa: E402
 
 _redis_client = None
 _redis_init_attempted = False

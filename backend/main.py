@@ -340,7 +340,7 @@ async def global_exception_handler(
 @app.get("/health", tags=["Health"])
 async def health_check():
     """Health check endpoint — returns operational status.
-    
+
     Internal diagnostics (circuit breakers, model health, metrics, queue depth)
     are only returned when DEBUG=true or ENVIRONMENT != production.
     """

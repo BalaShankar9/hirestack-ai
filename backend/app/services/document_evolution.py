@@ -12,7 +12,6 @@ This powers the "Document Evolution" visualization showing users
 exactly how their documents have improved over time.
 """
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timezone
 from difflib import SequenceMatcher
 import re
 import structlog
