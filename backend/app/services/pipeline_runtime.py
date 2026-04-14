@@ -23,6 +23,17 @@ import structlog
 
 logger = structlog.get_logger("hirestack.pipeline_runtime")
 
+PHASE_SLO_MS: Dict[str, int] = {
+    "recon": 8_000,
+    "atlas": 12_000,
+    "cipher": 10_000,
+    "quill": 20_000,
+    "forge": 15_000,
+    "sentinel": 5_000,
+    "nova": 2_000,
+    "persist": 5_000,
+}
+
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Execution mode & configuration
@@ -162,6 +173,7 @@ class DatabaseSink(EventSink):
         self._last_module_progress = -1  # track to avoid redundant DB writes
         self._completed_steps = 0
         self._current_phase = ""
+        self._last_job_snapshot: Dict[str, Any] = {}
 
     async def emit(self, event: PipelineEvent) -> None:
         self._sequence_no += 1
@@ -260,26 +272,17 @@ class DatabaseSink(EventSink):
         total_steps: int,
     ) -> None:
         """Write all tracking fields to the generation_jobs row."""
-        try:
-            await asyncio.to_thread(
-                lambda: self._db.table(self._tables["generation_jobs"])
-                .update({
-                    "progress": progress,
-                    "status": status,
-                    "phase": phase,
-                    "message": message,
-                    "current_agent": current_agent,
-                    "completed_steps": completed_steps,
-                    "total_steps": total_steps,
-                })
-                .eq("id", self._job_id)
-                .execute()
-            )
-        except Exception as e:
-            logger.warning("db_sink.job_update_failed", job_id=self._job_id, error=str(e)[:200])
-
-    async def _update_job_partial(self, **fields: Any) -> None:
-        """Update a subset of fields on the generation_jobs row."""
+        fields = {
+            "progress": progress,
+            "status": status,
+            "phase": phase,
+            "message": message,
+            "current_agent": current_agent,
+            "completed_steps": completed_steps,
+            "total_steps": total_steps,
+        }
+        if all(self._last_job_snapshot.get(key) == value for key, value in fields.items()):
+            return
         try:
             await asyncio.to_thread(
                 lambda: self._db.table(self._tables["generation_jobs"])
@@ -287,6 +290,22 @@ class DatabaseSink(EventSink):
                 .eq("id", self._job_id)
                 .execute()
             )
+            self._last_job_snapshot.update(fields)
+        except Exception as e:
+            logger.warning("db_sink.job_update_failed", job_id=self._job_id, error=str(e)[:200])
+
+    async def _update_job_partial(self, **fields: Any) -> None:
+        """Update a subset of fields on the generation_jobs row."""
+        if fields and all(self._last_job_snapshot.get(key) == value for key, value in fields.items()):
+            return
+        try:
+            await asyncio.to_thread(
+                lambda: self._db.table(self._tables["generation_jobs"])
+                .update(fields)
+                .eq("id", self._job_id)
+                .execute()
+            )
+            self._last_job_snapshot.update(fields)
         except Exception as e:
             logger.warning("db_sink.job_partial_update_failed", job_id=self._job_id, error=str(e)[:200])
 
@@ -420,6 +439,48 @@ class PipelineRuntime:
         self.sink = event_sink or NullSink()
         self._cancelled = False
         self._failed_modules: List[Dict[str, str]] = []
+        self._phase_started_at: Dict[str, float] = {}
+        self._phase_latencies: Dict[str, int] = {}
+
+    def _begin_phase(self, phase: str) -> None:
+        self._phase_started_at[phase] = time.perf_counter()
+
+    def _finish_phase(self, phase: str, *, success: bool = True, error_class: str = "") -> int:
+        started_at = self._phase_started_at.pop(phase, None)
+        if started_at is None:
+            return self._phase_latencies.get(phase, 0)
+
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        self._phase_latencies[phase] = duration_ms
+
+        try:
+            from app.core.metrics import MetricsCollector, StageMetric
+
+            finished_at = time.time()
+            stage_metric = StageMetric(
+                pipeline_name=f"runtime_{self.config.mode.value}",
+                stage_name=phase,
+                started_at=finished_at - (duration_ms / 1000),
+                finished_at=finished_at,
+                success=success,
+                error_class=error_class,
+            )
+            MetricsCollector.get().record_stage(stage_metric)
+        except Exception as metric_err:
+            logger.warning("pipeline_runtime.phase_metric_failed", phase=phase, error=str(metric_err)[:200])
+
+        threshold_ms = PHASE_SLO_MS.get(phase)
+        if threshold_ms and duration_ms > threshold_ms:
+            logger.warning(
+                "pipeline_runtime.phase_slow",
+                phase=phase,
+                duration_ms=duration_ms,
+                threshold_ms=threshold_ms,
+                mode=self.config.mode.value,
+                job_id=self.config.job_id or None,
+            )
+
+        return duration_ms
 
     async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Run the full pipeline and return the formatted response dict."""
@@ -434,6 +495,22 @@ class PipelineRuntime:
         logger.info("pipeline_runtime.start",
                      mode=self.config.mode.value, job_title=job_title,
                      company=company, user_id=user_id)
+
+        metrics = None
+        pipeline_metric = None
+        try:
+            from app.core.metrics import MetricsCollector, PipelineRunMetric
+
+            metrics = MetricsCollector.get()
+            metrics.job_started()
+            pipeline_metric = PipelineRunMetric(
+                pipeline_name=f"runtime_{self.config.mode.value}",
+                user_id=user_id,
+                mode=self.config.mode.value,
+                started_at=time.time(),
+            )
+        except Exception as metric_err:
+            logger.warning("pipeline_runtime.metrics_unavailable", error=str(metric_err)[:200])
 
         try:
             from ai_engine.client import AIClient
@@ -474,16 +551,32 @@ class PipelineRuntime:
                         pipeline_name=f"runtime_{self.config.mode.value}",
                         model_used=getattr(ai, "model", ""),
                         total_latency_ms=elapsed_ms,
+                        stage_latencies=self._phase_latencies.copy(),
                         token_usage={
                             "prompt_tokens": tu.get("prompt_tokens", 0),
                             "completion_tokens": tu.get("completion_tokens", 0),
                             "total_tokens": tu.get("total_tokens", 0),
                             "call_count": tu.get("call_count", 0),
                         },
+                        quality_scores=result.get("scores") or {},
+                        evidence_stats=((result.get("meta") or {}).get("evidence_summary") or {}),
                         cost_usd_cents=tu.get("estimated_cost_usd_cents", 0),
+                        pipeline_config={
+                            "requested_modules": self.config.requested_modules,
+                            "mode": self.config.mode.value,
+                        },
                     )
             except Exception as tel_err:
                 logger.warning("pipeline_runtime.telemetry_failed", error=str(tel_err)[:200])
+
+            if pipeline_metric is not None:
+                pipeline_metric.finished_at = time.time()
+                pipeline_metric.success = True
+                pipeline_metric.total_tokens_input = ai.token_usage.get("prompt_tokens", 0)
+                pipeline_metric.total_tokens_output = ai.token_usage.get("completion_tokens", 0)
+                pipeline_metric.stages = []
+                if metrics is not None:
+                    metrics.record_run(pipeline_metric)
 
             await self.sink.emit(PipelineEvent(
                 event_type="complete", phase="nova", progress=100,
@@ -497,6 +590,12 @@ class PipelineRuntime:
             return result
 
         except Exception as e:
+            if pipeline_metric is not None:
+                pipeline_metric.finished_at = time.time()
+                pipeline_metric.success = False
+                pipeline_metric.error_class = e.__class__.__name__
+                if metrics is not None:
+                    metrics.record_run(pipeline_metric)
             classified = classify_ai_error(e)
             if classified:
                 await self.sink.emit(PipelineEvent(
@@ -515,6 +614,8 @@ class PipelineRuntime:
                 ))
                 raise
         finally:
+            if metrics is not None:
+                metrics.job_finished()
             await self.sink.close()
 
     # ── Agent pipeline path ───────────────────────────────────────────
@@ -571,25 +672,94 @@ class PipelineRuntime:
             events_queue.clear()
 
         # ── Phase 0: Company Intelligence (best-effort, parallel-ready) ─
+        self._begin_phase("recon")
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="recon", progress=3,
             message="Gathering company intelligence…",
         ))
 
         company_intel: dict = {}
+        recon_sources_completed: set[str] = set()
+
+        async def _on_recon_event(event: dict) -> None:
+            """Forward Recon source-level updates to sinks for live timeline logs.
+
+            This keeps the UI moving during intel gathering instead of appearing
+            stalled at the initial recon progress value.
+            """
+            source = str(event.get("source") or "recon")
+            status = str(event.get("status") or "info")
+            message = str(event.get("message") or "Recon update")
+            url = event.get("url") if isinstance(event.get("url"), str) else None
+            metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else None
+
+            await self.sink.emit(
+                PipelineEvent(
+                    event_type="detail",
+                    phase="recon",
+                    message=message,
+                    status=status,
+                    data={
+                        "agent": "recon",
+                        "source": source,
+                        **({"url": url} if url else {}),
+                        **({"metadata": metadata} if metadata else {}),
+                    },
+                )
+            )
+
+            # Advance recon progress in small steps as sources complete so
+            # the user sees sequential movement similar to the landing flow.
+            if status in {"completed", "warning", "failed"} and source not in recon_sources_completed:
+                recon_sources_completed.add(source)
+                recon_progress = min(7, 3 + len(recon_sources_completed))
+                await self.sink.emit(
+                    PipelineEvent(
+                        event_type="progress",
+                        phase="recon",
+                        progress=recon_progress,
+                        message=f"Recon: processed {len(recon_sources_completed)} source(s)…",
+                    )
+                )
         try:
             from ai_engine.chains.company_intel import CompanyIntelChain
             intel_chain = CompanyIntelChain(ai)
-            company_intel = await intel_chain.gather_intel(
-                company=company, job_title=job_title, jd_text=jd_text,
+            company_intel = await asyncio.wait_for(
+                intel_chain.gather_intel(
+                    company=company,
+                    job_title=job_title,
+                    jd_text=jd_text,
+                    on_event=_on_recon_event,
+                ),
+                timeout=15,
             )
             logger.info("pipeline_runtime.intel_done",
                         confidence=company_intel.get("confidence", "unknown"))
+        except asyncio.TimeoutError:
+            logger.warning("pipeline_runtime.intel_timeout")
+            await self.sink.emit(PipelineEvent(
+                event_type="detail",
+                phase="recon",
+                message="Recon timed out while gathering external sources; continuing with JD-based intel.",
+                status="warning",
+                data={"agent": "recon", "source": "analysis"},
+            ))
+            self._failed_modules.append({"module": "company_intel", "error": "intel_timeout"})
         except Exception as intel_err:
             logger.warning("pipeline_runtime.intel_skipped", error=str(intel_err)[:200])
+            await self.sink.emit(PipelineEvent(
+                event_type="detail",
+                phase="recon",
+                message="Recon external intel failed; continuing with available inputs.",
+                status="warning",
+                data={"agent": "recon", "source": "analysis", "metadata": {"error": str(intel_err)[:200]}},
+            ))
             self._failed_modules.append({"module": "company_intel", "error": str(intel_err)[:200]})
+        finally:
+            self._finish_phase("recon")
 
         # ── Phase 1: Resume parse ─────────────────────────────────────
+        self._begin_phase("atlas")
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="atlas", progress=8,
             message="Agent: parsing resume…",
@@ -627,6 +797,7 @@ class PipelineRuntime:
                 "job_title": job_title,
                 "company": company,
                 "jd_text": jd_text,
+                "user_profile": user_profile,
             })
             await flush_events()
             benchmark_data = bench_result.content if isinstance(bench_result.content, dict) else {}
@@ -640,24 +811,46 @@ class PipelineRuntime:
         if not keywords:
             keywords = self._extract_keywords_from_jd(jd_text)
 
-        # Benchmark CV (best-effort via legacy chain)
+        # Start independent benchmark artifacts early so they overlap with gap analysis.
         benchmark_cv_html = ""
+        benchmark_cv_task: Optional[asyncio.Task[str]] = None
+        doc_pack_plan_task: Optional[asyncio.Task[Any]] = None
+
         try:
             from ai_engine.chains.benchmark_builder import BenchmarkBuilderChain
             bc = BenchmarkBuilderChain(ai)
-            benchmark_cv_html = await bc.create_benchmark_cv_html(
-                user_profile=user_profile, benchmark_data=benchmark_data,
-                job_title=job_title, company=company, jd_text=jd_text,
+            benchmark_cv_task = asyncio.create_task(
+                bc.create_benchmark_cv_html(
+                    user_profile=user_profile, benchmark_data=benchmark_data,
+                    job_title=job_title, company=company, jd_text=jd_text,
+                )
             )
         except Exception as bcv_err:
-            logger.warning("pipeline_runtime.benchmark_cv_failed", error=str(bcv_err)[:200])
+            logger.warning("pipeline_runtime.benchmark_cv_task_failed", error=str(bcv_err)[:200])
+
+        try:
+            from app.services.document_catalog import discover_and_observe
+
+            doc_pack_plan_task = asyncio.create_task(
+                discover_and_observe(
+                    db=sb, tables=tables, ai_client=ai,
+                    jd_text=jd_text, job_title=job_title,
+                    company=company, user_profile=user_profile,
+                    user_id=user_id,
+                    company_intel=company_intel,
+                )
+            )
+        except Exception as doc_task_err:
+            logger.warning("pipeline_runtime.doc_pack_plan_task_failed", error=str(doc_task_err)[:200])
 
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="atlas", progress=25,
             message="Resume parsed & benchmark built ✓",
         ))
+        self._finish_phase("atlas")
 
         # ── Phase 2: Gap analysis ─────────────────────────────────────
+        self._begin_phase("cipher")
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="cipher", progress=30,
             message="Agent: analyzing skill gaps…",
@@ -743,15 +936,8 @@ class PipelineRuntime:
         doc_pack_plan = None
         discovered_documents: list = []
         try:
-            from app.services.document_catalog import discover_and_observe
-
-            doc_pack_plan = await discover_and_observe(
-                db=sb, tables=tables, ai_client=ai,
-                jd_text=jd_text, job_title=job_title,
-                company=company, user_profile=user_profile,
-                user_id=user_id,
-                company_intel=company_intel,
-            )
+            if doc_pack_plan_task is not None:
+                doc_pack_plan = await doc_pack_plan_task
 
             if doc_pack_plan:
                 discovered_documents = (
@@ -770,7 +956,16 @@ class PipelineRuntime:
             logger.warning("pipeline_runtime.doc_pack_plan_skipped", error=str(dpp_err)[:200])
             self._failed_modules.append({"module": "doc_pack_planner", "error": str(dpp_err)[:200]})
 
+        if benchmark_cv_task is not None:
+            try:
+                benchmark_cv_html = await benchmark_cv_task
+            except Exception as bcv_err:
+                logger.warning("pipeline_runtime.benchmark_cv_failed", error=str(bcv_err)[:200])
+
+        self._finish_phase("cipher")
+
         # ── Phase 3: Core docs + Roadmap (parallel) ──────────────────
+        self._begin_phase("quill")
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="quill", progress=50,
             message="Agents: generating CV, cover letter & learning plan…",
@@ -784,6 +979,7 @@ class PipelineRuntime:
             "jd_text": jd_text,
             "gap_analysis": gap_analysis,
             "resume_text": resume_text,
+            "company_intel": self._build_intel_summary(company_intel),
         }
 
         cv_pipe = cv_generation_pipeline(
@@ -832,8 +1028,10 @@ class PipelineRuntime:
             event_type="progress", phase="quill", progress=70,
             message="CV, cover letter & learning plan ready ✓",
         ))
+        self._finish_phase("quill")
 
         # ── Phase 4: Personal statement + Portfolio (parallel) ────────
+        self._begin_phase("forge")
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="forge", progress=75,
             message="Agents: building personal statement & portfolio…",
@@ -954,8 +1152,10 @@ class PipelineRuntime:
             event_type="progress", phase="forge", progress=88,
             message="All documents ready ✓",
         ))
+        self._finish_phase("forge")
 
         # ── Phase 5: Validation ───────────────────────────────────────
+        self._begin_phase("sentinel")
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="sentinel", progress=92,
             message="Validating documents…",
@@ -972,8 +1172,10 @@ class PipelineRuntime:
                 "agent_powered": True,
             }
         }
+        self._finish_phase("sentinel")
 
         # ── Phase 6: Format response ─────────────────────────────────
+        self._begin_phase("nova")
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="nova", progress=98,
             message="Packaging your application…",
@@ -1030,6 +1232,7 @@ class PipelineRuntime:
         }
 
         # ── Persist to document_library table ─────────────────────────
+        self._begin_phase("persist")
         await self._persist_to_document_library(
             sb=sb, tables=tables, user_id=user_id,
             cv_html=sanitize_html(cv_html) if cv_html else "",
@@ -1043,6 +1246,9 @@ class PipelineRuntime:
                 for k, v in benchmark_documents.items()
             },
         )
+        self._finish_phase("persist")
+
+        self._finish_phase("nova")
 
         return response
 
@@ -1252,33 +1458,35 @@ class PipelineRuntime:
             from app.services.document_library import DocumentLibraryService
             service = DocumentLibraryService(sb, tables)
 
-            # Tailored core documents
-            tailored_docs = []
-            if cv_html:
-                tailored_docs.append({"doc_type": "cv", "label": "Tailored CV", "html": cv_html})
-            if cl_html:
-                tailored_docs.append({"doc_type": "cover_letter", "label": "Tailored Cover Letter", "html": cl_html})
-            if ps_html:
-                tailored_docs.append({"doc_type": "personal_statement", "label": "Tailored Personal Statement", "html": ps_html})
-            if portfolio_html:
-                tailored_docs.append({"doc_type": "portfolio", "label": "Tailored Portfolio", "html": portfolio_html})
+            # Build all create_document coroutines for concurrent execution
+            coros = []
 
-            for doc in tailored_docs:
-                await service.create_document(
-                    user_id=user_id,
-                    doc_type=doc["doc_type"],
-                    doc_category="tailored",
-                    label=doc["label"],
-                    application_id=application_id,
-                    html_content=doc["html"],
-                    status="ready",
-                    source="planner",
-                )
+            # Tailored core documents
+            tailored_count = 0
+            for doc_spec in [
+                {"doc_type": "cv",                 "label": "Tailored CV",                 "html": cv_html},
+                {"doc_type": "cover_letter",        "label": "Tailored Cover Letter",        "html": cl_html},
+                {"doc_type": "personal_statement",  "label": "Tailored Personal Statement",  "html": ps_html},
+                {"doc_type": "portfolio",           "label": "Tailored Portfolio",           "html": portfolio_html},
+            ]:
+                if doc_spec["html"]:
+                    tailored_count += 1
+                    coros.append(service.create_document(
+                        user_id=user_id,
+                        doc_type=doc_spec["doc_type"],
+                        doc_category="tailored",
+                        label=doc_spec["label"],
+                        application_id=application_id,
+                        html_content=doc_spec["html"],
+                        status="ready",
+                        source="planner",
+                    ))
 
             # Extra generated documents (tailored)
             for key, html in generated_docs.items():
                 if html:
-                    await service.create_document(
+                    tailored_count += 1
+                    coros.append(service.create_document(
                         user_id=user_id,
                         doc_type=key,
                         doc_category="tailored",
@@ -1287,11 +1495,13 @@ class PipelineRuntime:
                         html_content=html,
                         status="ready",
                         source="planner",
-                    )
+                    ))
 
             # Benchmark documents
+            benchmark_count = 0
             if benchmark_cv_html:
-                await service.create_document(
+                benchmark_count += 1
+                coros.append(service.create_document(
                     user_id=user_id,
                     doc_type="cv",
                     doc_category="benchmark",
@@ -1300,10 +1510,11 @@ class PipelineRuntime:
                     html_content=benchmark_cv_html,
                     status="ready",
                     source="planner",
-                )
+                ))
             for key, html in benchmark_docs.items():
                 if html and isinstance(html, str):
-                    await service.create_document(
+                    benchmark_count += 1
+                    coros.append(service.create_document(
                         user_id=user_id,
                         doc_type=key,
                         doc_category="benchmark",
@@ -1312,11 +1523,23 @@ class PipelineRuntime:
                         html_content=html,
                         status="ready",
                         source="planner",
-                    )
+                    ))
+
+            # Fan-out: all inserts run concurrently
+            results = await asyncio.gather(*coros, return_exceptions=True)
+            failures = sum(1 for r in results if isinstance(r, Exception))
+            if failures:
+                logger.warning(
+                    "pipeline_runtime.document_library_partial_failure",
+                    total=len(coros),
+                    failures=failures,
+                )
 
             logger.info("pipeline_runtime.document_library_persisted",
-                        tailored=len(tailored_docs) + len(generated_docs),
-                        benchmarks=1 + len(benchmark_docs) if benchmark_cv_html else len(benchmark_docs))
+                        tailored=tailored_count,
+                        benchmarks=benchmark_count,
+                        total=len(coros),
+                        failures=failures)
         except Exception as e:
             logger.warning("pipeline_runtime.document_library_persist_failed", error=str(e)[:200])
 

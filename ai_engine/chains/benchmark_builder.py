@@ -402,13 +402,58 @@ class BenchmarkBuilderChain:
             job_description=job_description
         )
 
-        return await self.ai_client.complete_json(
+        raw = await self.ai_client.complete_json(
             prompt=prompt,
             system=BENCHMARK_SYSTEM,
             temperature=0.4,
             max_tokens=4000,
             task_type="reasoning",
         )
+        return self._validate_ideal_profile(raw)
+
+    def _validate_ideal_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and normalize benchmark profile for downstream Atlas stability."""
+        if not isinstance(profile, dict):
+            profile = {}
+
+        profile.setdefault("ideal_profile", {})
+        profile.setdefault("ideal_skills", [])
+        profile.setdefault("ideal_experience", [])
+        profile.setdefault("ideal_education", [])
+        profile.setdefault("ideal_certifications", [])
+        profile.setdefault("soft_skills", [])
+        profile.setdefault("industry_knowledge", [])
+        profile.setdefault("scoring_weights", {})
+
+        # Enforce prompt caps to keep payload bounded and deterministic.
+        profile["ideal_skills"] = list(profile.get("ideal_skills") or [])[:10]
+        profile["ideal_experience"] = list(profile.get("ideal_experience") or [])[:3]
+        profile["ideal_education"] = list(profile.get("ideal_education") or [])[:2]
+        profile["ideal_certifications"] = list(profile.get("ideal_certifications") or [])[:5]
+        profile["soft_skills"] = list(profile.get("soft_skills") or [])[:6]
+        profile["industry_knowledge"] = list(profile.get("industry_knowledge") or [])[:4]
+
+        quality_flags: List[str] = []
+        if not profile.get("ideal_skills"):
+            quality_flags.append("missing_skills")
+        if not profile.get("ideal_experience"):
+            quality_flags.append("missing_experience")
+        if not isinstance(profile.get("ideal_profile"), dict) or not profile["ideal_profile"].get("title"):
+            quality_flags.append("missing_profile_title")
+
+        weights = profile.get("scoring_weights")
+        if not isinstance(weights, dict):
+            weights = {}
+        weight_sum = 0.0
+        for value in weights.values():
+            if isinstance(value, (int, float)):
+                weight_sum += float(value)
+        if weights and abs(weight_sum - 1.0) > 0.05:
+            quality_flags.append("weight_sum_not_1")
+
+        profile["benchmark_quality_flags"] = quality_flags
+        profile["benchmark_quality_score"] = round(max(0.0, 1.0 - 0.2 * len(quality_flags)), 2)
+        return profile
 
     async def create_ideal_cv(
         self,

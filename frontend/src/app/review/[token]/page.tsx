@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import DOMPurify from "dompurify";
+import { sanitizeHtml } from "@/lib/sanitize";
 import api from "@/lib/api";
 import type { ReviewSession, ReviewComment } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -118,7 +118,7 @@ export default function PublicReviewPage() {
         {(session as any).document_snapshot && (
           <div className="rounded-xl border p-6 bg-white dark:bg-zinc-950 max-h-96 overflow-y-auto">
             <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{
-              __html: typeof (session as any).document_snapshot === "string" ? DOMPurify.sanitize((session as any).document_snapshot) : ""
+              __html: typeof (session as any).document_snapshot === "string" ? sanitizeHtml((session as any).document_snapshot) : ""
             }} />
           </div>
         )}

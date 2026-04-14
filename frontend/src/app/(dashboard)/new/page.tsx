@@ -259,8 +259,11 @@ export default function NewApplicationPage() {
   const redirectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: generationJob } = useGenerationJob(activeJobId);
-  const { data: generationEvents = [] } = useGenerationJobEvents(activeJobId, 600);
   const generationJobStatus = generationJob?.status ?? null;
+  const isGenerationJobLive = !generationJobStatus || generationJobStatus === "queued" || generationJobStatus === "running";
+  const { data: generationEvents = [] } = useGenerationJobEvents(activeJobId, 600, {
+    live: isGenerationJobLive,
+  });
   const generationJobApplicationId = generationJob?.applicationId ?? null;
   const generationJobCreatedAt = generationJob?.createdAt;
   const generationJobStartedAt = generationJob?.startedAt;
@@ -517,6 +520,13 @@ export default function NewApplicationPage() {
     setActivePhaseIdx(0); // Start with Recon (intel agent) as active
     setPhaseLogs({});
 
+    const uid = user?.uid || user?.id;
+    if (!uid) {
+      setGenError("You must be logged in to create an application.");
+      setGenerating(false);
+      return;
+    }
+
     // Start elapsed timer
     const startTime = Date.now();
     elapsedRef.current = setInterval(() => {
@@ -526,14 +536,8 @@ export default function NewApplicationPage() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const uid = user?.uid || user?.id;
-    if (!uid) {
-      setGenError("You must be logged in to create an application.");
-      setGenerating(false);
-      return;
-    }
-
     let appId = draftAppId;
+    let createdJobId: string | null = null;
     try {
       if (!appId) {
         try {
@@ -605,12 +609,14 @@ export default function NewApplicationPage() {
         onDetailEvent: handleDetail,
         onAgentEvent: handleAgentEvent,
         onJobCreated: (jobId) => {
+          createdJobId = jobId;
           setActiveJobId(jobId);
           persistGenerationSession(appId!, jobId, "generate");
         },
       });
 
       // Done!
+      setGenerating(false);
       setProgress(100);
       setGenMessage("Your application is ready! 🎉");
       setCompletedPhases(new Set([0, 1, 2, 3, 4, 5, 6]));
@@ -618,7 +624,15 @@ export default function NewApplicationPage() {
       appendPhaseLog(6, "Final application bundle ready.");
 
       if (user) await trackEvent(uid, "app_generated", appId);
+
+      // Legacy stream mode has no job lifecycle updates, so redirect directly.
+      if (!createdJobId) {
+        clearGenerationSession();
+        setActiveJobId(null);
+        router.push(`/applications/${appId}`);
+      }
     } catch (err: any) {
+      setGenerating(false);
       let message: string;
       if (err?.name === "AbortError") {
         message = "Generation timed out. The AI took too long — please try again.";
@@ -637,7 +651,7 @@ export default function NewApplicationPage() {
       }
       abortRef.current = null;
     }
-  }, [activePhaseIdx, appendPhaseLog, user, draftAppId, jobTitle, company, jdText, resumeText, confirmedFacts, clearGenerationSession, persistGenerationSession]);
+  }, [activePhaseIdx, appendPhaseLog, user, draftAppId, jobTitle, company, jdText, resumeText, confirmedFacts, clearGenerationSession, persistGenerationSession, router]);
 
   /* ---- Navigation ---- */
   function canAdvance(): boolean {

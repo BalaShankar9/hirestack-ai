@@ -552,7 +552,7 @@ export default function DashboardPage() {
                           { icon: ScanEye, label: "Scan", val: a.scores?.recruiterScan ?? 0 },
                           { icon: Award, label: "Proof", val: proof },
                         ].map((m) => (
-                          <div key={m.label} className="rounded-md bg-muted/30 p-1.5 text-center">
+                          <div key={m.label} className="rounded-lg bg-muted/30 p-1.5 text-center">
                             <div className="flex items-center justify-center gap-0.5 text-muted-foreground"><m.icon className="h-2.5 w-2.5" /><span className="text-[9px]">{m.label}</span></div>
                             <div className={cn("text-[11px] font-semibold tabular-nums", scoreColor(m.val))}>{m.val}%</div>
                           </div>

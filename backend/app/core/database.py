@@ -47,7 +47,14 @@ def close_supabase() -> None:
     try:
         # Close the underlying httpx transport if available
         if hasattr(_supabase_client, "postgrest") and hasattr(_supabase_client.postgrest, "_session"):
-            _supabase_client.postgrest._session.aclose  # noqa: B018 – existence check
+            session = _supabase_client.postgrest._session
+            if hasattr(session, "aclose") and callable(session.aclose):
+                import asyncio
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(session.aclose())
+                except RuntimeError:
+                    pass  # No running loop — transport will be GC'd
     except Exception:
         pass
     _supabase_client = None

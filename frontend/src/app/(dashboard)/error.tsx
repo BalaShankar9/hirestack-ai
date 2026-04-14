@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, RefreshCw, LayoutDashboard } from "lucide-react";
+import { reportError } from "@/lib/error-reporting";
 
 export default function DashboardError({
   error,
@@ -13,6 +14,7 @@ export default function DashboardError({
 }) {
   useEffect(() => {
     console.error("[DashboardError]", error);
+    reportError(error);
   }, [error]);
 
   return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -166,13 +166,23 @@ function DemoAgentTimeline() {
 }
 
 export default function HomePage() {
+  const headerRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el || CSS.supports("animation-timeline", "scroll()")) return;
+    const onScroll = () => el.classList.toggle("scrolled", window.scrollY > 20);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   return (
     <div className="min-h-screen bg-background noise-overlay">
       {/* Living aurora background */}
       <div className="aurora-bg" aria-hidden="true" />
 
       {/* ── Header ── */}
-      <header className="fixed top-0 z-50 w-full border-b border-transparent bg-background/60 backdrop-blur-2xl elevation-on-scroll">
+      <header ref={headerRef} className="fixed top-0 z-50 w-full border-b border-transparent bg-background/60 backdrop-blur-2xl elevation-on-scroll">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
           <Link href="/" className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 shadow-glow-sm">

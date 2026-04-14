@@ -34,8 +34,12 @@ interface PageLoadingProps {
 
 export function PageLoading({ text = "Loading..." }: PageLoadingProps) {
   return (
-    <div className="flex items-center justify-center min-h-[400px]">
-      <LoadingSpinner size="lg" text={text} />
+    <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+      <div className="relative">
+        <div className="h-12 w-12 rounded-full border-2 border-muted" />
+        <div className="absolute inset-0 h-12 w-12 rounded-full border-2 border-transparent border-t-primary animate-spin" />
+      </div>
+      {text && <p className="text-sm text-muted-foreground animate-pulse">{text}</p>}
     </div>
   )
 }

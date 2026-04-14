@@ -181,7 +181,9 @@ async def test_jd_analyst_with_profile():
 async def test_profile_match_no_profile():
     agent = ProfileMatchSubAgent()
     result = await agent.safe_run({"jd_text": "some jd"})
-    assert not result.ok
+    assert result.ok
+    assert result.confidence == 0.30
+    assert "note" in result.data
 
 
 @pytest.mark.asyncio

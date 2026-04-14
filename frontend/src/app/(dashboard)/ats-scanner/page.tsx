@@ -198,10 +198,10 @@ export default function ATSScannerPage() {
             <div className="flex items-center justify-between">
               <Label className="text-sm font-semibold">Your Resume / CV</Label>
               <div className="inline-flex items-center gap-1 rounded-lg border bg-muted/50 p-0.5">
-                <button className={cn("flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors", inputMode === "paste" ? "bg-background shadow-sm" : "text-muted-foreground")} onClick={() => setInputMode("paste")}>
+                <button className={cn("flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors", inputMode === "paste" ? "bg-background shadow-sm" : "text-muted-foreground")} onClick={() => setInputMode("paste")}>
                   <ClipboardPaste className="h-3 w-3" /> Paste
                 </button>
-                <button className={cn("flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors", inputMode === "upload" ? "bg-background shadow-sm" : "text-muted-foreground")} onClick={() => setInputMode("upload")}>
+                <button className={cn("flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors", inputMode === "upload" ? "bg-background shadow-sm" : "text-muted-foreground")} onClick={() => setInputMode("upload")}>
                   <Upload className="h-3 w-3" /> Upload
                 </button>
               </div>

@@ -92,7 +92,7 @@ GAP ANALYSIS:
 Compatibility Score: {compatibility}%
 Key Gaps: {key_gaps}
 Strengths: {strengths}
-
+{company_intel_section}
 ═══════════════════════════════════════
 
 Now create a TAILORED CV that:
@@ -103,6 +103,7 @@ Now create a TAILORED CV that:
 5. Includes quantified achievements backed by real accomplishments
 6. Feels 100% authentic, professional, and interview-defensible
 7. Is structured for maximum ATS compatibility
+8. Where company intelligence is provided above, subtly reflect the company's values, culture, and language throughout
 
 Return ONLY the HTML CV content. No explanations, no markdown fences, just clean HTML starting with <h1>."""
 
@@ -139,14 +140,14 @@ JOB REQUIREMENTS:
 
 CANDIDATE PROFILE:
 {user_profile}
-
+{company_intel_section}
 CANDIDATE STRENGTHS: {strengths}
 
 KEY GAPS BEING ADDRESSED: {key_gaps}
 
 Write a cover letter that:
-1. Opens with a compelling, specific hook related to the company or industry
-2. Demonstrates genuine knowledge of the company
+1. Opens with a compelling, specific hook related to the company or industry (use the company intelligence above)
+2. Demonstrates GENUINE, SPECIFIC knowledge of the company — name their mission, culture, or values from the intel above
 3. Connects the candidate's experience to EVERY key requirement
 4. Includes 2-3 specific achievement metrics
 5. Addresses the candidate's career narrative naturally
@@ -677,6 +678,7 @@ class DocumentGeneratorChain:
         jd_text: str,
         gap_analysis: Dict[str, Any],
         resume_text: str = "",
+        company_intel: str = "",
     ) -> str:
         """Generate a strategically tailored CV with experience enhancement."""
         import json
@@ -691,6 +693,13 @@ class DocumentGeneratorChain:
         strengths_str = ", ".join(
             s.get("area", "") for s in strengths[:10] if isinstance(s, dict)
         ) or "Strong overall profile"
+        company_intel_section = (
+            f"\n═══════════════════════════════════════\n"
+            f"COMPANY INTELLIGENCE:\n"
+            f"═══════════════════════════════════════\n"
+            f"{company_intel}\n"
+            if company_intel else ""
+        )
 
         prompt = TAILORED_CV_PROMPT.format(
             job_title=job_title,
@@ -701,6 +710,7 @@ class DocumentGeneratorChain:
             compatibility=compatibility,
             key_gaps=key_gaps_str,
             strengths=strengths_str,
+            company_intel_section=company_intel_section,
         )
 
         return await self.ai_client.complete(
@@ -717,6 +727,7 @@ class DocumentGeneratorChain:
         company: str,
         jd_text: str,
         gap_analysis: Dict[str, Any],
+        company_intel: str = "",
     ) -> str:
         """Generate a strategically tailored cover letter."""
         import json
@@ -729,6 +740,11 @@ class DocumentGeneratorChain:
         strengths_str = ", ".join(
             s.get("area", "") for s in strengths[:6] if isinstance(s, dict)
         ) or "Strong overall profile"
+        company_intel_section = (
+            f"\nCOMPANY INTELLIGENCE (use this to write with genuine specificity):\n"
+            f"{company_intel}\n\n"
+            if company_intel else ""
+        )
 
         prompt = TAILORED_CL_PROMPT.format(
             job_title=job_title,
@@ -737,6 +753,7 @@ class DocumentGeneratorChain:
             user_profile=json.dumps(user_profile, indent=2)[:3000],
             key_gaps=key_gaps_str,
             strengths=strengths_str,
+            company_intel_section=company_intel_section,
         )
 
         return await self.ai_client.complete(

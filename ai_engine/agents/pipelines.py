@@ -47,6 +47,7 @@ def create_pipeline(
     job_id: Optional[str] = None,
     research_depth: ResearchDepth = ResearchDepth.THOROUGH,
     user_id: str = "",
+    custom_sub_agents: Optional[list[Any]] = None,
 ) -> AgentPipeline:
     """Create a configured AgentPipeline for a specific feature.
 
@@ -64,8 +65,11 @@ def create_pipeline(
         researcher = ResearcherAgent(
             ai_client=client, db=db, research_depth=research_depth,
         )
-        # Attach sub-agents for THOROUGH and EXHAUSTIVE depth
-        if research_depth in (ResearchDepth.THOROUGH, ResearchDepth.EXHAUSTIVE):
+        # Attach sub-agents for THOROUGH and EXHAUSTIVE depth.
+        # Atlas pipelines can provide a tighter, domain-specific list.
+        if custom_sub_agents is not None:
+            researcher._sub_agents = custom_sub_agents
+        elif research_depth in (ResearchDepth.THOROUGH, ResearchDepth.EXHAUSTIVE):
             sub_agents = [
                 JDAnalystSubAgent(ai_client=client),
                 CompanyIntelSubAgent(ai_client=client),
@@ -113,6 +117,8 @@ def resume_parse_pipeline(
     chain = RoleProfilerChain(client)
     return create_pipeline(
         "resume_parse", chain, "parse_resume",
+        # Resume parsing is deterministic-first; avoid unrelated researcher fan-out.
+        use_researcher=False,
         use_optimizer=False,
         ai_client=client, on_stage_update=on_stage_update,
         db=db, tables=tables, user_id=user_id,
@@ -129,10 +135,18 @@ def benchmark_pipeline(
     client = ai_client or get_ai_client()
     from ai_engine.chains import BenchmarkBuilderChain
     chain = BenchmarkBuilderChain(client)
+    atlas_sub_agents: list[Any] = [
+        # Atlas benchmarking benefits from JD + optional history context.
+        JDAnalystSubAgent(ai_client=client),
+        ProfileMatchSubAgent(ai_client=client),
+    ]
+    if db is not None and user_id:
+        atlas_sub_agents.append(HistorySubAgent(db=db, user_id=user_id, ai_client=client))
     return create_pipeline(
         "benchmark", chain, "create_ideal_profile",
         ai_client=client, on_stage_update=on_stage_update,
         db=db, tables=tables, user_id=user_id,
+        custom_sub_agents=atlas_sub_agents,
     )
 
 

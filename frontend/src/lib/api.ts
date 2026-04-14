@@ -109,31 +109,55 @@ class APIClient {
     additionalData?: Record<string, string>,
     token?: string
   ): Promise<any> {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    if (additionalData) {
-      Object.entries(additionalData).forEach(([key, value]) => {
-        formData.append(key, value);
-      });
-    }
-
     const authToken = token || this.token;
 
-    const response = await fetch(`${this.baseUrl}/api${endpoint}`, {
-      method: "POST",
-      headers: {
-        ...(authToken && { Authorization: `Bearer ${authToken}` }),
-      },
-      body: formData,
-    });
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= APIClient.MAX_RETRIES; attempt++) {
+      const formData = new FormData();
+      formData.append("file", file);
 
-    if (!response.ok) {
+      if (additionalData) {
+        Object.entries(additionalData).forEach(([key, value]) => {
+          formData.append(key, value);
+        });
+      }
+
+      let response: Response;
+      try {
+        response = await fetch(`${this.baseUrl}/api${endpoint}`, {
+          method: "POST",
+          headers: {
+            ...(authToken && { Authorization: `Bearer ${authToken}` }),
+          },
+          body: formData,
+        });
+      } catch (networkErr) {
+        lastError = networkErr instanceof Error ? networkErr : new Error("Network error");
+        if (attempt < APIClient.MAX_RETRIES) {
+          await new Promise((r) => setTimeout(r, attempt * 2000));
+          continue;
+        }
+        throw lastError;
+      }
+
+      if (response.ok) {
+        return response.json();
+      }
+
+      if (APIClient.NON_RETRYABLE.has(response.status)) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || `Upload failed`);
+      }
+
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `Upload failed`);
+      lastError = new Error(error.detail || `Upload failed (${response.status})`);
+
+      if (attempt < APIClient.MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, attempt * 2000));
+      }
     }
 
-    return response.json();
+    throw lastError!;
   }
 
   // Profile
@@ -405,6 +429,8 @@ class APIClient {
       this.request(`/career/predict/${encodeURIComponent(applicationId)}`),
     // Pipeline health — regression and anomaly detection
     pipelineHealth: async () => this.request("/career/telemetry/health"),
+    // Phase-level latency percentiles from the in-process MetricsCollector
+    phaseLatencies: async () => this.request("/career/telemetry/phase-latencies"),
     // Evidence graph — canonical nodes + contradictions
     evidenceGraph: async () => this.request("/career/evidence-graph"),
     // Autonomous career monitor — proactive alerts

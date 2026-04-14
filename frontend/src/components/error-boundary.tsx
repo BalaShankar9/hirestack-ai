@@ -12,19 +12,22 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
+  errorCount: number;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, errorCount: 0 };
   }
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    const count = this.state.errorCount + 1;
+    this.setState({ errorCount: count });
     console.error("[ErrorBoundary]", error, errorInfo);
     reportError(error, errorInfo.componentStack ?? undefined);
   }
@@ -37,6 +40,8 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;
 
+      const isCrashLoop = this.state.errorCount >= 3;
+
       return (
         <div className="flex min-h-[300px] flex-col items-center justify-center gap-4 rounded-lg border border-red-200 bg-red-50 p-8 text-center">
           <div className="text-4xl">⚠️</div>
@@ -44,10 +49,17 @@ export class ErrorBoundary extends Component<Props, State> {
           <p className="max-w-md text-sm text-red-600">
             {this.state.error?.message ?? "An unexpected error occurred."}
           </p>
+          {isCrashLoop && (
+            <p className="max-w-md text-xs text-red-500">
+              This error has occurred multiple times. Reloading the page may help.
+            </p>
+          )}
           <div className="flex gap-3">
-            <Button variant="outline" onClick={this.handleReset}>
-              Try again
-            </Button>
+            {!isCrashLoop && (
+              <Button variant="outline" onClick={this.handleReset}>
+                Try again
+              </Button>
+            )}
             <Button variant="outline" onClick={() => window.location.reload()}>
               Reload page
             </Button>

@@ -15,6 +15,8 @@ from .helpers import (
     _RUNTIME_AVAILABLE,
     _AGENT_PIPELINES_AVAILABLE,
     _classify_ai_error,
+    _build_company_intel_summary,
+    _build_atlas_diagnostics,
     _validate_pipeline_input,
     _sse,
     _agent_sse,
@@ -118,12 +120,16 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             "message": "Agent: building candidate benchmark…",
         })
 
-        bench_pipe = benchmark_pipeline(ai_client=ai, on_stage_update=stage_callback, db=sb, tables=TABLES)
+        bench_pipe = benchmark_pipeline(
+            ai_client=ai, on_stage_update=stage_callback,
+            db=sb, tables=TABLES, user_id=user_id,
+        )
         bench_result: PipelineResult = await bench_pipe.execute({
             "user_id": user_id,
             "job_title": req.job_title,
             "company": company,
             "jd_text": req.jd_text,
+            "user_profile": user_profile,
         })
         for ev in events_queue:
             yield ev
@@ -165,11 +171,55 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
         company_intel_stream: dict = {}
         try:
             intel_chain = CompanyIntelChain(ai)
-            company_intel_stream = await intel_chain.gather_intel(
-                company=company, job_title=req.job_title, jd_text=req.jd_text,
+            async def intel_event_callback(event: dict) -> None:
+                payload: Dict[str, Any] = {
+                    "agent": "recon",
+                    "message": str(event.get("message") or "Recon update"),
+                    "status": str(event.get("status") or "info"),
+                    "source": str(event.get("source") or "recon"),
+                }
+                if isinstance(event.get("url"), str):
+                    payload["url"] = event["url"]
+                if isinstance(event.get("metadata"), dict):
+                    payload["metadata"] = event["metadata"]
+                events_queue.append(_sse("detail", payload))
+
+            company_intel_stream = await asyncio.wait_for(
+                intel_chain.gather_intel(
+                    company=company,
+                    job_title=req.job_title,
+                    jd_text=req.jd_text,
+                    on_event=intel_event_callback,
+                ),
+                timeout=15,
             )
+            for ev in events_queue:
+                yield ev
+            events_queue.clear()
+        except asyncio.TimeoutError:
+            events_queue.append(_sse("detail", {
+                "agent": "recon",
+                "message": "Recon timed out while gathering external sources; continuing with JD-based signals.",
+                "status": "warning",
+                "source": "analysis",
+            }))
+            for ev in events_queue:
+                yield ev
+            events_queue.clear()
         except Exception as intel_err:
             logger.warning("agent_pipeline.intel_failed", error=str(intel_err)[:200])
+            events_queue.append(_sse("detail", {
+                "agent": "recon",
+                "message": "Recon external intel failed; continuing with available inputs.",
+                "status": "warning",
+                "source": "analysis",
+                "metadata": {"error": str(intel_err)[:200]},
+            }))
+            for ev in events_queue:
+                yield ev
+            events_queue.clear()
+
+        company_intel_summary_stream = _build_company_intel_summary(company_intel_stream)
 
         doc_pack_plan_stream = await discover_and_observe(
             db=sb, tables=TABLES, ai_client=ai,
@@ -226,6 +276,7 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             "jd_text": req.jd_text,
             "gap_analysis": gap_analysis,
             "resume_text": req.resume_text,
+            "company_intel": company_intel_summary_stream,
         }
 
         cv_queue: list[str] = []
@@ -392,6 +443,7 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             keywords=keywords,
             job_title=req.job_title,
             benchmark_cv_html=benchmark_cv_html,
+            atlas_diagnostics=_build_atlas_diagnostics(user_profile, benchmark_data),
         )
 
         response["meta"] = {
@@ -516,6 +568,8 @@ async def generate_pipeline_stream(request: Request, req: PipelineRequest, curre
 
             ai = AIClient()
             company = req.company or "the company"
+            company_intel: dict = {}
+            company_intel_summary = ""
 
             logger.info("pipeline_stream.start", job_title=req.job_title, company=company)
 
@@ -574,6 +628,23 @@ async def generate_pipeline_stream(request: Request, req: PipelineRequest, curre
                 "message": "Resume parsed & benchmark built ✓",
             })
 
+            # ── Recon (best effort) ───────────────────────────────────
+            try:
+                from ai_engine.chains.company_intel import CompanyIntelChain
+                intel_chain = CompanyIntelChain(ai)
+                company_intel = await asyncio.wait_for(
+                    intel_chain.gather_intel(
+                        company=company,
+                        job_title=req.job_title,
+                        jd_text=req.jd_text,
+                    ),
+                    timeout=15,
+                )
+            except Exception as intel_err:
+                logger.warning("pipeline_stream.intel_failed", error=str(intel_err)[:200])
+                company_intel = {}
+            company_intel_summary = _build_company_intel_summary(company_intel)
+
             # ── Phase 2: Gap Analysis ─────────────────────────────────
             yield _sse("progress", {
                 "phase": "gap_analysis",
@@ -611,11 +682,13 @@ async def generate_pipeline_stream(request: Request, req: PipelineRequest, curre
                     user_profile=user_profile, job_title=req.job_title,
                     company=company, jd_text=req.jd_text,
                     gap_analysis=gap_analysis, resume_text=req.resume_text,
+                    company_intel=company_intel_summary,
                 ),
                 doc_chain.generate_tailored_cover_letter(
                     user_profile=user_profile, job_title=req.job_title,
                     company=company, jd_text=req.jd_text,
                     gap_analysis=gap_analysis,
+                    company_intel=company_intel_summary,
                 ),
                 consultant.generate_roadmap(gap_analysis, user_profile, req.job_title, company),
                 return_exceptions=True,
@@ -737,7 +810,11 @@ async def generate_pipeline_stream(request: Request, req: PipelineRequest, curre
                 keywords=keywords,
                 job_title=req.job_title,
                 benchmark_cv_html=benchmark_cv_html,
+                atlas_diagnostics=_build_atlas_diagnostics(user_profile, benchmark_data),
             )
+
+            if company_intel:
+                response["companyIntel"] = company_intel
 
             logger.info("pipeline_stream.complete", overall_score=response["scores"]["overall"])
 

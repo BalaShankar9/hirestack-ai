@@ -312,9 +312,9 @@ class CompanyIntelChain:
         if company_url:
             urls_to_try.append(company_url)
 
-        guessed = self._guess_company_url(company)
-        if guessed and guessed not in urls_to_try:
-            urls_to_try.append(guessed)
+        for candidate in self._guess_company_url(company):
+            if candidate not in urls_to_try:
+                urls_to_try.append(candidate)
 
         for url in urls_to_try:
             await self._emit_event(
@@ -401,6 +401,15 @@ class CompanyIntelChain:
                     f"https://api.github.com/orgs/{org_name}",
                     headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "HireStack-AI/1.0"},
                 )
+                remaining = int(resp.headers.get("X-RateLimit-Remaining", "1"))
+                if resp.status_code == 403 or remaining == 0:
+                    await self._emit_event(
+                        status="warning",
+                        message=f"GitHub API rate limit exhausted — skipping GitHub intel for {org_name}.",
+                        source="github",
+                        url=f"https://github.com/{org_name}",
+                    )
+                    return ""
                 if resp.status_code != 200:
                     await self._emit_event(
                         status="warning",
@@ -476,8 +485,8 @@ class CompanyIntelChain:
                 base + "/work-with-us",
             ])
 
-        guessed = self._guess_company_url(company)
-        if guessed:
+        guessed_candidates = self._guess_company_url(company)
+        for guessed in guessed_candidates:
             base = guessed.rstrip("/")
             urls_to_try.extend([base + "/careers", base + "/jobs"])
 
@@ -583,13 +592,19 @@ class CompanyIntelChain:
 
         return f"Title: {title}\nDescription: {description}\nContent: {text[:6000]}"
 
-    def _guess_company_url(self, company: str) -> Optional[str]:
-        """Guess company website URL."""
+    def _guess_company_url(self, company: str) -> list:
+        """Guess company website URL candidates across common TLDs."""
         clean = re.sub(r"\s*(Inc|Ltd|LLC|Corp|Limited|PLC|GmbH|SA|AG|Co)\.?\s*$", "", company, flags=re.IGNORECASE)
         clean = re.sub(r"[^a-zA-Z0-9]", "", clean).lower()
         if len(clean) < 2:
-            return None
-        return f"https://www.{clean}.com"
+            return []
+        # Ordered by prevalence: .com first, then tech-heavy TLDs
+        return [
+            f"https://www.{clean}.com",
+            f"https://{clean}.io",
+            f"https://{clean}.ai",
+            f"https://{clean}.co",
+        ]
 
     def _guess_github_org(self, company: str) -> Optional[str]:
         """Guess GitHub organization name."""

@@ -141,6 +141,50 @@ async def get_telemetry_trend(
     )
 
 
+@router.get("/telemetry/phase-latencies")
+@limiter.limit("60/minute")
+async def get_phase_latencies(
+    request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Return per-phase latency percentiles from the in-process MetricsCollector.
+
+    Data is drawn from the rolling window of the current process (up to 100 runs).
+    Resets on server restart. Suitable for live regression visibility in the UI.
+    """
+    from app.core.metrics import MetricsCollector
+
+    collector = MetricsCollector.get()
+    stage_stats = collector.get_stage_stats()
+
+    # Enrich with SLO thresholds from the pipeline runtime
+    slo_map: Dict[str, int] = {}
+    try:
+        from app.services.pipeline_runtime import PHASE_SLO_MS
+        slo_map = dict(PHASE_SLO_MS)
+    except Exception:
+        pass
+
+    enriched: Dict[str, Any] = {}
+    for stage_name, stats in stage_stats.items():
+        slo_ms = slo_map.get(stage_name)
+        enriched[stage_name] = {
+            **stats,
+            "slo_ms": slo_ms,
+            "slo_breached": bool(slo_ms and stats["p95_ms"] > slo_ms),
+        }
+
+    return {
+        "stages": enriched,
+        "slo_map": slo_map,
+        "window_size": collector._window_size,
+        "pipeline_runs": {
+            name: pstats.get("count", 0)
+            for name, pstats in collector.get_stats().get("pipelines", {}).items()
+        },
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Production Replay — reconstruct pipeline state from event log
 # ═══════════════════════════════════════════════════════════════════════

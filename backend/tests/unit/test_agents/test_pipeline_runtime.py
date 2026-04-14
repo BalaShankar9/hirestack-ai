@@ -132,6 +132,49 @@ class TestDatabaseSink:
         assert call_args["job_id"] == "job-1"
         assert call_args["sequence_no"] == 1
 
+    @pytest.mark.asyncio
+    async def test_skip_duplicate_job_updates_when_progress_state_is_unchanged(self):
+        mock_db = MagicMock()
+
+        mock_event_insert = MagicMock()
+        mock_event_insert.execute.return_value = MagicMock(data=[])
+        mock_event_table = MagicMock()
+        mock_event_table.insert.return_value = mock_event_insert
+
+        mock_job_update = MagicMock()
+        mock_job_update.eq.return_value = mock_job_update
+        mock_job_update.execute.return_value = MagicMock(data=[])
+        mock_job_table = MagicMock()
+        mock_job_table.update.return_value = mock_job_update
+
+        def table_side_effect(name):
+            if name == "generation_job_events":
+                return mock_event_table
+            if name == "generation_jobs":
+                return mock_job_table
+            raise AssertionError(f"unexpected table: {name}")
+
+        mock_db.table.side_effect = table_side_effect
+
+        sink = DatabaseSink(
+            db=mock_db,
+            tables={"generation_job_events": "generation_job_events", "generation_jobs": "generation_jobs"},
+            job_id="job-1", user_id="user-1", application_id="app-1",
+        )
+
+        event = PipelineEvent(
+            event_type="progress",
+            phase="atlas",
+            progress=15,
+            message="Resume parsed",
+        )
+
+        await sink.emit(event)
+        await sink.emit(event)
+
+        assert mock_event_table.insert.call_count == 2
+        assert mock_job_table.update.call_count == 1
+
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Error classification tests

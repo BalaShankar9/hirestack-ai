@@ -427,7 +427,58 @@ class RoleProfilerChain:
                 result["skills"], result["experience"]
             )
 
+        warnings = self._build_parse_warnings(result)
+        result["parse_confidence"] = self._compute_parse_confidence(result)
+        result["parse_warnings"] = warnings
+
         return result
+
+    def _build_parse_warnings(self, result: Dict[str, Any]) -> List[str]:
+        """Generate Atlas-friendly warnings for weak extraction quality."""
+        warnings: List[str] = []
+
+        if not result.get("name"):
+            warnings.append("Missing candidate name")
+        contact = result.get("contact_info") or {}
+        if isinstance(contact, dict) and not contact.get("email"):
+            warnings.append("Missing contact email")
+
+        if len(result.get("skills", [])) < 3:
+            warnings.append("Low skill extraction density")
+        if len(result.get("experience", [])) < 1:
+            warnings.append("No work experience extracted")
+        if len(result.get("education", [])) < 1:
+            warnings.append("No education entries extracted")
+
+        return warnings
+
+    def _compute_parse_confidence(self, result: Dict[str, Any]) -> float:
+        """Compute a simple confidence score for downstream Atlas decisions."""
+        score = 0.0
+
+        if result.get("name"):
+            score += 0.15
+
+        contact = result.get("contact_info") or {}
+        if isinstance(contact, dict):
+            if contact.get("email"):
+                score += 0.15
+            if contact.get("phone"):
+                score += 0.05
+
+        skills = result.get("skills") or []
+        if isinstance(skills, list):
+            score += min(0.25, len(skills) * 0.02)
+
+        experience = result.get("experience") or []
+        if isinstance(experience, list):
+            score += min(0.25, len(experience) * 0.08)
+
+        education = result.get("education") or []
+        if isinstance(education, list) and education:
+            score += 0.1
+
+        return round(min(1.0, score), 2)
 
     def _clean_skill(self, skill: Dict[str, Any]) -> Dict[str, Any]:
         """Clean, validate, and normalize a skill entry."""

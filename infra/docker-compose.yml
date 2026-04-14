@@ -52,12 +52,12 @@ services:
       - redis_data:/data
     restart: unless-stopped
 
-  # Celery Worker (for async tasks)
+  # Redis Streams worker (generation job queue consumer)
   worker:
     build:
       context: ../backend
       dockerfile: ../infra/Dockerfile.backend
-    command: celery -A workers.celery_app worker --loglevel=info
+    command: python -m app.worker
     environment:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}

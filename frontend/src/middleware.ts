@@ -18,6 +18,7 @@ export function middleware(req: NextRequest) {
   response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()");
   response.headers.set("Cross-Origin-Opener-Policy", "same-origin");
   response.headers.set("Cross-Origin-Resource-Policy", "same-origin");
+  response.headers.set("X-DNS-Prefetch-Control", "on");
 
   return response;
 }

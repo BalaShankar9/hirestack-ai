@@ -83,6 +83,7 @@ class MetricsCollector:
     def __init__(self, window_size: int = 100) -> None:
         self._window_size = window_size
         self._runs: Dict[str, List[PipelineRunMetric]] = defaultdict(list)
+        self._stage_history: Dict[str, List[StageMetric]] = defaultdict(list)
         self._active_jobs: int = 0
         self._error_counts: Dict[str, int] = defaultdict(int)
         self._breaker_transitions: List[Dict[str, Any]] = []
@@ -129,6 +130,11 @@ class MetricsCollector:
 
     def record_stage(self, stage: StageMetric) -> None:
         """Record a single stage execution."""
+        history = self._stage_history[stage.stage_name]
+        history.append(stage)
+        if len(history) > self._window_size:
+            self._stage_history[stage.stage_name] = history[-self._window_size :]
+
         logger.info(
             "pipeline.metrics.stage_complete",
             pipeline=stage.pipeline_name,
@@ -185,6 +191,24 @@ class MetricsCollector:
         )
 
     # ── Querying ──────────────────────────────────────────────────────
+
+    def get_stage_stats(self) -> Dict[str, Any]:
+        """Return per-stage latency percentiles from the in-process rolling window."""
+        result: Dict[str, Any] = {}
+        for stage_name, history in self._stage_history.items():
+            if not history:
+                continue
+            durations = sorted(m.duration_ms for m in history)
+            n = len(durations)
+            success_count = sum(1 for m in history if m.success)
+            result[stage_name] = {
+                "count": n,
+                "success_rate": round(success_count / n, 3),
+                "p50_ms": durations[n // 2],
+                "p95_ms": durations[int(n * 0.95)] if n >= 20 else durations[-1],
+                "last_ms": history[-1].duration_ms,
+            }
+        return result
 
     def get_stats(self, pipeline_name: Optional[str] = None) -> Dict[str, Any]:
         """Get aggregated stats for a pipeline or all pipelines."""

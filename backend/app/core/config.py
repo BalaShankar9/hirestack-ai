@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 100
     rate_limit_window: int = 60  # seconds
 
-    @field_validator("supabase_url", "supabase_service_role_key")
+    @field_validator("supabase_url", "supabase_service_role_key", "supabase_anon_key")
     @classmethod
     def _require_in_production(cls, v: str, info) -> str:
         """Fail fast if critical Supabase values are empty in production."""

@@ -22,11 +22,11 @@ export function ThemeToggle() {
   return (
     <button
       onClick={() => setTheme(next)}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition-all hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 active:scale-90"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border/50 text-muted-foreground transition-all duration-200 hover:bg-muted/60 hover:text-foreground hover:border-border active:scale-90"
       title={`${label} — click to switch`}
       aria-label={`Current: ${label}. Click to switch.`}
     >
-      <Icon className="h-4 w-4" />
+      <Icon className="h-4 w-4 transition-transform duration-300" />
     </button>
   );
 }

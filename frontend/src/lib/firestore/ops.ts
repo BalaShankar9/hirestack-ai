@@ -92,7 +92,7 @@ export function mapApplicationRow(row: any): ApplicationDoc {
     generatedDocuments: row.generated_documents ?? undefined,
     benchmarkDocuments: row.benchmark_documents ?? undefined,
     documentStrategy: row.document_strategy ?? undefined,
-    companyIntel: row.company_intel ?? undefined,
+    companyIntel: row.company_intel ?? row.companyIntel ?? undefined,
   };
 }
 
@@ -270,6 +270,7 @@ export async function patchApplication(
     portfolioVersions: "portfolio_versions",
     userId: "user_id",
     applicationId: "application_id",
+    companyIntel: "company_intel",
   };
 
   for (const [k, v] of Object.entries(patch)) {

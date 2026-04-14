@@ -35,6 +35,8 @@ const REALTIME_ENABLED_BY_ENV =
 
 let REALTIME_DISABLED = false;
 
+const ACTIVE_GENERATION_JOB_STATUSES = new Set(["queued", "running"]);
+
 function realtimeWarn(...args: any[]) {
   if (!REALTIME_DEBUG) return;
   // eslint-disable-next-line no-console
@@ -49,6 +51,15 @@ function disableRealtimeOnce(reason: string, err?: unknown) {
   if (REALTIME_DISABLED) return;
   REALTIME_DISABLED = true;
   realtimeWarn("[HireStack][realtime] disabled:", reason, err);
+}
+
+function isDocumentHidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
+function isActiveGenerationJobStatus(status: string | null | undefined): boolean {
+  if (!status) return true;
+  return ACTIVE_GENERATION_JOB_STATUSES.has(status);
 }
 
 /* ------------------------------------------------------------------ */
@@ -92,7 +103,10 @@ export function useApplications(
 
     function startPolling() {
       if (poll) return;
-      poll = setInterval(fetchInitial, 10_000);
+      poll = setInterval(() => {
+        if (isDocumentHidden()) return;
+        void fetchInitial();
+      }, 10_000);
     }
 
     function stopPolling() {
@@ -225,7 +239,10 @@ export function useApplication(
 
     function startPolling() {
       if (poll) return;
-      poll = setInterval(fetchOne, 10_000);
+      poll = setInterval(() => {
+        if (isDocumentHidden()) return;
+        void fetchOne();
+      }, 10_000);
     }
 
     function stopPolling() {
@@ -343,7 +360,10 @@ export function useEvidence(
 
     function startPolling() {
       if (poll) return;
-      poll = setInterval(fetchInitial, 10_000);
+      poll = setInterval(() => {
+        if (isDocumentHidden()) return;
+        void fetchInitial();
+      }, 10_000);
     }
 
     function stopPolling() {
@@ -495,7 +515,10 @@ export function useTasks(
 
     function startPolling() {
       if (poll) return;
-      poll = setInterval(fetchInitial, 10_000);
+      poll = setInterval(() => {
+        if (isDocumentHidden()) return;
+        void fetchInitial();
+      }, 10_000);
     }
 
     function stopPolling() {
@@ -629,10 +652,15 @@ export function useGenerationJob(
 
     let cancelled = false;
     let poll: ReturnType<typeof setInterval> | null = null;
+    let latestStatus: string | null = null;
 
     function startPolling() {
       if (poll) return;
-      poll = setInterval(fetchOne, 2_000);
+      if (!isActiveGenerationJobStatus(latestStatus)) return;
+      poll = setInterval(() => {
+        if (isDocumentHidden()) return;
+        void fetchOne();
+      }, 2_000);
     }
 
     function stopPolling() {
@@ -651,8 +679,13 @@ export function useGenerationJob(
 
         if (err) throw err;
         if (!cancelled) {
-          setData(row ? mapGenerationJobRow(row) : null);
+          const next = row ? mapGenerationJobRow(row) : null;
+          latestStatus = next?.status ?? null;
+          setData(next);
           setLoading(false);
+          if (!isActiveGenerationJobStatus(latestStatus)) {
+            stopPolling();
+          }
         }
       } catch (e: any) {
         if (!cancelled) {
@@ -684,9 +717,15 @@ export function useGenerationJob(
         },
         (payload) => {
           if (payload.eventType === "DELETE") {
+            latestStatus = null;
             setData(null);
           } else {
-            setData(mapGenerationJobRow(payload.new));
+            const next = mapGenerationJobRow(payload.new);
+            latestStatus = next.status ?? null;
+            setData(next);
+            if (!isActiveGenerationJobStatus(latestStatus)) {
+              stopPolling();
+            }
           }
         }
       )
@@ -719,11 +758,13 @@ export function useGenerationJob(
 
 export function useGenerationJobEvents(
   jobId: string | null,
-  limit = 500
+  limit = 500,
+  opts?: { live?: boolean }
 ): { data: GenerationJobEventDoc[]; loading: boolean; error: Error | null } {
   const [data, setData] = useState<GenerationJobEventDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const live = opts?.live ?? true;
 
   useEffect(() => {
     if (!jobId) {
@@ -734,10 +775,15 @@ export function useGenerationJobEvents(
 
     let cancelled = false;
     let poll: ReturnType<typeof setInterval> | null = null;
+    let lastSequenceNo = 0;
 
     function startPolling() {
       if (poll) return;
-      poll = setInterval(fetchEvents, 2_000);
+      if (!live) return;
+      poll = setInterval(() => {
+        if (isDocumentHidden()) return;
+        void fetchEvents(false);
+      }, 2_000);
     }
 
     function stopPolling() {
@@ -746,18 +792,46 @@ export function useGenerationJobEvents(
       poll = null;
     }
 
-    async function fetchEvents() {
+    async function fetchEvents(forceFullRefresh = false) {
       try {
-        const { data: rows, error: err } = await supabase
+        let query = supabase
           .from(TABLES.generationJobEvents)
           .select("*")
           .eq("job_id", jobId)
-          .order("sequence_no", { ascending: true })
-          .limit(limit);
+          .order("sequence_no", { ascending: true });
+
+        if (!forceFullRefresh && lastSequenceNo > 0) {
+          query = query.gt("sequence_no", lastSequenceNo);
+        }
+
+        query = query.limit(limit);
+
+        const { data: rows, error: err } = await query;
 
         if (err) throw err;
         if (!cancelled) {
-          setData((rows ?? []).map(mapGenerationJobEventRow));
+          const mapped = (rows ?? []).map(mapGenerationJobEventRow);
+          const maxSequenceNo = mapped.length > 0
+            ? Math.max(...mapped.map((row) => row.sequenceNo))
+            : lastSequenceNo;
+
+          if (forceFullRefresh || lastSequenceNo === 0) {
+            setData(mapped.slice(-limit));
+          } else if (mapped.length > 0) {
+            setData((prev) => {
+              const merged = [...prev, ...mapped].reduce<GenerationJobEventDoc[]>((acc, row) => {
+                if (acc.some((existing) => existing.id === row.id)) return acc;
+                acc.push(row);
+                return acc;
+              }, []);
+
+              return merged
+                .sort((a, b) => a.sequenceNo - b.sequenceNo)
+                .slice(-limit);
+            });
+          }
+
+          lastSequenceNo = maxSequenceNo;
           setLoading(false);
         }
       } catch (e: any) {
@@ -768,7 +842,7 @@ export function useGenerationJobEvents(
       }
     }
 
-    fetchEvents();
+    fetchEvents(true);
 
     if (!shouldUseRealtime()) {
       startPolling();
@@ -791,6 +865,7 @@ export function useGenerationJobEvents(
         (payload) => {
           if (payload.eventType === "INSERT") {
             const next = mapGenerationJobEventRow(payload.new);
+            lastSequenceNo = Math.max(lastSequenceNo, next.sequenceNo);
             setData((prev) => {
               const filtered = prev.filter((row) => row.id !== next.id);
               return [...filtered, next]
@@ -829,7 +904,7 @@ export function useGenerationJobEvents(
       stopPolling();
       supabase.removeChannel(channel);
     };
-  }, [jobId, limit]);
+  }, [jobId, limit, live]);
 
   return { data, loading, error };
 }

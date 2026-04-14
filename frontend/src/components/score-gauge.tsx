@@ -56,6 +56,8 @@ export function ScoreGauge({
           className="transform -rotate-90"
           width={width}
           height={width}
+          role="img"
+          aria-label={`${label}: ${score}% — ${getScoreLabel(score)}`}
         >
           {/* Background circle */}
           <circle
@@ -68,7 +70,7 @@ export function ScoreGauge({
           />
           {/* Progress circle */}
           <circle
-            className={cn("transition-all duration-1000", getStrokeColor(score))}
+            className={cn("transition-all duration-1000 ease-out", getStrokeColor(score))}
             fill="none"
             strokeWidth={strokeWidth}
             strokeLinecap="round"
@@ -77,10 +79,11 @@ export function ScoreGauge({
             r={radius}
             cx={width / 2}
             cy={width / 2}
+            style={{ transitionDelay: "0.2s" }}
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className={cn("font-bold", fontSize, getScoreColor(score))}>
+          <span className={cn("font-bold tabular-nums", fontSize, getScoreColor(score))}>
             {score}%
           </span>
         </div>

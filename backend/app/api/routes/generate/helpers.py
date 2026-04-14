@@ -155,6 +155,69 @@ def _build_evidence_summary(pipeline_result) -> Optional[Dict[str, Any]]:
     }
 
 
+def _build_company_intel_summary(company_intel: Dict[str, Any]) -> str:
+    """Build a compact text summary from company intel for downstream prompts."""
+    if not isinstance(company_intel, dict) or not company_intel:
+        return ""
+
+    strategy = company_intel.get("application_strategy", {})
+    culture = company_intel.get("culture_and_values", {})
+
+    parts: List[str] = []
+
+    core_values = culture.get("core_values")
+    if isinstance(core_values, list) and core_values:
+        parts.append(f"Company values: {', '.join(str(v) for v in core_values[:5])}")
+
+    mission = culture.get("mission_statement")
+    if isinstance(mission, str) and mission.strip():
+        parts.append(f"Mission: {mission.strip()}")
+
+    keywords = strategy.get("keywords_to_use")
+    if isinstance(keywords, list) and keywords:
+        parts.append(f"Keywords to include: {', '.join(str(k) for k in keywords[:8])}")
+
+    mentions = strategy.get("things_to_mention")
+    if isinstance(mentions, list) and mentions:
+        parts.append(f"Reference: {'; '.join(str(m) for m in mentions[:3])}")
+
+    return "\n".join(parts)
+
+
+def _build_atlas_diagnostics(user_profile: Dict[str, Any], benchmark_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Build normalized Atlas diagnostics for cross-route parity."""
+    parse_confidence = 0.0
+    parse_warnings: List[str] = []
+    if isinstance(user_profile, dict):
+        parse_confidence = float(user_profile.get("parse_confidence", 0.0) or 0.0)
+        raw_warnings = user_profile.get("parse_warnings", [])
+        if isinstance(raw_warnings, list):
+            parse_warnings = [str(w) for w in raw_warnings[:10]]
+
+    benchmark_quality_score = 0.0
+    benchmark_quality_flags: List[str] = []
+    if isinstance(benchmark_data, dict):
+        benchmark_quality_score = float(benchmark_data.get("benchmark_quality_score", 0.0) or 0.0)
+        raw_flags = benchmark_data.get("benchmark_quality_flags", [])
+        if isinstance(raw_flags, list):
+            benchmark_quality_flags = [str(f) for f in raw_flags[:10]]
+
+    safe_mode = (
+        parse_confidence < 0.5
+        or bool(parse_warnings)
+        or benchmark_quality_score < 0.5
+        or bool(benchmark_quality_flags)
+    )
+
+    return {
+        "parseConfidence": round(parse_confidence, 2),
+        "parseWarnings": parse_warnings,
+        "benchmarkQualityScore": round(benchmark_quality_score, 2),
+        "benchmarkQualityFlags": benchmark_quality_flags,
+        "safeMode": safe_mode,
+    }
+
+
 def _extract_retry_after_seconds(err: str) -> Optional[int]:
     """Best-effort parse of provider retry hints into whole seconds."""
     m = re.search(r"retry in\s+([0-9]+(?:\.[0-9]+)?)s", err, flags=re.IGNORECASE)
@@ -279,6 +342,7 @@ def _format_response(
     keywords: List[str],
     job_title: str,
     benchmark_cv_html: str = "",
+    atlas_diagnostics: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Transform chain outputs into the frontend's expected data shapes."""
 
@@ -460,6 +524,7 @@ def _format_response(
         "benchmark": benchmark,
         "gaps": gaps,
         "learningPlan": learning_plan,
+        "atlas": atlas_diagnostics or {},
         "cvHtml": _sanitize_output_html(cv_html),
         "coverLetterHtml": _sanitize_output_html(cl_html),
         "personalStatementHtml": _sanitize_output_html(ps_html),

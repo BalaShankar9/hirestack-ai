@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from typing import Any, Callable, Coroutine, Dict
 
@@ -60,6 +61,26 @@ async def enqueue_generation_job(job_id: str, user_id: str) -> bool:
     if r is None:
         return False
     try:
+        _ensure_group(r)
+
+        # Safety guard: if Redis is up but no worker is actively consuming,
+        # don't enqueue and let caller fall back to in-process execution.
+        require_active_consumer = os.getenv("QUEUE_REQUIRE_ACTIVE_CONSUMER", "true").lower() in {
+            "1", "true", "yes", "on"
+        }
+        if require_active_consumer:
+            consumers = await asyncio.to_thread(r.xinfo_consumers, STREAM_KEY, GROUP_NAME)
+            active_consumers = [
+                c for c in (consumers or [])
+                if int(c.get("idle", CLAIM_IDLE_MS + 1)) < CLAIM_IDLE_MS
+            ]
+            if not active_consumers:
+                logger.warning(
+                    "queue.no_active_consumers_fallback",
+                    extra={"job_id": job_id, "stream": STREAM_KEY, "group": GROUP_NAME},
+                )
+                return False
+
         msg_id = await asyncio.to_thread(
             r.xadd,
             STREAM_KEY,

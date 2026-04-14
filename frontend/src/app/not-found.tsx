@@ -7,9 +7,15 @@ import { Button } from "@/components/ui/button";
 
 export default function NotFound() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary via-violet-600 to-indigo-700 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary via-violet-600 to-indigo-700 px-4 relative overflow-hidden">
+      {/* Background decoration */}
+      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+        <div className="absolute -right-20 -top-20 h-[400px] w-[400px] rounded-full border-[50px] border-white/5" />
+        <div className="absolute -bottom-20 -left-20 h-[300px] w-[300px] rounded-full border-[40px] border-white/5" />
+        <div className="absolute left-1/3 top-1/4 h-[200px] w-[200px] rounded-full bg-white/5 blur-3xl" />
+      </div>
       <motion.div
-        className="flex flex-col items-center text-center"
+        className="relative z-10 flex flex-col items-center text-center"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}

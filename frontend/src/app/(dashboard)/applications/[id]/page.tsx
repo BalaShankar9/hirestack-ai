@@ -165,7 +165,7 @@ export default function ApplicationWorkspacePage() {
   const { user, session } = useAuth();
   const userId = user?.uid || user?.id || null;
   const { data: app, loading } = useApplication(appId);
-  const { data: evidence = [] } = useEvidence(userId, 200);
+  const { data: evidence = [] } = useEvidence(userId, appId, 200);
   const { data: tasks = [], stats: taskStats } = useTasks(userId, appId, 200);
 
   const [tab, setTab] = useState(() => searchParams.get("tab") || "overview");
@@ -230,14 +230,14 @@ export default function ApplicationWorkspacePage() {
   }, []);
 
   // Fetch document library when the library tab is selected
-  const fetchDocLibrary = useCallback(async () => {
+  const fetchDocLibrary = useCallback(async (silent = false) => {
     if (!appId) return;
-    setDocLibraryLoading(true);
+    if (!silent) setDocLibraryLoading(true);
     try {
       const grouped = await getDocumentLibrary(appId);
       setDocLibrary(grouped);
     } catch { /* ignore */ } finally {
-      setDocLibraryLoading(false);
+      if (!silent) setDocLibraryLoading(false);
     }
   }, [appId]);
 
@@ -250,7 +250,10 @@ export default function ApplicationWorkspacePage() {
     if (tab !== "library") return;
     const hasGenerating = Object.values(docLibrary).flat().some(d => d.status === "generating");
     if (!hasGenerating) return;
-    const interval = setInterval(fetchDocLibrary, 4000);
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      void fetchDocLibrary(true);
+    }, 4000);
     return () => clearInterval(interval);
   }, [tab, docLibrary, fetchDocLibrary]);
 
@@ -954,7 +957,7 @@ export default function ApplicationWorkspacePage() {
             <TabsContent value="intel" className="mt-4">
               <SectionErrorBoundary label="Intel">
               {(() => {
-                const intel = (app as any)?.company_intel;
+                const intel = app?.companyIntel;
                 if (!intel || Object.keys(intel).length === 0) {
                   return (
                     <div className="rounded-2xl border border-dashed bg-card/50 p-10 text-center">
@@ -969,11 +972,18 @@ export default function ApplicationWorkspacePage() {
 
                 const overview = intel.company_overview || {};
                 const culture = intel.culture_and_values || {};
-                const tech = intel.tech_and_tools || {};
-                const news = intel.recent_news || {};
+                const tech = intel.tech_and_engineering || intel.tech_and_tools || {};
+                const products = intel.products_and_services || {};
+                const news = intel.recent_developments || intel.recent_news || {};
                 const strategy = intel.application_strategy || {};
-                const competitive = intel.competitive_position || {};
+                const competitive = intel.market_position || intel.competitive_position || {};
                 const confidence = intel.confidence || "unknown";
+                const workCulture = culture.work_environment || culture.work_culture;
+                const newsHighlights = news.news_highlights || news.highlights || [];
+                const growthSignals = news.growth_signals || [];
+                const interviewTopics = strategy.interview_prep_topics || strategy.interview_topics || [];
+                const techStack = tech.tech_stack || tech.programming_languages || [];
+                const productList = tech.products || products.main_products || [];
 
                 return (
                   <div className="space-y-4">
@@ -1009,13 +1019,13 @@ export default function ApplicationWorkspacePage() {
                     </div>
 
                     {/* Culture & Values */}
-                    {(culture.core_values?.length > 0 || culture.work_culture || culture.mission_statement) && (
+                    {(culture.core_values?.length > 0 || workCulture || culture.mission_statement) && (
                       <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                         <h3 className="flex items-center gap-2 font-semibold text-sm mb-3">
                           <Users className="h-4 w-4 text-violet-500" /> Culture & Values
                         </h3>
                         {culture.mission_statement && <p className="text-sm italic text-muted-foreground mb-3">&ldquo;{culture.mission_statement}&rdquo;</p>}
-                        {culture.work_culture && <p className="text-sm text-muted-foreground mb-2"><strong>Work culture:</strong> {culture.work_culture}</p>}
+                        {workCulture && <p className="text-sm text-muted-foreground mb-2"><strong>Work culture:</strong> {workCulture}</p>}
                         {culture.core_values?.length > 0 && (
                           <div className="flex flex-wrap gap-1.5">
                             {culture.core_values.map((v: string, i: number) => (
@@ -1027,26 +1037,26 @@ export default function ApplicationWorkspacePage() {
                     )}
 
                     {/* Tech & Tools */}
-                    {(tech.tech_stack?.length > 0 || tech.products?.length > 0) && (
+                    {(techStack?.length > 0 || productList?.length > 0) && (
                       <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                         <h3 className="flex items-center gap-2 font-semibold text-sm mb-3">
                           <Globe className="h-4 w-4 text-cyan-500" /> Tech Stack & Products
                         </h3>
-                        {tech.tech_stack?.length > 0 && (
+                        {techStack?.length > 0 && (
                           <div className="mb-3">
                             <span className="text-[10px] text-muted-foreground block mb-1.5">Technologies</span>
                             <div className="flex flex-wrap gap-1.5">
-                              {tech.tech_stack.map((t: string, i: number) => (
+                              {techStack.map((t: string, i: number) => (
                                 <span key={i} className="rounded-lg bg-cyan-500/10 px-2 py-0.5 text-[10px] font-mono text-cyan-600">{t}</span>
                               ))}
                             </div>
                           </div>
                         )}
-                        {tech.products?.length > 0 && (
+                        {productList?.length > 0 && (
                           <div>
                             <span className="text-[10px] text-muted-foreground block mb-1.5">Products</span>
                             <div className="flex flex-wrap gap-1.5">
-                              {tech.products.map((p: string, i: number) => (
+                              {productList.map((p: string, i: number) => (
                                 <span key={i} className="rounded-lg bg-muted px-2 py-0.5 text-[10px] font-medium">{p}</span>
                               ))}
                             </div>
@@ -1056,18 +1066,18 @@ export default function ApplicationWorkspacePage() {
                     )}
 
                     {/* Recent News */}
-                    {(news.highlights?.length > 0 || news.growth_signals?.length > 0) && (
+                    {(newsHighlights?.length > 0 || growthSignals?.length > 0) && (
                       <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                         <h3 className="flex items-center gap-2 font-semibold text-sm mb-3">
                           <Newspaper className="h-4 w-4 text-amber-500" /> Recent News & Growth
                         </h3>
-                        {news.highlights?.map((h: string, i: number) => (
+                        {newsHighlights?.map((h: string, i: number) => (
                           <div key={i} className="flex items-start gap-2 mb-2">
                             <TrendingUp className="h-3 w-3 text-amber-500 mt-1 shrink-0" />
                             <p className="text-sm text-muted-foreground">{h}</p>
                           </div>
                         ))}
-                        {news.growth_signals?.map((g: string, i: number) => (
+                        {growthSignals?.map((g: string, i: number) => (
                           <div key={`g${i}`} className="flex items-start gap-2 mb-2">
                             <Sparkles className="h-3 w-3 text-emerald-500 mt-1 shrink-0" />
                             <p className="text-sm text-muted-foreground">{g}</p>
@@ -1115,11 +1125,11 @@ export default function ApplicationWorkspacePage() {
                               </ul>
                             </div>
                           )}
-                          {strategy.interview_topics?.length > 0 && (
+                          {interviewTopics?.length > 0 && (
                             <div>
                               <span className="text-[10px] text-muted-foreground block mb-1.5 uppercase font-semibold">Interview preparation</span>
                               <ul className="space-y-1">
-                                {strategy.interview_topics.map((t: string, i: number) => (
+                                {interviewTopics.map((t: string, i: number) => (
                                   <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
                                     <Target className="h-2.5 w-2.5 text-amber-500 mt-1 shrink-0" />{t}
                                   </li>
@@ -1207,21 +1217,21 @@ export default function ApplicationWorkspacePage() {
                       </div>
                     </div>
 
-                    {(app.benchmark as any).idealProfile && (
+                    {app.benchmark.idealProfile && (
                       <div className="rounded-xl border p-4">
                         <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Ideal Candidate</div>
-                        <div className="mt-2 text-base font-bold">{toLabel((app.benchmark as any).idealProfile?.title || (app.benchmark as any).idealProfile?.name)}</div>
+                        <div className="mt-2 text-base font-bold">{toLabel(app.benchmark.idealProfile?.title || app.benchmark.idealProfile?.name)}</div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                          {(app.benchmark as any).idealProfile?.years_experience} yrs experience
+                          {app.benchmark.idealProfile?.years_experience} yrs experience
                         </div>
                       </div>
                     )}
 
-                    {(app.benchmark as any).idealSkills?.length > 0 && (
+                    {(app.benchmark.idealSkills?.length ?? 0) > 0 && (
                       <div>
                         <div className="text-xs font-semibold mb-3">Key Skills Required</div>
                         <div className="grid gap-2 sm:grid-cols-2">
-                          {((app.benchmark as any).idealSkills ?? []).slice(0, 8).map((s: any, i: number) => (
+                          {(app.benchmark.idealSkills ?? []).slice(0, 8).map((s: any, i: number) => (
                             <div key={toLabel(s?.name) || i} className="flex items-center justify-between rounded-lg border p-2.5">
                               <div className="flex items-center gap-2">
                                 <div className={`h-2 w-2 rounded-full ${s?.importance === "critical" ? "bg-rose-500" : s?.importance === "important" ? "bg-amber-500" : "bg-blue-500"}`} />
@@ -1257,7 +1267,7 @@ export default function ApplicationWorkspacePage() {
                     </div>
 
                     {/* ── Benchmark Ideal CV ─────────────────────────── */}
-                    {(app.benchmark as any).benchmarkCvHtml && (
+                    {app.benchmark.benchmarkCvHtml && (
                       <div className="mt-2">
                         <div className="flex items-center justify-between mb-3">
                           <div>
@@ -1273,7 +1283,7 @@ export default function ApplicationWorkspacePage() {
                               className="gap-1.5 rounded-xl text-xs"
                               onClick={async () => {
                                 try {
-                                  await downloadPdf((app.benchmark as any).benchmarkCvHtml, {
+                                  await downloadPdf(app.benchmark?.benchmarkCvHtml ?? "", {
                                     filename: "HireStack_Benchmark_CV",
                                     documentType: "cv",
                                   });
@@ -1291,7 +1301,7 @@ export default function ApplicationWorkspacePage() {
                               className="gap-1.5 rounded-xl text-xs"
                               onClick={() => {
                                 navigator.clipboard.writeText(
-                                  stripHtml((app.benchmark as any).benchmarkCvHtml || "")
+                                  stripHtml(app.benchmark?.benchmarkCvHtml || "")
                                 );
                                 toast.success("Copied!", "Benchmark CV text copied to clipboard.");
                               }}
@@ -1304,7 +1314,7 @@ export default function ApplicationWorkspacePage() {
                         <div className="mx-auto max-w-[800px]">
                           <div
                             className="doc-preview"
-                            dangerouslySetInnerHTML={{ __html: sanitizeHtml((app.benchmark as any).benchmarkCvHtml || "") }}
+                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(app.benchmark?.benchmarkCvHtml || "") }}
                           />
                         </div>
                       </div>
@@ -1378,22 +1388,22 @@ export default function ApplicationWorkspacePage() {
 
                 {app.gaps ? (
                   <div className="space-y-4">
-                    {(app.gaps as any).compatibility != null && (
+                    {app.gaps.compatibility != null && (
                       <div className="rounded-xl bg-gradient-to-br from-primary/5 to-violet-500/5 border border-primary/10 p-4">
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="text-xs font-semibold text-primary">Compatibility Score</div>
-                            <div className="mt-1 text-2xl font-bold">{(app.gaps as any).compatibility}%</div>
+                            <div className="mt-1 text-2xl font-bold">{app.gaps.compatibility}%</div>
                           </div>
                           <div className="text-right text-xs text-muted-foreground">
-                            {(app.gaps as any).compatibility >= 70 ? "Strong match" : (app.gaps as any).compatibility >= 45 ? "Competitive" : "Needs work"}
+                            {app.gaps.compatibility >= 70 ? "Strong match" : app.gaps.compatibility >= 45 ? "Competitive" : "Needs work"}
                           </div>
                         </div>
                         <div className="mt-2 h-2 rounded-full bg-muted overflow-hidden">
-                          <div className={`h-full rounded-full transition-all ${(app.gaps as any).compatibility >= 70 ? "bg-emerald-500" : (app.gaps as any).compatibility >= 45 ? "bg-amber-500" : "bg-rose-500"}`} style={{ width: `${(app.gaps as any).compatibility}%` }} />
+                          <div className={`h-full rounded-full transition-all ${app.gaps.compatibility >= 70 ? "bg-emerald-500" : app.gaps.compatibility >= 45 ? "bg-amber-500" : "bg-rose-500"}`} style={{ width: `${app.gaps.compatibility}%` }} />
                         </div>
-                        {toLabel((app.gaps as any).summary) && (
-                          <div className="mt-3 text-sm text-foreground/80 leading-relaxed">{toLabel((app.gaps as any).summary)}</div>
+                        {toLabel(app.gaps.summary) && (
+                          <div className="mt-3 text-sm text-foreground/80 leading-relaxed">{toLabel(app.gaps.summary)}</div>
                         )}
                       </div>
                     )}
@@ -1713,6 +1723,7 @@ export default function ApplicationWorkspacePage() {
               if (ungeneratedDocs.length === 0) return null;
               return (
                 <TabsContent value="optional-docs" className="mt-4">
+                  <SectionErrorBoundary label="Optional Documents">
                   <div className="rounded-2xl border bg-card p-5 shadow-soft-sm space-y-4">
                     <div>
                       <h3 className="text-sm font-semibold flex items-center gap-2">
@@ -1781,13 +1792,16 @@ export default function ApplicationWorkspacePage() {
                       ))}
                     </div>
                   </div>
+                  </SectionErrorBoundary>
                 </TabsContent>
               );
             })()}
 
             {/* ── ATS Score Tab ── */}
             <TabsContent value="ats" className="mt-4">
-              <ATSScorePanel cvHtml={cvLocal} jdText={app.confirmedFacts?.jdText || ""} />
+              <SectionErrorBoundary label="ATS Score">
+                <ATSScorePanel cvHtml={cvLocal} jdText={app.confirmedFacts?.jdText || ""} />
+              </SectionErrorBoundary>
             </TabsContent>
 
             {/* ── Document Library Tab ── */}
@@ -1831,6 +1845,7 @@ export default function ApplicationWorkspacePage() {
             </TabsContent>
 
             <TabsContent value="export" className="mt-4">
+              <SectionErrorBoundary label="Export">
               <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -2028,6 +2043,7 @@ export default function ApplicationWorkspacePage() {
                   </div>
                 </div>
               </div>
+              </SectionErrorBoundary>
             </TabsContent>
           </Tabs>
         </div>

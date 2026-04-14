@@ -75,6 +75,15 @@ export interface BenchmarkModule {
   overallScore?: number;
   /** Full HTML CV of the ideal benchmark candidate */
   benchmarkCvHtml?: string;
+  /** Ideal candidate profile */
+  idealProfile?: {
+    title?: string;
+    name?: string;
+    years_experience?: number;
+    [key: string]: any;
+  };
+  /** Ideal candidate skills */
+  idealSkills?: string[];
   createdAt?: number;
 }
 
@@ -96,6 +105,8 @@ export interface GapsModule {
   /** Optional structured gaps */
   gaps?: GapItem[];
   summary?: string;
+  /** Role compatibility percentage */
+  compatibility?: number;
   createdAt?: number;
 }
 
@@ -210,6 +221,7 @@ export interface ApplicationDoc {
   generatedDocuments?: Record<string, string>;
   benchmarkDocuments?: Record<string, string>;
   documentStrategy?: string;
+  /** Company intelligence gathered during recon */
   companyIntel?: Record<string, any>;
 
   /** Scores snapshot for list views */
@@ -225,6 +237,7 @@ export interface ApplicationDoc {
     coverLetter?: number;
     overall?: number;
   };
+
 }
 
 /* ------------------------------------------------------------------ */

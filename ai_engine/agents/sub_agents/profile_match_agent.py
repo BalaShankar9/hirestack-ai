@@ -27,7 +27,11 @@ class ProfileMatchSubAgent(SubAgent):
     async def run(self, context: dict) -> SubAgentResult:
         user_profile = context.get("user_profile", {})
         if not user_profile:
-            return SubAgentResult(agent_name=self.name, error="No user_profile in context")
+            return SubAgentResult(
+                agent_name=self.name,
+                data={"note": "No user_profile in context — skipped"},
+                confidence=0.30,
+            )
 
         # Extract structured evidence from profile
         profile_evidence = await _extract_profile_evidence(user_profile=user_profile)

@@ -137,6 +137,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     except Exception as e:
         logger.debug("Quality observations hydration skipped", error=str(e))
 
+    # Seed the document type catalog (idempotent)
+    try:
+        from app.services.document_catalog import ensure_catalog_seeded
+        from app.core.database import TABLES
+        await ensure_catalog_seeded(get_supabase(), TABLES)
+        logger.info("Document type catalog seeded")
+    except Exception as e:
+        logger.warning("Document catalog seeding failed", error=str(e)[:200])
+
     # Sweep for orphaned modules stuck in 'generating' with no active job
     try:
         from app.api.routes.generate import cleanup_orphaned_generating_modules
@@ -219,12 +228,12 @@ async def _periodic_stale_job_cleanup() -> None:
         try:
             await asyncio.sleep(600)  # 10 minutes
             from app.api.routes.generate import cleanup_stale_generation_jobs
-            cleaned = await cleanup_stale_generation_jobs()
+            cleaned = await asyncio.wait_for(cleanup_stale_generation_jobs(), timeout=30)
             if cleaned:
                 logger.info("Stale job cleanup completed", cleaned_count=cleaned)
             # Also sweep orphaned modules with no active job
             from app.api.routes.generate import cleanup_orphaned_generating_modules
-            orphans = await cleanup_orphaned_generating_modules()
+            orphans = await asyncio.wait_for(cleanup_orphaned_generating_modules(), timeout=30)
             if orphans:
                 logger.info("Orphaned module cleanup completed", cleaned_count=orphans)
         except asyncio.CancelledError:
@@ -443,6 +452,82 @@ async def health_check():
 # ── Frontend error collector ───────────────────────────────────────────
 from pydantic import BaseModel, Field  # noqa: E402
 from typing import List  # noqa: E402
+
+
+# ── Prometheus-compatible metrics endpoint ─────────────────────────────
+
+@app.get("/metrics", tags=["Observability"], include_in_schema=False)
+async def prometheus_metrics():
+    """Expose pipeline metrics in Prometheus text exposition format.
+
+    Provides gauges and counters for pipeline performance, circuit breakers,
+    model health, and queue depth — compatible with Prometheus scrapers,
+    Grafana Cloud, and Railway metrics.
+    """
+    lines: list[str] = []
+
+    # Pipeline run metrics
+    try:
+        from app.core.metrics import MetricsCollector
+        stats = MetricsCollector.get().get_stats()
+
+        active = stats.get("active_jobs", 0)
+        lines.append("# HELP hirestack_active_jobs Number of in-flight generation jobs")
+        lines.append("# TYPE hirestack_active_jobs gauge")
+        lines.append(f"hirestack_active_jobs {active}")
+
+        failovers = stats.get("model_failovers_total", 0)
+        lines.append("# HELP hirestack_model_failovers_total Cumulative model cascade failovers")
+        lines.append("# TYPE hirestack_model_failovers_total counter")
+        lines.append(f"hirestack_model_failovers_total {failovers}")
+
+        for pipeline_name, pstats in stats.get("pipelines", {}).items():
+            safe_name = pipeline_name.replace("-", "_").replace(" ", "_")
+            count = pstats.get("count", 0)
+            success_rate = pstats.get("success_rate", 0)
+            p50 = pstats.get("duration_p50_ms", 0)
+            p95 = pstats.get("duration_p95_ms", 0)
+
+            lines.append(f'hirestack_pipeline_runs_total{{pipeline="{safe_name}"}} {count}')
+            lines.append(f'hirestack_pipeline_success_rate{{pipeline="{safe_name}"}} {success_rate}')
+            lines.append(f'hirestack_pipeline_duration_p50_ms{{pipeline="{safe_name}"}} {p50}')
+            lines.append(f'hirestack_pipeline_duration_p95_ms{{pipeline="{safe_name}"}} {p95}')
+
+        for error_class, ecount in stats.get("error_counts", {}).items():
+            safe_class = error_class.replace('"', '\\"')
+            lines.append(f'hirestack_errors_total{{error_class="{safe_class}"}} {ecount}')
+    except Exception:
+        pass
+
+    # Circuit breaker states
+    try:
+        from app.core.circuit_breaker import _breakers
+        lines.append("# HELP hirestack_circuit_breaker_state Circuit breaker state (0=closed, 1=half_open, 2=open)")
+        lines.append("# TYPE hirestack_circuit_breaker_state gauge")
+        state_map = {"closed": 0, "half_open": 1, "open": 2}
+        for name, breaker in _breakers.items():
+            state_val = state_map.get(breaker.state.value, -1)
+            safe_name = name.replace("-", "_").replace(" ", "_")
+            lines.append(f'hirestack_circuit_breaker_state{{breaker="{safe_name}"}} {state_val}')
+            lines.append(f'hirestack_circuit_breaker_failures{{breaker="{safe_name}"}} {breaker.failure_count}')
+    except Exception:
+        pass
+
+    # Redis / queue depth
+    try:
+        from app.core.queue import queue_depth
+        depth = queue_depth()
+        lines.append("# HELP hirestack_queue_depth Pending jobs in Redis Streams queue")
+        lines.append("# TYPE hirestack_queue_depth gauge")
+        lines.append(f"hirestack_queue_depth {max(0, depth)}")
+    except Exception:
+        pass
+
+    from starlette.responses import Response
+    return Response(
+        content="\n".join(lines) + "\n",
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
 
 
 class _FEError(BaseModel):

@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   TrendingUp, Loader2, Camera, Calendar, BarChart3, Target,
-  Award, Activity, ArrowUp, ArrowDown, Minus, ChevronDown,
+  Award, Activity, ArrowUp, ArrowDown, Minus, ChevronDown, Zap, AlertTriangle,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +21,7 @@ export default function CareerAnalyticsPage() {
 
   const [timeline, setTimeline] = useState<CareerSnapshot[]>([]);
   const [portfolio, setPortfolio] = useState<any>(null);
+  const [phaseLatencies, setPhaseLatencies] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(true);
   const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState("");
@@ -41,6 +42,8 @@ export default function CareerAnalyticsPage() {
       setPortfolio(p);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
+    // Phase latency data is best-effort — don't block the page
+    api.career.phaseLatencies().then((d: any) => setPhaseLatencies(d)).catch(() => {});
   };
 
   const captureSnapshot = async () => {
@@ -207,6 +210,73 @@ export default function CareerAnalyticsPage() {
                   <TrendingUp className="h-3.5 w-3.5" /> New Application
                 </Button>
               </Link>
+            </div>
+          )}
+
+          {/* Phase Latency Panel */}
+          {phaseLatencies && Object.keys(phaseLatencies.stages || {}).length > 0 && (
+            <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-semibold text-sm flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-amber-500" /> Pipeline Phase Latencies
+                </h2>
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  last {phaseLatencies.window_size} runs · in-process
+                </span>
+              </div>
+              {/* Ordered phases */}
+              {["recon","atlas","cipher","quill","forge","sentinel","nova","persist"]
+                .filter((ph) => phaseLatencies.stages[ph])
+                .map((phase) => {
+                  const s = phaseLatencies.stages[phase];
+                  const slo = s.slo_ms as number | null;
+                  const p50 = s.p50_ms as number;
+                  const p95 = s.p95_ms as number;
+                  const last = s.last_ms as number;
+                  const maxBar = slo ? Math.max(slo * 1.3, p95 * 1.1) : p95 * 1.3;
+                  const p50Pct = Math.min(100, Math.round((p50 / maxBar) * 100));
+                  const p95Pct = Math.min(100, Math.round((p95 / maxBar) * 100));
+                  const sloPct = slo ? Math.min(100, Math.round((slo / maxBar) * 100)) : null;
+                  const isBad = s.slo_breached as boolean;
+                  const isWarn = !isBad && slo && p95 > slo * 0.8;
+                  const barColor = isBad ? "bg-rose-500" : isWarn ? "bg-amber-500" : "bg-emerald-500";
+                  const fmt = (ms: number) => ms >= 1000 ? `${(ms/1000).toFixed(1)}s` : `${ms}ms`;
+                  return (
+                    <div key={phase} className="mb-3 last:mb-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-medium font-mono">{phase}</span>
+                          {isBad && <AlertTriangle className="h-3 w-3 text-rose-500" />}
+                          <span className="text-[10px] text-muted-foreground">{s.count}×</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
+                          <span>p50 <strong className="text-foreground">{fmt(p50)}</strong></span>
+                          <span>p95 <strong className={cn(isBad ? "text-rose-500" : isWarn ? "text-amber-500" : "text-foreground")}>{fmt(p95)}</strong></span>
+                          <span>last <strong className="text-foreground">{fmt(last)}</strong></span>
+                          {slo && <span className="text-muted-foreground/60">SLO {fmt(slo)}</span>}
+                        </div>
+                      </div>
+                      {/* Stacked bar track */}
+                      <div className="relative h-3 rounded-full bg-muted overflow-hidden">
+                        {/* p95 bar (background) */}
+                        <div className={cn("absolute left-0 top-0 h-full rounded-full opacity-30", barColor)}
+                          style={{ width: `${p95Pct}%` }} />
+                        {/* p50 bar (foreground) */}
+                        <div className={cn("absolute left-0 top-0 h-full rounded-full", barColor)}
+                          style={{ width: `${p50Pct}%` }} />
+                        {/* SLO threshold tick */}
+                        {sloPct !== null && (
+                          <div className="absolute top-0 bottom-0 w-px bg-foreground/30"
+                            style={{ left: `${sloPct}%` }} />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              <p className="text-[10px] text-muted-foreground mt-3">
+                Dark bar = p50 · faded bar = p95 · vertical tick = SLO threshold.
+                Resets on server restart.
+              </p>
             </div>
           )}
         </>

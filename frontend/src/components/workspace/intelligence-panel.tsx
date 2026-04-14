@@ -78,7 +78,7 @@ function buildInsights(
   }
 
   // Company intel
-  const intel = (app as any)?.company_intel ?? app.companyIntel;
+  const intel = app.companyIntel;
   if (intel && Object.keys(intel).length > 0) {
     const confidence = intel.confidence || "unknown";
     items.push({

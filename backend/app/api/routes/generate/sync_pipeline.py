@@ -13,6 +13,8 @@ from .helpers import (
     PIPELINE_TIMEOUT,
     _RUNTIME_AVAILABLE,
     _classify_ai_error,
+    _build_company_intel_summary,
+    _build_atlas_diagnostics,
     _extract_keywords_from_jd,
     _format_response,
     _sanitize_output_html,
@@ -144,19 +146,27 @@ async def _run_sync_pipeline(req: PipelineRequest, current_user: Dict[str, Any])
     company_intel = {}
     try:
         intel_chain = CompanyIntelChain(ai)
-        company_intel = await intel_chain.gather_intel(
-            company=company,
-            job_title=req.job_title,
-            jd_text=req.jd_text,
+        company_intel = await asyncio.wait_for(
+            intel_chain.gather_intel(
+                company=company,
+                job_title=req.job_title,
+                jd_text=req.jd_text,
+            ),
+            timeout=15,
         )
         logger.info(
             "pipeline.intel_done",
             confidence=company_intel.get("confidence", "unknown"),
             sources=len(company_intel.get("data_sources", [])),
         )
+    except asyncio.TimeoutError:
+        logger.warning("pipeline.intel_timeout")
+        failed_modules.append({"module": "company_intel", "error": "intel_timeout"})
     except Exception as intel_err:
         logger.warning("pipeline.intel_failed", error=str(intel_err)[:200])
         failed_modules.append({"module": "company_intel", "error": str(intel_err)[:200]})
+
+    company_intel_summary = _build_company_intel_summary(company_intel)
 
     # ── Phase 0.7: Catalog-driven document pack planning ─────────
     from app.services.document_catalog import discover_and_observe
@@ -276,10 +286,12 @@ async def _run_sync_pipeline(req: PipelineRequest, current_user: Dict[str, Any])
             user_profile=user_profile, job_title=req.job_title,
             company=company, jd_text=req.jd_text,
             gap_analysis=gap_analysis, resume_text=req.resume_text,
+            company_intel=company_intel_summary,
         ),
         doc_chain.generate_tailored_cover_letter(
             user_profile=user_profile, job_title=req.job_title,
             company=company, jd_text=req.jd_text, gap_analysis=gap_analysis,
+            company_intel=company_intel_summary,
         ),
         consultant.generate_roadmap(gap_analysis, user_profile, req.job_title, company),
         return_exceptions=True,
@@ -340,22 +352,6 @@ async def _run_sync_pipeline(req: PipelineRequest, current_user: Dict[str, Any])
     generated_docs: Dict[str, str] = {}
     if extra_docs_to_generate:
         adaptive_chain = AdaptiveDocumentChain(ai)
-        # Build intel summary for document context
-        intel_summary = ""
-        if company_intel:
-            strategy = company_intel.get("application_strategy", {})
-            culture = company_intel.get("culture_and_values", {})
-            intel_parts = []
-            if culture.get("core_values"):
-                intel_parts.append(f"Company values: {', '.join(culture['core_values'][:5])}")
-            if culture.get("mission_statement"):
-                intel_parts.append(f"Mission: {culture['mission_statement']}")
-            if strategy.get("keywords_to_use"):
-                intel_parts.append(f"Keywords to include: {', '.join(strategy['keywords_to_use'][:8])}")
-            if strategy.get("things_to_mention"):
-                intel_parts.append(f"Reference: {'; '.join(strategy['things_to_mention'][:3])}")
-            intel_summary = "\n".join(intel_parts)
-
         doc_context = {
             "profile": user_profile,
             "jd_text": req.jd_text,
@@ -367,7 +363,7 @@ async def _run_sync_pipeline(req: PipelineRequest, current_user: Dict[str, Any])
             "gaps_summary": key_gaps_str,
             "strengths_summary": strengths_str,
             "benchmark_keywords": ", ".join(keywords[:15]),
-            "company_intel": intel_summary,
+            "company_intel": company_intel_summary,
         }
 
         for i in range(0, len(extra_docs_to_generate), 2):
@@ -423,6 +419,7 @@ async def _run_sync_pipeline(req: PipelineRequest, current_user: Dict[str, Any])
         keywords=keywords,
         job_title=req.job_title,
         benchmark_cv_html=benchmark_cv_html,
+        atlas_diagnostics=_build_atlas_diagnostics(user_profile, benchmark_data),
     )
 
     # Add new fields: discovered documents, all generated docs, benchmark docs

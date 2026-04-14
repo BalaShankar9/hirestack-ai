@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  poweredByHeader: false,
   output: "standalone",
   reactStrictMode: true,
   // Prevent dev/build (or multiple dev servers) from corrupting each other's output.
@@ -7,7 +8,10 @@ const nextConfig = {
   // - Dev can use `NEXT_DIST_DIR=.next-dev-*` via npm scripts
   distDir: process.env.NEXT_DIST_DIR || ".next",
   images: {
-    domains: ["avatars.githubusercontent.com", "lh3.googleusercontent.com"],
+    remotePatterns: [
+      { protocol: "https", hostname: "avatars.githubusercontent.com" },
+      { protocol: "https", hostname: "lh3.googleusercontent.com" },
+    ],
   },
   async rewrites() {
     return [
@@ -20,12 +24,27 @@ const nextConfig = {
   async headers() {
     const isDev = process.env.NODE_ENV !== "production";
     return [
+      // Immutable cache for hashed static assets (JS/CSS chunks)
+      {
+        source: "/_next/static/:path*",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+        ],
+      },
+      // Cache public assets (fonts, images) for 1 day
+      {
+        source: "/fonts/:path*",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" },
+        ],
+      },
+      // Security + CSP headers on all routes
       {
         source: "/(.*)",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
-          { key: "X-XSS-Protection", value: "1; mode=block" },
+          { key: "X-XSS-Protection", value: "0" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()" },
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },

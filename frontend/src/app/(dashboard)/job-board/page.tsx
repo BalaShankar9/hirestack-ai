@@ -197,7 +197,7 @@ export default function JobBoardPage() {
       <div className="flex items-center gap-3">
         <div className="flex gap-1 rounded-lg bg-muted/50 p-0.5">
           {["all", "new", "interested", "applied", "saved"].map((f) => (
-            <button key={f} onClick={() => setFilter(f)} className={cn("rounded-md px-3 py-1.5 text-xs font-medium transition-colors capitalize", filter === f ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>{f}</button>
+            <button key={f} onClick={() => setFilter(f)} className={cn("rounded-lg px-3 py-1.5 text-xs font-medium transition-colors capitalize", filter === f ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>{f}</button>
           ))}
         </div>
         <div className="relative flex-1 max-w-xs">

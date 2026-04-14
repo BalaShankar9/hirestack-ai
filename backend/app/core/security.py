@@ -80,7 +80,7 @@ class SecurityHeadersMiddleware:
     HEADERS: list[tuple[bytes, bytes]] = [
         (b"x-content-type-options", b"nosniff"),
         (b"x-frame-options", b"DENY"),
-        (b"x-xss-protection", b"1; mode=block"),
+        (b"x-xss-protection", b"0"),
         (b"referrer-policy", b"strict-origin-when-cross-origin"),
         (b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"),
         (b"cache-control", b"no-store"),

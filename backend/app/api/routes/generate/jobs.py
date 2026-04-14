@@ -15,6 +15,8 @@ from .helpers import (
     _RUNTIME_AVAILABLE,
     _AGENT_PIPELINES_AVAILABLE,
     _classify_ai_error,
+    _build_company_intel_summary,
+    _build_atlas_diagnostics,
     _extract_pipeline_html,
     _extract_keywords_from_jd,
     _build_evidence_summary,
@@ -470,6 +472,110 @@ async def _persist_generation_result_to_application(
             )
         except Exception as task_err:
             logger.warning("job_runner.task_sync_failed", application_id=application_id, error=str(task_err))
+
+    # ── Populate the document_library table ──────────────────────────
+    try:
+        await _sync_document_library(
+            sb, tables,
+            user_id=user_id,
+            application_id=application_id,
+            result=result,
+            requested=requested,
+        )
+    except Exception as dl_err:
+        logger.warning("job_runner.document_library_sync_failed", application_id=application_id, error=str(dl_err))
+
+
+async def _sync_document_library(
+    sb: Any,
+    tables: Dict[str, str],
+    *,
+    user_id: str,
+    application_id: str,
+    result: Dict[str, Any],
+    requested: set,
+) -> None:
+    """Populate the document_library table with generated content.
+
+    Idempotent: updates existing entries on re-generation instead of creating duplicates.
+
+    Creates:
+      1. Fixed library (persistent, cross-application) — idempotent
+      2. Benchmark library (per-application) — idempotent
+      3. Tailored documents with ready content from the pipeline
+    """
+    from app.services.document_library import DocumentLibraryService
+
+    svc = DocumentLibraryService(sb, tables)
+
+    # 1. Ensure the user's fixed library exists (idempotent — skips existing)
+    await svc.ensure_fixed_library(user_id)
+
+    # 2. Create benchmark library entries for this application (check for existing first)
+    if "benchmark" in requested and result.get("benchmark"):
+        existing_bench = await svc.get_documents_by_category(user_id, "benchmark", application_id)
+        if not existing_bench:
+            await svc.create_benchmark_library(user_id, application_id)
+
+    # 3. Create or update tailored document entries with generated content
+    _DOC_MAP = [
+        ("cvHtml", "cv", "Tailored CV"),
+        ("coverLetterHtml", "cover_letter", "Tailored Cover Letter"),
+        ("personalStatementHtml", "personal_statement", "Tailored Personal Statement"),
+        ("portfolioHtml", "portfolio", "Portfolio"),
+    ]
+
+    # Fetch existing tailored docs for this application to avoid duplicates
+    existing_tailored = await svc.get_documents_by_category(user_id, "tailored", application_id)
+    existing_tailored_by_type = {d["doc_type"]: d for d in existing_tailored}
+
+    for result_key, doc_type, label in _DOC_MAP:
+        html = result.get(result_key) or ""
+        if not isinstance(html, str) or not html.strip():
+            continue
+
+        existing_doc = existing_tailored_by_type.get(doc_type)
+        if existing_doc:
+            # Update the existing entry instead of creating a duplicate
+            await svc.update_document_content(user_id, existing_doc["id"], html)
+        else:
+            await svc.create_document(
+                user_id=user_id,
+                doc_type=doc_type,
+                doc_category="tailored",
+                label=label,
+                application_id=application_id,
+                html_content=html,
+                status="ready",
+                source="planner",
+            )
+
+    # 4. If there's a benchmark CV HTML, store it in the benchmark library
+    benchmark_cv = result.get("benchmarkCvHtml") or ""
+    if isinstance(benchmark_cv, str) and benchmark_cv.strip():
+        bench_docs = await svc.get_documents_by_category(user_id, "benchmark", application_id)
+        for bd in bench_docs:
+            if bd.get("doc_type") == "cv":
+                await svc.update_document_content(user_id, bd["id"], benchmark_cv)
+                break
+
+    # 5. Populate tailored docs from document pack plan if available
+    discovered = result.get("discoveredDocuments") or []
+    if isinstance(discovered, list) and discovered:
+        planned = []
+        for d in discovered:
+            if not isinstance(d, dict):
+                continue
+            dkey = d.get("key") or d.get("doc_type") or ""
+            dlabel = d.get("label") or dkey.replace("_", " ").title()
+            # Skip types already created above or already in library
+            if dkey in ("cv", "cover_letter", "personal_statement", "portfolio"):
+                continue
+            if dkey in existing_tailored_by_type:
+                continue
+            planned.append({"key": dkey, "label": dlabel, "metadata": d.get("metadata", {})})
+        if planned:
+            await svc.create_tailored_documents_from_plan(user_id, application_id, planned)
 
 
 def _phase_to_agent_name(phase: str) -> str:
@@ -1010,12 +1116,33 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
                     metadata=event.get("metadata") if isinstance(event.get("metadata"), dict) else None,
                 )
 
-            company_intel = await recon_chain.gather_intel(
-                company=company_name,
-                job_title=job_title,
-                jd_text=jd_text_val,
-                on_event=on_recon_event,
-            )
+            try:
+                company_intel = await asyncio.wait_for(
+                    recon_chain.gather_intel(
+                        company=company_name,
+                        job_title=job_title,
+                        jd_text=jd_text_val,
+                        on_event=on_recon_event,
+                    ),
+                    timeout=15,
+                )
+            except asyncio.TimeoutError:
+                await emit_detail(
+                    "recon",
+                    "Recon timed out while gathering external sources; continuing with JD-based signals.",
+                    "warning",
+                    "analysis",
+                )
+                company_intel = {
+                    "data_sources": ["Job description analysis"],
+                    "confidence": "low",
+                    "data_completeness": {
+                        "website_data": False,
+                        "jd_analysis": True,
+                        "github_data": False,
+                        "careers_page": False,
+                    },
+                }
         else:
             await emit_detail(
                 agent="recon",
@@ -1131,7 +1258,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             "jd_text": jd_text_val,
             "gap_analysis": gap_analysis,
             "resume_text": resume_text_val,
-            "company_intel": company_intel,
+            "company_intel": _build_company_intel_summary(company_intel),
         }
 
         def _ctx_for_pipeline(pipeline_name: str) -> dict:
@@ -1181,6 +1308,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         else:
             cv_result: Any = None  # no PipelineResult in legacy path
             doc_chain = DocumentGeneratorChain(ai)
+            company_intel_summary = _build_company_intel_summary(company_intel)
             cv_html, cl_html, roadmap = await asyncio.gather(
                 doc_chain.generate_tailored_cv(
                     user_profile=user_profile,
@@ -1189,6 +1317,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
                     jd_text=jd_text_val,
                     gap_analysis=gap_analysis,
                     resume_text=resume_text_val,
+                    company_intel=company_intel_summary,
                 ),
                 doc_chain.generate_tailored_cover_letter(
                     user_profile=user_profile,
@@ -1196,6 +1325,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
                     company=company_str,
                     jd_text=jd_text_val,
                     gap_analysis=gap_analysis,
+                    company_intel=company_intel_summary,
                 ),
                 consultant.generate_roadmap(gap_analysis, user_profile, job_title, company_str),
                 return_exceptions=True,
@@ -1312,6 +1442,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             keywords=keywords,
             job_title=job_title,
             benchmark_cv_html=benchmark_cv_html,
+            atlas_diagnostics=_build_atlas_diagnostics(user_profile, benchmark_data),
         )
         response["meta"] = {
             **(response.get("meta") or {}),

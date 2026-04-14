@@ -282,6 +282,7 @@ class DrafterAgent(BaseAgent):
             "jd_text": "jd_text",
             "gap_analysis": "gap_analysis",
             "resume_text": "resume_text",
+            "company_intel": "company_intel",
             "benchmark": "benchmark",
             "benchmark_data": "benchmark_data",
             "strengths": "strengths",

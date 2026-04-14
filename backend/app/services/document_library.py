@@ -26,6 +26,8 @@ BENCHMARK_DOCUMENT_TYPES = [
     {"key": "personal_statement", "label": "Benchmark Personal Statement"},
     {"key": "executive_summary", "label": "Benchmark Executive Summary"},
     {"key": "skills_matrix", "label": "Benchmark Skills Matrix"},
+    {"key": "interview_preparation", "label": "Benchmark Interview Guide"},
+    {"key": "competency_framework", "label": "Benchmark Competency Framework"},
 ]
 
 # Documents that belong in every user's fixed library (cross-application)
@@ -35,7 +37,108 @@ FIXED_DOCUMENT_TYPES = [
     {"key": "core_competencies", "label": "Core Competencies"},
     {"key": "evidence_portfolio", "label": "Evidence Portfolio"},
     {"key": "skills_inventory", "label": "Skills Inventory"},
+    {"key": "professional_summary", "label": "Professional Summary"},
+    {"key": "achievements_log", "label": "Achievements Log"},
+    {"key": "certifications_tracker", "label": "Certifications & Training"},
+    {"key": "references_sheet", "label": "References Sheet"},
+    {"key": "career_timeline", "label": "Career Timeline"},
 ]
+
+# Template content for fixed documents (shown as starter content)
+FIXED_DOCUMENT_TEMPLATES: Dict[str, str] = {
+    "master_cv": (
+        "<h1>Master CV</h1>"
+        "<p>Your comprehensive career document containing <strong>all</strong> roles, skills, projects, "
+        "and accomplishments. This is your single source of truth — tailored CVs are generated from this.</p>"
+        "<h2>How to use</h2>"
+        "<ul><li>Add every role you've held, including dates and key achievements</li>"
+        "<li>Include all certifications, education, and professional development</li>"
+        "<li>List technical skills, tools, and methodologies</li>"
+        "<li>HireStack AI will tailor job-specific CVs from this master document</li></ul>"
+    ),
+    "career_narrative": (
+        "<h1>Career Narrative</h1>"
+        "<p>A compelling story of your professional journey — connecting your experiences, motivations, "
+        "and aspirations into a cohesive narrative.</p>"
+        "<h2>How to use</h2>"
+        "<ul><li>Describe the thread that connects your career moves</li>"
+        "<li>Highlight pivotal moments and what you learned</li>"
+        "<li>Explain your professional mission and values</li>"
+        "<li>This feeds into cover letters and personal statements</li></ul>"
+    ),
+    "core_competencies": (
+        "<h1>Core Competencies</h1>"
+        "<p>An inventory of your top professional competencies with evidence and proficiency levels.</p>"
+        "<h2>How to use</h2>"
+        "<ul><li>List your top 10–15 competencies</li>"
+        "<li>Rate your proficiency: Expert / Advanced / Intermediate</li>"
+        "<li>Link each competency to concrete evidence (projects, results)</li>"
+        "<li>HireStack uses this to match you against job requirements</li></ul>"
+    ),
+    "evidence_portfolio": (
+        "<h1>Evidence Portfolio</h1>"
+        "<p>A structured collection of evidence supporting your competency claims — projects, metrics, "
+        "testimonials, and artifacts.</p>"
+        "<h2>How to use</h2>"
+        "<ul><li>Add STAR-format entries (Situation, Task, Action, Result)</li>"
+        "<li>Include quantified outcomes where possible</li>"
+        "<li>Attach or reference supporting documents and links</li>"
+        "<li>This powers the evidence-backed claims in your applications</li></ul>"
+    ),
+    "skills_inventory": (
+        "<h1>Skills Inventory</h1>"
+        "<p>A complete catalog of your technical and soft skills with proficiency ratings.</p>"
+        "<h2>How to use</h2>"
+        "<ul><li>Categorize skills: Technical, Leadership, Domain, Tools</li>"
+        "<li>Rate each skill's proficiency and recency</li>"
+        "<li>HireStack AI uses this for gap analysis and keyword optimization</li></ul>"
+    ),
+    "professional_summary": (
+        "<h1>Professional Summary</h1>"
+        "<p>A concise, polished elevator pitch summarizing who you are, what you do, and the value you bring.</p>"
+        "<h2>How to use</h2>"
+        "<ul><li>Keep it to 3–5 sentences</li>"
+        "<li>Lead with your strongest value proposition</li>"
+        "<li>Include years of experience and key specializations</li>"
+        "<li>This appears at the top of generated CVs and LinkedIn profiles</li></ul>"
+    ),
+    "achievements_log": (
+        "<h1>Achievements Log</h1>"
+        "<p>A chronological record of your professional achievements with metrics and impact.</p>"
+        "<h2>How to use</h2>"
+        "<ul><li>Record achievements as they happen</li>"
+        "<li>Include quantified impact (%, $, time saved)</li>"
+        "<li>Tag each with relevant skills and competencies</li>"
+        "<li>HireStack pulls from this to strengthen application claims</li></ul>"
+    ),
+    "certifications_tracker": (
+        "<h1>Certifications & Training</h1>"
+        "<p>Track all your professional certifications, courses, and training with dates and status.</p>"
+        "<h2>How to use</h2>"
+        "<ul><li>List certification name, issuing body, and date</li>"
+        "<li>Track renewal dates and continuing education requirements</li>"
+        "<li>Include online courses and workshops</li>"
+        "<li>HireStack highlights relevant certifications per application</li></ul>"
+    ),
+    "references_sheet": (
+        "<h1>References Sheet</h1>"
+        "<p>A ready-to-share document with your professional references, pre-formatted for employers.</p>"
+        "<h2>How to use</h2>"
+        "<ul><li>Include 3–5 professional references</li>"
+        "<li>List name, title, relationship, and contact info</li>"
+        "<li>Always confirm permission before listing someone</li>"
+        "<li>Keep updated — this is shared on request during interviews</li></ul>"
+    ),
+    "career_timeline": (
+        "<h1>Career Timeline</h1>"
+        "<p>A visual timeline of your career progression showing roles, promotions, and key milestones.</p>"
+        "<h2>How to use</h2>"
+        "<ul><li>Add each role with start/end dates</li>"
+        "<li>Mark promotions, lateral moves, and industry changes</li>"
+        "<li>Include education and certification milestones</li>"
+        "<li>HireStack uses this to tell your career growth story</li></ul>"
+    ),
+}
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -235,22 +338,33 @@ class DocumentLibraryService:
     # ── Initialization helpers ────────────────────────────────────
 
     async def ensure_fixed_library(self, user_id: str) -> List[Dict[str, Any]]:
-        """Ensure the user has a fixed document library. Creates planned entries if missing."""
+        """Ensure the user has a fixed document library. Creates entries with template content if missing."""
         existing = await self.get_documents_by_category(user_id, "fixed")
         existing_types = {d["doc_type"] for d in existing}
 
-        new_docs = []
+        new_rows = []
         for doc_def in FIXED_DOCUMENT_TYPES:
             if doc_def["key"] not in existing_types:
-                new_docs.append({
+                template = FIXED_DOCUMENT_TEMPLATES.get(doc_def["key"], "")
+                new_rows.append({
+                    "user_id": user_id,
+                    "application_id": None,
                     "doc_type": doc_def["key"],
                     "doc_category": "fixed",
                     "label": doc_def["label"],
+                    "html_content": template,
+                    "metadata": {},
+                    "status": "ready" if template else "planned",
                     "source": "auto_evolve",
                 })
 
-        if new_docs:
-            created = await self.create_planned_documents(user_id, None, new_docs)
+        if new_rows:
+            resp = await asyncio.to_thread(
+                lambda: self._db.table(self._tables["document_library"])
+                .insert(new_rows)
+                .execute()
+            )
+            created = resp.data or []
             existing.extend(created)
 
         return existing

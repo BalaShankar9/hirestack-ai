@@ -60,7 +60,7 @@ class RequestIDMiddleware:
 class AccessLogMiddleware:
     """Pure-ASGI middleware that logs every HTTP request with timing."""
 
-    _SKIP_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
+    _SKIP_PATHS = {"/health", "/metrics", "/docs", "/openapi.json", "/redoc"}
 
     def __init__(self, app: Any) -> None:
         self.app = app

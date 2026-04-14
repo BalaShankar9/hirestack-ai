@@ -494,10 +494,10 @@ export default function EvidenceVaultPage() {
                   {((ev.skills?.length ?? 0) > 0 || (ev.tools?.length ?? 0) > 0) && (
                     <div className="flex flex-wrap gap-1">
                       {(ev.skills ?? []).slice(0, 3).map((s: string) => (
-                        <Badge key={s} variant="secondary" className="text-[10px] rounded-md">{s}</Badge>
+                        <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>
                       ))}
                       {(ev.tools ?? []).slice(0, 2).map((t: string) => (
-                        <Badge key={t} variant="outline" className="text-[10px] rounded-md">{t}</Badge>
+                        <Badge key={t} variant="outline" className="text-[10px]">{t}</Badge>
                       ))}
                     </div>
                   )}
