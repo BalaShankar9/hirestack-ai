@@ -694,13 +694,18 @@ class PipelineRuntime:
         plan_artifact = None
         try:
             from ai_engine.agents.evidence_graph import EvidenceGraphBuilder
+            from ai_engine.agents.evidence import EvidenceLedger
             from ai_engine.agents.planner import PlannerAgent, PipelinePlan, PipelineStep
 
             graph_builder = EvidenceGraphBuilder(db=sb, user_id=user_id)
             for result in (bench_result, gap_result):
-                ledger = getattr(result, "evidence_ledger", None)
-                if ledger:
-                    graph_builder.canonicalize(ledger)
+                ledger_raw = getattr(result, "evidence_ledger", None)
+                if ledger_raw:
+                    # PipelineResult.evidence_ledger is a serialised dict;
+                    # canonicalize() expects an EvidenceLedger instance.
+                    if isinstance(ledger_raw, dict):
+                        ledger_raw = EvidenceLedger.from_dict(ledger_raw)
+                    graph_builder.canonicalize(ledger_raw)
 
             evidence_score = graph_builder.compute_evidence_strength_score()
 
