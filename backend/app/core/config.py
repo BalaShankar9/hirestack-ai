@@ -82,10 +82,10 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 100
     rate_limit_window: int = 60  # seconds
 
-    @field_validator("supabase_url", "supabase_anon_key", "supabase_service_role_key")
+    @field_validator("supabase_url", "supabase_service_role_key")
     @classmethod
     def _require_in_production(cls, v: str, info) -> str:
-        """Warn loudly if critical Supabase values are empty."""
+        """Fail fast if critical Supabase values are empty in production."""
         import os
         if not v and os.getenv("ENVIRONMENT", "development") == "production":
             raise ValueError(f"{info.field_name} must be set in production")
