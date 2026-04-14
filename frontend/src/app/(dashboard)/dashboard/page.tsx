@@ -130,15 +130,20 @@ export default function DashboardPage() {
   const topApps = useMemo(() => showAllApps ? apps : apps.slice(0, 8), [apps, showAllApps]);
 
   const stats = useMemo(() => {
-    const active = apps.filter((a) => a.status !== "archived").length;
-    const avgMatch = apps.length === 0 ? 0 : Math.round(apps.reduce((s, a) => s + (a.scores?.match ?? 0), 0) / apps.length);
-    // Career Pulse: weighted health score
-    const completeness = Math.min(100, active * 15);
-    const matchHealth = avgMatch;
-    const evidenceHealth = Math.min(100, evidence.length * 12);
-    const taskHealth = openTasks.length > 0 ? Math.max(0, 100 - openTasks.length * 8) : 100;
-    const pulse = Math.round(completeness * 0.2 + matchHealth * 0.4 + evidenceHealth * 0.2 + taskHealth * 0.2);
-    return { apps: active, openTasks: openTasks.length, evidence: evidence.length, avgMatch, pulse };
+    try {
+      const active = apps.filter((a) => a.status !== "archived").length;
+      const avgMatch = apps.length === 0 ? 0 : Math.round(apps.reduce((s, a) => s + (a.scores?.match ?? 0), 0) / apps.length);
+      // Career Pulse: weighted health score
+      const completeness = Math.min(100, active * 15);
+      const matchHealth = avgMatch;
+      const evidenceHealth = Math.min(100, evidence.length * 12);
+      const taskHealth = openTasks.length > 0 ? Math.max(0, 100 - openTasks.length * 8) : 100;
+      const pulse = Math.round(completeness * 0.2 + matchHealth * 0.4 + evidenceHealth * 0.2 + taskHealth * 0.2);
+      return { apps: active, openTasks: openTasks.length, evidence: evidence.length, avgMatch, pulse };
+    } catch (e) {
+      console.error("[DashboardPage] Failed to compute stats:", e);
+      return { apps: 0, openTasks: 0, evidence: 0, avgMatch: 0, pulse: 0 };
+    }
   }, [apps, evidence.length, openTasks.length]);
 
   // Load AI briefing
