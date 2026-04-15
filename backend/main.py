@@ -112,10 +112,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     ai_configured = bool(settings.gemini_api_key) or settings.gemini_use_vertexai
     if not ai_configured:
-        logger.warning(
+        msg = (
             "Gemini is not configured — generation endpoints will fail. "
-            "Set GEMINI_API_KEY or enable GEMINI_USE_VERTEXAI.",
+            "Set GEMINI_API_KEY or enable GEMINI_USE_VERTEXAI."
         )
+        if _is_prod:
+            raise RuntimeError(msg)
+        logger.warning(msg)
 
     try:
         from app.api.routes.generate import recover_inflight_generation_jobs
