@@ -71,6 +71,9 @@ export default function LearningPage() {
   const { data: apps = [] } = useApplications(userId, 50);
   const appGaps = useMemo(() => {
     const allGaps: { skill: string; severity: string; resources: any[]; appTitle: string }[] = [];
+    const getSeverityOrder = (sev: string) =>
+      ({ critical: 0, major: 1, moderate: 2, minor: 3 }[sev] ?? 99);
+
     apps.forEach(app => {
       const gaps = app.gaps as any;
       const structured = gaps?.skill_gaps ?? gaps?.skillGaps ?? [];
@@ -89,10 +92,9 @@ export default function LearningPage() {
     });
     // Deduplicate by skill, keep highest severity
     const bySkill: Record<string, typeof allGaps[0]> = {};
-    const sevOrder = { critical: 0, major: 1, moderate: 2, minor: 3 };
     allGaps.forEach(g => {
       const key = g.skill.toLowerCase();
-      if (!bySkill[key] || (sevOrder[g.severity as keyof typeof sevOrder] ?? 99) < (sevOrder[bySkill[key].severity as keyof typeof sevOrder] ?? 99)) {
+      if (!bySkill[key] || getSeverityOrder(g.severity) < getSeverityOrder(bySkill[key].severity)) {
         bySkill[key] = g;
       }
     });

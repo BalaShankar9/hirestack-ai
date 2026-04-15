@@ -93,7 +93,7 @@ Rules:
 7. For government/public sector: selection_criteria and capability_statement are almost always required.
 8. For academic: research_statement, teaching_philosophy usually required.
 9. For executive/senior roles: executive_summary often required.
-10. For ANY role where the JD mentions "lead", "own", "drive", "build", "manage", "grow", "responsible for", or "head of": include thirty_sixty_ninety_day_plan in required. Mid-level roles with these signals benefit enormously from a 30-60-90 plan as a differentiator.
+10. For ANY role where the JD mentions "lead", "own", "drive", "build", "manage", "grow", "responsible for", or "head of": include thirty_sixty_ninety_day_plan in required. Mid-level roles with these signals benefit enormously from a 30-60-90 plan as a differentiator. Note: this rule intentionally over-includes to maximize candidate differentiation — even IC roles with ownership language benefit from this document.
 11. For consulting/freelance/contract roles: project_proposal is required.
 12. For all roles: interview_prep_guide is optional but always beneficial — surface it.
 13. For developer advocate, academic, or conference-speaker roles: speaking_proposal is required.

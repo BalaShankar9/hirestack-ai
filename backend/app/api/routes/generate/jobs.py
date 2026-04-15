@@ -1234,7 +1234,14 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         # Recover from partial failures
         if isinstance(gap_analysis, Exception):
             logger.warning("job_runner.gap_analysis_failed", error=str(gap_analysis))
-            gap_analysis = {}
+            gap_analysis = {
+                "missing_keywords": [],
+                "compatibility_score": 0,
+                "readiness_level": "needs-work",
+                "skill_gaps": [],
+                "strengths": [],
+                "recommendations": [],
+            }
         if isinstance(_doc_pack_plan_job, Exception):
             logger.warning("job_runner.doc_planning_failed", error=str(_doc_pack_plan_job))
             _doc_pack_plan_job = None

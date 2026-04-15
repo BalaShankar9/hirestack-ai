@@ -382,54 +382,9 @@ class AdaptiveDocumentChain:
             extra_parts.append(f"TARGET KEYWORDS: {context['benchmark_keywords']}")
 
         # ── Structured intel injection per doc type (H1-3) ─────────
-        # Use the 150-word digest for prompt efficiency; add doc-specific structured fields on top.
         company_intel_obj = context.get("company_intel_obj") or {}
         intel_digest = context.get("company_intel_digest") or context.get("company_intel") or ""
-        if intel_digest:
-            extra_parts.append(f"APPLICATION STRATEGY DIGEST:\n{intel_digest}")
-
-        if company_intel_obj:
-            if doc_type == "cv":
-                must_have = company_intel_obj.get("hiring_intelligence", {}).get("must_have_skills", [])
-                if must_have:
-                    extra_parts.append(
-                        f"MUST-HAVE SKILLS CHECKLIST (verify all are present in CV):\n"
-                        + "\n".join(f"- {s}" for s in must_have)
-                    )
-            elif doc_type == "cover_letter":
-                hooks = company_intel_obj.get("application_strategy", {}).get("cover_letter_hooks", [])
-                founder_pts = company_intel_obj.get("founder_intel", {}).get("talking_points", [])
-                if hooks:
-                    extra_parts.append(f"COVER LETTER HOOKS (choose one for opening):\n" + "\n".join(f"- {h}" for h in hooks[:3]))
-                if founder_pts:
-                    extra_parts.append(f"FOUNDER/LEADERSHIP TALKING POINTS:\n" + "\n".join(f"- {p}" for p in founder_pts[:3]))
-            elif doc_type in ("thirty_sixty_ninety_day_plan", "ninety_day_plan"):
-                co = company_intel_obj.get("company_overview", {})
-                rd = company_intel_obj.get("recent_developments", {})
-                ps = company_intel_obj.get("products_and_services", {})
-                press = company_intel_obj.get("press_intel", {})
-                if co.get("stage"):
-                    extra_parts.append(f"COMPANY STAGE: {co['stage']}")
-                if rd.get("news_highlights"):
-                    extra_parts.append(f"RECENT DEVELOPMENTS:\n" + "\n".join(f"- {n}" for n in rd["news_highlights"][:3]))
-                if press.get("last_6_months"):
-                    extra_parts.append(f"LAST 6 MONTHS PRESS:\n" + "\n".join(f"- {n}" for n in press["last_6_months"][:3]))
-                if ps.get("main_products"):
-                    extra_parts.append(f"PRODUCTS/SERVICES TO REFERENCE: {', '.join(ps['main_products'][:4])}")
-            elif doc_type == "interview_prep_guide":
-                hi = company_intel_obj.get("hiring_intelligence", {})
-                ri = company_intel_obj.get("review_intel", {})
-                if hi.get("interview_process"):
-                    extra_parts.append(f"KNOWN INTERVIEW STAGES:\n" + "\n".join(f"- {s}" for s in hi["interview_process"][:5]))
-                if ri.get("actual_interview_questions"):
-                    extra_parts.append(f"QUESTIONS REAL CANDIDATES REPORTED:\n" + "\n".join(f"- {q}" for q in ri["actual_interview_questions"][:5]))
-            elif doc_type == "networking_email":
-                fi = company_intel_obj.get("founder_intel", {})
-                pi = company_intel_obj.get("press_intel", {})
-                if fi.get("talking_points"):
-                    extra_parts.append(f"PERSONALIZATION HOOKS (founder/leader intel):\n" + "\n".join(f"- {p}" for p in fi["talking_points"][:2]))
-                if pi.get("last_6_months"):
-                    extra_parts.append(f"RECENT LAUNCHES TO REFERENCE:\n" + "\n".join(f"- {n}" for n in pi["last_6_months"][:2]))
+        extra_parts.extend(self._build_intel_context(doc_type, intel_digest, company_intel_obj))
 
         mode_instruction = BENCHMARK_INSTRUCTION if mode == "benchmark" else USER_INSTRUCTION
 
@@ -471,6 +426,68 @@ class AdaptiveDocumentChain:
         if result.endswith("```"):
             result = result.rsplit("```", 1)[0]
         return result.strip()
+
+    def _build_intel_context(
+        self,
+        doc_type: str,
+        intel_digest: str,
+        company_intel_obj: dict,
+    ) -> list:
+        """Build per-document-type intel context snippets for prompt injection.
+
+        Uses the 150-word digest for general prompt efficiency and adds
+        doc-specific structured fields on top (H1-3 / H3-3).
+        """
+        parts = []
+        if intel_digest:
+            parts.append(f"APPLICATION STRATEGY DIGEST:\n{intel_digest}")
+
+        if not company_intel_obj:
+            return parts
+
+        if doc_type == "cv":
+            must_have = company_intel_obj.get("hiring_intelligence", {}).get("must_have_skills", [])
+            if must_have:
+                parts.append(
+                    "MUST-HAVE SKILLS CHECKLIST (verify all are present in CV):\n"
+                    + "\n".join(f"- {s}" for s in must_have)
+                )
+        elif doc_type == "cover_letter":
+            hooks = company_intel_obj.get("application_strategy", {}).get("cover_letter_hooks", [])
+            founder_pts = company_intel_obj.get("founder_intel", {}).get("talking_points", [])
+            if hooks:
+                parts.append("COVER LETTER HOOKS (choose one for opening):\n" + "\n".join(f"- {h}" for h in hooks[:3]))
+            if founder_pts:
+                parts.append("FOUNDER/LEADERSHIP TALKING POINTS:\n" + "\n".join(f"- {p}" for p in founder_pts[:3]))
+        elif doc_type in ("thirty_sixty_ninety_day_plan", "ninety_day_plan"):
+            co = company_intel_obj.get("company_overview", {})
+            rd = company_intel_obj.get("recent_developments", {})
+            ps = company_intel_obj.get("products_and_services", {})
+            press = company_intel_obj.get("press_intel", {})
+            if co.get("stage"):
+                parts.append(f"COMPANY STAGE: {co['stage']}")
+            if rd.get("news_highlights"):
+                parts.append("RECENT DEVELOPMENTS:\n" + "\n".join(f"- {n}" for n in rd["news_highlights"][:3]))
+            if press.get("last_6_months"):
+                parts.append("LAST 6 MONTHS PRESS:\n" + "\n".join(f"- {n}" for n in press["last_6_months"][:3]))
+            if ps.get("main_products"):
+                parts.append(f"PRODUCTS/SERVICES TO REFERENCE: {', '.join(ps['main_products'][:4])}")
+        elif doc_type == "interview_prep_guide":
+            hi = company_intel_obj.get("hiring_intelligence", {})
+            ri = company_intel_obj.get("review_intel", {})
+            if hi.get("interview_process"):
+                parts.append("KNOWN INTERVIEW STAGES:\n" + "\n".join(f"- {s}" for s in hi["interview_process"][:5]))
+            if ri.get("actual_interview_questions"):
+                parts.append("QUESTIONS REAL CANDIDATES REPORTED:\n" + "\n".join(f"- {q}" for q in ri["actual_interview_questions"][:5]))
+        elif doc_type == "networking_email":
+            fi = company_intel_obj.get("founder_intel", {})
+            pi = company_intel_obj.get("press_intel", {})
+            if fi.get("talking_points"):
+                parts.append("PERSONALIZATION HOOKS (founder/leader intel):\n" + "\n".join(f"- {p}" for p in fi["talking_points"][:2]))
+            if pi.get("last_6_months"):
+                parts.append("RECENT LAUNCHES TO REFERENCE:\n" + "\n".join(f"- {n}" for n in pi["last_6_months"][:2]))
+
+        return parts
 
     def _get_max_tokens(self, doc_type: str) -> int:
         large = {"cv", "publications_list", "portfolio", "selection_criteria", "case_study"}
