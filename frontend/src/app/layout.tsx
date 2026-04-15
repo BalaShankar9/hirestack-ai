@@ -99,19 +99,7 @@ export default function RootLayout({
             <Toaster />
           </Providers>
         </ErrorBoundary>
-        <Script id="card-spotlight" strategy="afterInteractive">{`
-          document.addEventListener('mousemove',function(e){
-            var t=e.target;while(t&&t!==document){
-              if(t.classList&&t.classList.contains('card-spotlight')){
-                var r=t.getBoundingClientRect();
-                t.style.setProperty('--spotlight-x',(e.clientX-r.left)+'px');
-                t.style.setProperty('--spotlight-y',(e.clientY-r.top)+'px');
-                return;
-              }
-              t=t.parentElement;
-            }
-          });
-        `}</Script>
+        <Script id="card-spotlight" src="/js/card-spotlight.js" strategy="afterInteractive" />
       </body>
     </html>
   );

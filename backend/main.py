@@ -365,7 +365,8 @@ async def health_check():
         )
         supabase_status = {"connected": True}
     except Exception as e:
-        supabase_status = {"connected": False, "error": str(e)}
+        _detail = str(e) if (settings.debug or settings.environment != "production") else "unavailable"
+        supabase_status = {"connected": False, "error": _detail}
 
     # Check AI provider (Gemini only)
     ai_status = {"provider": "gemini", "ok": bool(getattr(settings, "gemini_api_key", "")) or getattr(settings, "gemini_use_vertexai", False)}

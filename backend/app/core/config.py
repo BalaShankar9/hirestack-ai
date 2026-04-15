@@ -91,6 +91,15 @@ class Settings(BaseSettings):
             raise ValueError(f"{info.field_name} must be set in production")
         return v
 
+    @field_validator("supabase_jwt_secret")
+    @classmethod
+    def _require_jwt_secret_in_production(cls, v: str, info) -> str:
+        """Fail fast if JWT secret is empty in production."""
+        import os
+        if not v and os.getenv("ENVIRONMENT", "development") == "production":
+            raise ValueError("supabase_jwt_secret must be set in production for JWT verification")
+        return v
+
 
 @lru_cache
 def get_settings() -> Settings:

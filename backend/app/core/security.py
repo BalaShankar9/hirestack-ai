@@ -57,7 +57,7 @@ def get_user_or_ip(request: Request) -> str:
 limiter = Limiter(
     key_func=get_user_or_ip,
     storage_uri=_storage_uri,
-    default_limits=["100/minute"],
+    default_limits=[f"{os.getenv('RATE_LIMIT_REQUESTS', '100')}/minute"],
 )
 
 # ---------------------------------------------------------------------------
@@ -85,7 +85,7 @@ class SecurityHeadersMiddleware:
         (b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"),
         (b"cache-control", b"no-store"),
         (b"content-security-policy",
-         b"default-src 'self'; script-src 'self' 'unsafe-inline'; "
+         b"default-src 'self'; script-src 'self'; "
          b"style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; "
          b"font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; "
          b"frame-ancestors 'none'"),

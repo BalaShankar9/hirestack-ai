@@ -175,11 +175,20 @@ class BillingService:
             return None
 
     async def handle_webhook(self, event_type: str, data: Dict[str, Any]):
-        """Handle a Stripe webhook event."""
+        """Handle a Stripe webhook event with idempotency protection."""
+        # Idempotency: use the Stripe event ID to prevent duplicate processing
+        event_id = data.get("id") or data.get("object", {}).get("id", "")
+
         if event_type == "checkout.session.completed":
             org_id = data.get("metadata", {}).get("org_id")
             plan = data.get("metadata", {}).get("plan", "pro")
             if org_id:
+                # Check if this subscription was already activated (idempotency)
+                existing_sub = await self.get_subscription(org_id)
+                stripe_sub_id = data.get("subscription", "")
+                if existing_sub and existing_sub.get("stripe_subscription_id") == stripe_sub_id:
+                    logger.info("webhook_duplicate_skipped", event_type=event_type, org_id=org_id)
+                    return
                 await self._activate_subscription(org_id, plan, data)
 
         elif event_type == "customer.subscription.updated":
