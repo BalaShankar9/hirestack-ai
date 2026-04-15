@@ -9,8 +9,10 @@ from httpx import AsyncClient, ASGITransport
 os.environ["DEBUG"] = "false"
 os.environ["ENVIRONMENT"] = "test"
 os.environ["SUPABASE_URL"] = os.environ.get("SUPABASE_URL", "https://placeholder.supabase.co")
-os.environ["SUPABASE_ANON_KEY"] = os.environ.get("SUPABASE_ANON_KEY", "placeholder")
-os.environ["SUPABASE_SERVICE_ROLE_KEY"] = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "placeholder")
+# Supabase SDK validates the key matches JWT format (header.payload.signature)
+_DUMMY_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ0ZXN0Iiwicm9sZSI6ImFub24ifQ.ZGVhZGJlZWY"
+os.environ["SUPABASE_ANON_KEY"] = os.environ.get("SUPABASE_ANON_KEY", _DUMMY_JWT)
+os.environ["SUPABASE_SERVICE_ROLE_KEY"] = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", _DUMMY_JWT)
 
 
 @pytest.fixture
