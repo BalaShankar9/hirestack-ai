@@ -90,6 +90,10 @@ const QUICK_ACTIONS = [
   { href: "/salary", label: "Salary Coach", icon: DollarSign, color: "bg-amber-500/10 text-amber-500" },
   { href: "/evidence", label: "Evidence", icon: ShieldCheck, color: "bg-violet-500/10 text-violet-500" },
   { href: "/nexus", label: "Profile", icon: User, color: "bg-teal-500/10 text-teal-500" },
+  { href: "/job-board", label: "Job Board", icon: Briefcase, color: "bg-emerald-500/10 text-emerald-500" },
+  { href: "/career-analytics", label: "Analytics", icon: BarChart3, color: "bg-rose-500/10 text-rose-500" },
+  { href: "/learning", label: "Daily Learn", icon: BookOpen, color: "bg-orange-500/10 text-orange-500" },
+  { href: "/gaps", label: "Gap Report", icon: Brain, color: "bg-indigo-500/10 text-indigo-500" },
 ] as const;
 
 /* ── Page ─────────────────────────────────────────────────────────── */
@@ -283,6 +287,17 @@ export default function DashboardPage() {
               Start your first application
               <ArrowRight className="h-4 w-4" />
             </Button>
+            <a
+              href="https://www.youtube.com/@HireStackAI"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white transition-colors"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+              </svg>
+              Watch a 60-second demo →
+            </a>
           </div>
         </motion.div>
 
@@ -453,7 +468,7 @@ export default function DashboardPage() {
       </motion.div>
 
       {/* ── Quick Actions ─────────────────────────────────────── */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+      <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
         {QUICK_ACTIONS.map((a, i) => (
           <motion.div
             key={a.href}

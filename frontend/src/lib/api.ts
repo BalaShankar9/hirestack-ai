@@ -1,8 +1,8 @@
 /**
- * DEPRECATION NOTICE: This API client file is kept for backward compatibility.
- * The frontend primarily uses Supabase directly via the Firestore operations in @/lib/firestore/ops.
- * New features should use the Firestore/Supabase client instead of this REST API client.
- * This file may be removed in a future version.
+ * HireStack AI REST API client.
+ * Used by dashboard pages to communicate with the FastAPI backend.
+ * Supabase/Firestore hooks are used for real-time data; this client handles
+ * AI generation, analytics, and other backend-only endpoints.
  */
 
 import type {
@@ -14,7 +14,7 @@ import type {
 } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
-if (typeof window !== "undefined" && !process.env.NEXT_PUBLIC_API_URL) {
+if (typeof window !== "undefined" && !process.env.NEXT_PUBLIC_API_URL && process.env.NODE_ENV === "production") {
   console.error("[HireStack] NEXT_PUBLIC_API_URL is not set — API calls will fail in production.");
 }
 

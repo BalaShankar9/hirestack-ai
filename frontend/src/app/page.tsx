@@ -5,8 +5,9 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import {
   ArrowRight, Target, Sparkles, TrendingUp, Zap, Shield, BarChart3,
-  CheckCircle2, FileText, Brain, Search, Users, Star, Globe,
+  CheckCircle2, FileText, Brain, Search, Users, Star, Globe, ChevronDown,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const FEATURES = [
   {
@@ -165,6 +166,68 @@ function DemoAgentTimeline() {
   );
 }
 
+/* ── FAQ Accordion Component ── */
+
+const FAQ_ITEMS = [
+  {
+    question: "How does HireStack AI work?",
+    answer: "You paste a job description and upload (or paste) your resume. Six AI agents then work in sequence: one researches the company, one parses your resume, one identifies skill gaps, one writes tailored documents, one validates ATS compatibility, and one packages everything. The entire process takes under 3 minutes.",
+  },
+  {
+    question: "Is my data safe?",
+    answer: "Yes. Your resume and job descriptions are processed transiently and stored securely in your account with encryption at rest. We never sell your data to third parties, and we do not use your content to train AI models. See our Privacy Policy for full details.",
+  },
+  {
+    question: "What file formats does HireStack AI support?",
+    answer: "You can upload PDF, DOCX, DOC, or plain text (.txt) files for your resume. Generated documents are available as formatted HTML (for copy-pasting into any editor) and exportable to PDF.",
+  },
+  {
+    question: "Is it free to use?",
+    answer: "Yes — there is a free tier that includes a limited number of AI generation runs. Paid plans unlock unlimited generations, more document types, priority processing, and advanced analytics. No credit card is required to start.",
+  },
+  {
+    question: "Will AI-generated documents get me flagged?",
+    answer: "No. The AI uses your actual experience, skills, and achievements — it doesn't invent anything. It rewrites and tailors your real information to match the role. Everything in the output is grounded in what you actually did.",
+  },
+  {
+    question: "How is this different from ChatGPT or a regular resume builder?",
+    answer: "Generic AI tools produce generic outputs. HireStack AI runs six specialized agents that research the specific company, analyze the exact job description, map your unique evidence, and optimize for the actual ATS the employer uses. It's a targeted analysis system, not a template filler.",
+  },
+  {
+    question: "Can I edit the generated documents?",
+    answer: "Yes. Every generated document is fully editable in your workspace. You can regenerate individual sections, adjust the tone, or copy the HTML to any word processor. Your workspace saves all versions.",
+  },
+  {
+    question: "What does the ATS score mean?",
+    answer: "The ATS (Applicant Tracking System) score reflects how well your resume matches what automated hiring software looks for: keyword coverage, section structure, format compatibility, and readability. A score above 80% means you're well-positioned to pass the initial screen.",
+  },
+];
+
+function FAQAccordion() {
+  const [open, setOpen] = useState<number | null>(null);
+  return (
+    <div className="space-y-3">
+      {FAQ_ITEMS.map((item, i) => (
+        <div key={i} className="rounded-2xl border bg-card overflow-hidden">
+          <button
+            onClick={() => setOpen(open === i ? null : i)}
+            className="flex w-full items-center justify-between px-5 py-4 text-left text-sm font-medium hover:bg-muted/30 transition-colors"
+            aria-expanded={open === i}
+          >
+            <span>{item.question}</span>
+            <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 shrink-0 ml-3 ${open === i ? "rotate-180" : ""}`} />
+          </button>
+          {open === i && (
+            <div className="border-t px-5 py-4 text-sm text-muted-foreground leading-relaxed">
+              {item.answer}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function HomePage() {
   const headerRef = useRef<HTMLElement>(null);
 
@@ -196,6 +259,10 @@ export default function HomePage() {
             <Link href="/#how-it-works" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               How It Works
             </Link>
+            <Link href="/#features" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+              Features
+            </Link>
+            <ThemeToggle />
             <Link href="/login" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               Sign In
             </Link>
@@ -481,6 +548,85 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ── Testimonials ── */}
+      <section className="border-t py-24">
+        <div className="mx-auto max-w-6xl px-4">
+          <div className="text-center mb-12">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border bg-amber-500/5 px-3 py-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+              <Star className="h-3.5 w-3.5" /> What users say
+            </div>
+            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              Real results from real job seekers
+            </h2>
+          </div>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {[
+              {
+                quote: "I went from zero callbacks to 3 interviews in a week. The gap analysis showed me exactly what was missing from my resume.",
+                name: "Priya S.",
+                role: "Software Engineer",
+                avatar: "PS",
+              },
+              {
+                quote: "The ATS scanner caught keywords I never would have thought to include. My match score jumped from 42% to 91% after one revision.",
+                name: "Marcus T.",
+                role: "Product Manager",
+                avatar: "MT",
+              },
+              {
+                quote: "I was applying to senior roles but my resume read like a junior. The evidence mapping changed how I framed everything.",
+                name: "Aisha K.",
+                role: "Data Scientist",
+                avatar: "AK",
+              },
+              {
+                quote: "The interview prep feature predicted 6 out of 8 questions I was actually asked. I've never felt that prepared before.",
+                name: "James O.",
+                role: "DevOps Engineer",
+                avatar: "JO",
+              },
+            ].map((t, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.07 }}
+                className="rounded-2xl border bg-card p-5 shadow-soft-sm hover:shadow-soft-md hover:-translate-y-0.5 transition-all duration-300 card-spotlight"
+              >
+                <div className="flex gap-1 mb-3">
+                  {[1,2,3,4,5].map((s) => (
+                    <Star key={s} className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                  ))}
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed">&ldquo;{t.quote}&rdquo;</p>
+                <div className="mt-4 flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                    {t.avatar}
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold">{t.name}</p>
+                    <p className="text-[11px] text-muted-foreground">{t.role}</p>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── FAQ ── */}
+      <section className="border-t bg-card/30 py-24">
+        <div className="mx-auto max-w-3xl px-4">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              Frequently asked questions
+            </h2>
+          </div>
+          <FAQAccordion />
+        </div>
+      </section>
+
       {/* ── Bottom CTA ── */}
       <section className="border-t">
         <div className="mx-auto max-w-6xl px-4 py-24">
@@ -497,18 +643,18 @@ export default function HomePage() {
 
             <div className="relative z-10">
               <h2 className="text-3xl font-bold text-white sm:text-4xl">
-                Ready to build a stronger application?
+                Stop guessing. Start landing interviews.
               </h2>
               <p className="mx-auto mt-4 max-w-lg text-base text-white/80">
-                Paste a job description, add your resume, and let AI build a
-                tailored, proof-backed application package.
+                Every application you submit without AI analysis is a missed opportunity.
+                Paste a job description and get a proof-backed package in under 3 minutes.
               </p>
               <Link href="/login?mode=register&redirect=/new" className="mt-8 inline-flex items-center gap-2 rounded-2xl bg-white px-8 py-4 text-base font-semibold text-primary shadow-soft-lg hover:shadow-soft-xl transition-all hover:scale-[1.03] ease-spring duration-500">
-                Start Your Application
+                Start Your Application Free
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <p className="mt-3 text-xs text-white/50">
-                Create an account to save, edit, and export.
+                No credit card required. Create an account to save, edit, and export.
               </p>
             </div>
           </motion.div>

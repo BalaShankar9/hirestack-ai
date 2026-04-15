@@ -18,6 +18,13 @@ import {
   Search,
   ArrowRight,
   User,
+  FileSearch,
+  MessageSquare,
+  DollarSign,
+  Briefcase,
+  TrendingUp,
+  BookOpen,
+  Target,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import { Button } from "@/components/ui/button";
@@ -60,6 +67,18 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/evidence", label: "Evidence", icon: ShieldCheck, description: "Your proof library" },
       { href: "/nexus", label: "Profile", icon: User, description: "Your career identity" },
       { href: "/settings", label: "Settings", icon: Settings, description: "Account & organization" },
+    ],
+  },
+  {
+    title: "Tools",
+    items: [
+      { href: "/ats-scanner", label: "ATS Scanner", icon: FileSearch, description: "Check ATS compatibility" },
+      { href: "/interview", label: "Interview Prep", icon: MessageSquare, description: "AI interview coach" },
+      { href: "/salary", label: "Salary Coach", icon: DollarSign, description: "Know your market value" },
+      { href: "/job-board", label: "Job Board", icon: Briefcase, description: "Find matching roles" },
+      { href: "/career-analytics", label: "Career Analytics", icon: TrendingUp, description: "Track your progress" },
+      { href: "/learning", label: "Daily Learn", icon: BookOpen, description: "Sharpen your skills" },
+      { href: "/gaps", label: "Gap Report", icon: Target, description: "Skill gap analysis" },
     ],
   },
   {

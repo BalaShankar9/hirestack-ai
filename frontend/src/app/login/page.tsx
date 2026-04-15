@@ -37,6 +37,7 @@ function LoginContent() {
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<"google" | "github" | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [checkEmail, setCheckEmail] = useState(false);
   const { toast } = useToast();
 
   // Read ?mode=register from URL so "Get Started" links land on sign-up
@@ -62,6 +63,11 @@ function LoginContent() {
     try {
       if (isRegister) {
         await signUp(email, password, name);
+        // After sign-up, show "check your email" screen instead of polling for session,
+        // since Supabase sends a confirmation email before activating the account.
+        setCheckEmail(true);
+        setLoading(false);
+        return;
       } else {
         await signIn(email, password);
       }
@@ -111,6 +117,35 @@ function LoginContent() {
       });
       setOauthLoading(null);
     }
+  }
+
+  if (checkEmail) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4 bg-gradient-to-br from-primary via-violet-600 to-indigo-700">
+        <div className="w-full max-w-sm rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 p-8 text-center text-white">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-white/20">
+            <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold">Check your email</h2>
+          <p className="mt-3 text-sm text-white/75 leading-relaxed">
+            We sent a confirmation link to <strong className="text-white">{email}</strong>.
+            Click the link to activate your account and get started.
+          </p>
+          <p className="mt-4 text-xs text-white/50">
+            Didn&apos;t receive it? Check your spam folder, or{" "}
+            <button
+              type="button"
+              className="underline text-white/70 hover:text-white transition-colors"
+              onClick={() => { setCheckEmail(false); setIsRegister(true); }}
+            >
+              try again
+            </button>.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -305,6 +340,11 @@ function LoginContent() {
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
               </div>
+              {isRegister && (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Minimum 8 characters. Use a mix of letters, numbers, and symbols for a stronger password.
+                </p>
+              )}
             </div>
 
             {error && (

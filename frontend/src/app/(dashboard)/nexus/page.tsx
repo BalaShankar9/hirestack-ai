@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { getDocumentCSS } from "@/lib/document-styles";
 import api from "@/lib/api";
+import { toast } from "@/hooks/use-toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { exportToPdf } from "@/lib/export";
 import type {
@@ -769,6 +770,14 @@ export default function CareerNexusPage() {
                           onChange={(e) => setSocialInputs((prev) => ({ ...prev, [platform.key]: e.target.value }))}
                           onBlur={() => {
                             if (inputVal !== savedUrl && inputVal.trim()) {
+                              // Validate URL format before saving
+                              try {
+                                const parsed = new URL(inputVal.trim().startsWith("http") ? inputVal.trim() : `https://${inputVal.trim()}`);
+                                if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("Invalid URL");
+                              } catch {
+                                toast({ title: "Invalid URL", description: `"${inputVal}" doesn't look like a valid URL. Please include https://…`, variant: "error" });
+                                return;
+                              }
                               const allUrls: Record<string, string> = {};
                               for (const p of SOCIAL_PLATFORMS) {
                                 allUrls[p.key] = socialInputs[p.key] ?? getSocialUrl(p.key);

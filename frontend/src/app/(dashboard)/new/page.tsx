@@ -692,6 +692,9 @@ export default function NewApplicationPage() {
     <div className="mx-auto max-w-3xl space-y-6 animate-fade-in">
       {/* Stepper */}
       <div className="flex items-center gap-2">
+        <span className="shrink-0 text-xs font-medium text-muted-foreground mr-1">
+          Step {stepIndex + 1} of {STEPS.length}
+        </span>
         {STEPS.map((s, i) => {
           const Icon = s.icon;
           const active = i === stepIndex;

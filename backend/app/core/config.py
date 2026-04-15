@@ -43,7 +43,6 @@ class Settings(BaseSettings):
         "https://www.hirestack.tech",
         "https://hirestack-ai-production.up.railway.app",
     ]
-    allowed_origins: str = "http://localhost:3002"
 
     # Supabase
     supabase_url: str = ""

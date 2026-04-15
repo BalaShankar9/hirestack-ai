@@ -259,10 +259,6 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS helpers
-def _split_origins(value: str) -> list[str]:
-    return [v.strip() for v in (value or "").split(",") if v.strip()]
-
-
 def _with_localhost_aliases(origins: list[str]) -> list[str]:
     """Add localhost/127.0.0.1 aliases for the same scheme+port."""
     out: set[str] = set()
@@ -282,7 +278,7 @@ def _with_localhost_aliases(origins: list[str]) -> list[str]:
 
 
 # CORS middleware
-base_origins = list(dict.fromkeys(settings.cors_origins + _split_origins(settings.allowed_origins)))
+base_origins = list(dict.fromkeys(settings.cors_origins))
 extra_origins = _with_localhost_aliases(base_origins)
 allowed_origins = list(dict.fromkeys(base_origins + extra_origins))
 
