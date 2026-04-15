@@ -136,6 +136,13 @@ function stripHtml(html: string) {
   return (html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/** Return up to `maxChars` plain-text characters from an HTML string for card previews. */
+function htmlSnippet(html: string, maxChars = 120): string {
+  const text = stripHtml(html);
+  if (!text) return "";
+  return text.length > maxChars ? text.slice(0, maxChars) + "…" : text;
+}
+
 function escapeHtml(text: string) {
   return (text || "")
     .replace(/&/g, "&amp;")
@@ -877,6 +884,7 @@ export default function ApplicationWorkspacePage() {
                       description="Ideal candidate signal + rubric"
                       status={modStatus("benchmark")}
                       icon={<Target className="h-5 w-5" />}
+                      snippet={app.benchmark?.summary ? htmlSnippet(String(app.benchmark.summary)) : undefined}
                       onOpen={() => setTab("benchmark")}
                       onRegenerate={() => regenerate("benchmark")}
                     />
@@ -885,6 +893,7 @@ export default function ApplicationWorkspacePage() {
                       description="Missing keywords + recommendations"
                       status={modStatus("gaps")}
                       icon={<Layers className="h-5 w-5" />}
+                      snippet={app.gaps?.summary ? htmlSnippet(String(app.gaps.summary)) : undefined}
                       onOpen={() => setTab("gaps")}
                       onRegenerate={() => regenerate("gaps")}
                     />
@@ -900,6 +909,7 @@ export default function ApplicationWorkspacePage() {
                       description="Edit, diff, version, iterate"
                       status={modStatus("cv")}
                       icon={<FileText className="h-5 w-5" />}
+                      snippet={cvLocal ? htmlSnippet(cvLocal) : undefined}
                       onOpen={() => setTab("cv")}
                       onRegenerate={() => regenerate("cv")}
                     />
@@ -908,6 +918,7 @@ export default function ApplicationWorkspacePage() {
                       description="Evidence-first narrative"
                       status={modStatus("coverLetter")}
                       icon={<FileText className="h-5 w-5" />}
+                      snippet={clLocal ? htmlSnippet(clLocal) : undefined}
                       onOpen={() => setTab("cover")}
                       onRegenerate={() => regenerate("coverLetter")}
                     />
@@ -916,6 +927,7 @@ export default function ApplicationWorkspacePage() {
                       description="Compelling motivation narrative"
                       status={modStatus("personalStatement")}
                       icon={<PenTool className="h-5 w-5" />}
+                      snippet={psLocal ? htmlSnippet(psLocal) : undefined}
                       onOpen={() => setTab("statement")}
                       onRegenerate={() => regenerate("personalStatement")}
                     />
@@ -924,6 +936,7 @@ export default function ApplicationWorkspacePage() {
                       description="Proof of knowledge + projects"
                       status={modStatus("portfolio")}
                       icon={<FolderOpen className="h-5 w-5" />}
+                      snippet={portfolioLocal ? htmlSnippet(portfolioLocal) : undefined}
                       onOpen={() => setTab("portfolio")}
                       onRegenerate={() => regenerate("portfolio")}
                     />
@@ -939,6 +952,7 @@ export default function ApplicationWorkspacePage() {
                       description="Skill sprints + outcomes practice"
                       status={modStatus("learningPlan")}
                       icon={<GraduationCap className="h-5 w-5" />}
+                      snippet={app.learningPlan?.focus?.length ? htmlSnippet((app.learningPlan.focus as string[]).join(", ")) : undefined}
                       onOpen={() => setTab("learning")}
                       onRegenerate={() => regenerate("learningPlan")}
                     />

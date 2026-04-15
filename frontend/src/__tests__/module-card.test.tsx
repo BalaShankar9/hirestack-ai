@@ -184,4 +184,72 @@ describe("ModuleCard", () => {
     const openButton = container.querySelector('button:first-of-type');
     expect(openButton).toHaveAttribute('disabled');
   });
+
+  // ── P1-14: Verify module cards show real generated content ──────────────
+
+  it("shows snippet preview when status is ready and snippet is provided", () => {
+    const status: ModuleStatus = { state: "ready", progress: 100, updatedAt: Date.now() };
+    const snippet = "John Doe — Software Engineer with 8 years experience building distributed systems…";
+
+    render(
+      <ModuleCard
+        title="Tailored CV"
+        description="Edit, diff, version, iterate"
+        status={status}
+        icon={mockIcon}
+        snippet={snippet}
+      />
+    );
+
+    const preview = screen.getByLabelText("Content preview");
+    expect(preview).toBeInTheDocument();
+    expect(preview.textContent).toBe(snippet);
+  });
+
+  it("does not show snippet preview when status is not ready", () => {
+    const status: ModuleStatus = { state: "generating", progress: 40, updatedAt: Date.now() };
+
+    render(
+      <ModuleCard
+        title="Tailored CV"
+        description="Edit, diff, version, iterate"
+        status={status}
+        icon={mockIcon}
+        snippet="Some generated content"
+      />
+    );
+
+    expect(screen.queryByLabelText("Content preview")).not.toBeInTheDocument();
+  });
+
+  it("does not show snippet preview when snippet is empty", () => {
+    const status: ModuleStatus = { state: "ready", progress: 100, updatedAt: Date.now() };
+
+    render(
+      <ModuleCard
+        title="Tailored CV"
+        description="Edit, diff, version, iterate"
+        status={status}
+        icon={mockIcon}
+        snippet=""
+      />
+    );
+
+    expect(screen.queryByLabelText("Content preview")).not.toBeInTheDocument();
+  });
+
+  it("does not show snippet preview when snippet prop is omitted", () => {
+    const status: ModuleStatus = { state: "ready", progress: 100, updatedAt: Date.now() };
+
+    render(
+      <ModuleCard
+        title="Tailored CV"
+        description="Edit, diff, version, iterate"
+        status={status}
+        icon={mockIcon}
+      />
+    );
+
+    expect(screen.queryByLabelText("Content preview")).not.toBeInTheDocument();
+  });
 });
