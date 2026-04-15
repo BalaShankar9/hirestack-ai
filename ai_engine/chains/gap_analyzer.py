@@ -16,6 +16,10 @@ Provide honest, constructive feedback that helps the candidate understand:
 3. Their strengths they can leverage
 4. Actionable steps to improve their candidacy
 
+For each skill gap, include 2-3 concrete free learning resources. Use real platforms: YouTube, Coursera,
+freeCodeCamp, official docs, MDN, edX, Khan Academy, roadmap.sh, or similar. Always provide at least
+one free resource per gap.
+
 Be specific, realistic, and supportive. Use data-driven comparisons where possible.
 Scores should be fair and reflect actual gaps, not inflated to make the candidate feel good."""
 
@@ -139,6 +143,19 @@ GAP_ANALYSIS_SCHEMA: Dict[str, Any] = {
                     },
                     "recommendation": {"type": "STRING"},
                     "estimated_time_to_close": {"type": "STRING"},
+                    "learning_resources": {
+                        "type": "ARRAY",
+                        "items": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "platform": {"type": "STRING"},
+                                "title": {"type": "STRING"},
+                                "url": {"type": "STRING"},
+                                "is_free": {"type": "BOOLEAN"},
+                                "estimated_hours": {"type": "INTEGER"},
+                            },
+                        },
+                    },
                 },
             },
         },
@@ -259,8 +276,9 @@ class GapAnalyzerChain:
             prompt=prompt,
             system=GAP_ANALYZER_SYSTEM,
             temperature=0.0,
-            max_tokens=3000,
+            max_tokens=4000,  # Increased for learning_resources per gap
             schema=GAP_ANALYSIS_SCHEMA,
+            task_type="fast_doc",  # Structured JSON extraction — Flash handles this well
         )
 
         return self._validate_result(result)

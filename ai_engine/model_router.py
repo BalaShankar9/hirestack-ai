@@ -38,6 +38,11 @@ _DEFAULT_ROUTES = {
     "critique":           "gemini-2.5-flash",
     # General / fallback
     "general":            "gemini-2.5-pro",
+    # ── Tiered document generation (H3 cost reduction) ──────────────
+    # "quality_doc" = Pro; used for CV, Cover Letter, Personal Statement, Portfolio, 30-60-90
+    "quality_doc":        "gemini-2.5-pro",
+    # "fast_doc" = Flash; used for short/formulaic docs and administrative tasks
+    "fast_doc":           "gemini-2.0-flash",
 }
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -56,6 +61,9 @@ _DEFAULT_CASCADE = {
     "drafting":           ["gemini-2.5-pro", "gemini-2.5-flash"],
     "critique":           ["gemini-2.5-flash", "gemini-2.5-pro"],
     "general":            ["gemini-2.5-pro", "gemini-2.5-flash"],
+    # Tiered doc generation (H3)
+    "quality_doc":        ["gemini-2.5-pro", "gemini-2.5-flash"],
+    "fast_doc":           ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
 }
 
 # ═══════════════════════════════════════════════════════════════════════
