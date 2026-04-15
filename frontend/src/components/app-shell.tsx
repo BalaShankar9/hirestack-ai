@@ -59,13 +59,13 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/new", label: "New Application", icon: Plus, description: "Start a new application" },
       { href: "/evidence", label: "Evidence", icon: ShieldCheck, description: "Your proof library" },
       { href: "/nexus", label: "Profile", icon: User, description: "Your career identity" },
+      { href: "/settings", label: "Settings", icon: Settings, description: "Account & organization" },
     ],
   },
   {
     title: "Admin",
     items: [
       { href: "/candidates", label: "Pipeline", icon: Users, description: "Candidate tracking", roleRequired: "enterprise" },
-      { href: "/settings", label: "Settings", icon: Settings, description: "Organization & billing" },
     ],
   },
 ];
