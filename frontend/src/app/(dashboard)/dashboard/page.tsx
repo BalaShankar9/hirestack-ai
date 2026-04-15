@@ -98,6 +98,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const { user, session: authSession } = useAuth();
   const userId = user?.uid || user?.id || null;
+  const userRole = user?.user_metadata?.role as string | undefined;
 
   const { data: apps = [], loading: appsLoading, removeItem: removeApp } = useApplications(userId, 50);
   const { data: tasks = [], loading: tasksLoading } = useTasks(userId, null, 200);
@@ -661,8 +662,8 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Pipeline Telemetry Summary */}
-          {telemetry && telemetry.total_runs > 0 && (
+          {/* Pipeline Telemetry Summary — admin/enterprise only (internal cost data) */}
+          {(userRole === "admin" || userRole === "enterprise") && telemetry && telemetry.total_runs > 0 && (
             <div className="rounded-2xl border bg-card p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/10"><Activity className="h-3.5 w-3.5 text-cyan-500" /></div>
@@ -685,8 +686,8 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Pipeline Health Monitor */}
-          {pipelineHealth && (
+          {/* Pipeline Health Monitor — admin/enterprise only */}
+          {(userRole === "admin" || userRole === "enterprise") && pipelineHealth && (
             <div className={cn(
               "rounded-2xl border bg-card p-4 space-y-2",
               pipelineHealth.status === "unhealthy" && "border-rose-500/30",
@@ -733,8 +734,8 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Self-Tuning Recommendation */}
-          {tuning && tuning.recommendation === "tuned" && (
+          {/* Self-Tuning Recommendation — admin/enterprise only */}
+          {(userRole === "admin" || userRole === "enterprise") && tuning && tuning.recommendation === "tuned" && (
             <div className="rounded-2xl border bg-gradient-to-br from-violet-500/5 to-indigo-500/5 p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10"><Brain className="h-3.5 w-3.5 text-violet-500" /></div>

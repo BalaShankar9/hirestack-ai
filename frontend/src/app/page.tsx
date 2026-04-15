@@ -63,7 +63,7 @@ const STEPS = [
 const STATS = [
   { value: "35+", label: "document types" },
   { value: "6", label: "AI analysis steps" },
-  { value: "Complete", label: "ATS optimization" },
+  { value: "100%", label: "ATS optimization" },
   { value: "<3 min", label: "per application" },
 ];
 
@@ -519,16 +519,18 @@ export default function HomePage() {
       <footer className="border-t bg-card/30 py-12">
         <div className="mx-auto max-w-6xl px-4">
           <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
-            <div className="flex items-center gap-2.5">
+            <Link href="/" className="flex items-center gap-2.5 hover:opacity-90 transition-opacity">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-violet-600">
                 <Sparkles className="h-3.5 w-3.5 text-white" />
               </div>
               <span className="text-sm font-bold">HireStack <span className="text-primary">AI</span></span>
-            </div>
-            <div className="flex items-center gap-6 text-xs text-muted-foreground">
+            </Link>
+            <div className="flex flex-wrap items-center justify-center gap-5 text-xs text-muted-foreground">
               <Link href="/#how-it-works" className="link-hover-line hover:text-foreground transition-colors">How It Works</Link>
               <Link href="/login" className="link-hover-line hover:text-foreground transition-colors">Sign In</Link>
               <Link href="/login?mode=register&redirect=/new" className="link-hover-line hover:text-foreground transition-colors">Get Started</Link>
+              <Link href="/privacy" className="link-hover-line hover:text-foreground transition-colors">Privacy</Link>
+              <Link href="/terms" className="link-hover-line hover:text-foreground transition-colors">Terms</Link>
             </div>
             <p className="text-xs text-muted-foreground">
               &copy; {new Date().getFullYear()} HireStack AI

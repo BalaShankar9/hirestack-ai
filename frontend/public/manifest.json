@@ -1,0 +1,19 @@
+{
+  "name": "HireStack AI",
+  "short_name": "HireStack",
+  "description": "AI-powered career intelligence platform. Build interview-winning applications with 6 AI agents.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#080d1a",
+  "theme_color": "#6366f1",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "en"
+}

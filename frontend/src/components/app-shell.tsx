@@ -147,7 +147,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
       >
         {/* Logo */}
-        <div className="flex h-16 items-center gap-3 border-b border-border/70 px-4">
+        <Link href="/dashboard" className="flex h-16 items-center gap-3 border-b border-border/70 px-4 hover:opacity-90 transition-opacity">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 shadow-glow-sm ring-1 ring-white/50 dark:ring-white/10">
             <Sparkles className="h-4 w-4 text-white" />
           </div>
@@ -156,7 +156,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               HireStack <span className="text-primary">AI</span>
             </span>
           )}
-        </div>
+        </Link>
 
         {/* Search */}
         {!collapsed && (
@@ -311,14 +311,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex h-16 items-center justify-between border-b px-4">
-              <div className="flex items-center gap-3">
+              <Link href="/dashboard" onClick={() => setSidebarOpen(false)} className="flex items-center gap-3 hover:opacity-90 transition-opacity">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600">
                   <Sparkles className="h-4 w-4 text-white" />
                 </div>
                 <span className="text-base font-bold tracking-tight">
                   HireStack <span className="text-primary">AI</span>
                 </span>
-              </div>
+              </Link>
               <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)} className="rounded-lg" aria-label="Close navigation menu">
                 <X className="h-5 w-5" />
               </Button>
@@ -419,7 +419,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Menu className="h-5 w-5" />
           </Button>
 
-          {/* Breadcrumb / title area */}
+          {/* Mobile brand logo — visible when sidebar is closed */}
+          <Link href="/dashboard" className="lg:hidden flex items-center gap-2 hover:opacity-90 transition-opacity">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-violet-600 shadow-glow-sm">
+              <Sparkles className="h-3.5 w-3.5 text-white" />
+            </div>
+            <span className="text-sm font-bold tracking-tight">
+              HireStack <span className="text-primary">AI</span>
+            </span>
+          </Link>
+
+          {/* Breadcrumb / title area — desktop only (mobile shows brand logo instead) */}
           {(() => {
             const PAGE_LABELS: Record<string, string> = {
               "/dashboard": "Overview",
@@ -441,11 +451,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             const label = PAGE_LABELS[pathname] || (pathname.startsWith("/applications/") ? "Workspace" : null);
             if (!label) return <div className="flex-1" />;
             return (
-              <div className="flex-1 min-w-0">
+              <div className="hidden lg:flex flex-1 min-w-0">
                 <span className="text-sm font-medium text-muted-foreground truncate">{label}</span>
               </div>
             );
           })()}
+
+          {/* Spacer for mobile (brand logo doesn't use flex-1) */}
+          <div className="flex-1 lg:hidden" />
 
           <ThemeToggle />
 
