@@ -1,6 +1,7 @@
 """SSE streaming pipeline endpoint (POST /pipeline/stream)."""
 import asyncio
 import traceback
+import time
 from typing import Dict, Any, AsyncGenerator
 
 from fastapi import APIRouter, Depends, Request
@@ -51,6 +52,55 @@ except ImportError:
 
 router = APIRouter()
 
+# ── Helper: run async task with progress heartbeat ──────────────────────────
+async def _run_with_heartbeat(
+    coro,
+    phase: str,
+    initial_progress: int,
+    emit_fn,
+    heartbeat_interval: float = 5.0,
+) -> Any:
+    """
+    Run an async coroutine while emitting progress events every `heartbeat_interval` seconds.
+    
+    Args:
+        coro: The coroutine to run
+        phase: Phase name for progress event
+        initial_progress: Starting progress percentage
+        emit_fn: Async callable to emit progress (receives phase, progress, message, elapsed)
+        heartbeat_interval: Seconds between heartbeats (default 5)
+    
+    Returns: The coroutine result
+    """
+    task = asyncio.create_task(coro)
+    start_time = time.time()
+    
+    try:
+        while not task.done():
+            elapsed = time.time() - start_time
+            # Heartbeat: emit progress every interval
+            await emit_fn(
+                phase=phase,
+                progress=min(initial_progress + int(elapsed * 0.5), 98),  # Cap at 98
+                message=f"Running {phase}… ({int(elapsed)}s elapsed)",
+                elapsed_ms=int(elapsed * 1000),
+            )
+            
+            # Wait for either the task to complete or the heartbeat interval
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=heartbeat_interval)
+            except asyncio.TimeoutError:
+                continue
+            
+        # Task completed, get result
+        return await task
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
+    except Exception:
+        task.cancel()
+        raise
+
 async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncGenerator[str, None]:
     """
     Agent-powered SSE pipeline.
@@ -77,6 +127,7 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             "message": "Initializing agent pipeline…",
             "agent_powered": True,
         })
+        await asyncio.sleep(0.01)  # Force flush to client
 
         # ── Shared callback that queues agent_status SSE events ───────
         events_queue: list[str] = []
@@ -304,17 +355,68 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
         cl_pipe = cover_letter_pipeline(ai_client=ai, on_stage_update=cl_callback, db=sb, tables=TABLES)
         consultant = CareerConsultantChain(ai)
 
+        # Track timing for each document generation
+        doc_gen_start = time.time()
+        
+        # Emit heartbeat progress while documents generate
+        progress_queue: list[str] = []
+        async def emit_doc_progress(phase: str, progress: int, message: str, elapsed_ms: int):
+            progress_queue.append(_sse("progress", {
+                "phase": "documents",
+                "step": 3,
+                "totalSteps": 6,
+                "progress": progress,
+                "message": message,
+                "timing": {"elapsed_ms": elapsed_ms, "doc_gen_phases": ["cv", "cover_letter", "roadmap"]},
+            }))
+
+        # Run CV + CL + Roadmap in parallel with progress heartbeat
         cv_result_raw, cl_result_raw, roadmap = await asyncio.gather(
-            cv_pipe.execute(doc_context),
-            cl_pipe.execute(doc_context),
-            consultant.generate_roadmap(gap_analysis, user_profile, req.job_title, company),
+            _run_with_heartbeat(
+                cv_pipe.execute(doc_context),
+                phase="cv_generation",
+                initial_progress=50,
+                emit_fn=emit_doc_progress,
+                heartbeat_interval=3.0,
+            ),
+            _run_with_heartbeat(
+                cl_pipe.execute(doc_context),
+                phase="cover_letter_generation",
+                initial_progress=50,
+                emit_fn=emit_doc_progress,
+                heartbeat_interval=3.0,
+            ),
+            _run_with_heartbeat(
+                consultant.generate_roadmap(gap_analysis, user_profile, req.job_title, company),
+                phase="roadmap_generation",
+                initial_progress=50,
+                emit_fn=emit_doc_progress,
+                heartbeat_interval=3.0,
+            ),
             return_exceptions=True,
         )
+        
+        # Flush progress events immediately
+        for ev in progress_queue:
+            yield ev
+        progress_queue.clear()
+        await asyncio.sleep(0.01)  # Force flush to client
 
+        # Flush agent events
         for ev in cv_queue:
             yield ev
         for ev in cl_queue:
             yield ev
+        await asyncio.sleep(0.01)  # Force flush
+        
+        doc_gen_elapsed = time.time() - doc_gen_start
+        logger.info(
+            "agent_pipeline.documents_generated",
+            elapsed_seconds=doc_gen_elapsed,
+            cv_ok=not isinstance(cv_result_raw, Exception),
+            cl_ok=not isinstance(cl_result_raw, Exception),
+            roadmap_ok=not isinstance(roadmap, Exception),
+        )
 
         cv_result: PipelineResult | None = None
         cl_result: PipelineResult | None = None
@@ -344,6 +446,7 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             "progress": 70,
             "message": "CV, cover letter & learning plan ready ✓",
         })
+        await asyncio.sleep(0.01)  # Force flush to client
 
         # ── Phase 4: Personal statement + Portfolio (parallel) ────────
         yield _sse("progress", {
@@ -378,16 +481,59 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
         ps_pipe = personal_statement_pipeline(ai_client=ai, on_stage_update=ps_callback, db=sb, tables=TABLES)
         pf_pipe = portfolio_pipeline(ai_client=ai, on_stage_update=pf_callback, db=sb, tables=TABLES)
 
+        # Track timing for portfolio generation
+        portfolio_gen_start = time.time()
+        
+        # Emit heartbeat progress while portfolio generates
+        portfolio_progress_queue: list[str] = []
+        async def emit_portfolio_progress(phase: str, progress: int, message: str, elapsed_ms: int):
+            portfolio_progress_queue.append(_sse("progress", {
+                "phase": "portfolio",
+                "step": 4,
+                "totalSteps": 6,
+                "progress": progress,
+                "message": message,
+                "timing": {"elapsed_ms": elapsed_ms, "portfolio_phases": ["personal_statement", "portfolio"]},
+            }))
+
         ps_raw, pf_raw = await asyncio.gather(
-            ps_pipe.execute(doc_context),
-            pf_pipe.execute(doc_context),
+            _run_with_heartbeat(
+                ps_pipe.execute(doc_context),
+                phase="personal_statement_generation",
+                initial_progress=75,
+                emit_fn=emit_portfolio_progress,
+                heartbeat_interval=3.0,
+            ),
+            _run_with_heartbeat(
+                pf_pipe.execute(doc_context),
+                phase="portfolio_generation",
+                initial_progress=75,
+                emit_fn=emit_portfolio_progress,
+                heartbeat_interval=3.0,
+            ),
             return_exceptions=True,
         )
 
+        # Flush portfolio progress events
+        for ev in portfolio_progress_queue:
+            yield ev
+        portfolio_progress_queue.clear()
+        await asyncio.sleep(0.01)  # Force flush
+
+        # Flush portfolio agent events
         for ev in ps_queue:
             yield ev
         for ev in pf_queue:
             yield ev
+        await asyncio.sleep(0.01)  # Force flush
+        
+        portfolio_gen_elapsed = time.time() - portfolio_gen_start
+        logger.info(
+            "agent_pipeline.portfolio_generated",
+            elapsed_seconds=portfolio_gen_elapsed,
+            ps_ok=not isinstance(ps_raw, Exception),
+            pf_ok=not isinstance(pf_raw, Exception),
+        )
 
         ps_html = ""
         portfolio_html = ""
@@ -408,6 +554,7 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             "progress": 88,
             "message": "Personal statement & portfolio ready ✓",
         })
+        await asyncio.sleep(0.01)  # Force flush to client
 
         # ── Phase 5: Format response with quality metadata ────────────
         yield _sse("progress", {
@@ -471,7 +618,9 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
         logger.info("agent_pipeline.complete", overall_score=response["scores"]["overall"])
 
         yield _agent_sse("pipeline", "complete", "completed", message="All agent pipelines completed")
+        await asyncio.sleep(0.01)  # Force flush
         yield _sse("complete", {"progress": 100, "result": response})
+        await asyncio.sleep(0.01)  # Force final flush
 
     except CircuitBreakerOpen as cbe:
         logger.warning("agent_pipeline.circuit_breaker_open", breaker=cbe.name, remaining_s=cbe.remaining_s)
