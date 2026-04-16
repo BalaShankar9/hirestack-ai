@@ -85,9 +85,21 @@ jobs:
       - name: Lint (ruff)
         run: ruff check . --select E,W,F --ignore E501
 
-      - name: Static type check (mypy — errors only)
-        # Only fail on definite errors, not missing stubs
-        run: mypy app/ --ignore-missing-imports --no-strict-optional --check-untyped-defs --no-error-summary 2>/dev/null || true
+      - name: Static type check (mypy — regression guard)
+        # Soft cap: fails CI if mypy error count GROWS beyond ~110 pre-existing errors.
+        # Prevents new type regressions from silently shipping while we resolve existing ones.
+        # Remove the count gate and set --strict once all ~110 baseline errors are fixed.
+        run: |
+          set +e
+          MYPY_OUT=$(mypy app/ --ignore-missing-imports --no-strict-optional \
+            --check-untyped-defs --no-error-summary 2>&1)
+          ERROR_COUNT=$(echo "$MYPY_OUT" | grep -c ': error:' || true)
+          echo "mypy errors: ${ERROR_COUNT} (baseline ≈110, hard cap: 120)"
+          echo "$MYPY_OUT" | tail -6
+          if [ "${ERROR_COUNT}" -gt 120 ]; then
+            echo "FAIL: mypy error count (${ERROR_COUNT}) exceeds cap (120). Fix new type errors."
+            exit 1
+          fi
 
       - name: Test
         env:

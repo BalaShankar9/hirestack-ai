@@ -22,9 +22,11 @@ jobs:
       - name: Health Check
         run: |
           sleep 30
+          # Try primary URL first, then fallback Railway URL.
+          # Both must be unreachable before deploy is declared failed.
           curl -f https://api.hirestack.tech/health || \
           curl -f https://hirestack-production.up.railway.app/health || \
-          echo "Health check skipped - verify manually"
+          { echo "FAIL: Backend health check failed after deploy — investigate before promoting"; exit 1; }
 
   deploy-frontend:
     name: Deploy Frontend (Netlify)
