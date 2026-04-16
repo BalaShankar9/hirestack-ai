@@ -19,12 +19,6 @@ import asyncio
 from typing import Dict, Any, Optional, Callable, Awaitable
 import structlog
 
-# New intel sub-agents
-from ai_engine.agents.sub_agents.role_intel_agent import RoleIntelSubAgent
-from ai_engine.agents.sub_agents.founder_intel_agent import FounderIntelSubAgent
-from ai_engine.agents.sub_agents.press_intel_agent import PressIntelSubAgent
-from ai_engine.agents.sub_agents.review_intel_agent import ReviewIntelSubAgent
-
 logger = structlog.get_logger()
 
 IntelEventCallback = Callable[[Dict[str, Any]], Awaitable[None] | None]
