@@ -29,8 +29,8 @@ class CreateKeyRequest(BaseModel):
     expires_days: Optional[int] = Field(None, ge=1, le=365)
 
 
-@router.post("/keys")
 @limiter.limit("10/minute")
+@router.post("/keys")
 async def create_api_key(
     http_request: Request,
     request: CreateKeyRequest,
@@ -47,8 +47,8 @@ async def create_api_key(
     )
 
 
-@router.get("/keys")
 @limiter.limit("30/minute")
+@router.get("/keys")
 async def get_api_keys(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -58,8 +58,8 @@ async def get_api_keys(
     return await service.get_keys(current_user["id"])
 
 
-@router.delete("/keys/{key_id}")
 @limiter.limit("20/minute")
+@router.delete("/keys/{key_id}")
 async def revoke_api_key(
     request: Request,
     key_id: str,
@@ -74,8 +74,8 @@ async def revoke_api_key(
     return {"status": "revoked"}
 
 
-@router.get("/usage")
 @limiter.limit("30/minute")
+@router.get("/usage")
 async def get_usage_stats(
     request: Request,
     days: int = Query(30, ge=1, le=365),

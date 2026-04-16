@@ -126,7 +126,6 @@ export default function DashboardPage() {
 
   // Achievement system state
   const [pendingAchievement, setPendingAchievement] = useState<Achievement | null>(null);
-  const achievementQueue = useState<Achievement[]>([])[0];
   const handleAchievementUnlock = useCallback((a: Achievement) => {
     setPendingAchievement(a);
   }, []);
@@ -921,20 +920,44 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Learning Streak */}
-          {streak && (streak.current_streak > 0 || streak.total_points > 0) && (
-            <Link href="/learning" className="block rounded-2xl border bg-gradient-to-br from-amber-500/5 to-orange-500/5 p-4 hover:border-amber-500/20 hover:shadow-soft-sm hover:-translate-y-0.5 transition-all duration-300 glow-border-hover">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10"><Flame className="h-4 w-4 text-amber-500" /></div>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold">Learning Streak</p>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    <span className="text-[11px] text-muted-foreground"><span className="font-bold text-amber-500">{streak.current_streak}</span> day streak</span>
-                    <span className="text-[11px] text-muted-foreground">Lv.{streak.level}</span>
-                    <span className="text-[11px] text-muted-foreground">{streak.total_points} pts</span>
+          {/* Learning Streak / Daily Challenge */}
+          {streak ? (
+            streak.current_streak > 0 || streak.total_points > 0 ? (
+              <Link href="/learning" className="block rounded-2xl border bg-gradient-to-br from-amber-500/5 to-orange-500/5 p-4 hover:border-amber-500/20 hover:shadow-soft-sm hover:-translate-y-0.5 transition-all duration-300 glow-border-hover">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10"><Flame className="h-4 w-4 text-amber-500" /></div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold">Learning Streak</p>
+                    <div className="flex items-center gap-3 mt-0.5">
+                      <span className="text-[11px] text-muted-foreground"><span className="font-bold text-amber-500">{streak.current_streak}</span> day streak</span>
+                      <span className="text-[11px] text-muted-foreground">Lv.{streak.level}</span>
+                      <span className="text-[11px] text-muted-foreground">{streak.total_points} pts</span>
+                    </div>
                   </div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </Link>
+            ) : (
+              <Link href="/learning" className="block rounded-2xl border border-dashed border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/5 p-4 hover:border-amber-500/40 hover:-translate-y-0.5 transition-all duration-300">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10"><Flame className="h-4 w-4 text-amber-500/60" /></div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">Start your streak today</p>
+                    <p className="text-[11px] text-muted-foreground">Complete a daily lesson to earn XP</p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-amber-500/60" />
+                </div>
+              </Link>
+            )
+          ) : (
+            <Link href="/learning" className="block rounded-2xl border border-dashed border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/5 p-4 hover:border-amber-500/40 hover:-translate-y-0.5 transition-all duration-300">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10"><Flame className="h-4 w-4 text-amber-500/60" /></div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">Daily Learn</p>
+                  <p className="text-[11px] text-muted-foreground">Sharpen skills · earn XP · build streaks</p>
+                </div>
+                <ArrowRight className="h-4 w-4 text-amber-500/60" />
               </div>
             </Link>
           )}

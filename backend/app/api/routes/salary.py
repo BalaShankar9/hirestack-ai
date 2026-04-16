@@ -34,8 +34,8 @@ class SalaryAnalysisRequest(BaseModel):
     application_id: Optional[str] = None
 
 
-@router.post("/analyze")
 @limiter.limit("5/minute")
+@router.post("/analyze")
 async def analyze_salary(
     request: Request,
     body: SalaryAnalysisRequest,
@@ -59,8 +59,8 @@ async def analyze_salary(
         raise HTTPException(status_code=500, detail="Salary analysis failed. Please try again.")
 
 
-@router.get("/{analysis_id}")
 @limiter.limit("30/minute")
+@router.get("/{analysis_id}")
 async def get_analysis(
     request: Request,
     analysis_id: str,
@@ -75,8 +75,8 @@ async def get_analysis(
     return analysis
 
 
-@router.get("/")
 @limiter.limit("30/minute")
+@router.get("/")
 async def get_analyses(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),

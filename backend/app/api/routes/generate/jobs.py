@@ -1691,8 +1691,8 @@ def _start_generation_job_inprocess(job_id: str, user_id: str) -> None:
 
 
 
-@router.post("/jobs")
 @limiter.limit("3/minute")
+@router.post("/jobs")
 async def create_generation_job(
     request: Request,
     req: GenerationJobRequest,
@@ -1766,8 +1766,8 @@ async def create_generation_job(
     return {"job_id": job_id}
 
 
-@router.get("/jobs/{job_id}/stream")
 @limiter.limit("30/minute")
+@router.get("/jobs/{job_id}/stream")
 async def stream_generation_job(
     request: Request,
     job_id: str,
@@ -1867,8 +1867,8 @@ async def stream_generation_job(
     )
 
 
-@router.post("/jobs/{job_id}/cancel")
 @limiter.limit("10/minute")
+@router.post("/jobs/{job_id}/cancel")
 async def cancel_generation_job(
     request: Request,
     job_id: str,
@@ -1891,8 +1891,8 @@ async def cancel_generation_job(
     return {"cancelled": True}
 
 
-@router.get("/jobs/{job_id}/replay")
 @limiter.limit("10/minute")
+@router.get("/jobs/{job_id}/replay")
 async def replay_generation_job(
     request: Request,
     job_id: str,
@@ -1971,8 +1971,8 @@ async def replay_generation_job(
 
 # ── Job status polling (P2-04) ────────────────────────────────────────
 
-@router.get("/jobs/{job_id}/status")
 @limiter.limit("60/minute")
+@router.get("/jobs/{job_id}/status")
 async def get_generation_job_status(
     request: Request,
     job_id: str,
@@ -2031,8 +2031,8 @@ async def get_generation_job_status(
     }
 
 
-@router.post("/jobs/{job_id}/retry")
 @limiter.limit("3/minute")
+@router.post("/jobs/{job_id}/retry")
 async def retry_generation_modules(
     request: Request,
     job_id: str,

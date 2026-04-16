@@ -44,8 +44,8 @@ class AddCommentRequest(BaseModel):
     section: str = Field("", max_length=200)
 
 
-@router.post("/create")
 @limiter.limit("10/minute")
+@router.post("/create")
 async def create_review_session(
     request: Request,
     body: CreateReviewRequest,
@@ -62,8 +62,8 @@ async def create_review_session(
     )
 
 
-@router.get("/token/{share_token}")
 @limiter.limit("10/minute")
+@router.get("/token/{share_token}")
 async def get_session_by_token(request: Request, share_token: str):
     """Get a review session by share token (public endpoint)."""
     if len(share_token) > 500:
@@ -75,8 +75,8 @@ async def get_session_by_token(request: Request, share_token: str):
     return session
 
 
-@router.post("/{session_id}/comment")
 @limiter.limit("10/minute")
+@router.post("/{session_id}/comment")
 async def add_comment(
     request: Request,
     session_id: str,
@@ -97,8 +97,8 @@ async def add_comment(
     )
 
 
-@router.get("/{session_id}/comments")
 @limiter.limit("30/minute")
+@router.get("/{session_id}/comments")
 async def get_comments(
     request: Request,
     session_id: str,
@@ -111,8 +111,8 @@ async def get_comments(
     return await service.get_comments(session_id)
 
 
-@router.get("/{session_id}/summary")
 @limiter.limit("10/minute")
+@router.get("/{session_id}/summary")
 async def summarize_feedback(
     request: Request,
     session_id: str,
@@ -124,8 +124,8 @@ async def summarize_feedback(
     return await service.summarize_feedback(session_id, current_user["id"])
 
 
-@router.get("/")
 @limiter.limit("30/minute")
+@router.get("/")
 async def get_user_sessions(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -135,8 +135,8 @@ async def get_user_sessions(
     return await service.get_user_sessions(current_user["id"])
 
 
-@router.delete("/{session_id}")
 @limiter.limit("20/minute")
+@router.delete("/{session_id}")
 async def deactivate_session(
     request: Request,
     session_id: str,

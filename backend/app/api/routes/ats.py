@@ -26,8 +26,8 @@ class ATSScanRequest(BaseModel):
     job_id: str | None = None
 
 
-@router.post("/scan")
 @limiter.limit("5/minute")
+@router.post("/scan")
 async def scan_document(
     request: Request,
     req: ATSScanRequest,
@@ -73,8 +73,8 @@ async def scan_document(
         )
 
 
-@router.get("")
 @limiter.limit("30/minute")
+@router.get("")
 async def list_scans(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -84,8 +84,8 @@ async def list_scans(
     return await service.get_user_scans(current_user["id"])
 
 
-@router.get("/{scan_id}")
 @limiter.limit("30/minute")
+@router.get("/{scan_id}")
 async def get_scan(
     request: Request,
     scan_id: str,

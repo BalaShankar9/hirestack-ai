@@ -1,6 +1,5 @@
 "use client";
 
-import React, { type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -25,7 +24,10 @@ import {
   TrendingUp,
   BookOpen,
   Target,
+  Flame,
+  Zap,
 } from "lucide-react";
+import React, { type ReactNode, useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -39,6 +41,7 @@ import {
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "@/components/command-palette/command-palette";
 import { ThemeToggle } from "@/components/theme-toggle";
+import api from "@/lib/api";
 
 type NavItem = {
   href: string;
@@ -90,19 +93,31 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { user, signOut } = useAuth();
+  const { user, signOut, session } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const [sidebarOpen, setSidebarOpen] = React.useState(false);
-  const [collapsed, setCollapsed] = React.useState(false);
-  const [signingOut, setSigningOut] = React.useState(false);
-  const [navSearch, setNavSearch] = React.useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [navSearch, setNavSearch] = useState("");
+  const [streak, setStreak] = useState<{ current_streak: number; level: number; total_points: number } | null>(null);
+
+  // Load streak for sidebar widget
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+    fetch(`${API_URL}/api/learning/streak`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => d && setStreak(d))
+      .catch(() => {});
+  }, [session?.access_token]);
 
   // Role-based nav filtering: hide enterprise items unless user has that role
   // For now, we assume user metadata may contain role info
   const userRole = user?.user_metadata?.role as string | undefined;
 
-  const filteredGroups = React.useMemo(() => {
+  const filteredGroups = useMemo(() => {
     let groups = NAV_GROUPS.map((g) => ({
       ...g,
       items: g.items.filter((item) => {
@@ -257,6 +272,22 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           )}
         </nav>
+
+        {/* Streak widget — quick daily engagement hook */}
+        {!collapsed && streak && (streak.current_streak > 0 || streak.total_points > 0) && (
+          <div className="mx-3 mb-3">
+            <Link href="/learning" className="flex items-center gap-2.5 rounded-xl bg-gradient-to-br from-amber-500/10 to-orange-500/5 border border-amber-500/15 px-3 py-2 hover:border-amber-500/30 transition-all duration-200">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500/10">
+                <Flame className="h-3.5 w-3.5 text-amber-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-semibold text-amber-500">{streak.current_streak > 0 ? `${streak.current_streak}-day streak 🔥` : "Start a streak"}</p>
+                <p className="text-[10px] text-muted-foreground">Lv.{streak.level} · {streak.total_points} XP</p>
+              </div>
+              <Zap className="h-3 w-3 text-amber-500/60 shrink-0" />
+            </Link>
+          </div>
+        )}
 
         {/* Collapse toggle */}
         <div className="border-t border-border/70 px-3 py-2">

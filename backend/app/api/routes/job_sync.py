@@ -55,8 +55,8 @@ def _validate_uuid(value: str, label: str = "ID") -> str:
         )
 
 
-@router.post("/alerts")
 @limiter.limit("20/minute")
+@router.post("/alerts")
 async def create_alert(
     request: Request,
     body: CreateAlertRequest,
@@ -74,8 +74,8 @@ async def create_alert(
     )
 
 
-@router.get("/alerts")
 @limiter.limit("60/minute")
+@router.get("/alerts")
 async def get_alerts(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -85,8 +85,8 @@ async def get_alerts(
     return await service.get_alerts(current_user["id"])
 
 
-@router.post("/match")
 @limiter.limit("10/minute")
+@router.post("/match")
 async def score_match(
     request: Request,
     body: ScoreMatchRequest,
@@ -114,8 +114,8 @@ async def score_match(
         )
 
 
-@router.get("/matches")
 @limiter.limit("60/minute")
+@router.get("/matches")
 async def get_matches(
     request: Request,
     status: Optional[str] = None,
@@ -131,8 +131,8 @@ async def get_matches(
     return await service.get_matches(current_user["id"], status)
 
 
-@router.put("/matches/{match_id}/status")
 @limiter.limit("30/minute")
+@router.put("/matches/{match_id}/status")
 async def update_match_status(
     request: Request,
     match_id: str,

@@ -35,8 +35,8 @@ class GenerateVariantsRequest(BaseModel):
     tones: Optional[List[str]] = None
 
 
-@router.post("/generate")
 @limiter.limit("5/minute")
+@router.post("/generate")
 async def generate_variants(
     request: Request,
     body: GenerateVariantsRequest,
@@ -59,8 +59,8 @@ async def generate_variants(
         raise HTTPException(status_code=500, detail="Variant generation failed. Please try again.")
 
 
-@router.get("/")
 @limiter.limit("30/minute")
+@router.get("/")
 async def get_variants(
     request: Request,
     application_id: Optional[str] = None,
@@ -72,8 +72,8 @@ async def get_variants(
     return await service.get_variants(current_user["id"], application_id, document_type)
 
 
-@router.put("/{variant_id}/select")
 @limiter.limit("20/minute")
+@router.put("/{variant_id}/select")
 async def select_variant(
     request: Request,
     variant_id: str,
