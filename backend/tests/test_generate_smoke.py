@@ -96,6 +96,7 @@ def _mock_all_chains():
 def _wire_happy_path_mocks(
     MockProfiler, MockBenchmark, MockGap, MockDocGen,
     MockConsultant, MockValidator, MockDiscovery, MockIntel,
+    MockAdaptive=None,
 ):
     """Set up all chain mocks for the happy path."""
     MockProfiler.return_value.parse_resume = AsyncMock(return_value=SAMPLE_PROFILE)
@@ -127,6 +128,8 @@ def _wire_happy_path_mocks(
         "application_strategy": {"keywords_to_use": ["Python"]},
         "culture_and_values": {"core_values": ["innovation"]},
     })
+    if MockAdaptive is not None:
+        MockAdaptive.return_value.generate = AsyncMock(return_value="<p>Extra doc</p>")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -135,13 +138,6 @@ def _wire_happy_path_mocks(
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(
-    reason=(
-        "Mocks need updating for the refactored sync_pipeline. "
-        "The pipeline now uses asyncio.gather() with sub-tasks that require "
-        "properly configured AsyncMock coroutines. Track under: fix smoke test mocks."
-    )
-)
 async def test_generate_pipeline_returns_structured_response(aclient):
     """POST /api/generate/pipeline returns all expected fields when AI succeeds."""
     with (
@@ -154,12 +150,13 @@ async def test_generate_pipeline_returns_structured_response(aclient):
         patch("ai_engine.chains.career_consultant.CareerConsultantChain") as MockConsultant,
         patch("ai_engine.chains.validator.ValidatorChain") as MockValidator,
         patch("ai_engine.chains.document_discovery.DocumentDiscoveryChain") as MockDiscovery,
-        patch("ai_engine.chains.adaptive_document.AdaptiveDocumentChain"),
+        patch("ai_engine.chains.adaptive_document.AdaptiveDocumentChain") as MockAdaptive,
         patch("ai_engine.chains.company_intel.CompanyIntelChain") as MockIntel,
+        patch("app.services.document_catalog.discover_and_observe", new_callable=AsyncMock, return_value=None),
     ):
         _wire_happy_path_mocks(
             MockProfiler, MockBenchmark, MockGap, MockDocGen,
-            MockConsultant, MockValidator, MockDiscovery, MockIntel,
+            MockConsultant, MockValidator, MockDiscovery, MockIntel, MockAdaptive,
         )
 
         resp = await aclient.post(
@@ -258,13 +255,6 @@ async def test_stream_endpoint_returns_sse(aclient):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(
-    reason=(
-        "Mocks need updating for the refactored sync_pipeline. "
-        "asyncio.gather() tasks require AsyncMock coroutines. "
-        "Track under: fix smoke test mocks."
-    )
-)
 async def test_generate_pipeline_survives_partial_failure(aclient):
     """If cover letter generation fails, CV should still be returned."""
     with (
@@ -277,12 +267,13 @@ async def test_generate_pipeline_survives_partial_failure(aclient):
         patch("ai_engine.chains.career_consultant.CareerConsultantChain") as MockConsultant,
         patch("ai_engine.chains.validator.ValidatorChain") as MockValidator,
         patch("ai_engine.chains.document_discovery.DocumentDiscoveryChain") as MockDiscovery,
-        patch("ai_engine.chains.adaptive_document.AdaptiveDocumentChain"),
+        patch("ai_engine.chains.adaptive_document.AdaptiveDocumentChain") as MockAdaptive,
         patch("ai_engine.chains.company_intel.CompanyIntelChain") as MockIntel,
+        patch("app.services.document_catalog.discover_and_observe", new_callable=AsyncMock, return_value=None),
     ):
         _wire_happy_path_mocks(
             MockProfiler, MockBenchmark, MockGap, MockDocGen,
-            MockConsultant, MockValidator, MockDiscovery, MockIntel,
+            MockConsultant, MockValidator, MockDiscovery, MockIntel, MockAdaptive,
         )
         # Cover letter FAILS
         MockDocGen.return_value.generate_tailored_cover_letter = AsyncMock(
@@ -464,13 +455,6 @@ async def test_pipeline_timeout_returns_504(aclient):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(
-    reason=(
-        "Mocks need updating for the refactored sync_pipeline. "
-        "asyncio.gather() tasks require AsyncMock coroutines. "
-        "Track under: fix smoke test mocks."
-    )
-)
 async def test_partial_failure_reports_failed_modules(aclient):
     """When cover letter fails, response includes failedModules metadata."""
     with (
@@ -483,12 +467,13 @@ async def test_partial_failure_reports_failed_modules(aclient):
         patch("ai_engine.chains.career_consultant.CareerConsultantChain") as MockConsultant,
         patch("ai_engine.chains.validator.ValidatorChain") as MockValidator,
         patch("ai_engine.chains.document_discovery.DocumentDiscoveryChain") as MockDiscovery,
-        patch("ai_engine.chains.adaptive_document.AdaptiveDocumentChain"),
+        patch("ai_engine.chains.adaptive_document.AdaptiveDocumentChain") as MockAdaptive,
         patch("ai_engine.chains.company_intel.CompanyIntelChain") as MockIntel,
+        patch("app.services.document_catalog.discover_and_observe", new_callable=AsyncMock, return_value=None),
     ):
         _wire_happy_path_mocks(
             MockProfiler, MockBenchmark, MockGap, MockDocGen,
-            MockConsultant, MockValidator, MockDiscovery, MockIntel,
+            MockConsultant, MockValidator, MockDiscovery, MockIntel, MockAdaptive,
         )
         # Cover letter FAILS
         MockDocGen.return_value.generate_tailored_cover_letter = AsyncMock(
