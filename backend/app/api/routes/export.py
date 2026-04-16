@@ -26,8 +26,8 @@ class CreateExportRequest(BaseModel):
     options: Optional[Dict[str, Any]] = None
 
 
-@limiter.limit("20/minute")
 @router.post("")
+@limiter.limit("20/minute")
 async def create_export(
     body: CreateExportRequest,
     request: Request,
@@ -50,8 +50,8 @@ async def create_export(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
-@limiter.limit("20/minute")
 @router.get("")
+@limiter.limit("20/minute")
 async def list_exports(
     request: Request,
     limit: int = Query(50, ge=1, le=200),
@@ -63,8 +63,8 @@ async def list_exports(
     return await service.get_user_exports(current_user["id"], limit=limit, offset=offset)
 
 
-@limiter.limit("20/minute")
 @router.get("/{export_id}")
+@limiter.limit("20/minute")
 async def get_export(
     request: Request,
     export_id: str,
@@ -79,8 +79,8 @@ async def get_export(
     return export
 
 
-@limiter.limit("20/minute")
 @router.get("/{export_id}/download")
+@limiter.limit("20/minute")
 async def download_export(
     request: Request,
     export_id: str,
@@ -105,8 +105,8 @@ async def download_export(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
-@limiter.limit("20/minute")
 @router.delete("/{export_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("20/minute")
 async def delete_export(
     request: Request,
     export_id: str,
@@ -125,8 +125,8 @@ class DocxExportRequest(BaseModel):
     document_type: str = "document"
 
 
-@limiter.limit("20/minute")
 @router.post("/docx")
+@limiter.limit("20/minute")
 async def export_docx(
     request: Request,
     body: DocxExportRequest,

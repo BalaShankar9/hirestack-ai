@@ -21,8 +21,8 @@ class GenerateBenchmarkRequest(BaseModel):
     job_description_id: str = Field(..., min_length=1, max_length=100)
 
 
-@limiter.limit("3/minute")
 @router.post("/generate")
+@limiter.limit("3/minute")
 async def generate_benchmark(
     request: Request,
     body: GenerateBenchmarkRequest,
@@ -40,8 +40,8 @@ async def generate_benchmark(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
-@limiter.limit("30/minute")
 @router.get("/{benchmark_id}")
+@limiter.limit("30/minute")
 async def get_benchmark(
     request: Request,
     benchmark_id: str,
@@ -56,8 +56,8 @@ async def get_benchmark(
     return benchmark
 
 
-@limiter.limit("30/minute")
 @router.get("/job/{job_id}")
+@limiter.limit("30/minute")
 async def get_benchmark_for_job(
     request: Request,
     job_id: str,
@@ -72,8 +72,8 @@ async def get_benchmark_for_job(
     return benchmark
 
 
-@limiter.limit("3/minute")
 @router.post("/{benchmark_id}/regenerate")
+@limiter.limit("3/minute")
 async def regenerate_benchmark(
     request: Request,
     benchmark_id: str,
@@ -88,8 +88,8 @@ async def regenerate_benchmark(
     return benchmark
 
 
-@limiter.limit("30/minute")
 @router.delete("/{benchmark_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("30/minute")
 async def delete_benchmark(
     request: Request,
     benchmark_id: str,

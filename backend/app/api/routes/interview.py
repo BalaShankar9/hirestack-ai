@@ -31,8 +31,8 @@ class SubmitAnswerRequest(BaseModel):
     answer: str
 
 
-@limiter.limit("30/minute")
 @router.post("/sessions")
+@limiter.limit("30/minute")
 async def create_session(
     request: Request,
     req: CreateSessionRequest,
@@ -68,8 +68,8 @@ async def create_session(
         )
 
 
-@limiter.limit("30/minute")
 @router.post("/sessions/{session_id}/answers")
+@limiter.limit("30/minute")
 async def submit_answer(
     request: Request,
     session_id: str,
@@ -102,8 +102,8 @@ async def submit_answer(
         )
 
 
-@limiter.limit("30/minute")
 @router.post("/sessions/{session_id}/complete")
+@limiter.limit("30/minute")
 async def complete_session(
     request: Request,
     session_id: str,
@@ -124,8 +124,8 @@ async def complete_session(
         )
 
 
-@limiter.limit("30/minute")
 @router.get("/sessions")
+@limiter.limit("30/minute")
 async def list_sessions(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -135,8 +135,8 @@ async def list_sessions(
     return await service.get_user_sessions(current_user["id"])
 
 
-@limiter.limit("30/minute")
 @router.get("/sessions/{session_id}")
+@limiter.limit("30/minute")
 async def get_session(
     request: Request,
     session_id: str,

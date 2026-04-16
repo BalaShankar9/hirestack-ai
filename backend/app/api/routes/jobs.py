@@ -25,8 +25,8 @@ class JobDataRequest(BaseModel):
 router = APIRouter()
 
 
-@limiter.limit("30/minute")
 @router.post("", status_code=status.HTTP_201_CREATED)
+@limiter.limit("30/minute")
 async def create_job(
     request: Request,
     job_data: JobDataRequest,
@@ -40,8 +40,8 @@ async def create_job(
     return result
 
 
-@limiter.limit("30/minute")
 @router.get("")
+@limiter.limit("30/minute")
 async def list_jobs(
     request: Request,
     limit: int = Query(50, ge=1, le=200),
@@ -60,8 +60,8 @@ async def list_jobs(
     return result
 
 
-@limiter.limit("30/minute")
 @router.get("/{job_id}")
+@limiter.limit("30/minute")
 async def get_job(
     request: Request,
     job_id: str,
@@ -76,8 +76,8 @@ async def get_job(
     return job
 
 
-@limiter.limit("30/minute")
 @router.put("/{job_id}")
+@limiter.limit("30/minute")
 async def update_job(
     request: Request,
     job_id: str,
@@ -95,8 +95,8 @@ async def update_job(
     return job
 
 
-@limiter.limit("30/minute")
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("30/minute")
 async def delete_job(
     request: Request,
     job_id: str,
@@ -112,8 +112,8 @@ async def delete_job(
     await cache_invalidate_prefix(f"jobs:list:{current_user['id']}")
 
 
-@limiter.limit("30/minute")
 @router.post("/{job_id}/parse")
+@limiter.limit("30/minute")
 async def parse_job(
     request: Request,
     job_id: str,

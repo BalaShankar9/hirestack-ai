@@ -14,8 +14,8 @@ from app.api.deps import get_current_user
 router = APIRouter()
 
 
-@limiter.limit("10/minute")
 @router.get("/verify")
+@limiter.limit("10/minute")
 async def verify_token_endpoint(
     request: Request,
     authorization: str = Header(...),
@@ -52,8 +52,8 @@ async def verify_token_endpoint(
     }
 
 
-@limiter.limit("10/minute")
 @router.get("/me")
+@limiter.limit("10/minute")
 async def get_current_user_info(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -62,8 +62,8 @@ async def get_current_user_info(
     return current_user
 
 
-@limiter.limit("10/minute")
 @router.put("/me")
+@limiter.limit("10/minute")
 async def update_current_user(
     request: Request,
     full_name: Optional[str] = None,
@@ -86,8 +86,8 @@ async def update_current_user(
     return current_user
 
 
-@limiter.limit("10/minute")
 @router.post("/sync")
+@limiter.limit("10/minute")
 async def sync_user(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),

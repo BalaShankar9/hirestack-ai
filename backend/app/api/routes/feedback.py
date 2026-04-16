@@ -77,8 +77,8 @@ class ABTestResultRequest(BaseModel):
 #  Endpoints
 # ═══════════════════════════════════════════════════════════════════════
 
-@limiter.limit("10/minute")
 @router.post("/application")
+@limiter.limit("10/minute")
 async def submit_application_feedback(
     request: Request,
     req: ApplicationFeedbackRequest,
@@ -154,8 +154,8 @@ async def submit_application_feedback(
     }
 
 
-@limiter.limit("10/minute")
 @router.post("/ab-test")
+@limiter.limit("10/minute")
 async def record_ab_test_result(
     request: Request,
     req: ABTestResultRequest,
@@ -191,8 +191,8 @@ async def record_ab_test_result(
     return {"status": "ok"}
 
 
-@limiter.limit("30/minute")
 @router.get("/ab-test/stats")
+@limiter.limit("30/minute")
 async def get_ab_test_stats(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -248,8 +248,8 @@ async def get_ab_test_stats(
         return {"document_types": {}, "total_variants": 0}
 
 
-@limiter.limit("30/minute")
 @router.get("/stats")
+@limiter.limit("30/minute")
 async def get_feedback_stats(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),

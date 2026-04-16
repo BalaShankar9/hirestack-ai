@@ -35,8 +35,8 @@ class SubmitAnswerRequest(BaseModel):
     user_answer: str = Field(..., max_length=10_000)
 
 
-@limiter.limit("30/minute")
 @router.get("/streak")
+@limiter.limit("30/minute")
 async def get_streak(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -46,8 +46,8 @@ async def get_streak(
     return await service.get_or_create_streak(current_user["id"])
 
 
-@limiter.limit("5/minute")
 @router.post("/generate")
+@limiter.limit("5/minute")
 async def generate_daily_challenges(
     request: Request,
     body: GenerateChallengesRequest,
@@ -67,8 +67,8 @@ async def generate_daily_challenges(
         raise HTTPException(status_code=500, detail="Challenge generation failed. Please try again.")
 
 
-@limiter.limit("30/minute")
 @router.post("/{challenge_id}/answer")
+@limiter.limit("30/minute")
 async def submit_answer(
     request: Request,
     challenge_id: str,
@@ -88,8 +88,8 @@ async def submit_answer(
         raise HTTPException(status_code=400, detail="Challenge not found or already completed.")
 
 
-@limiter.limit("30/minute")
 @router.get("/today")
+@limiter.limit("30/minute")
 async def get_today_challenges(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -99,8 +99,8 @@ async def get_today_challenges(
     return await service.get_today_challenges(current_user["id"])
 
 
-@limiter.limit("30/minute")
 @router.get("/history")
+@limiter.limit("30/minute")
 async def get_history(
     request: Request,
     limit: int = Query(50, ge=1, le=500),

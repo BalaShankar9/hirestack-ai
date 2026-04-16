@@ -499,8 +499,8 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             })
 
 
-@limiter.limit("3/minute")
 @router.post("/pipeline/stream")
+@limiter.limit("3/minute")
 async def generate_pipeline_stream(request: Request, req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """
     SSE streaming version of the pipeline.

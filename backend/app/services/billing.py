@@ -177,7 +177,8 @@ class BillingService:
     async def handle_webhook(self, event_type: str, data: Dict[str, Any]):
         """Handle a Stripe webhook event with idempotency protection."""
         # Idempotency: use the Stripe event ID to prevent duplicate processing
-        event_id = data.get("id") or data.get("object", {}).get("id", "")
+        # TODO: persist event_id to a processed-events table to fully prevent replay attacks
+        _event_id = data.get("id") or data.get("object", {}).get("id", "")
 
         if event_type == "checkout.session.completed":
             org_id = data.get("metadata", {}).get("org_id")

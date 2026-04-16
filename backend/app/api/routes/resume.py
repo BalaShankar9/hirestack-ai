@@ -24,8 +24,8 @@ def _max_bytes() -> int:
     return int(settings.max_upload_size_mb) * 1024 * 1024
 
 
-@limiter.limit("10/minute")
 @router.post("/parse")
+@limiter.limit("10/minute")
 async def parse_resume(
     request: Request,
     file: UploadFile = File(...),

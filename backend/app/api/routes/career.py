@@ -23,8 +23,8 @@ router = APIRouter()
 #  Existing: Timeline / Snapshot / Portfolio
 # ═══════════════════════════════════════════════════════════════════════
 
-@limiter.limit("10/minute")
 @router.post("/snapshot")
+@limiter.limit("10/minute")
 async def capture_snapshot(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -34,8 +34,8 @@ async def capture_snapshot(
     return await service.capture_snapshot(current_user["id"])
 
 
-@limiter.limit("30/minute")
 @router.get("/timeline")
+@limiter.limit("30/minute")
 async def get_timeline(
     request: Request,
     days: int = Query(90, ge=1, le=365),
@@ -46,8 +46,8 @@ async def get_timeline(
     return await service.get_timeline(current_user["id"], days)
 
 
-@limiter.limit("30/minute")
 @router.get("/portfolio")
+@limiter.limit("30/minute")
 async def get_portfolio_summary(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -67,8 +67,8 @@ class OutcomeSignalRequest(BaseModel):
     signal_data: Optional[Dict[str, Any]] = None
 
 
-@limiter.limit("30/minute")
 @router.post("/outcomes")
+@limiter.limit("30/minute")
 async def record_outcome(
     request: Request,
     body: OutcomeSignalRequest,
@@ -88,8 +88,8 @@ async def record_outcome(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@limiter.limit("30/minute")
 @router.get("/outcomes/funnel")
+@limiter.limit("30/minute")
 async def get_conversion_funnel(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -99,8 +99,8 @@ async def get_conversion_funnel(
     return await service.get_conversion_funnel(current_user["id"])
 
 
-@limiter.limit("30/minute")
 @router.get("/outcomes/effectiveness")
+@limiter.limit("30/minute")
 async def get_strategy_effectiveness(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -114,8 +114,8 @@ async def get_strategy_effectiveness(
 #  Pipeline Telemetry — cost, token, and quality dashboards
 # ═══════════════════════════════════════════════════════════════════════
 
-@limiter.limit("30/minute")
 @router.get("/telemetry/summary")
+@limiter.limit("30/minute")
 async def get_telemetry_summary(
     request: Request,
     days: int = Query(30, ge=1, le=365),
@@ -126,8 +126,8 @@ async def get_telemetry_summary(
     return await service.get_user_cost_summary(current_user["id"], days)
 
 
-@limiter.limit("30/minute")
 @router.get("/telemetry/trend/{pipeline_name}")
+@limiter.limit("30/minute")
 async def get_telemetry_trend(
     request: Request,
     pipeline_name: str,
@@ -141,8 +141,8 @@ async def get_telemetry_trend(
     )
 
 
-@limiter.limit("60/minute")
 @router.get("/telemetry/phase-latencies")
+@limiter.limit("60/minute")
 async def get_phase_latencies(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -189,8 +189,8 @@ async def get_phase_latencies(
 #  Production Replay — reconstruct pipeline state from event log
 # ═══════════════════════════════════════════════════════════════════════
 
-@limiter.limit("10/minute")
 @router.get("/replay/{job_id}")
+@limiter.limit("10/minute")
 async def replay_pipeline_state(
     request: Request,
     job_id: str,
@@ -245,8 +245,8 @@ async def replay_pipeline_state(
 #  Self-Tuning Engine — learns optimal config from outcomes
 # ═══════════════════════════════════════════════════════════════════════
 
-@limiter.limit("10/minute")
 @router.get("/tuning/recommendation")
+@limiter.limit("10/minute")
 async def get_tuning_recommendation(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -260,8 +260,8 @@ async def get_tuning_recommendation(
     return await engine.recommend_config(current_user["id"])
 
 
-@limiter.limit("20/minute")
 @router.get("/predict/{application_id}")
+@limiter.limit("20/minute")
 async def predict_interview_likelihood(
     request: Request,
     application_id: str,
@@ -283,8 +283,8 @@ async def predict_interview_likelihood(
 #  Pipeline Health Monitor — quality regression & anomaly detection
 # ═══════════════════════════════════════════════════════════════════════
 
-@limiter.limit("10/minute")
 @router.get("/telemetry/health")
+@limiter.limit("10/minute")
 async def get_pipeline_health(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -305,8 +305,8 @@ async def get_pipeline_health(
 #  Evidence Graph — expose canonical nodes + contradictions for frontend
 # ═══════════════════════════════════════════════════════════════════════
 
-@limiter.limit("10/minute")
 @router.get("/evidence-graph")
+@limiter.limit("10/minute")
 async def get_evidence_graph(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -376,8 +376,8 @@ async def get_evidence_graph(
 #  Autonomous Career Monitor — proactive alerts
 # ═══════════════════════════════════════════════════════════════════════
 
-@limiter.limit("5/minute")
 @router.post("/monitor/scan")
+@limiter.limit("5/minute")
 async def trigger_career_scan(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -393,8 +393,8 @@ async def trigger_career_scan(
     return await monitor.run_full_scan(current_user["id"])
 
 
-@limiter.limit("30/minute")
 @router.get("/alerts")
+@limiter.limit("30/minute")
 async def get_career_alerts(
     request: Request,
     limit: int = Query(20, ge=1, le=50),
@@ -406,8 +406,8 @@ async def get_career_alerts(
     return await monitor.get_active_alerts(current_user["id"], limit=limit)
 
 
-@limiter.limit("30/minute")
 @router.get("/alerts/summary")
+@limiter.limit("30/minute")
 async def get_alert_summary(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -418,8 +418,8 @@ async def get_alert_summary(
     return await monitor.get_alert_summary(current_user["id"])
 
 
-@limiter.limit("30/minute")
 @router.post("/alerts/{alert_id}/dismiss")
+@limiter.limit("30/minute")
 async def dismiss_alert(
     request: Request,
     alert_id: str,
@@ -435,8 +435,8 @@ async def dismiss_alert(
     return {"status": "dismissed"}
 
 
-@limiter.limit("60/minute")
 @router.post("/alerts/{alert_id}/read")
+@limiter.limit("60/minute")
 async def mark_alert_read(
     request: Request,
     alert_id: str,
@@ -466,8 +466,8 @@ class DocumentEvolutionRequest(BaseModel):
     target_keywords: Optional[list] = None
 
 
-@limiter.limit("10/minute")
 @router.post("/document-evolution")
+@limiter.limit("10/minute")
 async def analyze_document_evolution(
     request: Request,
     body: DocumentEvolutionRequest,
@@ -496,8 +496,8 @@ async def analyze_document_evolution(
     )
 
 
-@limiter.limit("30/minute")
 @router.get("/document-evolution/timeline")
+@limiter.limit("30/minute")
 async def get_evolution_timeline(
     request: Request,
     document_id: Optional[str] = Query(None),
@@ -516,8 +516,8 @@ async def get_evolution_timeline(
     )
 
 
-@limiter.limit("30/minute")
 @router.get("/document-evolution/trend")
+@limiter.limit("30/minute")
 async def get_improvement_trend(
     request: Request,
     limit: int = Query(30, ge=1, le=100),
@@ -536,8 +536,8 @@ async def get_improvement_trend(
 #  Predictive Career Forecaster — enhanced predictions
 # ═══════════════════════════════════════════════════════════════════════
 
-@limiter.limit("20/minute")
 @router.get("/predict/offer/{application_id}")
+@limiter.limit("20/minute")
 async def predict_offer_probability(
     request: Request,
     application_id: str,
@@ -555,8 +555,8 @@ async def predict_offer_probability(
     )
 
 
-@limiter.limit("10/minute")
 @router.get("/momentum")
+@limiter.limit("10/minute")
 async def get_career_momentum(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),

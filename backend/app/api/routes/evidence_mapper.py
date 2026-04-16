@@ -44,8 +44,8 @@ class ConfirmMappingRequest(BaseModel):
     confirmed: bool = True
 
 
-@limiter.limit("10/minute")
 @router.post("/auto-map")
+@limiter.limit("10/minute")
 async def auto_map_evidence(
     request: Request,
     body: AutoMapRequest,
@@ -66,8 +66,8 @@ async def auto_map_evidence(
         raise HTTPException(status_code=500, detail="Evidence mapping failed. Please try again.")
 
 
-@limiter.limit("30/minute")
 @router.get("/mappings/{gap_report_id}")
+@limiter.limit("30/minute")
 async def get_mappings(
     request: Request,
     gap_report_id: str,
@@ -79,8 +79,8 @@ async def get_mappings(
     return await service.get_mappings(current_user["id"], gap_report_id)
 
 
-@limiter.limit("30/minute")
 @router.put("/mappings/{mapping_id}/confirm")
+@limiter.limit("30/minute")
 async def confirm_mapping(
     request: Request,
     mapping_id: str,

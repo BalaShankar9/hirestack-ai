@@ -34,8 +34,8 @@ class ChangeRoleRequest(BaseModel):
 
 # ── Org CRUD ──────────────────────────────────────────────────────
 
-@limiter.limit("30/minute")
 @router.post("")
+@limiter.limit("30/minute")
 async def create_org(
     request: Request,
     req: CreateOrgRequest, current_user: Dict[str, Any] = Depends(get_current_user
@@ -53,8 +53,8 @@ async def create_org(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create organization")
 
 
-@limiter.limit("30/minute")
 @router.get("")
+@limiter.limit("30/minute")
 async def list_orgs(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -63,8 +63,8 @@ async def list_orgs(
     return await service.get_user_orgs(current_user["id"])
 
 
-@limiter.limit("30/minute")
 @router.get("/{org_id}")
+@limiter.limit("30/minute")
 async def get_org(
     request: Request,
     org_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -81,8 +81,8 @@ async def get_org(
     return org
 
 
-@limiter.limit("30/minute")
 @router.put("/{org_id}")
+@limiter.limit("30/minute")
 async def update_org(
     request: Request,
     org_id: str, data: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -95,8 +95,8 @@ async def update_org(
     return await service.update_org(org_id, data)
 
 
-@limiter.limit("30/minute")
 @router.delete("/{org_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("30/minute")
 async def delete_org(
     request: Request,
     org_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -111,8 +111,8 @@ async def delete_org(
 
 # ── Members ───────────────────────────────────────────────────────
 
-@limiter.limit("30/minute")
 @router.get("/{org_id}/members")
+@limiter.limit("30/minute")
 async def list_members(
     request: Request,
     org_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -124,8 +124,8 @@ async def list_members(
     return await service.get_members(org_id)
 
 
-@limiter.limit("30/minute")
 @router.post("/{org_id}/members")
+@limiter.limit("30/minute")
 async def invite_member(
     request: Request,
     org_id: str, req: InviteMemberRequest, current_user: Dict[str, Any] = Depends(get_current_user
@@ -140,8 +140,8 @@ async def invite_member(
     return invitation
 
 
-@limiter.limit("30/minute")
 @router.put("/{org_id}/members/{user_id}")
+@limiter.limit("30/minute")
 async def change_member_role(
     request: Request,
     org_id: str, user_id: str, req: ChangeRoleRequest, current_user: Dict[str, Any] = Depends(get_current_user
@@ -160,8 +160,8 @@ async def change_member_role(
     return {"status": "updated"}
 
 
-@limiter.limit("30/minute")
 @router.delete("/{org_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("30/minute")
 async def remove_member(
     request: Request,
     org_id: str, user_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -178,8 +178,8 @@ async def remove_member(
 
 # ── Invitations ───────────────────────────────────────────────────
 
-@limiter.limit("30/minute")
 @router.post("/invitations/accept")
+@limiter.limit("30/minute")
 async def accept_invitation(
     request: Request,
     token: str, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -193,8 +193,8 @@ async def accept_invitation(
 
 # ── Audit & Usage ─────────────────────────────────────────────────
 
-@limiter.limit("30/minute")
 @router.get("/{org_id}/audit")
+@limiter.limit("30/minute")
 async def get_audit_logs(
     request: Request,
     org_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -206,8 +206,8 @@ async def get_audit_logs(
     return await service.get_audit_logs(org_id)
 
 
-@limiter.limit("30/minute")
 @router.get("/{org_id}/usage")
+@limiter.limit("30/minute")
 async def get_usage(
     request: Request,
     org_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):

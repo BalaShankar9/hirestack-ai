@@ -20,8 +20,8 @@ from .helpers import (
 
 router = APIRouter()
 
-@limiter.limit("3/minute")
 @router.post("/pipeline/planned")
+@limiter.limit("3/minute")
 async def generate_planned_pipeline(
     request: Request,
     req: PlannedPipelineRequest,

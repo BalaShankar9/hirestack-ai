@@ -24,8 +24,8 @@ class GenerateDocumentRequest(BaseModel):
     options: Optional[Dict[str, Any]] = None
 
 
-@limiter.limit("3/minute")
 @router.post("/generate")
+@limiter.limit("3/minute")
 async def generate_document(
     body: GenerateDocumentRequest,
     request: Request,
@@ -55,8 +55,8 @@ class GenerateAllRequest(BaseModel):
     job_id: Optional[str] = None
 
 
-@limiter.limit("3/minute")
 @router.post("/generate-all")
+@limiter.limit("3/minute")
 async def generate_all_documents(
     body: GenerateAllRequest,
     request: Request,
@@ -78,8 +78,8 @@ async def generate_all_documents(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
-@limiter.limit("30/minute")
 @router.get("/documents")
+@limiter.limit("30/minute")
 async def list_documents(
     request: Request,
     document_type: Optional[str] = Query(None),
@@ -90,8 +90,8 @@ async def list_documents(
     return await service.get_user_documents(current_user["id"], document_type=document_type)
 
 
-@limiter.limit("30/minute")
 @router.get("/documents/{document_id}")
+@limiter.limit("30/minute")
 async def get_document(
     request: Request,
     document_id: str,
@@ -111,8 +111,8 @@ class UpdateDocumentRequest(BaseModel):
     status: Optional[str] = Field(None, max_length=50)
 
 
-@limiter.limit("30/minute")
 @router.put("/documents/{document_id}")
+@limiter.limit("30/minute")
 async def update_document(
     request: Request,
     document_id: str,
@@ -127,8 +127,8 @@ async def update_document(
     return document
 
 
-@limiter.limit("30/minute")
 @router.post("/documents/{document_id}/version")
+@limiter.limit("30/minute")
 async def create_document_version(
     request: Request,
     document_id: str,
@@ -142,8 +142,8 @@ async def create_document_version(
     return document
 
 
-@limiter.limit("30/minute")
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("30/minute")
 async def delete_document(
     request: Request,
     document_id: str,

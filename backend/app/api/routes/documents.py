@@ -29,8 +29,8 @@ class UpdateDocumentRequest(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────────────
 
-@limiter.limit("30/minute")
 @router.get("/documents/library")
+@limiter.limit("30/minute")
 async def get_document_library(
     request: Request,
     application_id: Optional[str] = Query(None),
@@ -61,8 +61,8 @@ async def get_document_library(
     return {"documents": {"fixed": fixed}, "category": "fixed"}
 
 
-@limiter.limit("30/minute")
 @router.get("/documents/library/summary")
+@limiter.limit("30/minute")
 async def get_library_summary(
     request: Request,
     application_id: str = Query(...),
@@ -80,8 +80,8 @@ async def get_library_summary(
     return {"summary": summary}
 
 
-@limiter.limit("30/minute")
 @router.get("/documents/library/{doc_id}")
+@limiter.limit("30/minute")
 async def get_document(
     request: Request,
     doc_id: str,
@@ -101,8 +101,8 @@ async def get_document(
     return {"document": doc}
 
 
-@limiter.limit("10/minute")
 @router.post("/documents/library/generate")
+@limiter.limit("10/minute")
 async def generate_document(
     request: Request,
     req: GenerateDocumentRequest,
@@ -155,8 +155,8 @@ async def generate_document(
     return {"document": doc, "status": "generating"}
 
 
-@limiter.limit("20/minute")
 @router.patch("/documents/library/{doc_id}")
+@limiter.limit("20/minute")
 async def update_document(
     request: Request,
     doc_id: str,

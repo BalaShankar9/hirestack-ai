@@ -14,8 +14,8 @@ from .jobs import _persist_application_patch
 router = APIRouter()
 
 
-@limiter.limit("5/minute")
 @router.post("/document")
+@limiter.limit("5/minute")
 async def generate_on_demand_document(
     request: Request,
     req: GenerateDocumentRequest,

@@ -31,8 +31,8 @@ from .helpers import CircuitBreakerOpen
 
 router = APIRouter()
 
-@limiter.limit("3/minute")
 @router.post("/pipeline")
+@limiter.limit("3/minute")
 async def generate_pipeline(request: Request, req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Run the complete AI generation pipeline and return all modules."""
     await check_billing_limit("ai_calls", current_user)

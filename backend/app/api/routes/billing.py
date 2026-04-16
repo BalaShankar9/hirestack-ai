@@ -43,8 +43,8 @@ class CheckoutRequest(BaseModel):
         return v
 
 
-@limiter.limit("20/minute")
 @router.get("/status")
+@limiter.limit("20/minute")
 async def get_billing_status(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -75,8 +75,8 @@ async def get_billing_status(
         }
 
 
-@limiter.limit("20/minute")
 @router.post("/checkout")
+@limiter.limit("20/minute")
 async def create_checkout(
     request: Request,
     req: CheckoutRequest, current_user: Dict[str, Any] = Depends(get_current_user
@@ -103,8 +103,8 @@ async def create_checkout(
     return {"url": url}
 
 
-@limiter.limit("20/minute")
 @router.post("/portal")
+@limiter.limit("20/minute")
 async def create_portal(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -122,8 +122,8 @@ async def create_portal(
     return {"url": url}
 
 
-@limiter.limit("100/minute")
 @router.post("/webhook")
+@limiter.limit("100/minute")
 async def stripe_webhook(request: Request):
     """Handle Stripe webhook events."""
     import os
@@ -154,8 +154,8 @@ class RecordUsageRequest(BaseModel):
     feature: str = "exports"
 
 
-@limiter.limit("20/minute")
 @router.post("/record-export")
+@limiter.limit("20/minute")
 async def record_export(
     request: Request,
     req: RecordUsageRequest, current_user: Dict[str, Any] = Depends(get_current_user
@@ -172,8 +172,8 @@ async def record_export(
     return {"recorded": True, "usage": plan_info.get("usage", {})}
 
 
-@limiter.limit("20/minute")
 @router.get("/quota-check")
+@limiter.limit("20/minute")
 async def quota_check(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
