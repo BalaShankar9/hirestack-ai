@@ -28,6 +28,25 @@ import pytest
 # ── Skip unless real credentials are available ────────────────────────────
 
 
+def _get_real_settings():
+    """Load real settings from backend/.env (not test placeholders).
+
+    Temporarily removes CI placeholder env vars so pydantic-settings reads the
+    real .env file, then restores them.  Returns (Settings instance, saved vars).
+    """
+    saved = {}
+    for key in ("SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY",
+                "GEMINI_API_KEY", "ENVIRONMENT", "DEBUG"):
+        if key in os.environ:
+            saved[key] = os.environ.pop(key)
+    try:
+        from app.core.config import Settings
+        s = Settings()
+        return s, saved
+    finally:
+        os.environ.update(saved)
+
+
 def _has_real_credentials() -> bool:
     """Check if real (non-placeholder) Supabase/Gemini credentials exist.
 

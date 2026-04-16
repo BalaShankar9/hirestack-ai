@@ -11,7 +11,6 @@ Tests that the CriticAgent:
 from __future__ import annotations
 
 import asyncio
-import types
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
