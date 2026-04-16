@@ -16,7 +16,7 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from ai_engine.agents.base import BaseAgent, AgentResult
 from ai_engine.agents.sub_agents.base import SubAgentCoordinator
@@ -134,7 +134,7 @@ class DrafterAgent(BaseAgent):
             dims = revision_scope.get("dimensions", [])
             scoped_issues = revision_scope.get("issues", [])
             if dims:
-                revision_prompt += f"## REVISION FOCUS (address these dimensions ONLY)\n"
+                revision_prompt += "## REVISION FOCUS (address these dimensions ONLY)\n"
                 revision_prompt += f"Target dimensions: {', '.join(dims)}\n"
                 revision_prompt += "Leave sections unrelated to these dimensions UNCHANGED.\n\n"
             if scoped_issues:
@@ -188,7 +188,7 @@ class DrafterAgent(BaseAgent):
                 kw_analysis = optimizer_fb.get("keyword_analysis", {})
                 missing_kws = kw_analysis.get("missing", []) if isinstance(kw_analysis, dict) else []
                 suggestions = optimizer_fb.get("suggestions", [])
-            revision_prompt += f"## Keyword Insertions (weave naturally)\n"
+            revision_prompt += "## Keyword Insertions (weave naturally)\n"
             if missing_kws:
                 revision_prompt += f"Missing keywords: {', '.join(missing_kws[:10])}\n"
             if suggestions and isinstance(suggestions, list):

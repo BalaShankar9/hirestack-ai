@@ -222,9 +222,13 @@ GAP_ANALYSIS_SCHEMA: Dict[str, Any] = {
 
 
 class GapAnalyzerChain:
-    """Chain for analyzing gaps between user profiles and benchmarks."""
+    """Chain for analyzing gaps between user profiles and benchmarks.
 
-    VERSION = "1.0.0"
+    v2: Delegates to GapAnalysisCoordinator (6-agent swarm) with
+    automatic fallback to the single-LLM path if the swarm fails.
+    """
+
+    VERSION = "2.0.0"
 
     def __init__(self, ai_client: AIClient):
         self.ai_client = ai_client
@@ -236,7 +240,34 @@ class GapAnalyzerChain:
         job_title: str,
         company: str
     ) -> Dict[str, Any]:
-        """Perform comprehensive gap analysis."""
+        """Perform comprehensive gap analysis via the sub-agent swarm."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            from ai_engine.agents.sub_agents.gap_analysis.coordinator import GapAnalysisCoordinator
+            coordinator = GapAnalysisCoordinator(ai_client=self.ai_client)
+            result = await coordinator.analyze(
+                user_profile=user_profile,
+                benchmark=benchmark,
+                job_title=job_title,
+                company=company,
+            )
+            logger.info("gap_analysis_swarm_ok", score=result.get("compatibility_score"))
+            return self._validate_result(result)
+        except Exception as exc:
+            logger.warning("gap_analysis_swarm_failed, falling back to single-LLM", error=str(exc))
+            return await self._legacy_analyze(user_profile, benchmark, job_title, company)
+
+    async def _legacy_analyze(
+        self,
+        user_profile: Dict[str, Any],
+        benchmark: Dict[str, Any],
+        job_title: str,
+        company: str,
+    ) -> Dict[str, Any]:
+        """Original single-LLM gap analysis (fallback path)."""
         import json
 
         # Keep prompts compact to avoid shrinking the model's available output budget

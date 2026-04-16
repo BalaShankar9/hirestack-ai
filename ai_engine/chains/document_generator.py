@@ -4,7 +4,11 @@ Creates personalized application documents based on user profile and target job
 """
 from typing import Dict, Any, List
 
+import structlog
+
 from ai_engine.client import AIClient
+
+logger = structlog.get_logger("hirestack.chains.document_generator")
 
 
 DOCUMENT_SYSTEM = """You are an expert resume writer, cover letter specialist, and professional document creator.
@@ -460,21 +464,25 @@ class DocumentGeneratorChain:
     ) -> str:
         """Generate a tailored CV."""
         import json
+        try:
+            prompt = CV_GENERATOR_PROMPT.format(
+                user_profile=json.dumps(user_profile, indent=2),
+                job_title=job_title,
+                company=company,
+                job_requirements=json.dumps(job_requirements, indent=2),
+                gap_insights=json.dumps(gap_insights or {}, indent=2)
+            )
 
-        prompt = CV_GENERATOR_PROMPT.format(
-            user_profile=json.dumps(user_profile, indent=2),
-            job_title=job_title,
-            company=company,
-            job_requirements=json.dumps(job_requirements, indent=2),
-            gap_insights=json.dumps(gap_insights or {}, indent=2)
-        )
-
-        return await self.ai_client.complete(
-            prompt=prompt,
-            system=DOCUMENT_SYSTEM,
-            temperature=0.5,
-            max_tokens=4000
-        )
+            return await self.ai_client.complete(
+                prompt=prompt,
+                system=DOCUMENT_SYSTEM,
+                temperature=0.5,
+                max_tokens=4000,
+                task_type="drafting",
+            )
+        except Exception as exc:
+            logger.warning("generate_cv.failed", error=str(exc)[:200])
+            return ""
 
     async def generate_cover_letter(
         self,
@@ -487,22 +495,26 @@ class DocumentGeneratorChain:
     ) -> str:
         """Generate a personalized cover letter."""
         import json
+        try:
+            prompt = COVER_LETTER_PROMPT.format(
+                user_profile=json.dumps(user_profile, indent=2),
+                job_title=job_title,
+                company=company,
+                company_info=json.dumps(company_info or {}, indent=2),
+                job_requirements=json.dumps(job_requirements, indent=2),
+                strengths=json.dumps(strengths or [], indent=2)
+            )
 
-        prompt = COVER_LETTER_PROMPT.format(
-            user_profile=json.dumps(user_profile, indent=2),
-            job_title=job_title,
-            company=company,
-            company_info=json.dumps(company_info or {}, indent=2),
-            job_requirements=json.dumps(job_requirements, indent=2),
-            strengths=json.dumps(strengths or [], indent=2)
-        )
-
-        return await self.ai_client.complete(
-            prompt=prompt,
-            system=DOCUMENT_SYSTEM,
-            temperature=0.6,
-            max_tokens=2000
-        )
+            return await self.ai_client.complete(
+                prompt=prompt,
+                system=DOCUMENT_SYSTEM,
+                temperature=0.6,
+                max_tokens=2000,
+                task_type="drafting",
+            )
+        except Exception as exc:
+            logger.warning("generate_cover_letter.failed", error=str(exc)[:200])
+            return ""
 
     async def generate_motivation_statement(
         self,
@@ -513,20 +525,24 @@ class DocumentGeneratorChain:
     ) -> Dict[str, Any]:
         """Generate a company-specific motivation statement."""
         import json
+        try:
+            prompt = MOTIVATION_STATEMENT_PROMPT.format(
+                user_profile=json.dumps(user_profile, indent=2),
+                company=company,
+                company_info=json.dumps(company_info or {}, indent=2),
+                job_title=job_title
+            )
 
-        prompt = MOTIVATION_STATEMENT_PROMPT.format(
-            user_profile=json.dumps(user_profile, indent=2),
-            company=company,
-            company_info=json.dumps(company_info or {}, indent=2),
-            job_title=job_title
-        )
-
-        return await self.ai_client.complete_json(
-            prompt=prompt,
-            system=DOCUMENT_SYSTEM,
-            temperature=0.6,
-            max_tokens=3000
-        )
+            return await self.ai_client.complete_json(
+                prompt=prompt,
+                system=DOCUMENT_SYSTEM,
+                temperature=0.6,
+                max_tokens=3000,
+                task_type="reasoning",
+            )
+        except Exception as exc:
+            logger.warning("generate_motivation_statement.failed", error=str(exc)[:200])
+            return {}
 
     async def generate_portfolio_descriptions(
         self,
@@ -536,19 +552,23 @@ class DocumentGeneratorChain:
     ) -> Dict[str, Any]:
         """Generate professional portfolio descriptions."""
         import json
+        try:
+            prompt = PORTFOLIO_DESCRIPTION_PROMPT.format(
+                user_profile=json.dumps(user_profile, indent=2),
+                job_title=job_title,
+                projects=json.dumps(projects, indent=2)
+            )
 
-        prompt = PORTFOLIO_DESCRIPTION_PROMPT.format(
-            user_profile=json.dumps(user_profile, indent=2),
-            job_title=job_title,
-            projects=json.dumps(projects, indent=2)
-        )
-
-        return await self.ai_client.complete_json(
-            prompt=prompt,
-            system=DOCUMENT_SYSTEM,
-            temperature=0.5,
-            max_tokens=4000
-        )
+            return await self.ai_client.complete_json(
+                prompt=prompt,
+                system=DOCUMENT_SYSTEM,
+                temperature=0.5,
+                max_tokens=4000,
+                task_type="reasoning",
+            )
+        except Exception as exc:
+            logger.warning("generate_portfolio_descriptions.failed", error=str(exc)[:200])
+            return {}
 
     async def generate_all_documents(
         self,
@@ -601,34 +621,38 @@ class DocumentGeneratorChain:
     ) -> str:
         """Generate an elite personal statement in HTML."""
         import json
+        try:
+            compatibility = gap_analysis.get("compatibility_score", 50)
+            skill_gaps = gap_analysis.get("skill_gaps", [])
+            strengths = gap_analysis.get("strengths", [])
+            key_gaps_str = ", ".join(
+                g.get("skill", "") for g in skill_gaps[:8] if isinstance(g, dict)
+            ) or "None identified"
+            strengths_str = ", ".join(
+                s.get("area", "") for s in strengths[:8] if isinstance(s, dict)
+            ) or "Strong overall profile"
 
-        compatibility = gap_analysis.get("compatibility_score", 50)
-        skill_gaps = gap_analysis.get("skill_gaps", [])
-        strengths = gap_analysis.get("strengths", [])
-        key_gaps_str = ", ".join(
-            g.get("skill", "") for g in skill_gaps[:8] if isinstance(g, dict)
-        ) or "None identified"
-        strengths_str = ", ".join(
-            s.get("area", "") for s in strengths[:8] if isinstance(s, dict)
-        ) or "Strong overall profile"
+            prompt = TAILORED_PS_PROMPT.format(
+                job_title=job_title,
+                company=company,
+                jd_text=jd_text[:3000],
+                user_profile=json.dumps(user_profile, indent=2)[:3000],
+                resume_text=(resume_text or "No resume text provided")[:2000],
+                compatibility=compatibility,
+                key_gaps=key_gaps_str,
+                strengths=strengths_str,
+            )
 
-        prompt = TAILORED_PS_PROMPT.format(
-            job_title=job_title,
-            company=company,
-            jd_text=jd_text[:3000],
-            user_profile=json.dumps(user_profile, indent=2)[:3000],
-            resume_text=(resume_text or "No resume text provided")[:2000],
-            compatibility=compatibility,
-            key_gaps=key_gaps_str,
-            strengths=strengths_str,
-        )
-
-        return await self.ai_client.complete(
-            prompt=prompt,
-            system=TAILORED_PS_SYSTEM,
-            temperature=0.65,
-            max_tokens=4000,
-        )
+            return await self.ai_client.complete(
+                prompt=prompt,
+                system=TAILORED_PS_SYSTEM,
+                temperature=0.65,
+                max_tokens=4000,
+                task_type="drafting",
+            )
+        except Exception as exc:
+            logger.warning("generate_tailored_personal_statement.failed", error=str(exc)[:200])
+            return ""
 
     async def generate_tailored_portfolio(
         self,
@@ -641,34 +665,38 @@ class DocumentGeneratorChain:
     ) -> str:
         """Generate a professional evidence portfolio in HTML."""
         import json
+        try:
+            compatibility = gap_analysis.get("compatibility_score", 50)
+            skill_gaps = gap_analysis.get("skill_gaps", [])
+            strengths = gap_analysis.get("strengths", [])
+            key_gaps_str = ", ".join(
+                g.get("skill", "") for g in skill_gaps[:8] if isinstance(g, dict)
+            ) or "None identified"
+            strengths_str = ", ".join(
+                s.get("area", "") for s in strengths[:8] if isinstance(s, dict)
+            ) or "Strong overall profile"
 
-        compatibility = gap_analysis.get("compatibility_score", 50)
-        skill_gaps = gap_analysis.get("skill_gaps", [])
-        strengths = gap_analysis.get("strengths", [])
-        key_gaps_str = ", ".join(
-            g.get("skill", "") for g in skill_gaps[:8] if isinstance(g, dict)
-        ) or "None identified"
-        strengths_str = ", ".join(
-            s.get("area", "") for s in strengths[:8] if isinstance(s, dict)
-        ) or "Strong overall profile"
+            prompt = TAILORED_PORTFOLIO_PROMPT.format(
+                job_title=job_title,
+                company=company,
+                jd_text=jd_text[:3000],
+                user_profile=json.dumps(user_profile, indent=2)[:3000],
+                resume_text=(resume_text or "No resume text provided")[:2000],
+                compatibility=compatibility,
+                key_gaps=key_gaps_str,
+                strengths=strengths_str,
+            )
 
-        prompt = TAILORED_PORTFOLIO_PROMPT.format(
-            job_title=job_title,
-            company=company,
-            jd_text=jd_text[:3000],
-            user_profile=json.dumps(user_profile, indent=2)[:3000],
-            resume_text=(resume_text or "No resume text provided")[:2000],
-            compatibility=compatibility,
-            key_gaps=key_gaps_str,
-            strengths=strengths_str,
-        )
-
-        return await self.ai_client.complete(
-            prompt=prompt,
-            system=TAILORED_PORTFOLIO_SYSTEM,
-            temperature=0.55,
-            max_tokens=6000,
-        )
+            return await self.ai_client.complete(
+                prompt=prompt,
+                system=TAILORED_PORTFOLIO_SYSTEM,
+                temperature=0.55,
+                max_tokens=6000,
+                task_type="drafting",
+            )
+        except Exception as exc:
+            logger.warning("generate_tailored_portfolio.failed", error=str(exc)[:200])
+            return ""
 
     async def generate_tailored_cv(
         self,
@@ -682,43 +710,47 @@ class DocumentGeneratorChain:
     ) -> str:
         """Generate a strategically tailored CV with experience enhancement."""
         import json
+        try:
+            # Extract context from gap analysis
+            compatibility = gap_analysis.get("compatibility_score", 50)
+            skill_gaps = gap_analysis.get("skill_gaps", [])
+            strengths = gap_analysis.get("strengths", [])
+            key_gaps_str = ", ".join(
+                g.get("skill", "") for g in skill_gaps[:10] if isinstance(g, dict)
+            ) or "None identified"
+            strengths_str = ", ".join(
+                s.get("area", "") for s in strengths[:10] if isinstance(s, dict)
+            ) or "Strong overall profile"
+            company_intel_section = (
+                f"\n═══════════════════════════════════════\n"
+                f"COMPANY INTELLIGENCE:\n"
+                f"═══════════════════════════════════════\n"
+                f"{company_intel}\n"
+                if company_intel else ""
+            )
 
-        # Extract context from gap analysis
-        compatibility = gap_analysis.get("compatibility_score", 50)
-        skill_gaps = gap_analysis.get("skill_gaps", [])
-        strengths = gap_analysis.get("strengths", [])
-        key_gaps_str = ", ".join(
-            g.get("skill", "") for g in skill_gaps[:10] if isinstance(g, dict)
-        ) or "None identified"
-        strengths_str = ", ".join(
-            s.get("area", "") for s in strengths[:10] if isinstance(s, dict)
-        ) or "Strong overall profile"
-        company_intel_section = (
-            f"\n═══════════════════════════════════════\n"
-            f"COMPANY INTELLIGENCE:\n"
-            f"═══════════════════════════════════════\n"
-            f"{company_intel}\n"
-            if company_intel else ""
-        )
+            prompt = TAILORED_CV_PROMPT.format(
+                job_title=job_title,
+                company=company,
+                jd_text=jd_text[:4000],  # Truncate long JDs
+                user_profile=json.dumps(user_profile, indent=2)[:4000],
+                resume_text=(resume_text or "No resume text provided")[:3000],
+                compatibility=compatibility,
+                key_gaps=key_gaps_str,
+                strengths=strengths_str,
+                company_intel_section=company_intel_section,
+            )
 
-        prompt = TAILORED_CV_PROMPT.format(
-            job_title=job_title,
-            company=company,
-            jd_text=jd_text[:4000],  # Truncate long JDs
-            user_profile=json.dumps(user_profile, indent=2)[:4000],
-            resume_text=(resume_text or "No resume text provided")[:3000],
-            compatibility=compatibility,
-            key_gaps=key_gaps_str,
-            strengths=strengths_str,
-            company_intel_section=company_intel_section,
-        )
-
-        return await self.ai_client.complete(
-            prompt=prompt,
-            system=TAILORED_CV_SYSTEM,
-            temperature=0.6,
-            max_tokens=8000,
-        )
+            return await self.ai_client.complete(
+                prompt=prompt,
+                system=TAILORED_CV_SYSTEM,
+                temperature=0.55,
+                max_tokens=6000,
+                task_type="drafting",
+            )
+        except Exception as exc:
+            logger.warning("generate_tailored_cv.failed", error=str(exc)[:200])
+            return ""
 
     async def generate_tailored_cover_letter(
         self,
@@ -731,34 +763,38 @@ class DocumentGeneratorChain:
     ) -> str:
         """Generate a strategically tailored cover letter."""
         import json
+        try:
+            skill_gaps = gap_analysis.get("skill_gaps", [])
+            strengths = gap_analysis.get("strengths", [])
+            key_gaps_str = ", ".join(
+                g.get("skill", "") for g in skill_gaps[:6] if isinstance(g, dict)
+            ) or "None identified"
+            strengths_str = ", ".join(
+                s.get("area", "") for s in strengths[:6] if isinstance(s, dict)
+            ) or "Strong overall profile"
+            company_intel_section = (
+                f"\nCOMPANY INTELLIGENCE (use this to write with genuine specificity):\n"
+                f"{company_intel}\n\n"
+                if company_intel else ""
+            )
 
-        skill_gaps = gap_analysis.get("skill_gaps", [])
-        strengths = gap_analysis.get("strengths", [])
-        key_gaps_str = ", ".join(
-            g.get("skill", "") for g in skill_gaps[:6] if isinstance(g, dict)
-        ) or "None identified"
-        strengths_str = ", ".join(
-            s.get("area", "") for s in strengths[:6] if isinstance(s, dict)
-        ) or "Strong overall profile"
-        company_intel_section = (
-            f"\nCOMPANY INTELLIGENCE (use this to write with genuine specificity):\n"
-            f"{company_intel}\n\n"
-            if company_intel else ""
-        )
+            prompt = TAILORED_CL_PROMPT.format(
+                job_title=job_title,
+                company=company,
+                jd_text=jd_text[:3000],
+                user_profile=json.dumps(user_profile, indent=2)[:3000],
+                key_gaps=key_gaps_str,
+                strengths=strengths_str,
+                company_intel_section=company_intel_section,
+            )
 
-        prompt = TAILORED_CL_PROMPT.format(
-            job_title=job_title,
-            company=company,
-            jd_text=jd_text[:3000],
-            user_profile=json.dumps(user_profile, indent=2)[:3000],
-            key_gaps=key_gaps_str,
-            strengths=strengths_str,
-            company_intel_section=company_intel_section,
-        )
-
-        return await self.ai_client.complete(
-            prompt=prompt,
-            system=TAILORED_CL_SYSTEM,
-            temperature=0.65,
-            max_tokens=3000,
-        )
+            return await self.ai_client.complete(
+                prompt=prompt,
+                system=TAILORED_CL_SYSTEM,
+                temperature=0.65,
+                max_tokens=2500,
+                task_type="drafting",
+            )
+        except Exception as exc:
+            logger.warning("generate_tailored_cover_letter.failed", error=str(exc)[:200])
+            return ""

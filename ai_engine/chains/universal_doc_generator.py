@@ -5,7 +5,11 @@ Creates universal career documents from profile data alone — no job descriptio
 from typing import Dict, Any, List
 import json
 
+import structlog
+
 from ai_engine.client import AIClient
+
+logger = structlog.get_logger("hirestack.chains.universal_doc_generator")
 
 
 UNIVERSAL_RESUME_SYSTEM = """You are an elite professional resume writer with 20+ years of experience.
@@ -271,36 +275,51 @@ class UniversalDocGeneratorChain:
 
     async def generate_universal_resume(self, profile: Dict[str, Any]) -> str:
         """Generate a comprehensive universal resume from profile data."""
-        fields = self._format_profile_fields(profile)
-        prompt = UNIVERSAL_RESUME_PROMPT.format(**fields)
-        return await self.ai_client.complete(
-            prompt=prompt,
-            system=UNIVERSAL_RESUME_SYSTEM,
-            temperature=0.5,
-            max_tokens=6000,
-        )
+        try:
+            fields = self._format_profile_fields(profile)
+            prompt = UNIVERSAL_RESUME_PROMPT.format(**fields)
+            return await self.ai_client.complete(
+                prompt=prompt,
+                system=UNIVERSAL_RESUME_SYSTEM,
+                temperature=0.5,
+                max_tokens=6000,
+                task_type="drafting",
+            )
+        except Exception as exc:
+            logger.warning("generate_universal_resume.failed", error=str(exc)[:200])
+            return ""
 
     async def generate_full_cv(self, profile: Dict[str, Any]) -> str:
         """Generate a comprehensive CV from profile data."""
-        fields = self._format_profile_fields(profile)
-        prompt = FULL_CV_PROMPT.format(**fields)
-        return await self.ai_client.complete(
-            prompt=prompt,
-            system=FULL_CV_SYSTEM,
-            temperature=0.5,
-            max_tokens=8000,
-        )
+        try:
+            fields = self._format_profile_fields(profile)
+            prompt = FULL_CV_PROMPT.format(**fields)
+            return await self.ai_client.complete(
+                prompt=prompt,
+                system=FULL_CV_SYSTEM,
+                temperature=0.5,
+                max_tokens=8000,
+                task_type="drafting",
+            )
+        except Exception as exc:
+            logger.warning("generate_full_cv.failed", error=str(exc)[:200])
+            return ""
 
     async def generate_personal_statement(self, profile: Dict[str, Any]) -> str:
         """Generate a universal personal statement."""
-        fields = self._format_profile_fields(profile)
-        prompt = PERSONAL_STATEMENT_PROMPT.format(**fields)
-        return await self.ai_client.complete(
-            prompt=prompt,
-            system=PERSONAL_STATEMENT_SYSTEM,
-            temperature=0.65,
-            max_tokens=4000,
-        )
+        try:
+            fields = self._format_profile_fields(profile)
+            prompt = PERSONAL_STATEMENT_PROMPT.format(**fields)
+            return await self.ai_client.complete(
+                prompt=prompt,
+                system=PERSONAL_STATEMENT_SYSTEM,
+                temperature=0.65,
+                max_tokens=4000,
+                task_type="drafting",
+            )
+        except Exception as exc:
+            logger.warning("generate_personal_statement.failed", error=str(exc)[:200])
+            return ""
 
     async def generate_portfolio_showcase(
         self,
@@ -321,12 +340,17 @@ class UniversalDocGeneratorChain:
             )[:3000]
 
         prompt = PORTFOLIO_PROMPT.format(**fields, evidence_section=evidence_section)
-        return await self.ai_client.complete(
-            prompt=prompt,
-            system=PORTFOLIO_SYSTEM,
-            temperature=0.55,
-            max_tokens=6000,
-        )
+        try:
+            return await self.ai_client.complete(
+                prompt=prompt,
+                system=PORTFOLIO_SYSTEM,
+                temperature=0.55,
+                max_tokens=6000,
+                task_type="drafting",
+            )
+        except Exception as exc:
+            logger.warning("generate_portfolio_showcase.failed", error=str(exc)[:200])
+            return ""
 
     async def generate_all(
         self,

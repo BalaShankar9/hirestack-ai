@@ -62,19 +62,19 @@ async def _run_with_heartbeat(
 ) -> Any:
     """
     Run an async coroutine while emitting progress events every `heartbeat_interval` seconds.
-    
+
     Args:
         coro: The coroutine to run
         phase: Phase name for progress event
         initial_progress: Starting progress percentage
         emit_fn: Async callable to emit progress (receives phase, progress, message, elapsed)
         heartbeat_interval: Seconds between heartbeats (default 5)
-    
+
     Returns: The coroutine result
     """
     task = asyncio.create_task(coro)
     start_time = time.time()
-    
+
     try:
         while not task.done():
             elapsed = time.time() - start_time
@@ -85,13 +85,13 @@ async def _run_with_heartbeat(
                 message=f"Running {phase}… ({int(elapsed)}s elapsed)",
                 elapsed_ms=int(elapsed * 1000),
             )
-            
+
             # Wait for either the task to complete or the heartbeat interval
             try:
                 await asyncio.wait_for(asyncio.shield(task), timeout=heartbeat_interval)
             except asyncio.TimeoutError:
                 continue
-            
+
         # Task completed, get result
         return await task
     except asyncio.CancelledError:
@@ -220,6 +220,7 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
         from app.services.document_catalog import discover_and_observe
 
         company_intel_stream: dict = {}
+        intel_task = None
         try:
             intel_chain = CompanyIntelChain(ai)
             async def intel_event_callback(event: dict) -> None:
@@ -235,22 +236,31 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
                     payload["metadata"] = event["metadata"]
                 events_queue.append(_sse("detail", payload))
 
+            intel_coro = intel_chain.gather_intel(
+                company=company,
+                job_title=req.job_title,
+                jd_text=req.jd_text,
+                on_event=intel_event_callback,
+            )
+            intel_task = asyncio.create_task(intel_coro)
             company_intel_stream = await asyncio.wait_for(
-                intel_chain.gather_intel(
-                    company=company,
-                    job_title=req.job_title,
-                    jd_text=req.jd_text,
-                    on_event=intel_event_callback,
-                ),
-                timeout=15,
+                asyncio.shield(intel_task),
+                timeout=30,
             )
             for ev in events_queue:
                 yield ev
             events_queue.clear()
         except asyncio.TimeoutError:
+            # Cancel the task cleanly to avoid leaked coroutines
+            if intel_task and not intel_task.done():
+                intel_task.cancel()
+                try:
+                    await intel_task
+                except (asyncio.CancelledError, Exception):
+                    pass
             events_queue.append(_sse("detail", {
                 "agent": "recon",
-                "message": "Recon timed out while gathering external sources; continuing with JD-based signals.",
+                "message": "Recon timed out after 30s; continuing with JD-based signals.",
                 "status": "warning",
                 "source": "analysis",
             }))
@@ -357,7 +367,7 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
 
         # Track timing for each document generation
         doc_gen_start = time.time()
-        
+
         # Emit heartbeat progress while documents generate
         progress_queue: list[str] = []
         async def emit_doc_progress(phase: str, progress: int, message: str, elapsed_ms: int):
@@ -395,7 +405,7 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             ),
             return_exceptions=True,
         )
-        
+
         # Flush progress events immediately
         for ev in progress_queue:
             yield ev
@@ -408,7 +418,7 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
         for ev in cl_queue:
             yield ev
         await asyncio.sleep(0.01)  # Force flush
-        
+
         doc_gen_elapsed = time.time() - doc_gen_start
         logger.info(
             "agent_pipeline.documents_generated",
@@ -483,7 +493,7 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
 
         # Track timing for portfolio generation
         portfolio_gen_start = time.time()
-        
+
         # Emit heartbeat progress while portfolio generates
         portfolio_progress_queue: list[str] = []
         async def emit_portfolio_progress(phase: str, progress: int, message: str, elapsed_ms: int):
@@ -526,7 +536,7 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
         for ev in pf_queue:
             yield ev
         await asyncio.sleep(0.01)  # Force flush
-        
+
         portfolio_gen_elapsed = time.time() - portfolio_gen_start
         logger.info(
             "agent_pipeline.portfolio_generated",
@@ -611,6 +621,7 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
                 doc_pack_plan_stream.core
                 + doc_pack_plan_stream.required
                 + doc_pack_plan_stream.optional
+                + getattr(doc_pack_plan_stream, "new_candidates", [])
             )
         if company_intel_stream:
             response["companyIntel"] = company_intel_stream

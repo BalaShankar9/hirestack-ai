@@ -79,6 +79,8 @@ equity_statement, conflict_of_interest_declaration, media_kit, speaker_bio"""
 class DocumentDiscoveryChain:
     """Analyzes JD to determine required application documents."""
 
+    VERSION = "1.0.0"
+
     def __init__(self, ai_client):
         self.ai_client = ai_client
 

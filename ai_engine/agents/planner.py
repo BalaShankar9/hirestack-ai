@@ -19,7 +19,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from ai_engine.agents.base import BaseAgent, AgentResult
 from ai_engine.client import AIClient

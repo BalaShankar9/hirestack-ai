@@ -29,7 +29,6 @@ COPY --from=builder /install /usr/local
 # Copy application code
 COPY backend/ ./backend/
 COPY ai_engine/ ./ai_engine/
-COPY workers/ ./workers/
 
 # Create uploads directory
 RUN mkdir -p /app/uploads

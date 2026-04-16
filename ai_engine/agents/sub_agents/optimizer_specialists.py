@@ -6,7 +6,6 @@ each running independently for faster evaluation.
 """
 from __future__ import annotations
 
-import json
 from typing import Optional
 
 from ai_engine.agents.sub_agents.base import SubAgent, SubAgentResult

@@ -10,7 +10,6 @@ v3: parallel sub-agent evaluation mode for deeper analysis.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import time
 from pathlib import Path
@@ -308,6 +307,7 @@ class CriticAgent(BaseAgent):
             max_tokens=3000,
             temperature=0.3,
             schema=self.output_schema,
+            task_type="critique",
         )
 
         return self._timed_result(

@@ -179,9 +179,13 @@ ROADMAP_SCHEMA: Dict[str, Any] = {
 
 
 class CareerConsultantChain:
-    """Chain for generating career improvement roadmaps."""
+    """Chain for generating career improvement roadmaps.
 
-    VERSION = "1.0.0"
+    v2.0.0 — delegates to CareerCoordinator (5-agent swarm) with
+    automatic fallback to legacy single-LLM if the swarm fails.
+    """
+
+    VERSION = "2.0.0"
 
     def __init__(self, ai_client: AIClient):
         self.ai_client = ai_client
@@ -193,10 +197,40 @@ class CareerConsultantChain:
         job_title: str,
         company: str
     ) -> Dict[str, Any]:
-        """Generate a comprehensive career improvement roadmap."""
+        """Generate a comprehensive career improvement roadmap via sub-agent swarm."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            from ai_engine.agents.sub_agents.career.coordinator import CareerCoordinator
+
+            coordinator = CareerCoordinator(ai_client=self.ai_client)
+            result = await coordinator.generate_roadmap(
+                gap_analysis=gap_analysis,
+                user_profile=user_profile,
+                job_title=job_title,
+                company=company,
+            )
+            logger.info("career_v2_ok", diagnostics=result.get("_diagnostics"))
+            return self._validate_result(result)
+
+        except Exception as exc:
+            logger.warning("career_v2_fallback reason=%s", exc)
+            return await self._legacy_generate_roadmap(
+                gap_analysis, user_profile, job_title, company
+            )
+
+    async def _legacy_generate_roadmap(
+        self,
+        gap_analysis: Dict[str, Any],
+        user_profile: Dict[str, Any],
+        job_title: str,
+        company: str,
+    ) -> Dict[str, Any]:
+        """Legacy single-LLM roadmap generation (v1 fallback)."""
         import json
 
-        # Truncate large inputs to keep prompt size reasonable
         gap_str = json.dumps(gap_analysis, indent=2)[:3000]
         profile_str = json.dumps(user_profile, indent=2)[:2000]
 

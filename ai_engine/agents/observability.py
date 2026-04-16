@@ -1,14 +1,14 @@
 """
 Pipeline observability — structured metrics emitted at pipeline boundaries.
 
-Captures contract drift, evidence coverage, and quality signals in a single
-summary record. All metrics are warning-level log events (no external
-dependencies required). The summary can be persisted alongside the trace
-record for offline analysis.
+Captures contract drift, evidence coverage, quality signals, cost tracking,
+cache efficiency, and model routing decisions in a single summary record.
+All metrics are warning-level log events (no external dependencies required).
+The summary can be persisted alongside the trace record for offline analysis.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import structlog
 
@@ -27,6 +27,11 @@ class PipelineMetrics:
         self._evidence_stats: dict[str, Any] = {}
         self._quality_scores: dict[str, float] = {}
         self._final_analysis: dict[str, Any] = {}
+        # Part 2: cost, cache, and model routing tracking
+        self._cost_snapshot_start: dict[str, Any] = {}
+        self._cost_snapshot_end: dict[str, Any] = {}
+        self._model_decisions: list[dict[str, str]] = []
+        self._tool_timeouts: list[str] = []
 
     # ── Contract drift tracking ───────────────────────────────────
 
@@ -58,6 +63,69 @@ class PipelineMetrics:
     def record_quality_scores(self, scores: dict[str, float]) -> None:
         """Record final quality scores from the critic."""
         self._quality_scores = dict(scores)
+
+    # ── Cost & cache tracking (Part 2) ────────────────────────────
+
+    def snapshot_cost_start(self) -> None:
+        """Capture daily usage counters BEFORE the pipeline runs."""
+        try:
+            from ai_engine.client import get_daily_usage
+            self._cost_snapshot_start = get_daily_usage()
+        except Exception:
+            self._cost_snapshot_start = {}
+
+    def snapshot_cost_end(self) -> None:
+        """Capture daily usage counters AFTER the pipeline completes."""
+        try:
+            from ai_engine.client import get_daily_usage
+            self._cost_snapshot_end = get_daily_usage()
+        except Exception:
+            self._cost_snapshot_end = {}
+
+    def record_model_decision(self, stage: str, model: str, task_type: str) -> None:
+        """Record which model was used for a given stage."""
+        self._model_decisions.append({
+            "stage": stage,
+            "model": model,
+            "task_type": task_type,
+        })
+
+    def record_tool_timeout(self, tool_name: str) -> None:
+        """Record a tool that timed out during execution."""
+        self._tool_timeouts.append(tool_name)
+
+    def _compute_pipeline_cost(self) -> dict[str, Any]:
+        """Compute cost delta between start and end snapshots."""
+        if not self._cost_snapshot_start or not self._cost_snapshot_end:
+            return {}
+        tokens_used = (
+            self._cost_snapshot_end.get("total_tokens", 0)
+            - self._cost_snapshot_start.get("total_tokens", 0)
+        )
+        cost_usd = round(
+            self._cost_snapshot_end.get("total_cost_usd", 0)
+            - self._cost_snapshot_start.get("total_cost_usd", 0),
+            5,
+        )
+        calls_made = (
+            self._cost_snapshot_end.get("total_calls", 0)
+            - self._cost_snapshot_start.get("total_calls", 0)
+        )
+        cache_hits = (
+            self._cost_snapshot_end.get("cache_hits", 0)
+            - self._cost_snapshot_start.get("cache_hits", 0)
+        )
+        return {
+            "tokens_used": tokens_used,
+            "cost_usd": cost_usd,
+            "llm_calls": calls_made,
+            "cache_hits": cache_hits,
+            "cache_hit_rate": round(
+                cache_hits / max(calls_made + cache_hits, 1), 3
+            ),
+        }
+
+    # ── Final analysis ────────────────────────────────────────────
 
     def record_final_analysis(
         self,
@@ -99,28 +167,35 @@ class PipelineMetrics:
             "evidence": self._evidence_stats,
             "quality_scores": self._quality_scores,
             "final_analysis": self._final_analysis,
+            "cost": self._compute_pipeline_cost(),
+            "model_decisions": self._model_decisions,
+            "tool_timeouts": self._tool_timeouts,
         }
 
     def emit(self) -> dict[str, Any]:
         """Build and log the pipeline summary. Returns the summary dict."""
         summary = self.build_summary()
         drift_count = summary["contract_drift"]["total_issue_count"]
+        cost = summary.get("cost", {})
+
+        log_kwargs = dict(
+            pipeline=self.pipeline_name,
+            evidence_coverage=summary["evidence"].get("coverage_ratio", 0),
+            total_latency_ms=summary["total_latency_ms"],
+            cost_usd=cost.get("cost_usd", 0),
+            llm_calls=cost.get("llm_calls", 0),
+            cache_hit_rate=cost.get("cache_hit_rate", 0),
+            tool_timeouts=len(self._tool_timeouts),
+        )
 
         if drift_count > 0:
             logger.warning(
                 "pipeline_observability_summary",
-                pipeline=self.pipeline_name,
                 drift_stages=summary["contract_drift"]["stages_with_issues"],
                 drift_count=drift_count,
-                evidence_coverage=summary["evidence"].get("coverage_ratio", 0),
-                total_latency_ms=summary["total_latency_ms"],
+                **log_kwargs,
             )
         else:
-            logger.info(
-                "pipeline_observability_summary",
-                pipeline=self.pipeline_name,
-                evidence_coverage=summary["evidence"].get("coverage_ratio", 0),
-                total_latency_ms=summary["total_latency_ms"],
-            )
+            logger.info("pipeline_observability_summary", **log_kwargs)
 
         return summary

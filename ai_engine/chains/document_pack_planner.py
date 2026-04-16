@@ -8,7 +8,6 @@ core / required / optional / deferred buckets.
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -169,6 +168,8 @@ class DocumentPackPlanner:
     Takes the live catalog as selection space and produces a DocumentPackPlan
     for a specific JD.
     """
+
+    VERSION = "1.0.0"
 
     def __init__(self, ai_client: Any, catalog: List[Dict[str, Any]]) -> None:
         self._ai = ai_client

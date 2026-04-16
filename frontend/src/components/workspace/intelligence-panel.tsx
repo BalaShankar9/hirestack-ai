@@ -11,6 +11,13 @@ import {
   CheckCircle2,
   Target,
   Sparkles,
+  Code2,
+  Globe,
+  Users,
+  Briefcase,
+  Key,
+  TrendingUp,
+  MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ApplicationDoc, GapsModule, BenchmarkModule } from "@/lib/firestore";
@@ -77,15 +84,144 @@ function buildInsights(
     });
   }
 
-  // Company intel
+  // ── Rich company intel display ────────────────────────────────
   const intel = app.companyIntel;
-  if (intel && Object.keys(intel).length > 0) {
+  if (intel && typeof intel === "object" && Object.keys(intel).length > 0) {
     const confidence = intel.confidence || "unknown";
+    const dataSources: string[] = Array.isArray(intel.data_sources) ? intel.data_sources : [];
+    const sourceCount = dataSources.length;
+
+    // Overall intel confidence
+    const confColor =
+      confidence === "high"
+        ? "text-emerald-600 bg-emerald-500/10"
+        : confidence === "medium"
+          ? "text-teal-600 bg-teal-500/10"
+          : "text-amber-600 bg-amber-500/10";
     items.push({
       icon: <Building2 className="h-3.5 w-3.5" />,
-      label: `Company intelligence gathered (${confidence} confidence)`,
-      color: "text-teal-600 bg-teal-500/10",
+      label: `Company intel: ${confidence} confidence from ${sourceCount} source${sourceCount !== 1 ? "s" : ""}`,
+      color: confColor,
     });
+
+    // Tech stack
+    const techData = intel.tech_and_engineering;
+    if (techData && typeof techData === "object") {
+      const techStack: string[] = Array.isArray(techData.tech_stack)
+        ? techData.tech_stack
+        : [];
+      const jdTech = techData.jd_tech_stack;
+      let allTech = [...techStack];
+      if (jdTech && typeof jdTech === "object" && !Array.isArray(jdTech)) {
+        for (const catItems of Object.values(jdTech)) {
+          if (Array.isArray(catItems)) allTech.push(...(catItems as string[]));
+        }
+      }
+      allTech = [...new Set(allTech)];
+      if (allTech.length > 0) {
+        items.push({
+          icon: <Code2 className="h-3.5 w-3.5" />,
+          label: `Tech stack: ${allTech.slice(0, 8).join(", ")}${allTech.length > 8 ? ` +${allTech.length - 8} more` : ""}`,
+          color: "text-cyan-600 bg-cyan-500/10",
+        });
+      }
+
+      // GitHub presence
+      const gh = techData.github_stats;
+      if (gh && typeof gh === "object" && gh.org_name) {
+        const repoCount = gh.public_repos ?? 0;
+        const activity = gh.activity_level ?? "Unknown";
+        items.push({
+          icon: <Globe className="h-3.5 w-3.5" />,
+          label: `GitHub: ${gh.org_name} — ${repoCount} repos, ${activity} activity`,
+          color: "text-gray-600 bg-gray-500/10",
+        });
+      }
+    }
+
+    // Hiring intel
+    const hiringData = intel.hiring_intelligence;
+    if (hiringData && typeof hiringData === "object") {
+      const mustHave: string[] = Array.isArray(hiringData.must_have_skills)
+        ? hiringData.must_have_skills
+        : [];
+      if (mustHave.length > 0) {
+        items.push({
+          icon: <Key className="h-3.5 w-3.5" />,
+          label: `Must-have: ${mustHave.slice(0, 5).join(", ")}${mustHave.length > 5 ? ` +${mustHave.length - 5}` : ""}`,
+          color: "text-red-600 bg-red-500/10",
+        });
+      }
+      if (hiringData.ats_platform) {
+        items.push({
+          icon: <Briefcase className="h-3.5 w-3.5" />,
+          label: `ATS platform: ${hiringData.ats_platform}`,
+          color: "text-indigo-600 bg-indigo-500/10",
+        });
+      }
+    }
+
+    // Culture
+    const cultureData = intel.culture_and_values;
+    if (cultureData && typeof cultureData === "object") {
+      const values: string[] = Array.isArray(cultureData.core_values) ? cultureData.core_values : [];
+      if (values.length > 0) {
+        items.push({
+          icon: <Users className="h-3.5 w-3.5" />,
+          label: `Values: ${values.slice(0, 4).join(", ")}`,
+          color: "text-purple-600 bg-purple-500/10",
+        });
+      }
+      const workStyle = cultureData.work_style;
+      if (typeof workStyle === "string" && workStyle && workStyle.toLowerCase() !== "unknown") {
+        items.push({
+          icon: <Building2 className="h-3.5 w-3.5" />,
+          label: `Work style: ${workStyle}`,
+          color: "text-teal-600 bg-teal-500/10",
+        });
+      }
+    }
+
+    // Application strategy highlights
+    const strategy = intel.application_strategy;
+    if (strategy && typeof strategy === "object") {
+      const keywords: string[] = Array.isArray(strategy.keywords_to_use) ? strategy.keywords_to_use : [];
+      if (keywords.length > 0) {
+        items.push({
+          icon: <TrendingUp className="h-3.5 w-3.5" />,
+          label: `Strategic keywords: ${keywords.slice(0, 6).join(", ")}${keywords.length > 6 ? ` +${keywords.length - 6}` : ""}`,
+          color: "text-blue-600 bg-blue-500/10",
+        });
+      }
+      const hooks: string[] = Array.isArray(strategy.cover_letter_hooks) ? strategy.cover_letter_hooks : [];
+      if (hooks.length > 0) {
+        items.push({
+          icon: <MessageSquare className="h-3.5 w-3.5" />,
+          label: `${hooks.length} cover letter opening hook${hooks.length !== 1 ? "s" : ""} generated`,
+          color: "text-violet-600 bg-violet-500/10",
+        });
+      }
+      const prep: string[] = Array.isArray(strategy.interview_prep_topics) ? strategy.interview_prep_topics : [];
+      if (prep.length > 0) {
+        items.push({
+          icon: <Target className="h-3.5 w-3.5" />,
+          label: `${prep.length} interview prep topic${prep.length !== 1 ? "s" : ""} identified`,
+          color: "text-orange-600 bg-orange-500/10",
+        });
+      }
+    }
+
+    // Red flags
+    const redFlags: string[] = Array.isArray(cultureData?.red_flags)
+      ? cultureData.red_flags
+      : [];
+    if (redFlags.length > 0) {
+      items.push({
+        icon: <AlertTriangle className="h-3.5 w-3.5" />,
+        label: `${redFlags.length} potential concern${redFlags.length !== 1 ? "s" : ""} flagged`,
+        color: "text-red-600 bg-red-500/10",
+      });
+    }
   }
 
   // Evidence

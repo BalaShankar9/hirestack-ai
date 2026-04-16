@@ -7,7 +7,7 @@ helpers used at stage boundaries to catch contract drift early.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Optional
 
 
 # ═══════════════════════════════════════════════════════════════════════

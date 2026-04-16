@@ -41,7 +41,8 @@ class Settings(BaseSettings):
         "http://localhost:3002",
         "https://hirestack.tech",
         "https://www.hirestack.tech",
-        "https://hirestack-ai-production.up.railway.app",
+        "https://api.hirestack.tech",
+        "https://hirestack-ai.netlify.app",
     ]
 
     # Supabase
@@ -62,6 +63,14 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-pro"
     gemini_max_tokens: int = 8192
+
+    # AI Cost Controls
+    ai_cache_enabled: bool = True  # semantic response caching
+    ai_cache_ttl_seconds: int = 3600  # 1h TTL for AI response cache
+    ai_cache_max_entries: int = 2000  # max in-memory cache entries
+    ai_max_tokens_per_day: int = 10_000_000  # daily token budget (0=unlimited)
+    ai_cost_alert_threshold_usd: float = 50.0  # log alert when daily cost exceeds this
+    ai_max_input_tokens: int = 50_000  # truncate inputs longer than this
 
     # Gemini via Vertex AI (optional)
     # If enabled, GEMINI_API_KEY is ignored and the google.genai SDK will use

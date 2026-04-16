@@ -724,23 +724,32 @@ class PipelineRuntime:
         try:
             from ai_engine.chains.company_intel import CompanyIntelChain
             intel_chain = CompanyIntelChain(ai)
+            intel_coro = intel_chain.gather_intel(
+                company=company,
+                job_title=job_title,
+                jd_text=jd_text,
+                on_event=_on_recon_event,
+            )
+            intel_task = asyncio.create_task(intel_coro)
             company_intel = await asyncio.wait_for(
-                intel_chain.gather_intel(
-                    company=company,
-                    job_title=job_title,
-                    jd_text=jd_text,
-                    on_event=_on_recon_event,
-                ),
-                timeout=15,
+                asyncio.shield(intel_task),
+                timeout=30,
             )
             logger.info("pipeline_runtime.intel_done",
                         confidence=company_intel.get("confidence", "unknown"))
         except asyncio.TimeoutError:
+            # Cancel cleanly to avoid leaked coroutines
+            if intel_task and not intel_task.done():
+                intel_task.cancel()
+                try:
+                    await intel_task
+                except (asyncio.CancelledError, Exception):
+                    pass
             logger.warning("pipeline_runtime.intel_timeout")
             await self.sink.emit(PipelineEvent(
                 event_type="detail",
                 phase="recon",
-                message="Recon timed out while gathering external sources; continuing with JD-based intel.",
+                message="Recon timed out after 30s; continuing with JD-based intel.",
                 status="warning",
                 data={"agent": "recon", "source": "analysis"},
             ))

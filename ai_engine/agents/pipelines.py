@@ -17,7 +17,6 @@ from ai_engine.agents.schema_validator import ValidatorAgent
 from ai_engine.agents.lock import PipelineLockManager
 from ai_engine.agents.memory import AgentMemory
 from ai_engine.agents.sub_agents import (
-    SubAgentCoordinator,
     JDAnalystSubAgent,
     CompanyIntelSubAgent,
     ProfileMatchSubAgent,

@@ -27,6 +27,35 @@ from ai_engine.client import AIClient
 
 logger = structlog.get_logger("hirestack.agents.researcher")
 
+# ── Per-task timeout for tool/sub-agent calls ──────────────────────────
+_CORE_TOOL_TIMEOUT = 30.0    # local / deterministic tools
+_WEB_TOOL_TIMEOUT = 20.0     # external HTTP calls
+_SUB_AGENT_TIMEOUT = 60.0    # sub-agent runs (involve LLM calls)
+
+
+async def _safe_gather(
+    tasks: list, timeout: float, *, labels: list[str] | None = None,
+) -> list:
+    """Run tasks in parallel with a per-task timeout.
+
+    Returns a list of results in the same order as *tasks*.
+    Timed-out / failed tasks appear as ``TimeoutError`` or the raised exception;
+    callers should use ``return_exceptions=True``-style handling.
+    """
+    async def _wrap(coro, label: str):
+        try:
+            return await asyncio.wait_for(coro, timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning("tool_timeout", tool=label, timeout_s=timeout)
+            return TimeoutError(f"{label} timed out after {timeout}s")
+        except Exception as exc:
+            return exc
+
+    labels = labels or [f"task_{i}" for i in range(len(tasks))]
+    return await asyncio.gather(
+        *(_wrap(t, lbl) for t, lbl in zip(tasks, labels)),
+    )
+
 
 def _truncate_dict(d: dict, max_chars: int = 1500) -> dict:
     """Truncate dict values for LLM context windows."""
@@ -163,7 +192,7 @@ class ResearcherAgent(BaseAgent):
             phase_a_names.append(tool_name)
 
         if phase_a_tasks:
-            phase_a_results = await asyncio.gather(*phase_a_tasks, return_exceptions=True)
+            phase_a_results = await _safe_gather(phase_a_tasks, _CORE_TOOL_TIMEOUT, labels=phase_a_names)
             for name, result in zip(phase_a_names, phase_a_results):
                 if isinstance(result, Exception):
                     logger.warning("researcher_core_tool_failed", tool=name, error=str(result))
@@ -211,7 +240,7 @@ class ResearcherAgent(BaseAgent):
                 web_names.append(tool_name)
 
             if web_tasks:
-                web_results = await asyncio.gather(*web_tasks, return_exceptions=True)
+                web_results = await _safe_gather(web_tasks, _WEB_TOOL_TIMEOUT, labels=web_names)
                 for name, result in zip(web_names, web_results):
                     if isinstance(result, Exception):
                         logger.warning("researcher_web_tool_failed", tool=name, error=str(result))
@@ -332,12 +361,12 @@ class ResearcherAgent(BaseAgent):
             f"## Coverage Gaps (be transparent about these)\n"
             + ("\n".join(f"- {g}" for g in coverage_gaps) if coverage_gaps else "- None — full context available")
             + "\n\n"
-            f"Produce a comprehensive research context.\n"
-            f"Set coverage_score (0-1) based on actual data availability:\n"
-            f"- 0.9-1.0: JD + profile + company all available with rich data\n"
-            f"- 0.6-0.8: Some gaps but enough to produce a good document\n"
-            f"- 0.3-0.5: Significant gaps that will limit quality\n"
-            f"- 0.0-0.2: Insufficient data for meaningful output"
+            "Produce a comprehensive research context.\n"
+            "Set coverage_score (0-1) based on actual data availability:\n"
+            "- 0.9-1.0: JD + profile + company all available with rich data\n"
+            "- 0.6-0.8: Some gaps but enough to produce a good document\n"
+            "- 0.3-0.5: Significant gaps that will limit quality\n"
+            "- 0.0-0.2: Insufficient data for meaningful output"
         )
 
         result = await self.ai_client.complete_json(
@@ -393,9 +422,10 @@ class ResearcherAgent(BaseAgent):
         user_profile = context.get("user_profile", {})
         memories = context.get("agent_memories", [])
 
-        # Fan-out to all sub-agents
+        # Fan-out to all sub-agents (with per-agent timeout)
         tasks = [sa.run(context) for sa in self._sub_agents]
-        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+        sa_labels = [getattr(sa, "name", str(sa)) for sa in self._sub_agents]
+        raw_results = await _safe_gather(tasks, _SUB_AGENT_TIMEOUT, labels=sa_labels)
 
         # Collect results, tolerating failures
         sub_outputs: dict[str, dict] = {}

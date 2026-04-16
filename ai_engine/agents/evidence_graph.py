@@ -7,7 +7,7 @@ scoring the adaptive planner needs.
 
 Architecture:
   EvidenceLedger (job-scoped, in-memory)
-    → EvidenceGraphBuilder.canonicalize() 
+    → EvidenceGraphBuilder.canonicalize()
     → user_evidence_nodes (cross-job, DB-persisted)
     → EvidenceGraphBuilder.detect_contradictions()
     → evidence_contradictions (DB-persisted)

@@ -4,7 +4,11 @@ Generates tone-varied document variants for A/B testing
 """
 from typing import Dict, Any
 
+import structlog
+
 from ai_engine.client import AIClient
+
+logger = structlog.get_logger("hirestack.chains.doc_variant")
 
 
 DOC_VARIANT_SYSTEM = """You are an expert document writer specializing in creating
@@ -84,24 +88,29 @@ class DocumentVariantChain:
         **kwargs: Any,
     ) -> str:
         """Generate a tone variant of a document."""
-        tone_instructions = self.TONE_INSTRUCTIONS.get(tone, self.TONE_INSTRUCTIONS["balanced"])
+        try:
+            tone_instructions = self.TONE_INSTRUCTIONS.get(tone, self.TONE_INSTRUCTIONS["balanced"])
 
-        prompt = VARIANT_PROMPT.format(
-            tone=tone,
-            document_content=document_content[:8000],
-            tone_instructions=tone_instructions,
-            job_title=job_title or "the target role",
-            company=company or "the company",
-        )
+            prompt = VARIANT_PROMPT.format(
+                tone=tone,
+                document_content=document_content[:8000],
+                tone_instructions=tone_instructions,
+                job_title=job_title or "the target role",
+                company=company or "the company",
+            )
 
-        result = await self.ai_client.complete(
-            prompt=prompt,
-            system=DOC_VARIANT_SYSTEM,
-            temperature=0.4,
-            max_tokens=4000,
-        )
+            result = await self.ai_client.complete(
+                prompt=prompt,
+                system=DOC_VARIANT_SYSTEM,
+                temperature=0.4,
+                max_tokens=4000,
+                task_type="drafting",
+            )
 
-        return result
+            return result
+        except Exception as exc:
+            logger.warning("generate_variant.failed", error=str(exc)[:200])
+            return document_content  # Return original on failure
 
     async def generate_variant_metadata(
         self,
@@ -111,16 +120,21 @@ class DocumentVariantChain:
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Generate metadata comparing two document variants."""
-        prompt = VARIANT_METADATA_PROMPT.format(
-            original=original[:4000],
-            tone=tone,
-            variant=variant[:4000],
-        )
+        try:
+            prompt = VARIANT_METADATA_PROMPT.format(
+                original=original[:4000],
+                tone=tone,
+                variant=variant[:4000],
+            )
 
-        return await self.ai_client.complete_json(
-            prompt=prompt,
-            system=DOC_VARIANT_SYSTEM,
-            temperature=0.0,
-            max_tokens=1000,
-            schema=VARIANT_METADATA_SCHEMA,
-        )
+            return await self.ai_client.complete_json(
+                prompt=prompt,
+                system=DOC_VARIANT_SYSTEM,
+                temperature=0.0,
+                max_tokens=1000,
+                schema=VARIANT_METADATA_SCHEMA,
+                task_type="reasoning",
+            )
+        except Exception as exc:
+            logger.warning("generate_variant_metadata.failed", error=str(exc)[:200])
+            return {"tone": tone, "key_differences": []}

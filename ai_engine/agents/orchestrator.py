@@ -27,7 +27,7 @@ from uuid import uuid4
 import structlog
 
 from ai_engine.agents.base import AgentResult, BaseAgent
-from ai_engine.agents.contracts import validate_stage_output, validate_pipeline_result, validate_optimizer_final_analysis_output
+from ai_engine.agents.contracts import validate_stage_output, validate_pipeline_result
 from ai_engine.agents.evidence import (
     EvidenceLedger,
     EvidenceSource,
@@ -47,9 +47,6 @@ from ai_engine.agents.workflow_runtime import (
     WorkflowState,
     execute_stage,
     skip_stage,
-    WorkflowCancelled,
-    WorkflowStageFailed,
-    WorkflowStageTimeout,
     reconstruct_state,
     get_stage_artifacts,
 )
@@ -339,6 +336,7 @@ class AgentPipeline:
         tracer = AgentTracer(pipeline_id, self.name, user_id)
         # v6: pipeline-level observability metrics
         metrics = PipelineMetrics(pipeline_id, self.name, user_id)
+        metrics.snapshot_cost_start()
 
         # v3: Initialize evidence ledger
         ledger = EvidenceLedger()
@@ -1371,6 +1369,7 @@ class AgentPipeline:
         )
         if critic_result and critic_result.quality_scores:
             metrics.record_quality_scores(critic_result.quality_scores)
+        metrics.snapshot_cost_end()
         metrics.emit()
 
         # Adaptive policy: record outcome for future threshold adjustments

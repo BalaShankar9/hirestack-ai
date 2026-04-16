@@ -1,0 +1,206 @@
+"""Semantic response cache for AI calls.
+
+Hashes (prompt + system + model + schema + temperature) → cached response.
+Uses an in-memory LRU with optional Redis backend for persistence across restarts.
+
+Cache hits avoid LLM calls entirely — same input always yields same output
+for deterministic temperatures (≤0.3). Higher temperatures are cached too
+but with a shorter TTL since results may vary.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import time
+from collections import OrderedDict
+from typing import Any, Dict, Optional
+
+logger = logging.getLogger("hirestack.ai_cache")
+
+
+def _build_cache_key(
+    *,
+    prompt: str,
+    system: Optional[str],
+    model: str,
+    schema: Optional[Dict[str, Any]],
+    temperature: float,
+    max_tokens: Optional[int],
+) -> str:
+    """SHA-256 hash of all request parameters that affect output."""
+    payload = json.dumps(
+        {
+            "p": prompt,
+            "s": system or "",
+            "m": model,
+            "sc": schema or {},
+            "t": round(temperature, 2),
+            "mt": max_tokens or 0,
+        },
+        sort_keys=True,
+        ensure_ascii=True,
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+class _LRUCache:
+    """Thread-safe in-memory LRU cache with TTL expiry."""
+
+    def __init__(self, max_entries: int = 2000) -> None:
+        self._store: OrderedDict[str, tuple[float, Any]] = OrderedDict()
+        self._max = max_entries
+
+    def get(self, key: str) -> Optional[Any]:
+        entry = self._store.get(key)
+        if entry is None:
+            return None
+        expires_at, value = entry
+        if time.monotonic() > expires_at:
+            self._store.pop(key, None)
+            return None
+        # Move to end (most recently accessed)
+        self._store.move_to_end(key)
+        return value
+
+    def put(self, key: str, value: Any, ttl_seconds: float) -> None:
+        expires_at = time.monotonic() + ttl_seconds
+        self._store[key] = (expires_at, value)
+        self._store.move_to_end(key)
+        # Evict oldest if over capacity
+        while len(self._store) > self._max:
+            self._store.popitem(last=False)
+
+    def invalidate(self, key: str) -> None:
+        self._store.pop(key, None)
+
+    def clear(self) -> None:
+        self._store.clear()
+
+    @property
+    def size(self) -> int:
+        return len(self._store)
+
+
+class AIResponseCache:
+    """Semantic cache for AI responses.
+
+    Wraps an in-memory LRU. Redis support can be added later by
+    extending get/put to check Redis before/after the LRU.
+    """
+
+    def __init__(
+        self,
+        enabled: bool = True,
+        default_ttl: int = 3600,
+        max_entries: int = 2000,
+    ) -> None:
+        self._enabled = enabled
+        self._default_ttl = default_ttl
+        self._lru = _LRUCache(max_entries=max_entries)
+        self._hits = 0
+        self._misses = 0
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    def _effective_ttl(self, temperature: float) -> float:
+        """Lower TTL for high-temperature (non-deterministic) calls."""
+        if temperature <= 0.3:
+            return float(self._default_ttl)
+        if temperature <= 0.5:
+            return float(self._default_ttl) * 0.5
+        # High temperature — cache briefly (5 min) to dedup rapid retries
+        return min(300.0, float(self._default_ttl) * 0.15)
+
+    def get(
+        self,
+        *,
+        prompt: str,
+        system: Optional[str] = None,
+        model: str,
+        schema: Optional[Dict[str, Any]] = None,
+        temperature: float = 0.3,
+        max_tokens: Optional[int] = None,
+    ) -> Optional[Any]:
+        if not self._enabled:
+            return None
+        key = _build_cache_key(
+            prompt=prompt, system=system, model=model,
+            schema=schema, temperature=temperature, max_tokens=max_tokens,
+        )
+        result = self._lru.get(key)
+        if result is not None:
+            self._hits += 1
+            if self._hits % 50 == 0:
+                logger.info(
+                    "ai_cache_stats: hits=%d misses=%d hit_rate=%.1f%% size=%d",
+                    self._hits, self._misses,
+                    (self._hits / max(1, self._hits + self._misses)) * 100,
+                    self._lru.size,
+                )
+            return result
+        self._misses += 1
+        return None
+
+    def put(
+        self,
+        *,
+        prompt: str,
+        system: Optional[str] = None,
+        model: str,
+        schema: Optional[Dict[str, Any]] = None,
+        temperature: float = 0.3,
+        max_tokens: Optional[int] = None,
+        response: Any,
+    ) -> None:
+        if not self._enabled:
+            return
+        key = _build_cache_key(
+            prompt=prompt, system=system, model=model,
+            schema=schema, temperature=temperature, max_tokens=max_tokens,
+        )
+        ttl = self._effective_ttl(temperature)
+        self._lru.put(key, response, ttl)
+
+    def clear(self) -> None:
+        self._lru.clear()
+        self._hits = 0
+        self._misses = 0
+
+    @property
+    def stats(self) -> Dict[str, Any]:
+        total = self._hits + self._misses
+        return {
+            "hits": self._hits,
+            "misses": self._misses,
+            "hit_rate_pct": round((self._hits / max(1, total)) * 100, 1),
+            "size": self._lru.size,
+            "enabled": self._enabled,
+        }
+
+
+# ── Singleton ──────────────────────────────────────────────────────────
+_cache_instance: Optional[AIResponseCache] = None
+
+
+def get_ai_cache() -> AIResponseCache:
+    """Get the singleton AI response cache."""
+    global _cache_instance
+    if _cache_instance is None:
+        try:
+            from app.core.config import settings
+            _cache_instance = AIResponseCache(
+                enabled=settings.ai_cache_enabled,
+                default_ttl=settings.ai_cache_ttl_seconds,
+                max_entries=settings.ai_cache_max_entries,
+            )
+        except Exception:
+            # Fallback if config not available (e.g. running outside backend)
+            _cache_instance = AIResponseCache(
+                enabled=True,
+                default_ttl=3600,
+                max_entries=2000,
+            )
+    return _cache_instance

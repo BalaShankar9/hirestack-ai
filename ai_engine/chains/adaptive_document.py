@@ -341,6 +341,8 @@ Emphasize transferable skills and quantify every achievement."""
 class AdaptiveDocumentChain:
     """Generates any document type with world-class quality."""
 
+    VERSION = "1.0.0"
+
     def __init__(self, ai_client):
         self.ai_client = ai_client
 

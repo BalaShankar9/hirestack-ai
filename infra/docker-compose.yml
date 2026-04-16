@@ -2,14 +2,14 @@ services:
   # Backend API
   backend:
     build:
-      context: ../backend
-      dockerfile: ../infra/Dockerfile.backend
+      context: ..
+      dockerfile: infra/Dockerfile.backend
     ports:
       - "8000:8000"
     environment:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
@@ -31,8 +31,12 @@ services:
   # Frontend
   frontend:
     build:
-      context: ../frontend
-      dockerfile: ../infra/Dockerfile.frontend
+      context: ..
+      dockerfile: infra/Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
     ports:
       - "3000:3000"
     environment:
@@ -70,13 +74,13 @@ services:
   # Redis Streams worker (generation job queue consumer)
   worker:
     build:
-      context: ../backend
-      dockerfile: ../infra/Dockerfile.backend
-    command: python -m app.worker
+      context: ..
+      dockerfile: infra/Dockerfile.backend
+    command: ["sh", "-c", "cd /app/backend && python -m app.worker"]
     environment:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379

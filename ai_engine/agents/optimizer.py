@@ -11,7 +11,6 @@ v3: Parallel sub-agent evaluation mode (ATS ∥ Readability).
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import time
 from pathlib import Path
@@ -145,16 +144,16 @@ class OptimizerAgent(BaseAgent):
             f"## Improvement Plan\n"
             + "\n".join(f"- {item}" for item in improvement_plan)
             + "\n\n"
-            f"## RULES\n"
-            f"1. For each missing keyword, provide a SPECIFIC insertion suggestion:\n"
-            f"   which section, which sentence, and exactly how to naturally weave it in.\n"
-            f"2. NEVER fabricate achievements, metrics, or credentials.\n"
-            f"   Suggestions must only HIGHLIGHT or REWORD existing content.\n"
-            f"3. Prioritize must-have keywords from the JD over nice-to-have ones.\n"
-            f"4. For readability fixes, identify SPECIFIC sentences and provide rewrites.\n"
-            f"5. For vague statements, suggest quantified alternatives using ONLY\n"
-            f"   information that could plausibly come from the user's profile.\n"
-            f"Return a confidence score (0-1) for your analysis."
+            "## RULES\n"
+            "1. For each missing keyword, provide a SPECIFIC insertion suggestion:\n"
+            "   which section, which sentence, and exactly how to naturally weave it in.\n"
+            "2. NEVER fabricate achievements, metrics, or credentials.\n"
+            "   Suggestions must only HIGHLIGHT or REWORD existing content.\n"
+            "3. Prioritize must-have keywords from the JD over nice-to-have ones.\n"
+            "4. For readability fixes, identify SPECIFIC sentences and provide rewrites.\n"
+            "5. For vague statements, suggest quantified alternatives using ONLY\n"
+            "   information that could plausibly come from the user's profile.\n"
+            "Return a confidence score (0-1) for your analysis."
         )
 
         result = await self.ai_client.complete_json(

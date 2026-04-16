@@ -173,6 +173,7 @@ class ValidatorChain:
             temperature=0.2,
             max_tokens=2000,
             schema=DOCUMENT_VALIDATION_SCHEMA,
+            task_type="validation",
         )
 
         is_valid = result.get("is_valid", True)
@@ -209,6 +210,7 @@ class ValidatorChain:
             temperature=0.2,
             max_tokens=2000,
             schema=ANALYSIS_VALIDATION_SCHEMA,
+            task_type="validation",
         )
 
         return result.get("is_valid", True), result

@@ -7,7 +7,6 @@ Dimensions:
   3. Keyword Coverage (0-10): JD keyword presence in the generated content
   4. Readability (0-10): Clarity, tone, professional quality
 """
-import json
 import re
 from typing import Dict, Any, Optional
 

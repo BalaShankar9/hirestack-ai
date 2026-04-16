@@ -156,30 +156,133 @@ def _build_evidence_summary(pipeline_result) -> Optional[Dict[str, Any]]:
 
 
 def _build_company_intel_summary(company_intel: Dict[str, Any]) -> str:
-    """Build a compact text summary from company intel for downstream prompts."""
+    """Build a rich text summary from company intel for downstream document prompts.
+
+    v2: Passes MUCH more data to doc generators — tech stack, hiring intel,
+    interview prep, differentiators — so documents can be deeply tailored.
+    """
     if not isinstance(company_intel, dict) or not company_intel:
         return ""
 
     strategy = company_intel.get("application_strategy", {})
     culture = company_intel.get("culture_and_values", {})
+    tech = company_intel.get("tech_and_engineering", {})
+    overview = company_intel.get("company_overview", {})
+    hiring = company_intel.get("hiring_intelligence", {})
+    products = company_intel.get("products_and_services", {})
 
     parts: List[str] = []
 
+    # Company overview
+    desc = overview.get("description")
+    if isinstance(desc, str) and desc.strip():
+        parts.append(f"Company: {desc.strip()}")
+    industry = overview.get("industry")
+    if isinstance(industry, str) and industry.strip() and industry.lower() != "unknown":
+        sub = overview.get("sub_industry", "")
+        parts.append(f"Industry: {industry}" + (f" ({sub})" if sub else ""))
+    size = overview.get("size")
+    stage = overview.get("stage")
+    if size or stage:
+        parts.append(f"Size/stage: {size or 'Unknown'} / {stage or 'Unknown'}")
+
+    # Core values and mission
     core_values = culture.get("core_values")
     if isinstance(core_values, list) and core_values:
-        parts.append(f"Company values: {', '.join(str(v) for v in core_values[:5])}")
-
+        parts.append(f"Company values: {', '.join(str(v) for v in core_values[:8])}")
     mission = culture.get("mission_statement")
     if isinstance(mission, str) and mission.strip():
         parts.append(f"Mission: {mission.strip()}")
 
+    # Work style
+    work_style = culture.get("work_style")
+    if isinstance(work_style, str) and work_style.strip() and work_style.lower() != "unknown":
+        parts.append(f"Work style: {work_style}")
+
+    # Tech stack (critical for tailored CVs/cover letters)
+    tech_stack = tech.get("tech_stack") or tech.get("jd_tech_stack", {})
+    if isinstance(tech_stack, list) and tech_stack:
+        parts.append(f"Tech stack: {', '.join(str(t) for t in tech_stack[:20])}")
+    elif isinstance(tech_stack, dict):
+        all_tech = []
+        for category_items in tech_stack.values():
+            if isinstance(category_items, list):
+                all_tech.extend(str(t) for t in category_items)
+        if all_tech:
+            parts.append(f"Tech stack: {', '.join(all_tech[:20])}")
+    methodologies = tech.get("methodologies")
+    if isinstance(methodologies, list) and methodologies:
+        parts.append(f"Methodologies: {', '.join(str(m) for m in methodologies[:6])}")
+
+    # GitHub presence
+    gh = tech.get("github_stats", {})
+    if isinstance(gh, dict) and gh.get("top_languages"):
+        parts.append(f"GitHub languages: {', '.join(str(lang) for lang in gh['top_languages'][:8])}")
+        if gh.get("notable_repos"):
+            parts.append(f"Notable repos: {', '.join(str(r) for r in gh['notable_repos'][:5])}")
+
+    # Products
+    main_prods = products.get("main_products")
+    if isinstance(main_prods, list) and main_prods:
+        parts.append(f"Products: {', '.join(str(p) for p in main_prods[:5])}")
+    target = products.get("target_market")
+    if isinstance(target, str) and target.strip():
+        parts.append(f"Target market: {target}")
+
+    # Hiring intelligence
+    must_have = hiring.get("must_have_skills")
+    if isinstance(must_have, list) and must_have:
+        parts.append(f"Must-have skills: {', '.join(str(s) for s in must_have[:10])}")
+    nice_have = hiring.get("nice_to_have_skills")
+    if isinstance(nice_have, list) and nice_have:
+        parts.append(f"Nice-to-have skills: {', '.join(str(s) for s in nice_have[:8])}")
+    seniority = hiring.get("seniority_signals")
+    if isinstance(seniority, dict):
+        level = seniority.get("detected_level", "")
+        if level:
+            parts.append(f"Seniority target: {level}")
+    elif isinstance(seniority, str) and seniority:
+        parts.append(f"Seniority signals: {seniority}")
+
+    # Application strategy
     keywords = strategy.get("keywords_to_use")
     if isinstance(keywords, list) and keywords:
-        parts.append(f"Keywords to include: {', '.join(str(k) for k in keywords[:8])}")
-
+        parts.append(f"Keywords to use: {', '.join(str(k) for k in keywords[:15])}")
     mentions = strategy.get("things_to_mention")
     if isinstance(mentions, list) and mentions:
-        parts.append(f"Reference: {'; '.join(str(m) for m in mentions[:3])}")
+        parts.append(f"Reference these: {'; '.join(str(m) for m in mentions[:5])}")
+    avoid = strategy.get("things_to_avoid")
+    if isinstance(avoid, list) and avoid:
+        parts.append(f"Avoid: {'; '.join(str(a) for a in avoid[:5])}")
+    hooks = strategy.get("cover_letter_hooks")
+    if isinstance(hooks, list) and hooks:
+        hook_texts = []
+        for h in hooks[:3]:
+            if isinstance(h, dict):
+                hook_texts.append(h.get("hook", str(h)))
+            else:
+                hook_texts.append(str(h))
+        parts.append(f"Cover letter hooks: {'; '.join(hook_texts)}")
+    tone = strategy.get("tone")
+    if isinstance(tone, str) and tone.strip():
+        parts.append(f"Recommended tone: {tone}")
+    differentiators = strategy.get("differentiator_opportunities") or strategy.get("differentiators")
+    if isinstance(differentiators, list) and differentiators:
+        parts.append(f"Differentiators: {'; '.join(str(d) for d in differentiators[:4])}")
+    interview_topics = strategy.get("interview_prep_topics")
+    if isinstance(interview_topics, list) and interview_topics:
+        topic_texts = []
+        for t in interview_topics[:6]:
+            if isinstance(t, dict):
+                topic_texts.append(t.get("topic", str(t)))
+            else:
+                topic_texts.append(str(t))
+        parts.append(f"Interview prep: {', '.join(topic_texts)}")
+
+    # Culture red flags (useful to avoid missteps)
+    red_flags = culture.get("red_flags")
+    if isinstance(red_flags, list) and red_flags:
+        parts.append(f"Caution: {'; '.join(str(r) for r in red_flags[:3])}")
 
     return "\n".join(parts)
 

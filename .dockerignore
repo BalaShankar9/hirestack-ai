@@ -1,0 +1,50 @@
+# Version control
+.git
+.github
+.gitignore
+
+# Dependencies (rebuilt in Docker)
+node_modules
+.venv
+venv
+__pycache__
+*.pyc
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+.next
+.next-dev-*
+out
+dist
+build
+*.egg-info
+*.tsbuildinfo
+
+# Testing
+coverage
+.pytest_cache
+playwright-report
+test-results
+.playwright-cli
+
+# IDE
+.idea
+.vscode
+*.swp
+
+# Docs & misc
+*.md
+*.log
+.DS_Store
+Thumbs.db
+k6
+docs
+exports
+output
+.supabase
+.netlify
+.worktrees

@@ -36,6 +36,72 @@ from .optimizer_specialists import (
     ATSOptimizerSubAgent,
     ReadabilityOptimizerSubAgent,
 )
+# Intel sub-agent swarm (v2)
+from .intel import (
+    IntelCoordinator,
+    WebsiteIntelAgent,
+    GitHubIntelAgent,
+    CareersIntelAgent,
+    JDIntelAgent,
+    CompanyProfileAgent,
+    MarketPositionAgent,
+    ApplicationStrategyAgent,
+)
+# Gap Analysis sub-agent swarm (v2)
+from .gap_analysis import (
+    GapAnalysisCoordinator,
+    TechnicalSkillAnalyst,
+    ExperienceAnalyst,
+    EducationCertAnalyst,
+    SoftSkillCultureAnalyst,
+    StrengthMapper,
+    GapSynthesizer,
+)
+# Career Consultant sub-agent swarm (v2)
+from .career import (
+    CareerCoordinator,
+    SkillPrioritizer,
+    MilestoneScheduler,
+    QuickWinExtractor,
+    ProjectIdeaGenerator,
+    RoadmapSynthesizer,
+)
+# Interview Simulator sub-agent swarm (v2)
+from .interview import (
+    InterviewCoordinator,
+    QuestionFrameworkBuilder,
+    RoleContextExtractor,
+    CandidateGapProber,
+    PrepTipGenerator,
+    QuestionSynthesizer,
+)
+# Market Intelligence sub-agent swarm (v2)
+from .market_intel import (
+    MarketIntelCoordinator,
+    LocationNormalizer,
+    SkillDemandMapper,
+    ExperienceLevelClassifier,
+    TrendMapper,
+    MarketSynthesizer,
+)
+# Salary Coach sub-agent swarm (v2)
+from .salary import (
+    SalaryCoordinator,
+    MarketRangeEstimator,
+    ValueDriverAnalyzer,
+    OfferAnalyzer,
+    NegotiationFrameworkBuilder,
+    SalarySynthesizer,
+)
+# LinkedIn Advisor sub-agent swarm (v2)
+from .linkedin import (
+    LinkedInCoordinator,
+    ProfileScorer,
+    SkillGapFinder,
+    ExperienceCritic,
+    KeywordExtractor,
+    LinkedInSynthesizer,
+)
 
 __all__ = [
     "SubAgent",
@@ -63,4 +129,56 @@ __all__ = [
     # Optimizer
     "ATSOptimizerSubAgent",
     "ReadabilityOptimizerSubAgent",
+    # Intel swarm (v2)
+    "IntelCoordinator",
+    "WebsiteIntelAgent",
+    "GitHubIntelAgent",
+    "CareersIntelAgent",
+    "JDIntelAgent",
+    "CompanyProfileAgent",
+    "MarketPositionAgent",
+    "ApplicationStrategyAgent",
+    # Gap Analysis swarm (v2)
+    "GapAnalysisCoordinator",
+    "TechnicalSkillAnalyst",
+    "ExperienceAnalyst",
+    "EducationCertAnalyst",
+    "SoftSkillCultureAnalyst",
+    "StrengthMapper",
+    "GapSynthesizer",
+    # Career Consultant swarm (v2)
+    "CareerCoordinator",
+    "SkillPrioritizer",
+    "MilestoneScheduler",
+    "QuickWinExtractor",
+    "ProjectIdeaGenerator",
+    "RoadmapSynthesizer",
+    # Interview Simulator swarm (v2)
+    "InterviewCoordinator",
+    "QuestionFrameworkBuilder",
+    "RoleContextExtractor",
+    "CandidateGapProber",
+    "PrepTipGenerator",
+    "QuestionSynthesizer",
+    # Market Intelligence swarm (v2)
+    "MarketIntelCoordinator",
+    "LocationNormalizer",
+    "SkillDemandMapper",
+    "ExperienceLevelClassifier",
+    "TrendMapper",
+    "MarketSynthesizer",
+    # Salary Coach swarm (v2)
+    "SalaryCoordinator",
+    "MarketRangeEstimator",
+    "ValueDriverAnalyzer",
+    "OfferAnalyzer",
+    "NegotiationFrameworkBuilder",
+    "SalarySynthesizer",
+    # LinkedIn Advisor swarm (v2)
+    "LinkedInCoordinator",
+    "ProfileScorer",
+    "SkillGapFinder",
+    "ExperienceCritic",
+    "KeywordExtractor",
+    "LinkedInSynthesizer",
 ]

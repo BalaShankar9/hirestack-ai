@@ -82,9 +82,14 @@ EVALUATE_SCHEMA: Dict[str, Any] = {
 
 
 class InterviewSimulatorChain:
-    """Chain for interview simulation."""
+    """Chain for interview simulation.
 
-    VERSION = "1.0.0"
+    v2.0.0 — delegates generate_questions to InterviewCoordinator
+    (5-agent swarm) with automatic fallback to legacy single-LLM.
+    evaluate_answer remains a direct LLM call.
+    """
+
+    VERSION = "2.0.0"
 
     def __init__(self, ai_client: AIClient):
         self.ai_client = ai_client
@@ -99,7 +104,43 @@ class InterviewSimulatorChain:
         question_count: int = 10,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        """Generate interview questions for a role."""
+        """Generate interview questions via sub-agent swarm."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            from ai_engine.agents.sub_agents.interview.coordinator import InterviewCoordinator
+
+            coordinator = InterviewCoordinator(ai_client=self.ai_client)
+            result = await coordinator.generate_questions(
+                job_title=job_title,
+                company=company,
+                jd_summary=jd_summary,
+                profile_summary=profile_summary,
+                interview_type=interview_type,
+                question_count=question_count,
+            )
+            logger.info("interview_v2_ok", diagnostics=result.get("_diagnostics"))
+            return self._validate_questions(result)
+
+        except Exception as exc:
+            logger.warning("interview_v2_fallback reason=%s", exc)
+            return await self._legacy_generate_questions(
+                job_title, company, jd_summary, profile_summary,
+                interview_type, question_count,
+            )
+
+    async def _legacy_generate_questions(
+        self,
+        job_title: str,
+        company: str,
+        jd_summary: str,
+        profile_summary: str,
+        interview_type: str,
+        question_count: int,
+    ) -> Dict[str, Any]:
+        """Legacy single-LLM question generation (v1 fallback)."""
         prompt = QUESTIONS_PROMPT.format(
             job_title=job_title,
             company=company or "the company",

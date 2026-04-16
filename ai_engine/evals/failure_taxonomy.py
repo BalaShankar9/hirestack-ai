@@ -8,7 +8,6 @@ access to the original LLM session.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
 
 
 class FailureClass(str, Enum):

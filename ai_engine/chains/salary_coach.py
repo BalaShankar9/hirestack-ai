@@ -89,9 +89,13 @@ SALARY_ANALYSIS_SCHEMA: Dict[str, Any] = {
 
 
 class SalaryCoachChain:
-    """Chain for salary analysis and negotiation coaching."""
+    """Chain for salary analysis and negotiation coaching.
 
-    VERSION = "1.0.0"
+    v2.0.0 — delegates to SalaryCoordinator (5-agent swarm)
+    with automatic fallback to legacy single-LLM.
+    """
+
+    VERSION = "2.0.0"
 
     def __init__(self, ai_client: AIClient):
         self.ai_client = ai_client
@@ -109,7 +113,50 @@ class SalaryCoachChain:
         industry: str = "",
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        """Analyze compensation and provide negotiation coaching."""
+        """Analyze compensation via sub-agent swarm."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            from ai_engine.agents.sub_agents.salary.coordinator import SalaryCoordinator
+
+            coordinator = SalaryCoordinator(ai_client=self.ai_client)
+            result = await coordinator.analyze_salary(
+                job_title=job_title,
+                company=company,
+                location=location,
+                years_experience=years_experience,
+                skills_summary=skills_summary,
+                current_salary=current_salary,
+                target_salary=target_salary,
+                offer_details=offer_details,
+                industry=industry,
+            )
+            logger.info("salary_v2_ok", diagnostics=result.get("_diagnostics"))
+            return self._validate_result(result)
+
+        except Exception as exc:
+            logger.warning("salary_v2_fallback reason=%s", exc)
+            return await self._legacy_analyze_salary(
+                job_title, company, location, years_experience,
+                skills_summary, current_salary, target_salary,
+                offer_details, industry,
+            )
+
+    async def _legacy_analyze_salary(
+        self,
+        job_title: str,
+        company: str,
+        location: str,
+        years_experience: int,
+        skills_summary: str,
+        current_salary: str,
+        target_salary: str,
+        offer_details: str,
+        industry: str,
+    ) -> Dict[str, Any]:
+        """Legacy single-LLM salary analysis (v1 fallback)."""
         prompt = SALARY_ANALYSIS_PROMPT.format(
             job_title=job_title,
             company=company or "the company",

@@ -65,13 +65,37 @@ Return a JSON object with exactly these fields:
 
 
 class LinkedInAdvisorChain:
-    """Generates LinkedIn profile optimization advice based on resume data."""
+    """Generates LinkedIn profile optimization advice based on resume data.
+
+    v2.0.0 — delegates to LinkedInCoordinator (5-agent swarm)
+    with automatic fallback to legacy single-LLM.
+    """
+
+    VERSION = "2.0.0"
 
     def __init__(self, ai_client):
         self.ai_client = ai_client
 
     async def analyze(self, profile_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze profile and return LinkedIn improvement suggestions."""
+        """Analyze profile and return LinkedIn improvement suggestions via sub-agent swarm."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            from ai_engine.agents.sub_agents.linkedin.coordinator import LinkedInCoordinator
+
+            coordinator = LinkedInCoordinator(ai_client=self.ai_client)
+            result = await coordinator.analyze(profile_data=profile_data)
+            logger.info("linkedin_v2_ok", diagnostics=result.get("_diagnostics"))
+            return self._validate_result(result)
+
+        except Exception as exc:
+            logger.warning("linkedin_v2_fallback reason=%s", exc)
+            return await self._legacy_analyze(profile_data)
+
+    async def _legacy_analyze(self, profile_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Legacy single-LLM LinkedIn advisor (v1 fallback)."""
         skills = profile_data.get("skills") or []
         experience = profile_data.get("experience") or []
         education = profile_data.get("education") or []
@@ -127,7 +151,11 @@ class LinkedInAdvisorChain:
             task_type="reasoning",
         )
 
-        # Validate expected fields
+        return self._validate_result(result)
+
+    @staticmethod
+    def _validate_result(result: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate expected fields."""
         result.setdefault("headline_suggestions", [])
         result.setdefault("summary_rewrite", "")
         result.setdefault("skills_to_add", [])
@@ -135,5 +163,4 @@ class LinkedInAdvisorChain:
         result.setdefault("profile_completeness_tips", [])
         result.setdefault("overall_score", 50)
         result.setdefault("priority_actions", [])
-
         return result

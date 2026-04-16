@@ -21,6 +21,7 @@ from ai_engine.chains.application_coach import ApplicationCoachChain
 from ai_engine.chains.document_discovery import DocumentDiscoveryChain
 from ai_engine.chains.adaptive_document import AdaptiveDocumentChain
 from ai_engine.chains.company_intel import CompanyIntelChain
+from ai_engine.chains.document_pack_planner import DocumentPackPlanner, DocumentPackPlan
 
 __all__ = [
     "RoleProfilerChain",
@@ -42,4 +43,6 @@ __all__ = [
     "DocumentDiscoveryChain",
     "AdaptiveDocumentChain",
     "CompanyIntelChain",
+    "DocumentPackPlanner",
+    "DocumentPackPlan",
 ]

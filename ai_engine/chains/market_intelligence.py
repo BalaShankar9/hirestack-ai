@@ -79,7 +79,13 @@ Base salary ranges on the specific location and role level."""
 
 
 class MarketIntelligenceChain:
-    """Generates location-based market intelligence for career planning."""
+    """Generates location-based market intelligence for career planning.
+
+    v2.0.0 — delegates to MarketIntelCoordinator (5-agent swarm)
+    with automatic fallback to legacy single-LLM.
+    """
+
+    VERSION = "2.0.0"
 
     def __init__(self, ai_client):
         self.ai_client = ai_client
@@ -91,7 +97,38 @@ class MarketIntelligenceChain:
         skills: List[str],
         years_experience: int = 0,
     ) -> Dict[str, Any]:
-        """Analyze job market conditions for the given profile."""
+        """Analyze job market conditions via sub-agent swarm."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            from ai_engine.agents.sub_agents.market_intel.coordinator import MarketIntelCoordinator
+
+            coordinator = MarketIntelCoordinator(ai_client=self.ai_client)
+            result = await coordinator.analyze(
+                location=location,
+                title=title,
+                skills=skills,
+                years_experience=years_experience,
+            )
+            logger.info("market_intel_v2_ok", diagnostics=result.get("_diagnostics"))
+            return self._validate_result(result)
+
+        except Exception as exc:
+            logger.warning("market_intel_v2_fallback reason=%s", exc)
+            return await self._legacy_analyze(
+                location, title, skills, years_experience,
+            )
+
+    async def _legacy_analyze(
+        self,
+        location: str,
+        title: str,
+        skills: List[str],
+        years_experience: int,
+    ) -> Dict[str, Any]:
+        """Legacy single-LLM market analysis (v1 fallback)."""
         skills_text = ", ".join(skills[:20]) if skills else "Not specified"
 
         prompt = MARKET_INTEL_PROMPT.format(
@@ -109,12 +146,15 @@ class MarketIntelligenceChain:
             task_type="reasoning",
         )
 
-        # Validate and set defaults
-        result.setdefault("market_overview", {"location": location, "temperature": "warm", "summary": ""})
+        return self._validate_result(result)
+
+    @staticmethod
+    def _validate_result(result: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and set defaults."""
+        result.setdefault("market_overview", {"temperature": "warm", "summary": ""})
         result.setdefault("skills_demand", [])
         result.setdefault("emerging_trends", [])
         result.setdefault("salary_insights", {"currency": "USD", "range_low": 0, "range_median": 0, "range_high": 0})
         result.setdefault("opportunity_suggestions", [])
         result.setdefault("skill_gaps_to_market", [])
-
         return result
