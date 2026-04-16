@@ -35,6 +35,7 @@ vi.mock("@/lib/api", () => {
       timeline: vi.fn(() => Promise.resolve(mockTimeline)),
       portfolio: vi.fn(() => Promise.resolve({ total_applications: 5, total_skills: 12 })),
       snapshot: vi.fn(() => Promise.resolve({ id: "snap1", overall_score: 88 })),
+      phaseLatencies: vi.fn(() => Promise.resolve([])),
     },
   };
   return { default: apiObj, api: apiObj };

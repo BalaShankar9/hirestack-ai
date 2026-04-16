@@ -181,3 +181,59 @@ class MaxBodySizeMiddleware:
                 break
 
         await self.app(scope, limited_receive, send)
+
+
+class TimeoutMiddleware:
+    """
+    Pure-ASGI middleware that enforces a maximum response time per request.
+
+    Long-running generation endpoints have their own internal timeouts; this
+    middleware acts as a safety net for requests that hang unexpectedly.
+
+    Defaults to 120 s (generous enough for streaming generation).
+    Skips WebSocket and health-check paths.
+    """
+
+    _SKIP_PATHS = {"/health", "/metrics"}
+
+    def __init__(self, app: Any, timeout_seconds: float = 120.0) -> None:
+        self.app = app
+        self.timeout = timeout_seconds
+        self._logger = structlog.get_logger("middleware.timeout")
+
+    async def __call__(self, scope: dict, receive: Callable, send: Callable) -> None:
+        if scope["type"] not in ("http",):
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        if path in self._SKIP_PATHS:
+            await self.app(scope, receive, send)
+            return
+
+        try:
+            import asyncio
+            await asyncio.wait_for(
+                self.app(scope, receive, send),
+                timeout=self.timeout,
+            )
+        except TimeoutError:
+            self._logger.warning(
+                "request_timeout",
+                path=path,
+                method=scope.get("method", ""),
+                timeout_s=self.timeout,
+            )
+            # Try to send a 504 response if headers haven't been sent yet
+            try:
+                await send({
+                    "type": "http.response.start",
+                    "status": 504,
+                    "headers": [(b"content-type", b"application/json")],
+                })
+                await send({
+                    "type": "http.response.body",
+                    "body": b'{"detail":"Gateway timeout - request took too long"}',
+                })
+            except Exception:
+                pass

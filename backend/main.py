@@ -23,7 +23,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.database import init_supabase, get_supabase
-from app.core.tracing import RequestIDMiddleware, AccessLogMiddleware, MaxBodySizeMiddleware, request_id_var
+from app.core.tracing import RequestIDMiddleware, AccessLogMiddleware, MaxBodySizeMiddleware, TimeoutMiddleware, request_id_var
 from app.api.routes import router as api_router
 
 # ── Sentry Error Monitoring ────────────────────────────────────────────
@@ -296,6 +296,8 @@ from app.core.security import SecurityHeadersMiddleware  # noqa: E402
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(AccessLogMiddleware)
 app.add_middleware(MaxBodySizeMiddleware)
+# Global request timeout — safety net for unexpectedly slow requests (120 s)
+app.add_middleware(TimeoutMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
 
@@ -543,9 +545,13 @@ class _FEErrorBatch(BaseModel):
     errors: List[_FEError] = Field(..., max_length=20)
 
 
+@limiter.limit("30/minute")
 @app.post("/api/frontend-errors", status_code=204, tags=["Observability"])
-async def collect_frontend_errors(batch: _FEErrorBatch) -> None:
-    """Receive client-side error reports and log them server-side."""
+async def collect_frontend_errors(request: Request, batch: _FEErrorBatch) -> None:
+    """Receive client-side error reports and log them server-side.
+
+    Rate-limited to 30 requests/min per IP to prevent log-flooding attacks.
+    """
     for err in batch.errors:
         logger.warning(
             "frontend_error",

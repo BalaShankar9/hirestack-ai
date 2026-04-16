@@ -84,7 +84,7 @@ export default function LearningPage() {
               skill: g.skill,
               severity: g.gap_severity || "moderate",
               resources: g.learning_resources.slice(0, 3),
-              appTitle: (app.jobTitle || "") + (app.company ? ` @ ${app.company}` : ""),
+              appTitle: (app.confirmedFacts?.jobTitle || app.title || "") + (app.confirmedFacts?.company ? ` @ ${app.confirmedFacts.company}` : ""),
             });
           }
         });

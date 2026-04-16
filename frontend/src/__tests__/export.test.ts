@@ -252,6 +252,6 @@ describe("downloadHtml", () => {
 
     // Verify the blob was created with HTML mime type
     expect(capturedBlob).not.toBeNull();
-    expect((capturedBlob as Blob).type).toBe("text/html");
+    expect((capturedBlob as unknown as Blob).type).toBe("text/html");
   });
 });

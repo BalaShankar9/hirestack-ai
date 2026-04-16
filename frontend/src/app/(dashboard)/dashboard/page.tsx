@@ -160,7 +160,7 @@ export default function DashboardPage() {
   }, [apps, evidence.length, openTasks.length]);
 
   // Best scores for achievement checks
-  const bestAtsScore = useMemo(() => Math.max(0, ...apps.map((a) => a.scores?.ats ?? 0)), [apps]);
+  const bestAtsScore = useMemo(() => Math.max(0, ...apps.map((a) => a.scores?.atsReadiness ?? 0)), [apps]);
   const bestMatchScore = useMemo(() => Math.max(0, ...apps.map((a) => a.scores?.match ?? 0)), [apps]);
 
   // Achievement system

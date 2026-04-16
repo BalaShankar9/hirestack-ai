@@ -185,8 +185,8 @@ export default function GapsPage() {
 
         return {
           id: app.id,
-          jobTitle: app.jobTitle || "Untitled Role",
-          company: app.company || "Unknown Company",
+          jobTitle: app.confirmedFacts?.jobTitle || app.title || "Untitled Role",
+          company: app.confirmedFacts?.company || "Unknown Company",
           compatibilityScore: gaps?.compatibility_score ?? gaps?.compatibility ?? 0,
           skillGaps: skillGaps.sort((a, b) =>
             (SEVERITY_ORDER[a.gap_severity as keyof typeof SEVERITY_ORDER] ?? 99)
