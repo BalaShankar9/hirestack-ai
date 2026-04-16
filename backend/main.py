@@ -23,7 +23,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.database import init_supabase, get_supabase
-from app.core.tracing import RequestIDMiddleware, AccessLogMiddleware, MaxBodySizeMiddleware, request_id_var
+from app.core.tracing import RequestIDMiddleware, AccessLogMiddleware, MaxBodySizeMiddleware, TimeoutMiddleware, request_id_var
 from app.api.routes import router as api_router
 
 # ── Sentry Error Monitoring ────────────────────────────────────────────
@@ -112,10 +112,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     ai_configured = bool(settings.gemini_api_key) or settings.gemini_use_vertexai
     if not ai_configured:
-        logger.warning(
+        msg = (
             "Gemini is not configured — generation endpoints will fail. "
-            "Set GEMINI_API_KEY or enable GEMINI_USE_VERTEXAI.",
+            "Set GEMINI_API_KEY or enable GEMINI_USE_VERTEXAI."
         )
+        if _is_prod:
+            raise RuntimeError(msg)
+        logger.warning(msg)
 
     try:
         from app.api.routes.generate import recover_inflight_generation_jobs
@@ -256,10 +259,6 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS helpers
-def _split_origins(value: str) -> list[str]:
-    return [v.strip() for v in (value or "").split(",") if v.strip()]
-
-
 def _with_localhost_aliases(origins: list[str]) -> list[str]:
     """Add localhost/127.0.0.1 aliases for the same scheme+port."""
     out: set[str] = set()
@@ -279,7 +278,7 @@ def _with_localhost_aliases(origins: list[str]) -> list[str]:
 
 
 # CORS middleware
-base_origins = list(dict.fromkeys(settings.cors_origins + _split_origins(settings.allowed_origins)))
+base_origins = list(dict.fromkeys(settings.cors_origins))
 extra_origins = _with_localhost_aliases(base_origins)
 allowed_origins = list(dict.fromkeys(base_origins + extra_origins))
 
@@ -297,6 +296,8 @@ from app.core.security import SecurityHeadersMiddleware  # noqa: E402
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(AccessLogMiddleware)
 app.add_middleware(MaxBodySizeMiddleware)
+# Global request timeout — safety net for unexpectedly slow requests (120 s)
+app.add_middleware(TimeoutMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
 
@@ -362,10 +363,14 @@ async def health_check():
         )
         supabase_status = {"connected": True}
     except Exception as e:
-        supabase_status = {"connected": False, "error": str(e)}
+        _detail = str(e) if (settings.debug or settings.environment != "production") else "unavailable"
+        supabase_status = {"connected": False, "error": _detail}
 
     # Check AI provider (Gemini only)
-    ai_status = {"provider": "gemini", "ok": bool(getattr(settings, "gemini_api_key", "")) or getattr(settings, "gemini_use_vertexai", False)}
+    # Key presence is the best proxy we can check without incurring an API call.
+    # In production, a missing key means ALL generation requests will fail — mark degraded.
+    _ai_key_ok = bool(getattr(settings, "gemini_api_key", "")) or getattr(settings, "gemini_use_vertexai", False)
+    ai_status = {"provider": "gemini", "ok": _ai_key_ok}
 
     # Redis cache health
     redis_status = {"connected": False}
@@ -415,8 +420,14 @@ async def health_check():
     except Exception:
         queue_info = {"backend": "in_process"}
 
-    # Determine overall health – Supabase down = degraded
-    degraded = not supabase_status.get("connected", False)
+    # Determine overall health.
+    # Supabase down = degraded (no auth or data access possible).
+    # AI key missing in production = degraded (all generation endpoints will fail).
+    _supabase_ok = supabase_status.get("connected", False)
+    _ai_degraded_in_prod = (
+        settings.environment == "production" and not ai_status.get("ok", False)
+    )
+    degraded = not _supabase_ok or _ai_degraded_in_prod
     overall = "degraded" if degraded else "healthy"
     code = status.HTTP_503_SERVICE_UNAVAILABLE if degraded else status.HTTP_200_OK
 
@@ -544,8 +555,12 @@ class _FEErrorBatch(BaseModel):
 
 
 @app.post("/api/frontend-errors", status_code=204, tags=["Observability"])
-async def collect_frontend_errors(batch: _FEErrorBatch) -> None:
-    """Receive client-side error reports and log them server-side."""
+@limiter.limit("30/minute")
+async def collect_frontend_errors(request: Request, batch: _FEErrorBatch) -> None:
+    """Receive client-side error reports and log them server-side.
+
+    Rate-limited to 30 requests/min per IP to prevent log-flooding attacks.
+    """
     for err in batch.errors:
         logger.warning(
             "frontend_error",

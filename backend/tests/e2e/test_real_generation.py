@@ -29,16 +29,17 @@ import pytest
 
 
 def _get_real_settings():
-    """Load real settings from backend/.env (not test placeholders)."""
-    # Remove test-injected placeholders so pydantic-settings reads .env
+    """Load real settings from backend/.env (not test placeholders).
+
+    Temporarily removes CI placeholder env vars so pydantic-settings reads the
+    real .env file, then restores them.  Returns (Settings instance, saved vars).
+    """
     saved = {}
     for key in ("SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY",
                 "GEMINI_API_KEY", "ENVIRONMENT", "DEBUG"):
         if key in os.environ:
             saved[key] = os.environ.pop(key)
-
     try:
-        # Force fresh settings
         from app.core.config import Settings
         s = Settings()
         return s, saved
@@ -47,12 +48,31 @@ def _get_real_settings():
 
 
 def _has_real_credentials() -> bool:
-    s, saved = _get_real_settings()
-    os.environ.update(saved)
+    """Check if real (non-placeholder) Supabase/Gemini credentials exist.
+
+    Reads the backend/.env file directly to avoid poisoning the cached
+    Settings singleton that the rest of the test suite relies on.
+    """
+    from pathlib import Path
+
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    env_vars: dict[str, str] = {}
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, _, val = line.partition("=")
+                env_vars[key.strip()] = val.strip().strip("\"'")
+
+    url = env_vars.get("SUPABASE_URL", "")
+    key = env_vars.get("SUPABASE_SERVICE_ROLE_KEY", "")
+    gemini = env_vars.get("GEMINI_API_KEY", "")
     return bool(
-        s.supabase_url and "placeholder" not in s.supabase_url
-        and s.supabase_service_role_key and "placeholder" not in s.supabase_service_role_key
-        and s.gemini_api_key
+        url and "placeholder" not in url
+        and key and "placeholder" not in key
+        and gemini
     )
 
 

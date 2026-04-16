@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -24,6 +24,8 @@ import { TaskQueue } from "@/components/workspace/task-queue";
 import { AITrace } from "@/components/ui/ai-trace";
 import { cn } from "@/lib/utils";
 import { useOnboarding } from "@/contexts/onboarding-context";
+import { useAchievements, type Achievement } from "@/hooks/use-achievements";
+import { AchievementToast } from "@/components/ui/achievement-toast";
 import api from "@/lib/api";
 import type { Profile } from "@/types";
 
@@ -90,6 +92,10 @@ const QUICK_ACTIONS = [
   { href: "/salary", label: "Salary Coach", icon: DollarSign, color: "bg-amber-500/10 text-amber-500" },
   { href: "/evidence", label: "Evidence", icon: ShieldCheck, color: "bg-violet-500/10 text-violet-500" },
   { href: "/nexus", label: "Profile", icon: User, color: "bg-teal-500/10 text-teal-500" },
+  { href: "/job-board", label: "Job Board", icon: Briefcase, color: "bg-emerald-500/10 text-emerald-500" },
+  { href: "/career-analytics", label: "Analytics", icon: BarChart3, color: "bg-rose-500/10 text-rose-500" },
+  { href: "/learning", label: "Daily Learn", icon: BookOpen, color: "bg-orange-500/10 text-orange-500" },
+  { href: "/gaps", label: "Gap Report", icon: Brain, color: "bg-indigo-500/10 text-indigo-500" },
 ] as const;
 
 /* ── Page ─────────────────────────────────────────────────────────── */
@@ -98,6 +104,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const { user, session: authSession } = useAuth();
   const userId = user?.uid || user?.id || null;
+  const userRole = user?.user_metadata?.role as string | undefined;
 
   const { data: apps = [], loading: appsLoading, removeItem: removeApp } = useApplications(userId, 50);
   const { data: tasks = [], loading: tasksLoading } = useTasks(userId, null, 200);
@@ -116,6 +123,12 @@ export default function DashboardPage() {
   const [predictions, setPredictions] = useState<Record<string, { prediction: number; confidence: string }>>({});
   const [alertSummary, setAlertSummary] = useState<{ total: number; unread: number; by_severity: Record<string, number>; by_type: Record<string, number> } | null>(null);
   const [momentum, setMomentum] = useState<{ score: number; trend: string; components: Record<string, number> } | null>(null);
+
+  // Achievement system state
+  const [pendingAchievement, setPendingAchievement] = useState<Achievement | null>(null);
+  const handleAchievementUnlock = useCallback((a: Achievement) => {
+    setPendingAchievement(a);
+  }, []);
 
   // Fetch profile to check onboarding step 2
   useEffect(() => {
@@ -145,6 +158,22 @@ export default function DashboardPage() {
       return { apps: 0, openTasks: 0, evidence: 0, avgMatch: 0, pulse: 0 };
     }
   }, [apps, evidence.length, openTasks.length]);
+
+  // Best scores for achievement checks
+  const bestAtsScore = useMemo(() => Math.max(0, ...apps.map((a) => a.scores?.atsReadiness ?? 0)), [apps]);
+  const bestMatchScore = useMemo(() => Math.max(0, ...apps.map((a) => a.scores?.match ?? 0)), [apps]);
+
+  // Achievement system
+  useAchievements({
+    userId: userId ?? "",
+    appCount: stats.apps,
+    evidenceCount: stats.evidence,
+    streak: streak?.current_streak ?? 0,
+    profilePct: 0, // profile completeness checked when profile loads
+    bestAtsScore,
+    bestMatchScore,
+    onUnlock: handleAchievementUnlock,
+  });
 
   // Load AI briefing
   useEffect(() => {
@@ -282,6 +311,17 @@ export default function DashboardPage() {
               Start your first application
               <ArrowRight className="h-4 w-4" />
             </Button>
+            <a
+              href="https://www.youtube.com/@HireStackAI"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white transition-colors"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+              </svg>
+              Watch a 60-second demo →
+            </a>
           </div>
         </motion.div>
 
@@ -452,7 +492,7 @@ export default function DashboardPage() {
       </motion.div>
 
       {/* ── Quick Actions ─────────────────────────────────────── */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+      <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
         {QUICK_ACTIONS.map((a, i) => (
           <motion.div
             key={a.href}
@@ -511,7 +551,7 @@ export default function DashboardPage() {
                   <div key={a.id} className="group relative rounded-2xl border bg-card p-4 shadow-soft-sm hover:shadow-soft-md hover:border-primary/20 hover:-translate-y-0.5 transition-all duration-300 card-spotlight">
                     <button type="button" onClick={(e) => { e.preventDefault(); setDeleteTarget({ id: a.id, title }); }}
                       aria-label={`Delete ${title}`}
-                      className="absolute right-3 top-3 z-10 h-6 w-6 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      className="absolute right-3 top-3 z-10 h-6 w-6 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 sm:opacity-0 [@media(pointer:coarse)]:opacity-100 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       <Trash2 className="h-3 w-3" />
                     </button>
                     <Link href={`/applications/${a.id}`} className="block">
@@ -661,8 +701,8 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Pipeline Telemetry Summary */}
-          {telemetry && telemetry.total_runs > 0 && (
+          {/* Pipeline Telemetry Summary — admin/enterprise only (internal cost data) */}
+          {(userRole === "admin" || userRole === "enterprise") && telemetry && telemetry.total_runs > 0 && (
             <div className="rounded-2xl border bg-card p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/10"><Activity className="h-3.5 w-3.5 text-cyan-500" /></div>
@@ -685,8 +725,8 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Pipeline Health Monitor */}
-          {pipelineHealth && (
+          {/* Pipeline Health Monitor — admin/enterprise only */}
+          {(userRole === "admin" || userRole === "enterprise") && pipelineHealth && (
             <div className={cn(
               "rounded-2xl border bg-card p-4 space-y-2",
               pipelineHealth.status === "unhealthy" && "border-rose-500/30",
@@ -733,8 +773,8 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Self-Tuning Recommendation */}
-          {tuning && tuning.recommendation === "tuned" && (
+          {/* Self-Tuning Recommendation — admin/enterprise only */}
+          {(userRole === "admin" || userRole === "enterprise") && tuning && tuning.recommendation === "tuned" && (
             <div className="rounded-2xl border bg-gradient-to-br from-violet-500/5 to-indigo-500/5 p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10"><Brain className="h-3.5 w-3.5 text-violet-500" /></div>
@@ -880,20 +920,44 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Learning Streak */}
-          {streak && (streak.current_streak > 0 || streak.total_points > 0) && (
-            <Link href="/learning" className="block rounded-2xl border bg-gradient-to-br from-amber-500/5 to-orange-500/5 p-4 hover:border-amber-500/20 hover:shadow-soft-sm hover:-translate-y-0.5 transition-all duration-300 glow-border-hover">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10"><Flame className="h-4 w-4 text-amber-500" /></div>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold">Learning Streak</p>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    <span className="text-[11px] text-muted-foreground"><span className="font-bold text-amber-500">{streak.current_streak}</span> day streak</span>
-                    <span className="text-[11px] text-muted-foreground">Lv.{streak.level}</span>
-                    <span className="text-[11px] text-muted-foreground">{streak.total_points} pts</span>
+          {/* Learning Streak / Daily Challenge */}
+          {streak ? (
+            streak.current_streak > 0 || streak.total_points > 0 ? (
+              <Link href="/learning" className="block rounded-2xl border bg-gradient-to-br from-amber-500/5 to-orange-500/5 p-4 hover:border-amber-500/20 hover:shadow-soft-sm hover:-translate-y-0.5 transition-all duration-300 glow-border-hover">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10"><Flame className="h-4 w-4 text-amber-500" /></div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold">Learning Streak</p>
+                    <div className="flex items-center gap-3 mt-0.5">
+                      <span className="text-[11px] text-muted-foreground"><span className="font-bold text-amber-500">{streak.current_streak}</span> day streak</span>
+                      <span className="text-[11px] text-muted-foreground">Lv.{streak.level}</span>
+                      <span className="text-[11px] text-muted-foreground">{streak.total_points} pts</span>
+                    </div>
                   </div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </Link>
+            ) : (
+              <Link href="/learning" className="block rounded-2xl border border-dashed border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/5 p-4 hover:border-amber-500/40 hover:-translate-y-0.5 transition-all duration-300">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10"><Flame className="h-4 w-4 text-amber-500/60" /></div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">Start your streak today</p>
+                    <p className="text-[11px] text-muted-foreground">Complete a daily lesson to earn XP</p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-amber-500/60" />
+                </div>
+              </Link>
+            )
+          ) : (
+            <Link href="/learning" className="block rounded-2xl border border-dashed border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/5 p-4 hover:border-amber-500/40 hover:-translate-y-0.5 transition-all duration-300">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10"><Flame className="h-4 w-4 text-amber-500/60" /></div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">Daily Learn</p>
+                  <p className="text-[11px] text-muted-foreground">Sharpen skills · earn XP · build streaks</p>
+                </div>
+                <ArrowRight className="h-4 w-4 text-amber-500/60" />
               </div>
             </Link>
           )}
@@ -913,6 +977,12 @@ export default function DashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Achievement unlock notification */}
+      <AchievementToast
+        achievement={pendingAchievement}
+        onDismiss={() => setPendingAchievement(null)}
+      />
     </div>
   );
 }

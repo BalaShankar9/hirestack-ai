@@ -9,9 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
-  Users, Plus, Loader2, Search, Mail, Phone, MapPin,
-  Building2, ChevronRight, ArrowRight, Briefcase, X,
-  UserPlus, Filter,
+  Users, Plus, Loader2, Search, Mail, MapPin,
+  Building2, X, UserPlus, LayoutGrid, List,
 } from "lucide-react";
 import { RoleGate } from "@/components/role-gate";
 import { toast } from "@/hooks/use-toast";
@@ -115,6 +114,14 @@ export default function CandidatesPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 rounded-xl h-9 w-48 text-sm" />
           </div>
+          <div className="flex rounded-xl border overflow-hidden">
+            <button onClick={() => setView("kanban")} className={cn("px-2.5 h-9 flex items-center transition-colors", view === "kanban" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground")}>
+              <LayoutGrid className="h-3.5 w-3.5" />
+            </button>
+            <button onClick={() => setView("list")} className={cn("px-2.5 h-9 flex items-center border-l transition-colors", view === "list" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground")}>
+              <List className="h-3.5 w-3.5" />
+            </button>
+          </div>
           <Button onClick={() => setShowAdd(true)} className="rounded-xl gap-1.5">
             <UserPlus className="h-4 w-4" /> Add Candidate
           </Button>
@@ -152,7 +159,7 @@ export default function CandidatesPage() {
         </div>
       )}
 
-      {/* Kanban Board */}
+      {/* Kanban / List Board */}
       {loading ? (
         <div className="text-center py-12"><Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" /></div>
       ) : filtered.length === 0 && !search ? (
@@ -162,7 +169,49 @@ export default function CandidatesPage() {
           <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">Add candidates to track them through your recruitment pipeline.</p>
           <Button className="mt-4 rounded-xl gap-2" onClick={() => setShowAdd(true)}><UserPlus className="h-4 w-4" /> Add First Candidate</Button>
         </div>
+      ) : view === "list" ? (
+        /* ── List View ── */
+        <div className="rounded-2xl border bg-card overflow-hidden shadow-soft-sm">
+          <div className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-0 border-b px-4 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+            <span>Candidate</span>
+            <span>Stage</span>
+            <span>Company</span>
+            <span>Location</span>
+          </div>
+          {filtered.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">No candidates match your search.</div>
+          ) : (
+            filtered.map((c) => {
+              const stage = STAGES.find((s) => s.key === c.pipeline_stage);
+              return (
+                <div key={c.id} className="grid grid-cols-[2fr_1fr_1fr_1fr] gap-0 items-center px-4 py-3 border-b last:border-b-0 hover:bg-muted/30 transition-colors group">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{c.name}</p>
+                    {c.email && <p className="text-[10px] text-muted-foreground flex items-center gap-0.5"><Mail className="h-2.5 w-2.5" /> {c.email}</p>}
+                  </div>
+                  <div>
+                    {stage ? (
+                      <span className={cn("inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border", stage.lightColor)}>
+                        <span className={cn("h-1.5 w-1.5 rounded-full", stage.color)} />
+                        {stage.label}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground">—</span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground truncate">
+                    {c.client_company ? <span className="flex items-center gap-0.5"><Building2 className="h-2.5 w-2.5" /> {c.client_company}</span> : "—"}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground truncate">
+                    {c.location ? <span className="flex items-center gap-0.5"><MapPin className="h-2.5 w-2.5" /> {c.location}</span> : "—"}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
       ) : (
+        /* ── Kanban View ── */
         <div className="flex gap-3 overflow-x-auto pb-4">
           {STAGES.map((stage) => {
             const stageCards = filtered.filter((c) => c.pipeline_stage === stage.key);

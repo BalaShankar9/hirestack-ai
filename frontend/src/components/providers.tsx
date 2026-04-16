@@ -12,6 +12,7 @@ import type { User, Session } from "@supabase/supabase-js";
 import { ThemeProvider } from "next-themes";
 import { supabase } from "@/lib/supabase";
 import { installGlobalErrorHandler } from "@/lib/error-reporting";
+import { checkEnvOnce } from "@/lib/env-validation";
 
 /* ------------------------------------------------------------------ */
 /*  Auth context types                                                */
@@ -77,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     installGlobalErrorHandler();
+    checkEnvOnce();
   }, []);
 
   useEffect(() => {

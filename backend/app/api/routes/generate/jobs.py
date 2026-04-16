@@ -1215,7 +1215,36 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         await emit_detail("cipher", "Comparing your profile against the benchmark and job requirements.", "running", "gap_analysis")
 
         gap_chain = GapAnalyzerChain(ai)
-        gap_analysis = await gap_chain.analyze_gaps(user_profile, benchmark_data, job_title, company_str)
+
+        # ── Parallelize gap analysis + document pack planning (H4-1) ──
+        from app.services.document_catalog import discover_and_observe
+
+        gap_analysis, _doc_pack_plan_job = await asyncio.gather(
+            gap_chain.analyze_gaps(user_profile, benchmark_data, job_title, company_str),
+            discover_and_observe(
+                db=sb, tables=TABLES, ai_client=ai,
+                jd_text=jd_text_val, job_title=job_title,
+                company=company_str, user_profile=user_profile,
+                user_id=user_id, application_id=app_id,
+                company_intel=company_intel,
+            ),
+            return_exceptions=True,
+        )
+
+        # Recover from partial failures
+        if isinstance(gap_analysis, Exception):
+            logger.warning("job_runner.gap_analysis_failed", error=str(gap_analysis))
+            gap_analysis = {
+                "missing_keywords": [],
+                "compatibility_score": 0,
+                "readiness_level": "needs-work",
+                "skill_gaps": [],
+                "strengths": [],
+                "recommendations": [],
+            }
+        if isinstance(_doc_pack_plan_job, Exception):
+            logger.warning("job_runner.doc_planning_failed", error=str(_doc_pack_plan_job))
+            _doc_pack_plan_job = None
 
         missing_keywords = gap_analysis.get("missing_keywords", []) or gap_analysis.get("missingKeywords", []) or []
         await emit_detail(
@@ -1228,17 +1257,6 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         if await check_cancel():
             await emit_error("Generation cancelled.", 499)
             return
-
-        # ── Phase 3b: Catalog-driven document planning ───────────────
-        from app.services.document_catalog import discover_and_observe
-
-        _doc_pack_plan_job = await discover_and_observe(
-            db=sb, tables=TABLES, ai_client=ai,
-            jd_text=jd_text_val, job_title=job_title,
-            company=company_str, user_profile=user_profile,
-            user_id=user_id, application_id=app_id,
-            company_intel=company_intel,
-        )
 
         await emit_progress("documents", 4, 58, "Quill is generating the CV, cover letter, and learning plan…")
         await emit_detail("quill", "Drafting the tailored CV, cover letter, and roadmap in parallel.", "running", "documents")
@@ -1259,6 +1277,9 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             "gap_analysis": gap_analysis,
             "resume_text": resume_text_val,
             "company_intel": _build_company_intel_summary(company_intel),
+            # H1-3: pass structured intel object + digest for per-doc-type injection
+            "company_intel_obj": company_intel,
+            "company_intel_digest": company_intel.get("application_strategy_digest", ""),
         }
 
         def _ctx_for_pipeline(pipeline_name: str) -> dict:

@@ -18,6 +18,8 @@ import {
   Code2,
   Trophy,
   Newspaper,
+  CheckSquare,
+  Square,
   Package,
   ShieldCheck,
   Presentation,
@@ -101,6 +103,8 @@ export default function EvidenceVaultPage() {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Form state
   const [kind, setKind] = useState<"link" | "file">("link");
@@ -231,12 +235,51 @@ export default function EvidenceVaultPage() {
     try {
       await deleteEvidence(deleteTargetId);
       removeItem(deleteTargetId);
+      setSelectedIds((prev) => { const n = new Set(prev); n.delete(deleteTargetId); return n; });
       toast({ title: "Evidence deleted" });
     } catch (err) {
       toast({ title: "Delete failed", description: "Please try again.", variant: "error" });
     } finally {
       setDeletingId(null);
       setDeleteTargetId(null);
+    }
+  }
+
+  async function confirmBulkDelete() {
+    if (selectedIds.size === 0) return;
+    setBulkDeleting(true);
+    const ids = Array.from(selectedIds);
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await deleteEvidence(id);
+        removeItem(id);
+      } catch {
+        failed++;
+      }
+    }
+    setSelectedIds(new Set());
+    setBulkDeleting(false);
+    if (failed === 0) {
+      toast({ title: `${ids.length} item${ids.length !== 1 ? "s" : ""} deleted` });
+    } else {
+      toast({ title: `Deleted ${ids.length - failed} of ${ids.length}`, variant: "error", description: `${failed} item${failed !== 1 ? "s" : ""} could not be deleted.` });
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === filtered.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map((e) => e.id)));
     }
   }
 
@@ -399,6 +442,41 @@ export default function EvidenceVaultPage() {
         </div>
       )}
 
+      {/* Bulk-select toolbar */}
+      {filtered.length > 0 && (
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-xs rounded-xl h-8"
+            onClick={toggleSelectAll}
+          >
+            {selectedIds.size === filtered.length && filtered.length > 0 ? (
+              <CheckSquare className="h-3.5 w-3.5" />
+            ) : (
+              <Square className="h-3.5 w-3.5" />
+            )}
+            {selectedIds.size === filtered.length && filtered.length > 0 ? "Deselect all" : "Select all"}
+          </Button>
+          {selectedIds.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              className="gap-1.5 text-xs rounded-xl h-8"
+              onClick={confirmBulkDelete}
+              disabled={bulkDeleting}
+            >
+              {bulkDeleting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+              Delete {selectedIds.size} selected
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* AI Intelligence Trace */}
       {evidence.length > 0 && (
         <AITrace
@@ -442,11 +520,25 @@ export default function EvidenceVaultPage() {
             const TypeIcon = typeConfig.icon;
 
             return (
-              <div key={ev.id} className="relative group rounded-2xl border bg-card shadow-soft-sm hover:shadow-soft-md hover:-translate-y-0.5 transition-all duration-300 overflow-hidden card-spotlight">
+              <div key={ev.id} className={cn("relative group rounded-2xl border bg-card shadow-soft-sm hover:shadow-soft-md hover:-translate-y-0.5 transition-all duration-300 overflow-hidden card-spotlight", selectedIds.has(ev.id) && "ring-2 ring-primary/50 border-primary/30")}>
                 {/* Type indicator strip */}
                 <div className={cn("h-1 w-full", typeConfig.color.split(" ")[0])} />
 
-                <div className="p-4 space-y-3">
+                {/* Checkbox (top-left corner) */}
+                <button
+                  type="button"
+                  aria-label={selectedIds.has(ev.id) ? "Deselect" : "Select"}
+                  onClick={() => toggleSelect(ev.id)}
+                  className="absolute left-2 top-3 z-10 text-muted-foreground hover:text-primary transition-colors"
+                >
+                  {selectedIds.has(ev.id) ? (
+                    <CheckSquare className="h-4 w-4 text-primary" />
+                  ) : (
+                    <Square className="h-4 w-4 opacity-0 group-hover:opacity-100" />
+                  )}
+                </button>
+
+                <div className="p-4 pl-8 space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-start gap-2.5 min-w-0">
                       <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg shrink-0", typeConfig.color)}>
@@ -457,7 +549,7 @@ export default function EvidenceVaultPage() {
                         <div className="text-[11px] text-muted-foreground capitalize">{typeConfig.label}</div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-all duration-200">
                       {link && (
                         <Button
                           variant="ghost"

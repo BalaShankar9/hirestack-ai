@@ -100,7 +100,7 @@ class TestDiscoverAndObserve:
 
         assert result is not None
         assert isinstance(result, DocumentPackPlan)
-        assert len(result.core) == 4
+        assert len(result.core) == len(CORE_DOCS)
         mock_observe.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -254,7 +254,7 @@ class TestPlannerCompanyIntel:
         )
 
         assert result is not None
-        assert len(result.core) == 4
+        assert len(result.core) == len(CORE_DOCS)
         # No COMPANY INTELLIGENCE section when None
         prompt = ai.complete_json.call_args.kwargs.get("prompt", "")
         assert "COMPANY INTELLIGENCE" not in prompt

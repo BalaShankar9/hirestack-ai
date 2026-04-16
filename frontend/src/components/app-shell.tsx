@@ -1,6 +1,5 @@
 "use client";
 
-import React, { type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -18,7 +17,17 @@ import {
   Search,
   ArrowRight,
   User,
+  FileSearch,
+  MessageSquare,
+  DollarSign,
+  Briefcase,
+  TrendingUp,
+  BookOpen,
+  Target,
+  Flame,
+  Zap,
 } from "lucide-react";
+import React, { type ReactNode, useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -32,6 +41,7 @@ import {
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "@/components/command-palette/command-palette";
 import { ThemeToggle } from "@/components/theme-toggle";
+import api from "@/lib/api";
 
 type NavItem = {
   href: string;
@@ -59,31 +69,55 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/new", label: "New Application", icon: Plus, description: "Start a new application" },
       { href: "/evidence", label: "Evidence", icon: ShieldCheck, description: "Your proof library" },
       { href: "/nexus", label: "Profile", icon: User, description: "Your career identity" },
+      { href: "/settings", label: "Settings", icon: Settings, description: "Account & organization" },
+    ],
+  },
+  {
+    title: "Tools",
+    items: [
+      { href: "/ats-scanner", label: "ATS Scanner", icon: FileSearch, description: "Check ATS compatibility" },
+      { href: "/interview", label: "Interview Prep", icon: MessageSquare, description: "AI interview coach" },
+      { href: "/salary", label: "Salary Coach", icon: DollarSign, description: "Know your market value" },
+      { href: "/job-board", label: "Job Board", icon: Briefcase, description: "Find matching roles" },
+      { href: "/career-analytics", label: "Career Analytics", icon: TrendingUp, description: "Track your progress" },
+      { href: "/learning", label: "Daily Learn", icon: BookOpen, description: "Sharpen your skills" },
+      { href: "/gaps", label: "Gap Report", icon: Target, description: "Skill gap analysis" },
     ],
   },
   {
     title: "Admin",
     items: [
       { href: "/candidates", label: "Pipeline", icon: Users, description: "Candidate tracking", roleRequired: "enterprise" },
-      { href: "/settings", label: "Settings", icon: Settings, description: "Organization & billing" },
     ],
   },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { user, signOut } = useAuth();
+  const { user, signOut, session } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const [sidebarOpen, setSidebarOpen] = React.useState(false);
-  const [collapsed, setCollapsed] = React.useState(false);
-  const [signingOut, setSigningOut] = React.useState(false);
-  const [navSearch, setNavSearch] = React.useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [navSearch, setNavSearch] = useState("");
+  const [streak, setStreak] = useState<{ current_streak: number; level: number; total_points: number } | null>(null);
+
+  // Load streak for sidebar widget
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+    fetch(`${API_URL}/api/learning/streak`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => d && setStreak(d))
+      .catch(() => {});
+  }, [session?.access_token]);
 
   // Role-based nav filtering: hide enterprise items unless user has that role
   // For now, we assume user metadata may contain role info
   const userRole = user?.user_metadata?.role as string | undefined;
 
-  const filteredGroups = React.useMemo(() => {
+  const filteredGroups = useMemo(() => {
     let groups = NAV_GROUPS.map((g) => ({
       ...g,
       items: g.items.filter((item) => {
@@ -147,7 +181,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
       >
         {/* Logo */}
-        <div className="flex h-16 items-center gap-3 border-b border-border/70 px-4">
+        <Link href="/dashboard" className="flex h-16 items-center gap-3 border-b border-border/70 px-4 hover:opacity-90 transition-opacity">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 shadow-glow-sm ring-1 ring-white/50 dark:ring-white/10">
             <Sparkles className="h-4 w-4 text-white" />
           </div>
@@ -156,7 +190,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               HireStack <span className="text-primary">AI</span>
             </span>
           )}
-        </div>
+        </Link>
 
         {/* Search */}
         {!collapsed && (
@@ -239,6 +273,22 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
         </nav>
 
+        {/* Streak widget — quick daily engagement hook */}
+        {!collapsed && streak && (streak.current_streak > 0 || streak.total_points > 0) && (
+          <div className="mx-3 mb-3">
+            <Link href="/learning" className="flex items-center gap-2.5 rounded-xl bg-gradient-to-br from-amber-500/10 to-orange-500/5 border border-amber-500/15 px-3 py-2 hover:border-amber-500/30 transition-all duration-200">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500/10">
+                <Flame className="h-3.5 w-3.5 text-amber-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-semibold text-amber-500">{streak.current_streak > 0 ? `${streak.current_streak}-day streak 🔥` : "Start a streak"}</p>
+                <p className="text-[10px] text-muted-foreground">Lv.{streak.level} · {streak.total_points} XP</p>
+              </div>
+              <Zap className="h-3 w-3 text-amber-500/60 shrink-0" />
+            </Link>
+          </div>
+        )}
+
         {/* Collapse toggle */}
         <div className="border-t border-border/70 px-3 py-2">
           <button
@@ -260,7 +310,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   collapsed && "justify-center"
                 )}>
                   <Avatar className="h-8 w-8 ring-2 ring-primary/10 ring-offset-2 ring-offset-background">
-                    <AvatarImage src={user?.photoURL ?? undefined} />
+                    <AvatarImage src={user?.photoURL ?? undefined} alt={user?.displayName ?? "User avatar"} />
                     <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
                   </Avatar>
                   {!collapsed && (
@@ -311,14 +361,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex h-16 items-center justify-between border-b px-4">
-              <div className="flex items-center gap-3">
+              <Link href="/dashboard" onClick={() => setSidebarOpen(false)} className="flex items-center gap-3 hover:opacity-90 transition-opacity">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600">
                   <Sparkles className="h-4 w-4 text-white" />
                 </div>
                 <span className="text-base font-bold tracking-tight">
                   HireStack <span className="text-primary">AI</span>
                 </span>
-              </div>
+              </Link>
               <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)} className="rounded-lg" aria-label="Close navigation menu">
                 <X className="h-5 w-5" />
               </Button>
@@ -380,7 +430,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               {user ? (
                 <div className="flex items-center gap-3 px-2">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={user?.photoURL ?? undefined} />
+                    <AvatarImage src={user?.photoURL ?? undefined} alt={user?.displayName ?? "User avatar"} />
                     <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1">
@@ -419,7 +469,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Menu className="h-5 w-5" />
           </Button>
 
-          {/* Breadcrumb / title area */}
+          {/* Mobile brand logo — visible when sidebar is closed */}
+          <Link href="/dashboard" className="lg:hidden flex items-center gap-2 hover:opacity-90 transition-opacity">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-violet-600 shadow-glow-sm">
+              <Sparkles className="h-3.5 w-3.5 text-white" />
+            </div>
+            <span className="text-sm font-bold tracking-tight">
+              HireStack <span className="text-primary">AI</span>
+            </span>
+          </Link>
+
+          {/* Breadcrumb / title area — desktop only (mobile shows brand logo instead) */}
           {(() => {
             const PAGE_LABELS: Record<string, string> = {
               "/dashboard": "Overview",
@@ -441,11 +501,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             const label = PAGE_LABELS[pathname] || (pathname.startsWith("/applications/") ? "Workspace" : null);
             if (!label) return <div className="flex-1" />;
             return (
-              <div className="flex-1 min-w-0">
+              <div className="hidden lg:flex flex-1 min-w-0">
                 <span className="text-sm font-medium text-muted-foreground truncate">{label}</span>
               </div>
             );
           })()}
+
+          {/* Spacer for mobile (brand logo doesn't use flex-1) */}
+          <div className="flex-1 lg:hidden" />
 
           <ThemeToggle />
 
@@ -466,7 +529,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full lg:hidden">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={user?.photoURL ?? undefined} />
+                    <AvatarImage src={user?.photoURL ?? undefined} alt={user?.displayName ?? "User avatar"} />
                     <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
                   </Avatar>
                 </Button>

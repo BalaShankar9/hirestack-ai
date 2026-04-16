@@ -43,8 +43,8 @@ class SocialLinksUpdate(BaseModel):
 # ── Upload & CRUD ──────────────────────────────────────────────────────
 
 
-@limiter.limit("5/minute")
 @router.post("/upload")
+@limiter.limit("5/minute")
 async def upload_resume(
     request: Request,
     file: UploadFile = File(...),
@@ -102,9 +102,9 @@ async def upload_resume(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail)
 
 
-@limiter.limit("30/minute")
 @router.get("/all")
 @router.get("")
+@limiter.limit("30/minute")
 async def list_profiles(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -120,8 +120,8 @@ async def list_profiles(
     return result
 
 
-@limiter.limit("30/minute")
 @router.get("/primary")
+@limiter.limit("30/minute")
 async def get_primary_profile(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -139,8 +139,8 @@ async def get_primary_profile(
     return profile
 
 
-@limiter.limit("30/minute")
 @router.get("/{profile_id}")
+@limiter.limit("30/minute")
 async def get_profile(
     request: Request,
     profile_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -153,8 +153,8 @@ async def get_profile(
     return profile
 
 
-@limiter.limit("30/minute")
 @router.put("/{profile_id}")
+@limiter.limit("30/minute")
 async def update_profile(
     request: Request,
     profile_id: str, profile_data: UpdateProfileRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -170,8 +170,8 @@ async def update_profile(
     return profile
 
 
-@limiter.limit("30/minute")
 @router.delete("/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("30/minute")
 async def delete_profile(
     request: Request,
     profile_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -186,8 +186,8 @@ async def delete_profile(
     await cache_invalidate_prefix(f"profiles:primary:{current_user['id']}")
 
 
-@limiter.limit("30/minute")
 @router.post("/{profile_id}/set-primary")
+@limiter.limit("30/minute")
 async def set_primary_profile(
     request: Request,
     profile_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -203,8 +203,8 @@ async def set_primary_profile(
     return profile
 
 
-@limiter.limit("5/minute")
 @router.post("/{profile_id}/reparse")
+@limiter.limit("5/minute")
 async def reparse_profile(
     request: Request,
     profile_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -219,8 +219,8 @@ async def reparse_profile(
 # ── Career Intelligence ────────────────────────────────────────────────
 
 
-@limiter.limit("30/minute")
 @router.get("/intelligence/completeness")
+@limiter.limit("30/minute")
 async def get_completeness(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -232,8 +232,8 @@ async def get_completeness(
     return service.compute_completeness(profile)
 
 
-@limiter.limit("5/minute")
 @router.get("/intelligence/resume-worth")
+@limiter.limit("5/minute")
 async def get_resume_worth(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -242,8 +242,8 @@ async def get_resume_worth(
     return await service.compute_resume_worth(current_user["id"])
 
 
-@limiter.limit("30/minute")
 @router.get("/intelligence/aggregate-gaps")
+@limiter.limit("30/minute")
 async def get_aggregate_gaps(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -252,8 +252,8 @@ async def get_aggregate_gaps(
     return await service.aggregate_gap_analysis(current_user["id"])
 
 
-@limiter.limit("5/minute")
 @router.get("/intelligence/market")
+@limiter.limit("5/minute")
 async def get_market_intelligence(
     request: Request,
     force_refresh: bool = False,
@@ -271,8 +271,8 @@ async def get_market_intelligence(
 # ── Universal Documents ────────────────────────────────────────────────
 
 
-@limiter.limit("5/minute")
 @router.post("/{profile_id}/augment-skills")
+@limiter.limit("5/minute")
 async def augment_skills(
     request: Request,
     profile_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -282,8 +282,8 @@ async def augment_skills(
     return result
 
 
-@limiter.limit("5/minute")
 @router.post("/{profile_id}/universal-documents")
+@limiter.limit("5/minute")
 async def generate_universal_documents(
     request: Request,
     profile_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -302,8 +302,8 @@ async def generate_universal_documents(
 # ── Social Links ───────────────────────────────────────────────────────
 
 
-@limiter.limit("30/minute")
 @router.put("/{profile_id}/social-links")
+@limiter.limit("30/minute")
 async def update_social_links(
     request: Request,
     profile_id: str, links: SocialLinksUpdate, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -358,8 +358,8 @@ class ConnectSocialRequest(BaseModel):
     url: str
 
 
-@limiter.limit("5/minute")
 @router.post("/{profile_id}/connect-social")
+@limiter.limit("5/minute")
 async def connect_social(
     request: Request,
     profile_id: str,
@@ -446,8 +446,8 @@ async def connect_social(
 # ── Evidence Sync ──────────────────────────────────────────────────────
 
 
-@limiter.limit("30/minute")
 @router.get("/evidence/synced")
+@limiter.limit("30/minute")
 async def get_synced_evidence(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -456,8 +456,8 @@ async def get_synced_evidence(
     return await service.get_synced_evidence(current_user["id"])
 
 
-@limiter.limit("10/minute")
 @router.post("/{profile_id}/sync-evidence")
+@limiter.limit("10/minute")
 async def sync_evidence(
     request: Request,
     profile_id: str,

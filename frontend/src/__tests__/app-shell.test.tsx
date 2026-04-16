@@ -51,7 +51,7 @@ describe("AppShell", () => {
     expect(screen.getAllByText("Overview").length).toBeGreaterThan(0);
     expect(screen.getAllByText("New Application").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Evidence").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Improvement").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Tools").length).toBeGreaterThan(0);
     expect(screen.getByText("Content")).toBeInTheDocument();
   });
 });

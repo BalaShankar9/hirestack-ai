@@ -22,8 +22,8 @@ class GapAnalysisRequest(BaseModel):
     benchmark_id: str = Field(..., min_length=1, max_length=100)
 
 
-@limiter.limit("3/minute")
 @router.post("/analyze")
+@limiter.limit("3/minute")
 async def analyze_gaps(
     request: Request,
     body: GapAnalysisRequest,
@@ -42,8 +42,8 @@ async def analyze_gaps(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
-@limiter.limit("30/minute")
 @router.get("")
+@limiter.limit("30/minute")
 async def list_gap_reports(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -53,8 +53,8 @@ async def list_gap_reports(
     return await service.get_user_reports(current_user["id"])
 
 
-@limiter.limit("30/minute")
 @router.get("/{report_id}")
+@limiter.limit("30/minute")
 async def get_gap_report(
     request: Request,
     report_id: str,
@@ -68,8 +68,8 @@ async def get_gap_report(
     return report
 
 
-@limiter.limit("30/minute")
 @router.get("/{report_id}/summary")
+@limiter.limit("30/minute")
 async def get_gap_summary(
     request: Request,
     report_id: str,
@@ -83,8 +83,8 @@ async def get_gap_summary(
     return summary
 
 
-@limiter.limit("30/minute")
 @router.post("/{report_id}/refresh")
+@limiter.limit("30/minute")
 async def refresh_gap_analysis(
     request: Request,
     report_id: str,
@@ -98,8 +98,8 @@ async def refresh_gap_analysis(
     return report
 
 
-@limiter.limit("30/minute")
 @router.delete("/{report_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("30/minute")
 async def delete_gap_report(
     request: Request,
     report_id: str,

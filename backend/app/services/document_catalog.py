@@ -72,6 +72,23 @@ SEED_CATALOG: Tuple[Dict[str, Any], ...] = (
     {"key": "media_kit", "label": "Media Kit", "description": "Press-ready materials including bio, photos, and key achievements", "category": "creative", "generatable": True},
     {"key": "consulting_deck", "label": "Consulting Deck", "description": "Presentation-style overview of expertise and methodology", "category": "executive", "generatable": True},
     {"key": "board_presentation", "label": "Board Presentation", "description": "Executive-level presentation of qualifications for board roles", "category": "executive", "generatable": True},
+
+    # ── New catalog entries (H2 additions) ──────────────────────────
+
+    # Modern always-available career documents
+    {"key": "thirty_sixty_ninety_day_plan", "label": "30-60-90 Day Plan", "description": "Company-intel-powered strategic onboarding plan: first 30, 60, and 90 days with real targets", "category": "executive", "generatable": True},
+    {"key": "capability_statement", "label": "Capability Statement", "description": "One-page formal capability overview for government contracting, procurement, and vendor applications", "category": "compliance", "generatable": True},
+    {"key": "expression_of_interest", "label": "Expression of Interest", "description": "Formal proposal-style document for AU/UK/EU public sector and large-org applications", "category": "compliance", "generatable": True},
+    {"key": "letter_of_intent", "label": "Letter of Intent", "description": "Formal pre-application statement of interest for US government, nonprofit, and foundation roles", "category": "compliance", "generatable": True},
+    {"key": "interview_prep_guide", "label": "Interview Prep Guide", "description": "Private prep doc: 10 role-specific questions + suggested answers + smart questions to ask the interviewer", "category": "professional", "generatable": True},
+    {"key": "salary_negotiation_script", "label": "Salary Negotiation Script", "description": "Word-for-word script for negotiating compensation using market salary intel", "category": "professional", "generatable": True},
+    {"key": "networking_email", "label": "Networking Email", "description": "Highly personalized cold outreach to recruiter or hiring manager using company and founder intel", "category": "professional", "generatable": True},
+    {"key": "project_proposal", "label": "Project Proposal", "description": "Structured engagement proposal for consulting, freelance, and client-facing roles", "category": "technical", "generatable": True},
+    {"key": "personal_website_brief", "label": "Personal Website Brief", "description": "Structured brief for commissioning or building a personal portfolio site: sections, content, tone", "category": "creative", "generatable": True},
+    {"key": "pitch_deck_bio_slide", "label": "Pitch Deck Bio Slide", "description": "One-slide executive biography formatted as a pitch deck slide — credentials, achievement, mission", "category": "creative", "generatable": True},
+    {"key": "linkedin_recommendation_request", "label": "LinkedIn Recommendation Request", "description": "Personalized message to a colleague asking for a LinkedIn recommendation with talking points", "category": "professional", "generatable": True},
+    {"key": "speaking_proposal", "label": "Speaking Proposal", "description": "Conference CFP submission for developer advocates, academics, and speaker-role applicants", "category": "creative", "generatable": True},
+    {"key": "board_bio", "label": "Board Bio", "description": "Authoritative 150-200 word board-level biography for governance nominations and advisory appointments", "category": "executive", "generatable": True},
 )
 
 # Quick lookups (immutable, built once)

@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+
+# Dependencies (rebuilt in Docker)
+node_modules
+__pycache__
+*.pyc
+.venv
+venv
+
+# Environment files (secrets)
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build outputs
+.next
+out
+dist
+build
+*.egg-info
+
+# Testing
+coverage
+.pytest_cache
+playwright-report
+test-results
+
+# Documentation
+docs
+*.md
+LICENSE
+
+# Local artifacts
+output
+uploads
+.supabase
+.netlify
+.worktrees
+
+# Docker-in-Docker
+docker-compose.yml
+
+# Analysis files
+*.docx
+HireStack_AI_Analysis.js

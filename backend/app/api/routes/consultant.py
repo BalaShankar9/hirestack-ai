@@ -26,8 +26,8 @@ class UpdateProgressRequest(BaseModel):
     status: Literal["pending", "in_progress", "completed"] = "pending"
 
 
-@limiter.limit("5/minute")
 @router.post("/roadmap")
+@limiter.limit("5/minute")
 async def generate_roadmap(
     request: Request,
     body: GenerateRoadmapRequest,
@@ -48,8 +48,8 @@ async def generate_roadmap(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred")
 
 
-@limiter.limit("5/minute")
 @router.get("/roadmaps")
+@limiter.limit("5/minute")
 async def list_roadmaps(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -59,8 +59,8 @@ async def list_roadmaps(
     return await service.get_user_roadmaps(current_user["id"])
 
 
-@limiter.limit("5/minute")
 @router.get("/roadmap/{roadmap_id}")
+@limiter.limit("5/minute")
 async def get_roadmap(
     request: Request,
     roadmap_id: str,
@@ -75,8 +75,8 @@ async def get_roadmap(
     return roadmap
 
 
-@limiter.limit("5/minute")
 @router.put("/roadmap/{roadmap_id}/progress")
+@limiter.limit("5/minute")
 async def update_progress(
     request: Request,
     roadmap_id: str,
@@ -94,8 +94,8 @@ async def update_progress(
     return {"message": "Progress updated"}
 
 
-@limiter.limit("5/minute")
 @router.delete("/roadmap/{roadmap_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/minute")
 async def delete_roadmap(
     request: Request,
     roadmap_id: str,
@@ -116,8 +116,8 @@ class CoachQuestionRequest(BaseModel):
     app_id: str
 
 
-@limiter.limit("5/minute")
 @router.post("/coach")
+@limiter.limit("5/minute")
 async def ask_coach(
     request: Request,
     req: CoachQuestionRequest,

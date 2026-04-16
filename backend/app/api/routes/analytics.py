@@ -18,8 +18,8 @@ class TrackEventRequest(BaseModel):
     event_data: Dict[str, Any] = Field(default_factory=dict)
 
 
-@limiter.limit("30/minute")
 @router.get("/dashboard")
+@limiter.limit("30/minute")
 async def get_dashboard(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -29,8 +29,8 @@ async def get_dashboard(
     return await service.get_dashboard(current_user["id"])
 
 
-@limiter.limit("30/minute")
 @router.get("/activity")
+@limiter.limit("30/minute")
 async def get_activity(
     request: Request,
     days: int = Query(30),
@@ -42,8 +42,8 @@ async def get_activity(
     return {"activity": activity}
 
 
-@limiter.limit("30/minute")
 @router.get("/progress")
+@limiter.limit("30/minute")
 async def get_progress(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -53,8 +53,8 @@ async def get_progress(
     return await service.get_progress(current_user["id"])
 
 
-@limiter.limit("30/minute")
 @router.post("/track")
+@limiter.limit("30/minute")
 async def track_event(
     request: Request,
     body: TrackEventRequest,
@@ -70,8 +70,8 @@ async def track_event(
     return {"status": "tracked"}
 
 
-@limiter.limit("30/minute")
 @router.get("/stats/applications")
+@limiter.limit("30/minute")
 async def get_application_stats(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -81,8 +81,8 @@ async def get_application_stats(
     return await service.get_application_stats(current_user["id"])
 
 
-@limiter.limit("5/minute")
 @router.get("/daily-briefing")
+@limiter.limit("5/minute")
 async def get_daily_briefing(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user),

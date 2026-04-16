@@ -165,6 +165,129 @@ to promote equitable outcomes. Return clean semantic HTML only.""",
     "conflict_of_interest_declaration": """You format professional conflict of interest declarations
 with proper legal structure. Include financial interests, professional relationships, and
 mitigation strategies. Return clean semantic HTML only.""",
+
+    # ── New document types (H2 additions) ───────────────────────────
+
+    "thirty_sixty_ninety_day_plan": """You are a strategic onboarding specialist. You create compelling
+30-60-90 Day Plans that show hiring managers exactly how the candidate will ramp up, deliver quick wins,
+and create lasting impact.
+
+DAYS 1-30 (Listen & Learn): Map the landscape, understand the team, absorb context, ask smart questions.
+DAYS 31-60 (Contribute & Build): First meaningful contributions, quick wins, build relationships and trust.
+DAYS 61-90 (Own & Lead): Take ownership of something meaningful, propose your first initiative,
+demonstrate judgment and strategic thinking.
+
+Use REAL company data from the intel provided: reference actual products, real team structures,
+known recent launches, and specific initiatives from the company intel digest. This is what
+makes a 30-60-90 plan stand out — not generic advice.
+
+Include specific deliverables, success metrics, and stakeholder mapping for each phase.
+Return clean semantic HTML only.""",
+
+    "capability_statement": """You are an expert in government contracting and procurement documents.
+You write concise, powerful capability statements used in formal vendor/consultant applications,
+government contracting, and procurement processes. A capability statement includes: core competencies,
+past performance highlights, differentiators, and company data/DUNS/cage code fields.
+Write in formal, precise language. Maximum 1 page. Return clean semantic HTML only.""",
+
+    "expression_of_interest": """You are an expert in public sector and formal organizational applications
+(Australian/UK/EU). You write compelling Expressions of Interest — more formal than a cover letter,
+structured as a proposal that demonstrates fit, capability, and genuine interest.
+Structure: opening statement → demonstrated capability → why this opportunity → what you bring.
+Tone: formal, structured, evidence-based. Return clean semantic HTML only.""",
+
+    "letter_of_intent": """You are an expert in US government, nonprofit, and foundation applications.
+You write compelling Letters of Intent that signal serious commitment before a formal application.
+A LOI is more formal than a cover letter — it outlines the applicant's intent, qualifications,
+and why they are the right choice. Tone: formal, direct, confident. Return clean semantic HTML only.""",
+
+    "interview_prep_guide": """You are a senior interview coach who has prepped hundreds of candidates
+for competitive roles. You create private interview preparation guides (NOT submitted to employer).
+Using the job description and company intel, generate:
+- 10 likely interview questions (behavioral, technical, situational) based on the JD and company
+- Suggested answer frameworks for each question using STAR method where appropriate
+- 3-5 smart questions to ask the interviewer using company intel (founder background, recent news, strategy)
+- Key themes to weave through all answers
+- Red flags to watch for from review intel
+This is the candidate's secret weapon. Make it specific to THIS role and THIS company.
+Return clean semantic HTML only.""",
+
+    "salary_negotiation_script": """You are a compensation negotiation expert. You create practical,
+word-for-word salary negotiation scripts. Include:
+- The opening line to use when an offer comes in
+- How to frame a counter-offer using market salary data
+- What to say if they push back
+- How to negotiate total comp (equity, signing bonus, benefits) not just base
+- Closing phrases that preserve the relationship
+Use any market salary intel available. Be specific and direct — this is a script, not advice.
+Return clean semantic HTML only.""",
+
+    "networking_email": """You are a professional networking coach and master of cold outreach.
+You write highly personalized networking emails to recruiters or hiring managers. Rules:
+- Open with something specific about them (their work, a talk, a press mention, a product launch)
+- State your genuine connection to their work in 1-2 sentences
+- Make a very specific, low-friction ask
+- Keep it under 200 words
+- Sound like a person, not a template
+Use founder intel, press intel, and company intel to personalize the opening.
+Return clean semantic HTML only.""",
+
+    "project_proposal": """You are a senior consultant who writes winning project proposals.
+You create structured proposals for consulting, freelance, and client-facing engagements. Include:
+- Executive Summary: the problem and your proposed solution
+- Scope of Work: what you will deliver and what's out of scope
+- Approach and Methodology: how you'll do the work
+- Timeline: realistic phase-by-phase plan
+- Investment: fee structure and payment terms
+- About You: relevant credentials and past success
+Professional, confident, specific. Return clean semantic HTML only.""",
+
+    "personal_website_brief": """You are a brand strategist and UX copywriter. You create structured
+personal website briefs that a candidate can hand to a web designer or use to build their own
+portfolio site. The brief includes:
+- Site purpose and target audience
+- Suggested page structure (Home, About, Work, Contact, etc.)
+- Key messages and positioning for each page
+- Content to include in each section
+- Tone, visual direction, and inspiration examples
+- Call-to-action for each page
+Return clean semantic HTML only.""",
+
+    "pitch_deck_bio_slide": """You are a pitch deck designer and executive communications specialist.
+You create one-slide speaker/executive biographies formatted exactly like a pitch deck slide:
+- Headline: name and title in large font
+- 2-3 bullet points of standout credentials
+- One key achievement with a number
+- One quote or personal mission statement
+- Professional photo placeholder description
+Minimal, punchy, designed to be read in 10 seconds. Return clean semantic HTML only.""",
+
+    "linkedin_recommendation_request": """You are a professional networking coach.
+You write tailored messages asking a specific colleague for a LinkedIn recommendation.
+The message should:
+- Open with a warm, personal reference to working together
+- Specify the type of recommendation needed (skills, leadership, etc.)
+- Give the colleague specific talking points so they know what to write
+- Keep it easy to say yes to — under 150 words
+- Sound like the candidate, not a template
+Return clean semantic HTML only.""",
+
+    "speaking_proposal": """You are a conference programming specialist and speaker coach.
+You write compelling speaking proposals for conference CFPs (Call for Proposals),
+developer advocacy applications, and academic conference submissions. Include:
+- Talk title (punchy, specific, action-oriented)
+- Abstract (150-200 words: hook, what attendees will learn, your unique angle)
+- 3-5 audience takeaways
+- Speaker bio (70 words — credentials + why you on this topic)
+- Technical level and target audience
+- Optional: session format preference (keynote, talk, workshop, panel)
+Return clean semantic HTML only.""",
+
+    "board_bio": """You are a board nomination specialist. You write concise, authoritative
+board-level biographies (150-200 words) for governance applications, advisory board nominations,
+and foundation appointments. Focus on: executive leadership impact, board governance experience,
+sector expertise, strategic value, and any public company / regulatory experience.
+Third person, authoritative, board-appropriate tone. Return clean semantic HTML only.""",
 }
 
 # ── Prompt template ──────────────────────────────────────────────────
@@ -257,8 +380,11 @@ class AdaptiveDocumentChain:
             extra_parts.append(f"KEY STRENGTHS:\n{context['strengths_summary']}")
         if context.get("benchmark_keywords"):
             extra_parts.append(f"TARGET KEYWORDS: {context['benchmark_keywords']}")
-        if context.get("company_intel"):
-            extra_parts.append(f"COMPANY INTELLIGENCE (use this to tailor content):\n{context['company_intel']}")
+
+        # ── Structured intel injection per doc type (H1-3) ─────────
+        company_intel_obj = context.get("company_intel_obj") or {}
+        intel_digest = context.get("company_intel_digest") or context.get("company_intel") or ""
+        extra_parts.extend(self._build_intel_context(doc_type, intel_digest, company_intel_obj))
 
         mode_instruction = BENCHMARK_INSTRUCTION if mode == "benchmark" else USER_INSTRUCTION
 
@@ -283,13 +409,14 @@ class AdaptiveDocumentChain:
         system = SYSTEM_PROMPTS.get(doc_type, SYSTEM_PROMPTS["cv"])
         max_tokens = self._get_max_tokens(doc_type)
         temperature = self._get_temperature(doc_type)
+        task_type = self._get_task_type(doc_type)
 
         result = await self.ai_client.complete(
             prompt=prompt,
             system=system,
             max_tokens=max_tokens,
             temperature=temperature,
-            task_type="reasoning",
+            task_type=task_type,
         )
 
         # Clean up: remove markdown code fences if present
@@ -300,21 +427,109 @@ class AdaptiveDocumentChain:
             result = result.rsplit("```", 1)[0]
         return result.strip()
 
+    def _build_intel_context(
+        self,
+        doc_type: str,
+        intel_digest: str,
+        company_intel_obj: dict,
+    ) -> list:
+        """Build per-document-type intel context snippets for prompt injection.
+
+        Uses the 150-word digest for general prompt efficiency and adds
+        doc-specific structured fields on top (H1-3 / H3-3).
+        """
+        parts = []
+        if intel_digest:
+            parts.append(f"APPLICATION STRATEGY DIGEST:\n{intel_digest}")
+
+        if not company_intel_obj:
+            return parts
+
+        if doc_type == "cv":
+            must_have = company_intel_obj.get("hiring_intelligence", {}).get("must_have_skills", [])
+            if must_have:
+                parts.append(
+                    "MUST-HAVE SKILLS CHECKLIST (verify all are present in CV):\n"
+                    + "\n".join(f"- {s}" for s in must_have)
+                )
+        elif doc_type == "cover_letter":
+            hooks = company_intel_obj.get("application_strategy", {}).get("cover_letter_hooks", [])
+            founder_pts = company_intel_obj.get("founder_intel", {}).get("talking_points", [])
+            if hooks:
+                parts.append("COVER LETTER HOOKS (choose one for opening):\n" + "\n".join(f"- {h}" for h in hooks[:3]))
+            if founder_pts:
+                parts.append("FOUNDER/LEADERSHIP TALKING POINTS:\n" + "\n".join(f"- {p}" for p in founder_pts[:3]))
+        elif doc_type in ("thirty_sixty_ninety_day_plan", "ninety_day_plan"):
+            co = company_intel_obj.get("company_overview", {})
+            rd = company_intel_obj.get("recent_developments", {})
+            ps = company_intel_obj.get("products_and_services", {})
+            press = company_intel_obj.get("press_intel", {})
+            if co.get("stage"):
+                parts.append(f"COMPANY STAGE: {co['stage']}")
+            if rd.get("news_highlights"):
+                parts.append("RECENT DEVELOPMENTS:\n" + "\n".join(f"- {n}" for n in rd["news_highlights"][:3]))
+            if press.get("last_6_months"):
+                parts.append("LAST 6 MONTHS PRESS:\n" + "\n".join(f"- {n}" for n in press["last_6_months"][:3]))
+            if ps.get("main_products"):
+                parts.append(f"PRODUCTS/SERVICES TO REFERENCE: {', '.join(ps['main_products'][:4])}")
+        elif doc_type == "interview_prep_guide":
+            hi = company_intel_obj.get("hiring_intelligence", {})
+            ri = company_intel_obj.get("review_intel", {})
+            if hi.get("interview_process"):
+                parts.append("KNOWN INTERVIEW STAGES:\n" + "\n".join(f"- {s}" for s in hi["interview_process"][:5]))
+            if ri.get("actual_interview_questions"):
+                parts.append("QUESTIONS REAL CANDIDATES REPORTED:\n" + "\n".join(f"- {q}" for q in ri["actual_interview_questions"][:5]))
+        elif doc_type == "networking_email":
+            fi = company_intel_obj.get("founder_intel", {})
+            pi = company_intel_obj.get("press_intel", {})
+            if fi.get("talking_points"):
+                parts.append("PERSONALIZATION HOOKS (founder/leader intel):\n" + "\n".join(f"- {p}" for p in fi["talking_points"][:2]))
+            if pi.get("last_6_months"):
+                parts.append("RECENT LAUNCHES TO REFERENCE:\n" + "\n".join(f"- {n}" for n in pi["last_6_months"][:2]))
+
+        return parts
+
     def _get_max_tokens(self, doc_type: str) -> int:
         large = {"cv", "publications_list", "portfolio", "selection_criteria", "case_study"}
-        medium = {"cover_letter", "personal_statement", "research_statement", "teaching_philosophy", "motivation_letter", "diversity_statement"}
-        small = {"executive_summary", "elevator_pitch", "references_list", "writing_sample"}
+        medium = {"cover_letter", "personal_statement", "research_statement", "teaching_philosophy", "motivation_letter", "diversity_statement", "thirty_sixty_ninety_day_plan", "ninety_day_plan", "interview_prep_guide", "project_proposal"}
+        # Short/formulaic docs — cap tightly for cost savings (H3)
+        short = {
+            "thank_you_note": 300,
+            "follow_up_email": 350,
+            "linkedin_recommendation_request": 350,
+            "elevator_pitch": 400,
+            "networking_email": 400,
+            "linkedin_summary": 500,
+            "references_list": 600,
+            "pitch_deck_bio_slide": 500,
+            "board_bio": 400,
+        }
+        small_legacy = {"executive_summary", "writing_sample", "salary_negotiation_script", "capability_statement", "expression_of_interest", "letter_of_intent"}
         if doc_type in large:
             return 8000
         if doc_type in medium:
             return 4000
-        if doc_type in small:
+        if doc_type in short:
+            return short[doc_type]
+        if doc_type in small_legacy:
             return 2000
         return 6000
 
+    def _get_task_type(self, doc_type: str) -> str:
+        """Route doc type to the appropriate model tier (H3 cost reduction)."""
+        # Flash tier — short, formulaic, low-stakes documents
+        fast_docs = {
+            "elevator_pitch", "references_list", "follow_up_email", "thank_you_note",
+            "linkedin_summary", "networking_email", "linkedin_recommendation_request",
+            "pitch_deck_bio_slide", "salary_negotiation_script",
+        }
+        if doc_type in fast_docs:
+            return "fast_doc"
+        return "quality_doc"
+
     def _get_temperature(self, doc_type: str) -> float:
-        creative = {"personal_statement", "elevator_pitch", "motivation_letter", "diversity_statement"}
-        precise = {"cv", "publications_list", "references_list", "selection_criteria"}
+        creative = {"personal_statement", "elevator_pitch", "motivation_letter", "diversity_statement", "networking_email", "speaking_proposal"}
+        precise = {"cv", "publications_list", "references_list", "selection_criteria", "capability_statement", "letter_of_intent"}
         if doc_type in creative:
             return 0.65
         if doc_type in precise:

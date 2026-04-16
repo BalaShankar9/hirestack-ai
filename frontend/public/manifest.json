@@ -1,0 +1,63 @@
+{
+  "name": "HireStack AI",
+  "short_name": "HireStack",
+  "description": "AI-powered career intelligence platform. Build interview-winning applications with 6 AI agents.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "background_color": "#080d1a",
+  "theme_color": "#6366f1",
+  "orientation": "any",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/opengraph-image",
+      "sizes": "1200x630",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "HireStack AI Dashboard"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New Application",
+      "short_name": "New App",
+      "description": "Create a new AI-powered application workspace",
+      "url": "/new",
+      "icons": [{ "src": "/favicon.ico", "sizes": "any" }]
+    },
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "View your career command center",
+      "url": "/dashboard",
+      "icons": [{ "src": "/favicon.ico", "sizes": "any" }]
+    },
+    {
+      "name": "ATS Scanner",
+      "short_name": "ATS",
+      "description": "Scan your resume for ATS compatibility",
+      "url": "/ats-scanner",
+      "icons": [{ "src": "/favicon.ico", "sizes": "any" }]
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
+}

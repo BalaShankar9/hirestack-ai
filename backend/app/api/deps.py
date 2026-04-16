@@ -30,15 +30,6 @@ async def get_token_from_header(
     return authorization.replace("Bearer ", "")
 
 
-DEV_USER: Dict[str, Any] = {
-    "uid": "00000000-0000-0000-0000-000000000000",
-    "id": "00000000-0000-0000-0000-000000000000",
-    "email": "dev@hirestack.local",
-    "full_name": "Dev User",
-    "is_active": True,
-}
-
-
 async def get_current_user(
     token: Optional[str] = Depends(get_token_from_header),
     db: SupabaseDB = Depends(get_db),
@@ -138,8 +129,11 @@ async def check_billing_limit(feature: str, current_user: Dict[str, Any]) -> Non
     try:
         allowed = await billing.check_limit(orgs[0]["id"], feature)
     except Exception as exc:
-        _billing_logger.warning("billing_check_failed", feature=feature, error=str(exc)[:200])
-        return  # Fail-open on billing service errors
+        _billing_logger.error("billing_check_failed", feature=feature, error=str(exc)[:200])
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Billing service is temporarily unavailable. Please try again.",
+        )
 
     if not allowed:
         raise HTTPException(

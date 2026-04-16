@@ -22,10 +22,10 @@ if (!IS_CONFIGURED && typeof window !== "undefined") {
 
 function createSupabaseClient(): SupabaseClient {
   if (!IS_CONFIGURED) {
-    // Use dummy values to avoid crash — all operations will fail gracefully
-    return createClient("https://placeholder.supabase.co", "placeholder", {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
+    throw new Error(
+      "[HireStack] FATAL: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set. " +
+      "The app cannot function without a valid Supabase configuration."
+    );
   }
   return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {

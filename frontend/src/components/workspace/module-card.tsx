@@ -45,6 +45,7 @@ export function ModuleCard({
   description,
   status,
   icon,
+  snippet,
   onOpen,
   onRegenerate,
 }: {
@@ -52,6 +53,8 @@ export function ModuleCard({
   description: string;
   status: ModuleStatus;
   icon: React.ReactNode;
+  /** Optional plain-text preview of the generated content shown when status is "ready". */
+  snippet?: string;
   onOpen?: () => void;
   onRegenerate?: () => void;
 }) {
@@ -101,6 +104,12 @@ export function ModuleCard({
       {status.state === "error" && status.error ? (
         <div className="mt-3 rounded-xl border border-rose-300/50 bg-rose-500/10 p-3 text-xs text-rose-700 animate-fade-in dark:border-rose-400/30 dark:text-rose-300">
           {status.error}
+        </div>
+      ) : null}
+
+      {status.state === "ready" && snippet ? (
+        <div className="mt-3 rounded-xl bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground leading-snug line-clamp-2 animate-fade-in" aria-label="Content preview">
+          {snippet}
         </div>
       ) : null}
 

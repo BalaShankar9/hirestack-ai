@@ -84,15 +84,19 @@ PLANNER_SYSTEM = """You are a senior career strategist who has reviewed 50,000+ 
 Given a job description and a catalog of available document types, you select the OPTIMAL document pack.
 
 Rules:
-1. Core documents (cv, cover_letter, personal_statement, portfolio) are ALWAYS included — do not list them.
+1. Core documents (cv, cover_letter, personal_statement, portfolio, elevator_pitch, linkedin_summary, follow_up_email, thank_you_note, references_list) are ALWAYS included — do not list them.
 2. From the catalog, pick documents that the JD explicitly or implicitly requires → "required" list.
 3. From the catalog, pick documents that would STRENGTHEN the application but aren't required → "optional" list.
 4. If the JD mentions documents not in the catalog, add them to "new_candidates".
 5. Every selection must include a concise "reason" explaining WHY for this specific job.
 6. Be selective — more required docs = more AI cost. Only add what genuinely helps.
-7. For government/public sector: selection_criteria is almost always required.
+7. For government/public sector: selection_criteria and capability_statement are almost always required.
 8. For academic: research_statement, teaching_philosophy usually required.
-9. For executive/senior: executive_summary, ninety_day_plan often required.
+9. For executive/senior roles: executive_summary often required.
+10. For ANY role where the JD mentions "lead", "own", "drive", "build", "manage", "grow", "responsible for", or "head of": include thirty_sixty_ninety_day_plan in required. Mid-level roles with these signals benefit enormously from a 30-60-90 plan as a differentiator. Note: this rule intentionally over-includes to maximize candidate differentiation — even IC roles with ownership language benefit from this document.
+11. For consulting/freelance/contract roles: project_proposal is required.
+12. For all roles: interview_prep_guide is optional but always beneficial — surface it.
+13. For developer advocate, academic, or conference-speaker roles: speaking_proposal is required.
 
 Return ONLY valid JSON."""
 
@@ -145,6 +149,12 @@ CORE_DOCS = [
     {"key": "cover_letter", "label": "Cover Letter", "priority": "critical"},
     {"key": "personal_statement", "label": "Personal Statement", "priority": "high"},
     {"key": "portfolio", "label": "Portfolio & Evidence", "priority": "high"},
+    # Extended core — always generated for every application (H2-1)
+    {"key": "elevator_pitch", "label": "Elevator Pitch", "priority": "high"},
+    {"key": "linkedin_summary", "label": "LinkedIn Summary", "priority": "high"},
+    {"key": "follow_up_email", "label": "Follow-Up Email", "priority": "medium"},
+    {"key": "thank_you_note", "label": "Interview Thank-You Note", "priority": "medium"},
+    {"key": "references_list", "label": "References List", "priority": "medium"},
 ]
 
 
@@ -205,26 +215,32 @@ class DocumentPackPlanner:
                     parts.append(f"Education: {latest.get('degree', '')} {latest.get('institution', '')}")
             profile_summary = " | ".join(parts) if parts else "Resume provided but minimal data extracted"
 
-        # Build company intel summary for the prompt
+        # Build company intel summary for the prompt — use digest if available (H1-2 / H3-3)
         company_intel_section = ""
         if company_intel:
-            intel_parts = []
-            hiring = company_intel.get("hiring_intelligence", {})
-            if hiring.get("must_have_skills"):
-                intel_parts.append(f"Must-have skills: {', '.join(str(s) for s in hiring['must_have_skills'][:10])}")
-            culture = company_intel.get("culture_and_values", {})
-            if culture.get("core_values"):
-                intel_parts.append(f"Core values: {', '.join(str(v) for v in culture['core_values'][:6])}")
-            strategy = company_intel.get("application_strategy", {})
-            if strategy.get("keywords_to_use"):
-                intel_parts.append(f"Keywords to target: {', '.join(str(k) for k in strategy['keywords_to_use'][:8])}")
-            tech = company_intel.get("tech_and_engineering", {})
-            if tech.get("tech_stack"):
-                intel_parts.append(f"Tech stack: {', '.join(str(t) for t in tech['tech_stack'][:8])}")
-            confidence = company_intel.get("confidence", "unknown")
-            intel_parts.append(f"Intel confidence: {confidence}")
-            if intel_parts:
-                company_intel_section = "\nCOMPANY INTELLIGENCE:\n" + "\n".join(intel_parts) + "\n"
+            digest = company_intel.get("application_strategy_digest", "")
+            if digest:
+                # Use the pre-generated 150-word digest — saves ~4,000 tokens vs full JSON
+                company_intel_section = f"\nAPPLICATION STRATEGY DIGEST:\n{digest}\n"
+            else:
+                # Fallback: build a brief summary from structured fields
+                intel_parts = []
+                hiring = company_intel.get("hiring_intelligence", {})
+                if hiring.get("must_have_skills"):
+                    intel_parts.append(f"Must-have skills: {', '.join(str(s) for s in hiring['must_have_skills'][:10])}")
+                culture = company_intel.get("culture_and_values", {})
+                if culture.get("core_values"):
+                    intel_parts.append(f"Core values: {', '.join(str(v) for v in culture['core_values'][:6])}")
+                strategy = company_intel.get("application_strategy", {})
+                if strategy.get("keywords_to_use"):
+                    intel_parts.append(f"Keywords to target: {', '.join(str(k) for k in strategy['keywords_to_use'][:8])}")
+                tech = company_intel.get("tech_and_engineering", {})
+                if tech.get("tech_stack"):
+                    intel_parts.append(f"Tech stack: {', '.join(str(t) for t in tech['tech_stack'][:8])}")
+                confidence = company_intel.get("confidence", "unknown")
+                intel_parts.append(f"Intel confidence: {confidence}")
+                if intel_parts:
+                    company_intel_section = "\nCOMPANY INTELLIGENCE:\n" + "\n".join(intel_parts) + "\n"
 
         prompt = PLANNER_PROMPT.format(
             job_title=job_title or "Not specified",
@@ -241,7 +257,7 @@ class DocumentPackPlanner:
                 system=PLANNER_SYSTEM,
                 max_tokens=2000,
                 temperature=0.2,
-                task_type="reasoning",
+                task_type="fast_doc",  # Doc planning is a classification task — use Flash
             )
             return self._parse_plan(result)
         except Exception as e:

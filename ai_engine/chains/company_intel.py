@@ -14,6 +14,12 @@ from typing import Dict, Any, Optional, Callable, Awaitable
 import httpx
 import structlog
 
+# New intel sub-agents
+from ai_engine.agents.sub_agents.role_intel_agent import RoleIntelSubAgent
+from ai_engine.agents.sub_agents.founder_intel_agent import FounderIntelSubAgent
+from ai_engine.agents.sub_agents.press_intel_agent import PressIntelSubAgent
+from ai_engine.agents.sub_agents.review_intel_agent import ReviewIntelSubAgent
+
 logger = structlog.get_logger()
 
 
@@ -155,6 +161,32 @@ Return the same comprehensive JSON format, but mark confidence appropriately.
 Fields you cannot determine should be "Unknown" or empty arrays."""
 
 
+# ── Application Strategy Digest prompt ──────────────────────────────
+
+DIGEST_SYSTEM = """You are a senior recruiter who distils complex company intelligence into a crisp,
+actionable brief for a job applicant. Be direct, concrete, and specific."""
+
+DIGEST_PROMPT = """Given this company intelligence report, produce a 150-word Application Strategy Digest.
+
+INTEL REPORT (summary):
+Company: {company}
+Role: {job_title}
+Industry: {industry}
+Stage: {stage}
+Keywords to use: {keywords}
+Cover letter hooks: {hooks}
+Things to avoid: {avoid}
+Must-have skills: {must_have}
+Recent news: {news}
+Founder/Leadership insight: {founder_insight}
+Review insight: {review_insight}
+
+Write exactly this structure (no headers, pure prose):
+"[COMPANY SIGNAL 1] [COMPANY SIGNAL 2] [COMPANY SIGNAL 3] Keywords to use: [KEYWORD1, KEYWORD2, KEYWORD3, KEYWORD4, KEYWORD5]. Avoid: [THING1, THING2]. Hook: [ONE COMPELLING COVER LETTER OPENING SENTENCE USING FOUNDER OR PRESS INTEL]."
+
+Keep it under 160 words. Be specific, not generic."""
+
+
 class CompanyIntelChain:
     """Multi-source intelligence gathering for target companies."""
 
@@ -181,7 +213,7 @@ class CompanyIntelChain:
                 source="recon",
             )
 
-            # Run all data gathering in parallel
+            # Run all data gathering in parallel — website + GitHub + careers + 4 new sub-agents
             web_task = self._gather_website_data(company, company_url)
             github_task = self._gather_github_data(company)
             careers_task = self._gather_careers_data(company, company_url)
@@ -195,10 +227,34 @@ class CompanyIntelChain:
                     metadata={"signals": jd_signals},
                 )
 
-            web_data, github_data, careers_data = await asyncio.gather(
+            sub_context = {
+                "company_name": company,
+                "company": company,
+                "job_title": job_title,
+                "jd_text": jd_text,
+            }
+            role_agent = RoleIntelSubAgent(self.ai_client)
+            founder_agent = FounderIntelSubAgent(self.ai_client)
+            press_agent = PressIntelSubAgent(self.ai_client)
+            review_agent = ReviewIntelSubAgent(self.ai_client)
+
+            (
+                web_data, github_data, careers_data,
+                role_result, founder_result, press_result, review_result,
+            ) = await asyncio.gather(
                 web_task, github_task, careers_task,
+                role_agent.run(sub_context),
+                founder_agent.run(sub_context),
+                press_agent.run(sub_context),
+                review_agent.run(sub_context),
                 return_exceptions=True,
             )
+
+            # Tolerate sub-agent failures gracefully
+            role_data = role_result.data if not isinstance(role_result, Exception) and role_result.ok else {}
+            founder_data = founder_result.data if not isinstance(founder_result, Exception) and founder_result.ok else {}
+            press_data = press_result.data if not isinstance(press_result, Exception) and press_result.ok else {}
+            review_data = review_result.data if not isinstance(review_result, Exception) and review_result.ok else {}
 
             # Handle exceptions
             if isinstance(web_data, Exception):
@@ -288,6 +344,66 @@ class CompanyIntelChain:
                 "github_data": has_github,
                 "careers_page": has_careers,
             }
+
+            # ── Enrich result with new sub-agent data ──────────────
+            if role_data:
+                result["role_intel"] = role_data
+                data_sources.append("Role benchmark research")
+            if founder_data:
+                result["founder_intel"] = founder_data
+                if founder_data.get("talking_points"):
+                    result["application_strategy"].setdefault("founder_talking_points", founder_data["talking_points"])
+                data_sources.append("Leadership / founder research")
+            if press_data:
+                result["press_intel"] = press_data
+                if press_data.get("last_6_months"):
+                    result.setdefault("recent_developments", {})["press_highlights"] = press_data["last_6_months"][:3]
+                data_sources.append("Press / PR research")
+            if review_data:
+                result["review_intel"] = review_data
+                if review_data.get("actual_interview_questions"):
+                    result["hiring_intelligence"]["actual_interview_questions"] = review_data["actual_interview_questions"]
+                if review_data.get("culture_red_flags"):
+                    result["culture_and_values"].setdefault("red_flags", []).extend(review_data["culture_red_flags"])
+                data_sources.append("Employee reviews (Glassdoor/Indeed/Blind)")
+
+            # ── Generate 150-word Application Strategy Digest ──────
+            try:
+                news_highlights = (
+                    result.get("recent_developments", {}).get("news_highlights", [])
+                    + result.get("recent_developments", {}).get("press_highlights", [])
+                )
+                digest = await self.ai_client.complete(
+                    prompt=DIGEST_PROMPT.format(
+                        company=company,
+                        job_title=job_title,
+                        industry=result.get("company_overview", {}).get("industry", ""),
+                        stage=result.get("company_overview", {}).get("stage", "Unknown"),
+                        keywords=", ".join(result.get("application_strategy", {}).get("keywords_to_use", [])[:8]),
+                        hooks="; ".join(result.get("application_strategy", {}).get("cover_letter_hooks", [])[:2]),
+                        avoid="; ".join(result.get("application_strategy", {}).get("things_to_avoid", [])[:2]),
+                        must_have=", ".join(result.get("hiring_intelligence", {}).get("must_have_skills", [])[:5]),
+                        news="; ".join(str(n) for n in news_highlights[:2]),
+                        founder_insight="; ".join(founder_data.get("talking_points", [])[:1]),
+                        review_insight="; ".join(review_data.get("actual_interview_questions", [])[:1]),
+                    ),
+                    system=DIGEST_SYSTEM,
+                    max_tokens=250,
+                    temperature=0.3,
+                    task_type="structured_output",
+                )
+                result["application_strategy_digest"] = digest.strip()
+            except Exception as digest_err:
+                logger.warning("digest_generation_failed", error=str(digest_err)[:200])
+                # Build a minimal digest from available data
+                keywords = result.get("application_strategy", {}).get("keywords_to_use", [])[:5]
+                avoid = result.get("application_strategy", {}).get("things_to_avoid", [])[:2]
+                result["application_strategy_digest"] = (
+                    f"{company} is a {result.get('company_overview', {}).get('stage', 'company')} "
+                    f"in {result.get('company_overview', {}).get('industry', 'the industry')}. "
+                    f"Keywords to use: {', '.join(keywords)}. "
+                    f"{'Avoid: ' + ', '.join(avoid) + '.' if avoid else ''}"
+                )
 
             await self._emit_event(
                 status="completed",
@@ -678,4 +794,5 @@ class CompanyIntelChain:
                 "questions_to_ask": [],
             },
             "confidence": "low",
+            "application_strategy_digest": f"Limited intel for {company}. Focus on JD keywords and your direct experience.",
         }

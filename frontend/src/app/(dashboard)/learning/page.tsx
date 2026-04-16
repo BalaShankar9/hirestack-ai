@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useAuth } from "@/components/providers";
+import { useApplications } from "@/lib/firestore";
 import api from "@/lib/api";
 import type { LearningChallenge, LearningStreak } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -61,9 +62,44 @@ function StreakCard({ streak }: { streak: LearningStreak | null }) {
 
 export default function LearningPage() {
   const { user, session: authSession } = useAuth();
+  const userId = user?.id ?? null;
   const [streak, setStreak] = useState<LearningStreak | null>(null);
   const [profileSkills, setProfileSkills] = useState<string[]>([]);
   const [profileReady, setProfileReady] = useState(false);
+
+  // Load application gaps for personalized learning resources (H6-learning)
+  const { data: apps = [] } = useApplications(userId, 50);
+  const appGaps = useMemo(() => {
+    const allGaps: { skill: string; severity: string; resources: any[]; appTitle: string }[] = [];
+    const getSeverityOrder = (sev: string) =>
+      ({ critical: 0, major: 1, moderate: 2, minor: 3 }[sev] ?? 99);
+
+    apps.forEach(app => {
+      const gaps = app.gaps as any;
+      const structured = gaps?.skill_gaps ?? gaps?.skillGaps ?? [];
+      if (Array.isArray(structured)) {
+        structured.forEach((g: any) => {
+          if (g?.skill && Array.isArray(g.learning_resources) && g.learning_resources.length > 0) {
+            allGaps.push({
+              skill: g.skill,
+              severity: g.gap_severity || "moderate",
+              resources: g.learning_resources.slice(0, 3),
+              appTitle: (app.confirmedFacts?.jobTitle || app.title || "") + (app.confirmedFacts?.company ? ` @ ${app.confirmedFacts.company}` : ""),
+            });
+          }
+        });
+      }
+    });
+    // Deduplicate by skill, keep highest severity
+    const bySkill: Record<string, typeof allGaps[0]> = {};
+    allGaps.forEach(g => {
+      const key = g.skill.toLowerCase();
+      if (!bySkill[key] || getSeverityOrder(g.severity) < getSeverityOrder(bySkill[key].severity)) {
+        bySkill[key] = g;
+      }
+    });
+    return Object.values(bySkill).slice(0, 8);
+  }, [apps]);
 
   // Load profile skills for personalized challenges
   useEffect(() => {
@@ -167,6 +203,54 @@ export default function LearningPage() {
 
       {/* Streak card */}
       <StreakCard streak={streak} />
+
+      {/* Application Gaps with Learning Resources (H6-learning) */}
+      {appGaps.length > 0 && (
+        <div className="rounded-2xl border bg-card overflow-hidden">
+          <div className="px-5 py-3 border-b bg-muted/30 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Target className="h-4 w-4 text-primary" />
+              <span className="font-semibold text-sm">Skills to Close — From Your Applications</span>
+            </div>
+            <Link href="/gaps" className="text-xs text-primary hover:underline flex items-center gap-1">
+              View all gaps <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
+          <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            {appGaps.map((gap, i) => (
+              <div key={i} className="rounded-xl border bg-background/60 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-sm">{gap.skill}</span>
+                  <Badge variant="outline" className={cn(
+                    "text-2xs capitalize",
+                    gap.severity === "critical" ? "border-red-500/30 text-red-600" :
+                    gap.severity === "major" ? "border-orange-500/30 text-orange-600" :
+                    "border-amber-500/30 text-amber-600"
+                  )}>{gap.severity}</Badge>
+                </div>
+                <p className="text-2xs text-muted-foreground">From: {gap.appTitle}</p>
+                <div className="space-y-1.5">
+                  {gap.resources.map((r: any, j: number) => (
+                    <a
+                      key={j}
+                      href={r.url || "#"}
+                      target={r.url && r.url !== "#" ? "_blank" : undefined}
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 px-2.5 py-1.5 hover:bg-muted transition-colors group text-xs"
+                    >
+                      <span className="truncate group-hover:text-primary transition-colors">{r.title}</span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {r.is_free && <Badge variant="outline" className="text-2xs px-1 py-0 border-emerald-500/30 text-emerald-600">Free</Badge>}
+                        <span className="text-muted-foreground/50 text-2xs">{r.platform}</span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {error && <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
 

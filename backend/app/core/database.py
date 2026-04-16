@@ -55,8 +55,8 @@ def close_supabase() -> None:
                     loop.create_task(session.aclose())
                 except RuntimeError:
                     pass  # No running loop — transport will be GC'd
-    except Exception:
-        pass
+    except (AttributeError, TypeError) as exc:
+        logger.debug("close_supabase minor error: %s", str(exc)[:100])
     _supabase_client = None
     logger.info("Supabase client released")
 
@@ -335,7 +335,7 @@ class SupabaseDB:
         except Exception as e:
             if self._is_table_missing_error(e):
                 logger.error("table_missing_on_create: table=%s error=%s", table, str(e)[:200])
-                return None  # Callers must handle None — no more fake IDs
+                raise RuntimeError(f"Database table '{table}' does not exist. Run migrations first.") from e
             raise
 
     async def get(self, table: str, doc_id: str) -> Optional[Dict[str, Any]]:
@@ -351,8 +351,8 @@ class SupabaseDB:
             return await self._run(_get)
         except Exception as e:
             if self._is_table_missing_error(e):
-                logger.warning("table_missing_on_get: %s", table)
-                return None
+                logger.error("table_missing_on_get: table=%s error=%s", table, str(e)[:200])
+                raise RuntimeError(f"Database table '{table}' does not exist. Run migrations first.") from e
             raise
 
     async def update(self, table: str, doc_id: str, data: Dict[str, Any]) -> bool:
@@ -402,8 +402,8 @@ class SupabaseDB:
             return True
         except Exception as e:
             if self._is_table_missing_error(e):
-                logger.warning("table_missing_on_delete_where: %s", table)
-                return True
+                logger.error("table_missing_on_delete_where: table=%s error=%s", table, str(e)[:200])
+                raise RuntimeError(f"Database table '{table}' does not exist. Run migrations first.") from e
             raise
 
     async def query(
@@ -450,8 +450,8 @@ class SupabaseDB:
             return await self._run(_q)
         except Exception as e:
             if self._is_table_missing_error(e):
-                logger.warning("table_missing_on_query: %s", table)
-                return []
+                logger.error("table_missing_on_query: table=%s error=%s", table, str(e)[:200])
+                raise RuntimeError(f"Database table '{table}' does not exist. Run migrations first.") from e
             raise
 
     # ── User helpers ─────────────────────────────────────────────────────

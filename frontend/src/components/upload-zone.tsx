@@ -46,8 +46,25 @@ export function UploadZone({
     [maxSize]
   )
 
+  const onDropRejected = useCallback(
+    (rejectedFiles: import("react-dropzone").FileRejection[]) => {
+      const first = rejectedFiles[0]
+      if (!first) return
+      const errorCode = first.errors[0]?.code
+      if (errorCode === "file-invalid-type") {
+        setError("Unsupported file type. Please upload a PDF, DOC, or DOCX file.")
+      } else if (errorCode === "file-too-large") {
+        setError(`File is too large. Maximum size is ${maxSize / 1024 / 1024} MB.`)
+      } else {
+        setError(first.errors[0]?.message ?? "File rejected. Please try a different file.")
+      }
+    },
+    [maxSize]
+  )
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    onDropRejected,
     accept,
     maxFiles: 1,
     maxSize,

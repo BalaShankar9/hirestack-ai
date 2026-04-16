@@ -1,21 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
-/** Safely coerce any DB value to a renderable string — handles both
- *  plain strings and legacy object shapes (e.g. {dimension, indicators}). */
-function toLabel(v: unknown, fallback = ""): string {
-  if (typeof v === "string") return v;
-  if (v && typeof v === "object") {
-    // pick the first string-valued key we find
-    const obj = v as Record<string, unknown>;
-    for (const k of ["dimension", "title", "name", "area", "description", "gap", "suggestion", "label"]) {
-      if (typeof obj[k] === "string") return obj[k] as string;
-    }
-    return JSON.stringify(v);
-  }
-  return String(v ?? fallback);
-}
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
@@ -132,8 +117,29 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+/** Safely coerce any DB value to a renderable string — handles both
+ *  plain strings and legacy object shapes (e.g. {dimension, indicators}). */
+function toLabel(v: unknown, fallback = ""): string {
+  if (typeof v === "string") return v;
+  if (v && typeof v === "object") {
+    const obj = v as Record<string, unknown>;
+    for (const k of ["dimension", "title", "name", "area", "description", "gap", "suggestion", "label"]) {
+      if (typeof obj[k] === "string") return obj[k] as string;
+    }
+    return JSON.stringify(v);
+  }
+  return String(v ?? fallback);
+}
+
 function stripHtml(html: string) {
   return (html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Return up to `maxChars` plain-text characters from an HTML string for card previews. */
+function htmlSnippet(html: string, maxChars = 120): string {
+  const text = stripHtml(html);
+  if (!text) return "";
+  return text.length > maxChars ? text.slice(0, maxChars) + "…" : text;
 }
 
 function escapeHtml(text: string) {
@@ -199,6 +205,7 @@ export default function ApplicationWorkspacePage() {
   const [exporting, setExporting] = useState(false);
   const [regeneratingModule, setRegeneratingModule] = useState<string | null>(null);
   const [regeneratingAll, setRegeneratingAll] = useState(false);
+  const [regenConfirm, setRegenConfirm] = useState<{ module: ModuleKey; label: string } | null>(null);
   const [liveProgress, setLiveProgress] = useState<number>(0);
   const [generatingDocKey, setGeneratingDocKey] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -480,6 +487,17 @@ export default function ApplicationWorkspacePage() {
 
   const regenerate = async (module: ModuleKey) => {
     if (!user || !app || regeneratingModule || regeneratingAll) return;
+    // Show confirmation before firing a costly AI call
+    const moduleLabel: Record<string, string> = {
+      benchmark: "Company Benchmark", gaps: "Gap Analysis", cv: "CV", coverLetter: "Cover Letter",
+      personalStatement: "Personal Statement", portfolio: "Portfolio", learningPlan: "Learning Plan",
+    };
+    setRegenConfirm({ module, label: moduleLabel[module] ?? module });
+  };
+
+  const doRegenerate = async (module: ModuleKey) => {
+    if (!user || !app) return;
+    setRegenConfirm(null);
     setRegeneratingModule(module);
     try {
       await regenerateModule({
@@ -488,12 +506,17 @@ export default function ApplicationWorkspacePage() {
         module,
         evidenceCount: evidence.length,
       });
-      toast.success("Regenerated!", `${module} has been regenerated with fresh AI content.`);
+      toast.success("Regenerated!", `${moduleLabel[module] ?? module} has been regenerated with fresh AI content.`);
     } catch (err: any) {
       toast.error("Regeneration failed", err?.message ?? "Make sure the backend is running and try again.");
     } finally {
       setRegeneratingModule(null);
     }
+  };
+
+  const moduleLabel: Record<string, string> = {
+    benchmark: "Company Benchmark", gaps: "Gap Analysis", cv: "CV", coverLetter: "Cover Letter",
+    personalStatement: "Personal Statement", portfolio: "Portfolio", learningPlan: "Learning Plan",
   };
 
   const regenerateAll = async () => {
@@ -877,6 +900,7 @@ export default function ApplicationWorkspacePage() {
                       description="Ideal candidate signal + rubric"
                       status={modStatus("benchmark")}
                       icon={<Target className="h-5 w-5" />}
+                      snippet={app.benchmark?.summary ? htmlSnippet(String(app.benchmark.summary)) : undefined}
                       onOpen={() => setTab("benchmark")}
                       onRegenerate={() => regenerate("benchmark")}
                     />
@@ -885,6 +909,7 @@ export default function ApplicationWorkspacePage() {
                       description="Missing keywords + recommendations"
                       status={modStatus("gaps")}
                       icon={<Layers className="h-5 w-5" />}
+                      snippet={app.gaps?.summary ? htmlSnippet(String(app.gaps.summary)) : undefined}
                       onOpen={() => setTab("gaps")}
                       onRegenerate={() => regenerate("gaps")}
                     />
@@ -900,6 +925,7 @@ export default function ApplicationWorkspacePage() {
                       description="Edit, diff, version, iterate"
                       status={modStatus("cv")}
                       icon={<FileText className="h-5 w-5" />}
+                      snippet={cvLocal ? htmlSnippet(cvLocal) : undefined}
                       onOpen={() => setTab("cv")}
                       onRegenerate={() => regenerate("cv")}
                     />
@@ -908,6 +934,7 @@ export default function ApplicationWorkspacePage() {
                       description="Evidence-first narrative"
                       status={modStatus("coverLetter")}
                       icon={<FileText className="h-5 w-5" />}
+                      snippet={clLocal ? htmlSnippet(clLocal) : undefined}
                       onOpen={() => setTab("cover")}
                       onRegenerate={() => regenerate("coverLetter")}
                     />
@@ -916,6 +943,7 @@ export default function ApplicationWorkspacePage() {
                       description="Compelling motivation narrative"
                       status={modStatus("personalStatement")}
                       icon={<PenTool className="h-5 w-5" />}
+                      snippet={psLocal ? htmlSnippet(psLocal) : undefined}
                       onOpen={() => setTab("statement")}
                       onRegenerate={() => regenerate("personalStatement")}
                     />
@@ -924,6 +952,7 @@ export default function ApplicationWorkspacePage() {
                       description="Proof of knowledge + projects"
                       status={modStatus("portfolio")}
                       icon={<FolderOpen className="h-5 w-5" />}
+                      snippet={portfolioLocal ? htmlSnippet(portfolioLocal) : undefined}
                       onOpen={() => setTab("portfolio")}
                       onRegenerate={() => regenerate("portfolio")}
                     />
@@ -939,6 +968,7 @@ export default function ApplicationWorkspacePage() {
                       description="Skill sprints + outcomes practice"
                       status={modStatus("learningPlan")}
                       icon={<GraduationCap className="h-5 w-5" />}
+                      snippet={app.learningPlan?.focus?.length ? htmlSnippet((app.learningPlan.focus as string[]).join(", ")) : undefined}
                       onOpen={() => setTab("learning")}
                       onRegenerate={() => regenerate("learningPlan")}
                     />
@@ -2172,6 +2202,26 @@ export default function ApplicationWorkspacePage() {
           await restoreDocVersion(appId, versionsTarget, versionId);
         }}
       />
+
+      {/* Regeneration confirmation dialog */}
+      <Dialog open={!!regenConfirm} onOpenChange={(o) => !o && setRegenConfirm(null)}>
+        <DialogContent className="sm:max-w-sm rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Regenerate {regenConfirm?.label}?</DialogTitle>
+            <DialogDescription>
+              This will replace the current version with fresh AI content. Your previous version will be saved in{" "}
+              <span className="font-medium text-foreground">Version History</span> so you can restore it if needed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" className="rounded-xl" onClick={() => setRegenConfirm(null)}>Cancel</Button>
+            <Button className="rounded-xl gap-2" onClick={() => regenConfirm && doRegenerate(regenConfirm.module)}>
+              <RefreshCw className="h-4 w-4" />
+              Regenerate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete workspace confirmation dialog */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>

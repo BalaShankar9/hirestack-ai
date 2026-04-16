@@ -96,6 +96,7 @@ def _mock_all_chains():
 def _wire_happy_path_mocks(
     MockProfiler, MockBenchmark, MockGap, MockDocGen,
     MockConsultant, MockValidator, MockDiscovery, MockIntel,
+    MockAdaptive=None,
 ):
     """Set up all chain mocks for the happy path."""
     MockProfiler.return_value.parse_resume = AsyncMock(return_value=SAMPLE_PROFILE)
@@ -127,6 +128,8 @@ def _wire_happy_path_mocks(
         "application_strategy": {"keywords_to_use": ["Python"]},
         "culture_and_values": {"core_values": ["innovation"]},
     })
+    if MockAdaptive is not None:
+        MockAdaptive.return_value.generate = AsyncMock(return_value="<p>Extra doc</p>")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -147,12 +150,13 @@ async def test_generate_pipeline_returns_structured_response(aclient):
         patch("ai_engine.chains.career_consultant.CareerConsultantChain") as MockConsultant,
         patch("ai_engine.chains.validator.ValidatorChain") as MockValidator,
         patch("ai_engine.chains.document_discovery.DocumentDiscoveryChain") as MockDiscovery,
-        patch("ai_engine.chains.adaptive_document.AdaptiveDocumentChain"),
+        patch("ai_engine.chains.adaptive_document.AdaptiveDocumentChain") as MockAdaptive,
         patch("ai_engine.chains.company_intel.CompanyIntelChain") as MockIntel,
+        patch("app.services.document_catalog.discover_and_observe", new_callable=AsyncMock, return_value=None),
     ):
         _wire_happy_path_mocks(
             MockProfiler, MockBenchmark, MockGap, MockDocGen,
-            MockConsultant, MockValidator, MockDiscovery, MockIntel,
+            MockConsultant, MockValidator, MockDiscovery, MockIntel, MockAdaptive,
         )
 
         resp = await aclient.post(
@@ -263,12 +267,13 @@ async def test_generate_pipeline_survives_partial_failure(aclient):
         patch("ai_engine.chains.career_consultant.CareerConsultantChain") as MockConsultant,
         patch("ai_engine.chains.validator.ValidatorChain") as MockValidator,
         patch("ai_engine.chains.document_discovery.DocumentDiscoveryChain") as MockDiscovery,
-        patch("ai_engine.chains.adaptive_document.AdaptiveDocumentChain"),
+        patch("ai_engine.chains.adaptive_document.AdaptiveDocumentChain") as MockAdaptive,
         patch("ai_engine.chains.company_intel.CompanyIntelChain") as MockIntel,
+        patch("app.services.document_catalog.discover_and_observe", new_callable=AsyncMock, return_value=None),
     ):
         _wire_happy_path_mocks(
             MockProfiler, MockBenchmark, MockGap, MockDocGen,
-            MockConsultant, MockValidator, MockDiscovery, MockIntel,
+            MockConsultant, MockValidator, MockDiscovery, MockIntel, MockAdaptive,
         )
         # Cover letter FAILS
         MockDocGen.return_value.generate_tailored_cover_letter = AsyncMock(
@@ -462,12 +467,13 @@ async def test_partial_failure_reports_failed_modules(aclient):
         patch("ai_engine.chains.career_consultant.CareerConsultantChain") as MockConsultant,
         patch("ai_engine.chains.validator.ValidatorChain") as MockValidator,
         patch("ai_engine.chains.document_discovery.DocumentDiscoveryChain") as MockDiscovery,
-        patch("ai_engine.chains.adaptive_document.AdaptiveDocumentChain"),
+        patch("ai_engine.chains.adaptive_document.AdaptiveDocumentChain") as MockAdaptive,
         patch("ai_engine.chains.company_intel.CompanyIntelChain") as MockIntel,
+        patch("app.services.document_catalog.discover_and_observe", new_callable=AsyncMock, return_value=None),
     ):
         _wire_happy_path_mocks(
             MockProfiler, MockBenchmark, MockGap, MockDocGen,
-            MockConsultant, MockValidator, MockDiscovery, MockIntel,
+            MockConsultant, MockValidator, MockDiscovery, MockIntel, MockAdaptive,
         )
         # Cover letter FAILS
         MockDocGen.return_value.generate_tailored_cover_letter = AsyncMock(

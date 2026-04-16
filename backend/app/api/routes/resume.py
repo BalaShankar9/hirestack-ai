@@ -5,8 +5,6 @@ The frontend owns Supabase Auth; the backend verifies the token and
 provides server-side helpers (e.g. PDF parsing) for reliability.
 """
 
-from __future__ import annotations
-
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status

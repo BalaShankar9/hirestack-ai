@@ -41,8 +41,8 @@ async def _get_user_org(current_user: Dict[str, Any]) -> Dict[str, Any]:
     return orgs[0]
 
 
-@limiter.limit("30/minute")
 @router.get("")
+@limiter.limit("30/minute")
 async def list_candidates(
     request: Request,
     stage: Optional[str] = Query(None),
@@ -53,8 +53,8 @@ async def list_candidates(
     return await service.list(org["id"], stage=stage)
 
 
-@limiter.limit("30/minute")
 @router.post("")
+@limiter.limit("30/minute")
 async def create_candidate(
     request: Request,
     req: CreateCandidateRequest,
@@ -66,8 +66,8 @@ async def create_candidate(
     return await service.create(org["id"], req.model_dump(), current_user["id"])
 
 
-@limiter.limit("30/minute")
 @router.get("/stats")
+@limiter.limit("30/minute")
 async def pipeline_stats(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -76,8 +76,8 @@ async def pipeline_stats(
     return await service.get_pipeline_stats(org["id"])
 
 
-@limiter.limit("30/minute")
 @router.get("/{candidate_id}")
+@limiter.limit("30/minute")
 async def get_candidate(
     request: Request,
     candidate_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -105,8 +105,8 @@ class UpdateCandidateRequest(BaseModel):
     status: Optional[str] = Field(None, max_length=50)
 
 
-@limiter.limit("30/minute")
 @router.put("/{candidate_id}")
+@limiter.limit("30/minute")
 async def update_candidate(
     request: Request,
     candidate_id: str, data: UpdateCandidateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
@@ -119,8 +119,8 @@ async def update_candidate(
     return updated
 
 
-@limiter.limit("30/minute")
 @router.post("/{candidate_id}/move")
+@limiter.limit("30/minute")
 async def move_candidate(
     request: Request,
     candidate_id: str, req: MoveStageRequest, current_user: Dict[str, Any] = Depends(get_current_user
@@ -137,8 +137,8 @@ async def move_candidate(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@limiter.limit("30/minute")
 @router.delete("/{candidate_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("30/minute")
 async def delete_candidate(
     request: Request,
     candidate_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
