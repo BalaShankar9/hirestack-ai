@@ -242,15 +242,15 @@ Auth enforcement happens client-side only (Supabase stores sessions in `localSto
 | Frontend tsc --noEmit | ✅ 0 errors |
 | Frontend ESLint (--max-warnings=0) | ✅ 0 warnings or errors |
 | Frontend vitest | ✅ 22/22 files, 184/184 tests pass |
-| Backend pytest (unit + integration) | ✅ 841 passed, 3 skipped, 0 failed |
+| Backend pytest | ✅ 844 passed, 0 failed, 0 skipped |
 
 ### Test suite improvement
 
-| Metric | Before this pass | After this pass |
+| Metric | Before this pass | After this pass (final) |
 |--------|-----------------|-----------------|
 | Backend failures | 105 | 0 |
-| Backend passes | 739 | 841 |
-| Backend skipped | 0 | 3 (clearly documented) |
+| Backend passes | 739 | 844 |
+| Backend skipped | 0 | 0 |
 | Frontend passes | 184 | 184 |
 
 ---
@@ -267,7 +267,7 @@ Auth enforcement happens client-side only (Supabase stores sessions in `localSto
 | `.github/workflows/ci.yml` | Replaced mypy `\|\| true` with 120-error soft cap |
 | `.github/workflows/deploy.yml.disabled` | Health check now fails hard instead of echoing |
 | `backend/tests/conftest.py` | Always force JWT-format Supabase keys in test env |
-| `backend/tests/test_generate_smoke.py` | Skip 3 stale smoke tests with clear reason |
+| `backend/tests/test_generate_smoke.py` | Fix 3 smoke tests: patch discover_and_observe, wire AdaptiveDocumentChain |
 | `backend/tests/unit/test_document_pack_planner.py` | Update 3 stale CORE_DOCS assertions |
 | `backend/tests/unit/test_gap_fixes.py` | Update 2 stale CORE_DOCS assertions |
 | `docs/release-promotion-report.md` | This file (new) |
@@ -276,12 +276,11 @@ Auth enforcement happens client-side only (Supabase stores sessions in `localSto
 
 ## 6. Remaining Non-Blocking Risks
 
-1. **3 smoke tests skipped** — `test_generate_pipeline_*` smoke tests need AsyncMock updates to match refactored `sync_pipeline.py`. Not a production risk; the pipeline code itself has broader integration test coverage.
-2. **Deploy workflow disabled** — `deploy.yml.disabled` must be re-enabled and have all secrets provisioned before automated deployment. Manual deployment process is in `PRODUCTION_CHECKLIST.md`.
-3. **No staging environment** — Releases go directly to production. Acceptable at current scale but must be revisited before high-traffic launch.
-4. **CSP `unsafe-inline` in production** — `script-src 'self' 'unsafe-inline'` weakens XSS protection. Mitigated by React's escape-by-default. Future work: nonce-based CSP.
-5. **Stripe webhook idempotency incomplete** — `event_id` extracted but not persisted. `stripe_subscription_id` deduplication catches the most common replay scenario. Full fix: persist event IDs to DB.
-6. **mypy baseline of 110 errors** — Type coverage is weak. Hard cap at 120 prevents regressions; reducing to 0 should be a near-term engineering goal.
+1. **Deploy workflow disabled** — `deploy.yml.disabled` must be re-enabled and have all secrets provisioned before automated deployment. Manual deployment process is in `PRODUCTION_CHECKLIST.md`.
+2. **No staging environment** — Releases go directly to production. Acceptable at current scale but must be revisited before high-traffic launch.
+3. **CSP `unsafe-inline` in production** — `script-src 'self' 'unsafe-inline'` weakens XSS protection. Mitigated by React's escape-by-default. Future work: nonce-based CSP.
+4. **Stripe webhook idempotency incomplete** — `event_id` extracted but not persisted. `stripe_subscription_id` deduplication catches the most common replay scenario. Full fix: persist event IDs to DB.
+5. **mypy baseline of ~110 errors** — Type coverage is weak. Hard cap at 120 prevents regressions; reducing to 0 should be a near-term engineering goal.
 
 ---
 
@@ -292,9 +291,10 @@ Auth enforcement happens client-side only (Supabase stores sessions in `localSto
 ### What was done in this pass
 
 - **P0 Security**: Rate limiting was completely bypassed across all 161 route handlers in the previous state. All 172 decorator pairs are now correct. Every route is actually rate-limited.
-- **CI reliability**: Backend test suite went from 105 failures → 0 failures. Frontend: 184/184. No meaningful regressions left undetected.
+- **CI reliability**: Backend test suite went from 105 failures → **0 failures, 0 skipped, 844 passing**. Frontend: 184/184. No meaningful regressions left undetected.
 - **CI gates hardened**: mypy now has a regression cap. Deploy health check fails hard.
 - **Observability**: `SENTRY_DSN` documented for new deployers.
+- **Smoke tests fully restored**: All 3 pipeline smoke tests now pass with proper mocking — no real API key required.
 
 ### What still prevents upgrading to READY
 
@@ -302,13 +302,11 @@ Auth enforcement happens client-side only (Supabase stores sessions in `localSto
 |---------|-------|----------------|
 | Deploy workflow re-enabled with real secrets | DevOps | First production release |
 | Confirm health check passes post-deploy | DevOps | Every release |
-| 3 smoke tests updated (AsyncMock) | Engineering | Before next sprint |
 
 ### Upgrade to READY FOR PRODUCTION when:
 - [ ] `deploy.yml.disabled` → `deploy.yml` with all secrets confirmed
 - [ ] Post-deploy health check confirmed passing in at least one staging/production deployment
-- [ ] All 3 skipped smoke tests either fixed or explicitly decommissioned
 
 ---
 
-*Last updated: 2026-04-16 by Second-Wave Production Promotion Pass*
+*Last updated: 2026-04-16 by Second-Wave Production Promotion Pass (Batch 8 final)*
