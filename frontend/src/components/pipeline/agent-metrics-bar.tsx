@@ -54,22 +54,22 @@ export const AgentMetricsBar = memo(function AgentMetricsBar({
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
       {stats.map((stat) => (
         <div
           key={stat.label}
-          className="glass-panel rounded-xl px-3 py-2.5 flex items-center gap-2.5"
+          className="glass-panel rounded-lg sm:rounded-xl px-2 py-2 sm:px-3 sm:py-2.5 flex items-center gap-2"
         >
           <stat.icon
-            className={`h-4 w-4 shrink-0 text-muted-foreground ${
+            className={`h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 text-muted-foreground ${
               stat.pulse ? "text-primary animate-pulse" : ""
             }`}
           />
           <div className="min-w-0">
-            <p className="text-2xs text-muted-foreground uppercase tracking-wider truncate">
+            <p className="text-[9px] sm:text-2xs text-muted-foreground uppercase tracking-wider truncate">
               {stat.label}
             </p>
-            <p className="text-sm font-semibold font-mono tabular-nums text-foreground">
+            <p className="text-xs sm:text-sm font-semibold font-mono tabular-nums text-foreground">
               {stat.value}
             </p>
           </div>
