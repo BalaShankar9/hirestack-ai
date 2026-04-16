@@ -163,7 +163,7 @@ export const AgentTimelineCard = memo(function AgentTimelineCard({
 
             {/* Log count badge for running agents */}
             {status === "running" && logs.length > 0 && (
-              <span className="text-[9px] font-mono text-primary/60 tabular-nums shrink-0">
+              <span className="text-[10px] sm:text-[11px] font-mono text-primary/60 tabular-nums shrink-0">
                 {logs.length} lines
               </span>
             )}
