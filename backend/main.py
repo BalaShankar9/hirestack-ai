@@ -367,7 +367,10 @@ async def health_check():
         supabase_status = {"connected": False, "error": _detail}
 
     # Check AI provider (Gemini only)
-    ai_status = {"provider": "gemini", "ok": bool(getattr(settings, "gemini_api_key", "")) or getattr(settings, "gemini_use_vertexai", False)}
+    # Key presence is the best proxy we can check without incurring an API call.
+    # In production, a missing key means ALL generation requests will fail — mark degraded.
+    _ai_key_ok = bool(getattr(settings, "gemini_api_key", "")) or getattr(settings, "gemini_use_vertexai", False)
+    ai_status = {"provider": "gemini", "ok": _ai_key_ok}
 
     # Redis cache health
     redis_status = {"connected": False}
@@ -417,8 +420,14 @@ async def health_check():
     except Exception:
         queue_info = {"backend": "in_process"}
 
-    # Determine overall health – Supabase down = degraded
-    degraded = not supabase_status.get("connected", False)
+    # Determine overall health.
+    # Supabase down = degraded (no auth or data access possible).
+    # AI key missing in production = degraded (all generation endpoints will fail).
+    _supabase_ok = supabase_status.get("connected", False)
+    _ai_degraded_in_prod = (
+        settings.environment == "production" and not ai_status.get("ok", False)
+    )
+    degraded = not _supabase_ok or _ai_degraded_in_prod
     overall = "degraded" if degraded else "healthy"
     code = status.HTTP_503_SERVICE_UNAVAILABLE if degraded else status.HTTP_200_OK
 
