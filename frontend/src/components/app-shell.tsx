@@ -279,7 +279,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   collapsed && "justify-center"
                 )}>
                   <Avatar className="h-8 w-8 ring-2 ring-primary/10 ring-offset-2 ring-offset-background">
-                    <AvatarImage src={user?.photoURL ?? undefined} />
+                    <AvatarImage src={user?.photoURL ?? undefined} alt={user?.displayName ?? "User avatar"} />
                     <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
                   </Avatar>
                   {!collapsed && (
@@ -399,7 +399,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               {user ? (
                 <div className="flex items-center gap-3 px-2">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={user?.photoURL ?? undefined} />
+                    <AvatarImage src={user?.photoURL ?? undefined} alt={user?.displayName ?? "User avatar"} />
                     <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1">
@@ -498,7 +498,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full lg:hidden">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={user?.photoURL ?? undefined} />
+                    <AvatarImage src={user?.photoURL ?? undefined} alt={user?.displayName ?? "User avatar"} />
                     <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">{initials}</AvatarFallback>
                   </Avatar>
                 </Button>

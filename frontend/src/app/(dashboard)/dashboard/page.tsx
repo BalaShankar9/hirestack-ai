@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -24,6 +24,8 @@ import { TaskQueue } from "@/components/workspace/task-queue";
 import { AITrace } from "@/components/ui/ai-trace";
 import { cn } from "@/lib/utils";
 import { useOnboarding } from "@/contexts/onboarding-context";
+import { useAchievements, type Achievement } from "@/hooks/use-achievements";
+import { AchievementToast } from "@/components/ui/achievement-toast";
 import api from "@/lib/api";
 import type { Profile } from "@/types";
 
@@ -122,6 +124,13 @@ export default function DashboardPage() {
   const [alertSummary, setAlertSummary] = useState<{ total: number; unread: number; by_severity: Record<string, number>; by_type: Record<string, number> } | null>(null);
   const [momentum, setMomentum] = useState<{ score: number; trend: string; components: Record<string, number> } | null>(null);
 
+  // Achievement system state
+  const [pendingAchievement, setPendingAchievement] = useState<Achievement | null>(null);
+  const achievementQueue = useState<Achievement[]>([])[0];
+  const handleAchievementUnlock = useCallback((a: Achievement) => {
+    setPendingAchievement(a);
+  }, []);
+
   // Fetch profile to check onboarding step 2
   useEffect(() => {
     if (!userId) return;
@@ -150,6 +159,22 @@ export default function DashboardPage() {
       return { apps: 0, openTasks: 0, evidence: 0, avgMatch: 0, pulse: 0 };
     }
   }, [apps, evidence.length, openTasks.length]);
+
+  // Best scores for achievement checks
+  const bestAtsScore = useMemo(() => Math.max(0, ...apps.map((a) => a.scores?.ats ?? 0)), [apps]);
+  const bestMatchScore = useMemo(() => Math.max(0, ...apps.map((a) => a.scores?.match ?? 0)), [apps]);
+
+  // Achievement system
+  useAchievements({
+    userId: userId ?? "",
+    appCount: stats.apps,
+    evidenceCount: stats.evidence,
+    streak: streak?.current_streak ?? 0,
+    profilePct: 0, // profile completeness checked when profile loads
+    bestAtsScore,
+    bestMatchScore,
+    onUnlock: handleAchievementUnlock,
+  });
 
   // Load AI briefing
   useEffect(() => {
@@ -929,6 +954,12 @@ export default function DashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Achievement unlock notification */}
+      <AchievementToast
+        achievement={pendingAchievement}
+        onDismiss={() => setPendingAchievement(null)}
+      />
     </div>
   );
 }

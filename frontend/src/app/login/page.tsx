@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Sparkles, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
+import { Sparkles, ArrowRight, ArrowLeft, Loader2, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
@@ -206,15 +206,21 @@ function LoginContent() {
 
       {/* ── Right: Auth Form ──────────────────────── */}
       <div className="flex w-full flex-col items-center justify-center px-4 lg:w-1/2 noise-overlay">
-        {/* Mobile logo */}
-        <Link href="/" className="mb-8 flex items-center gap-2.5 lg:hidden">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 btn-glow">
-            <Sparkles className="h-4 w-4 text-white" />
-          </div>
-          <span className="text-lg font-bold tracking-tight">
-            HireStack <span className="text-primary">AI</span>
-          </span>
-        </Link>
+        {/* Mobile back link + logo */}
+        <div className="mb-8 flex w-full max-w-sm flex-col items-center gap-3 lg:hidden">
+          <Link href="/" className="self-start flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to home
+          </Link>
+          <Link href="/" className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 btn-glow">
+              <Sparkles className="h-4 w-4 text-white" />
+            </div>
+            <span className="text-lg font-bold tracking-tight">
+              HireStack <span className="text-primary">AI</span>
+            </span>
+          </Link>
+        </div>
 
         <div className="w-full max-w-sm">
           <div className="mb-8 text-center">

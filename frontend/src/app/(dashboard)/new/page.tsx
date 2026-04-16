@@ -209,6 +209,8 @@ export default function NewApplicationPage() {
   const [company, setCompany] = useState("");
   const [jdText, setJdText] = useState("");
   const [jdQuality, setJdQuality] = useState<JDQuality & { issues: string[]; suggestions: string[] } | null>(null);
+  const [jdSaveStatus, setJdSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const jdSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Step 2: Resume
   const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -754,9 +756,23 @@ export default function NewApplicationPage() {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label htmlFor="job-description">Job Description</Label>
-                <span className={`text-[11px] tabular-nums ${jdText.trim().length > 20 ? "text-muted-foreground" : "text-amber-500"}`}>
-                  {jdText.trim().length > 0 ? `${jdText.trim().split(/\s+/).length} words` : ""}
-                </span>
+                <div className="flex items-center gap-2">
+                  {jdSaveStatus === "saving" && (
+                    <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                      Saving…
+                    </span>
+                  )}
+                  {jdSaveStatus === "saved" && (
+                    <span className="text-[11px] text-emerald-500 flex items-center gap-1">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      Saved
+                    </span>
+                  )}
+                  <span className={`text-[11px] tabular-nums ${jdText.trim().length > 20 ? "text-muted-foreground" : "text-amber-500"}`}>
+                    {jdText.trim().length > 0 ? `${jdText.trim().split(/\s+/).length} words` : ""}
+                  </span>
+                </div>
               </div>
               <Textarea
                 id="job-description"
@@ -764,7 +780,15 @@ export default function NewApplicationPage() {
                 className="rounded-xl"
                 placeholder="Paste the full job description here…"
                 value={jdText}
-                onChange={(e) => setJdText(e.target.value)}
+                onChange={(e) => {
+                  setJdText(e.target.value);
+                  setJdSaveStatus("saving");
+                  if (jdSaveTimerRef.current) clearTimeout(jdSaveTimerRef.current);
+                  jdSaveTimerRef.current = setTimeout(() => {
+                    setJdSaveStatus("saved");
+                    setTimeout(() => setJdSaveStatus("idle"), 2500);
+                  }, 900);
+                }}
               />
               {jdText.trim().length > 0 && jdText.trim().length <= 20 && (
                 <p className="text-[11px] text-amber-500">Add more detail — a full JD produces much better results.</p>

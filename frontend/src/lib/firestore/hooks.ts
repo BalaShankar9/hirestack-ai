@@ -62,6 +62,21 @@ function isActiveGenerationJobStatus(status: string | null | undefined): boolean
   return ACTIVE_GENERATION_JOB_STATUSES.has(status);
 }
 
+/**
+ * Schedule a realtime re-enable after a backoff period.
+ * This allows hooks to recover from transient websocket disconnects
+ * without requiring a full page reload.
+ */
+let _realtimeResetTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleRealtimeReset(delayMs: number) {
+  if (_realtimeResetTimer) return; // already scheduled
+  _realtimeResetTimer = setTimeout(() => {
+    _realtimeResetTimer = null;
+    REALTIME_DISABLED = false;
+    realtimeWarn("[HireStack][realtime] attempting reconnect after backoff");
+  }, delayMs);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Generic helper                                                      */
 /* ------------------------------------------------------------------ */
@@ -186,6 +201,8 @@ export function useApplications(
           setError(err ?? new Error(`Realtime subscription error: ${status}`));
           startPolling();
           disableRealtimeOnce(status, err);
+          // Schedule reconnect attempt after 30s so mobile/flaky-wifi users recover
+          scheduleRealtimeReset(30_000);
           supabase.removeChannel(channel);
           realtimeWarn("[HireStack][realtime][applications]", status, err);
         } else if (status === "CLOSED") {
