@@ -659,13 +659,33 @@ export default function CareerNexusPage() {
             </div>
 
             {/* Stats */}
-            <div className="flex items-center gap-6">
+            <div className="flex items-start gap-6">
               <CompletionRing score={score} />
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                <div><span className="font-bold text-sm tabular-nums">{skills.length}</span> <span className="text-muted-foreground">Skills</span></div>
-                <div><span className="font-bold text-sm tabular-nums">{experience.length}</span> <span className="text-muted-foreground">Roles</span></div>
-                <div><span className="font-bold text-sm tabular-nums">{certs.length}</span> <span className="text-muted-foreground">Certs</span></div>
-                <div><span className="font-bold text-sm tabular-nums">{projects.length}</span> <span className="text-muted-foreground">Projects</span></div>
+              <div className="space-y-2 flex-1 min-w-0">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                  <div><span className="font-bold text-sm tabular-nums">{skills.length}</span> <span className="text-muted-foreground">Skills</span></div>
+                  <div><span className="font-bold text-sm tabular-nums">{experience.length}</span> <span className="text-muted-foreground">Roles</span></div>
+                  <div><span className="font-bold text-sm tabular-nums">{certs.length}</span> <span className="text-muted-foreground">Certs</span></div>
+                  <div><span className="font-bold text-sm tabular-nums">{projects.length}</span> <span className="text-muted-foreground">Projects</span></div>
+                </div>
+                {/* What's missing checklist */}
+                {score < 100 && (
+                  <div className="space-y-1">
+                    {[
+                      { label: "Work experience added", done: experience.length > 0 },
+                      { label: "Skills listed", done: skills.length > 0 },
+                      { label: "Education added", done: education.length > 0 },
+                      { label: "Certifications added", done: certs.length > 0 },
+                      { label: "Projects added", done: projects.length > 0 },
+                      { label: "Profile connected (LinkedIn/GitHub)", done: connectedPlatforms.length > 0 },
+                    ].filter((item) => !item.done).slice(0, 3).map((item) => (
+                      <div key={item.label} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                        {item.label}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -549,7 +549,7 @@ export default function EvidenceVaultPage() {
                         <div className="text-[11px] text-muted-foreground capitalize">{typeConfig.label}</div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-all duration-200">
                       {link && (
                         <Button
                           variant="ghost"

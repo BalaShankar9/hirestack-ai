@@ -39,6 +39,27 @@ class APIClient {
     this.token = token;
   }
 
+  /**
+   * Strips internal details (stack traces, path info) from API error messages
+   * before surfacing them to the user.
+   */
+  private static sanitizeErrorDetail(detail: string, status: number): string {
+    if (typeof detail !== "string") return `Request failed (${status})`;
+    // Remove anything that looks like a Python traceback or file path
+    if (detail.includes("Traceback") || detail.includes("File \"") || detail.includes("line ")) {
+      return status >= 500
+        ? "Something went wrong on our end. Please try again."
+        : `Request failed (${status})`;
+    }
+    // Truncate very long messages that are likely internal
+    if (detail.length > 300) {
+      return status >= 500
+        ? "Something went wrong on our end. Please try again."
+        : detail.slice(0, 300);
+    }
+    return detail;
+  }
+
   async request<T = any>(
     endpoint: string,
     options: RequestOptions = {}
@@ -83,7 +104,8 @@ class APIClient {
       // Non-retryable status codes — fail immediately
       if (APIClient.NON_RETRYABLE.has(response.status)) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.detail || `HTTP error! status: ${response.status}`);
+        const detail = error.detail || `HTTP error! status: ${response.status}`;
+        throw new Error(APIClient.sanitizeErrorDetail(detail, response.status));
       }
 
       // Retryable (503, 429, 5xx) — respect Retry-After header
@@ -93,7 +115,8 @@ class APIClient {
         : attempt * 2000;
 
       const error = await response.json().catch(() => ({}));
-      lastError = new Error(error.detail || `HTTP error! status: ${response.status}`);
+      const detail = error.detail || `HTTP error! status: ${response.status}`;
+      lastError = new Error(APIClient.sanitizeErrorDetail(detail, response.status));
 
       if (attempt < APIClient.MAX_RETRIES) {
         await new Promise((r) => setTimeout(r, delayMs));

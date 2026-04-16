@@ -527,7 +527,7 @@ export default function DashboardPage() {
                   <div key={a.id} className="group relative rounded-2xl border bg-card p-4 shadow-soft-sm hover:shadow-soft-md hover:border-primary/20 hover:-translate-y-0.5 transition-all duration-300 card-spotlight">
                     <button type="button" onClick={(e) => { e.preventDefault(); setDeleteTarget({ id: a.id, title }); }}
                       aria-label={`Delete ${title}`}
-                      className="absolute right-3 top-3 z-10 h-6 w-6 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      className="absolute right-3 top-3 z-10 h-6 w-6 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 sm:opacity-0 [@media(pointer:coarse)]:opacity-100 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       <Trash2 className="h-3 w-3" />
                     </button>
                     <Link href={`/applications/${a.id}`} className="block">
