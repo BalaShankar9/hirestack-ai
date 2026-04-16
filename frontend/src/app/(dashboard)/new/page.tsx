@@ -210,7 +210,9 @@ export default function NewApplicationPage() {
   const [jdText, setJdText] = useState("");
   const [jdQuality, setJdQuality] = useState<JDQuality & { issues: string[]; suggestions: string[] } | null>(null);
   const [jdSaveStatus, setJdSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  // Two separate timers: one to flip to "saved", another to fade back to "idle"
   const jdSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const jdIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Step 2: Resume
   const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -784,9 +786,10 @@ export default function NewApplicationPage() {
                   setJdText(e.target.value);
                   setJdSaveStatus("saving");
                   if (jdSaveTimerRef.current) clearTimeout(jdSaveTimerRef.current);
+                  if (jdIdleTimerRef.current) clearTimeout(jdIdleTimerRef.current);
                   jdSaveTimerRef.current = setTimeout(() => {
                     setJdSaveStatus("saved");
-                    setTimeout(() => setJdSaveStatus("idle"), 2500);
+                    jdIdleTimerRef.current = setTimeout(() => setJdSaveStatus("idle"), 2500);
                   }, 900);
                 }}
               />
