@@ -578,17 +578,23 @@ export default function NewApplicationPage() {
 
         const phaseIdx = getPhaseIndexFromProgress(p.phase);
         if (phaseIdx >= 0) {
-          setActivePhaseIdx(phaseIdx);
+          // For _done phases, mark this phase as completed and advance to next
+          if (p.phase.endsWith("_done") || p.phase === "complete") {
+            setCompletedPhases((prev) => {
+              const next = new Set(prev);
+              next.add(phaseIdx);
+              return next;
+            });
+            // Advance active phase to the next one unless we're done
+            if (p.phase !== "complete" && phaseIdx < TOTAL_PHASES - 1) {
+              setActivePhaseIdx(phaseIdx + 1);
+            } else if (p.phase === "complete") {
+              setActivePhaseIdx(-1);
+            }
+          } else {
+            setActivePhaseIdx(phaseIdx);
+          }
           appendPhaseLog(phaseIdx, p.message);
-        }
-
-        // Mark phases that are done
-        if (p.phase.endsWith("_done") || p.phase === "complete") {
-          setCompletedPhases((prev) => {
-            const next = new Set(prev);
-            if (phaseIdx >= 0) next.add(phaseIdx);
-            return next;
-          });
         }
       };
 
@@ -693,25 +699,25 @@ export default function NewApplicationPage() {
   /* ------------------------------------------------------------------ */
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 animate-fade-in">
+    <div className="mx-auto max-w-3xl space-y-4 sm:space-y-6 px-3 sm:px-0 animate-fade-in">
       {/* Stepper */}
-      <div className="flex items-center gap-2">
-        <span className="shrink-0 text-xs font-medium text-muted-foreground mr-1">
-          Step {stepIndex + 1} of {STEPS.length}
+      <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <span className="shrink-0 text-[10px] sm:text-xs font-medium text-muted-foreground mr-0.5 sm:mr-1">
+          Step {stepIndex + 1}/{STEPS.length}
         </span>
         {STEPS.map((s, i) => {
           const Icon = s.icon;
           const active = i === stepIndex;
           const done = i < stepIndex;
           return (
-            <div key={s.key} className="flex items-center gap-2">
+            <div key={s.key} className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               {i > 0 && (
                 <div
-                  className={`h-0.5 w-6 rounded-full transition-colors ${done ? "bg-primary" : "bg-muted"}`}
+                  className={`h-0.5 w-4 sm:w-6 rounded-full transition-colors ${done ? "bg-primary" : "bg-muted"}`}
                 />
               )}
               <div
-                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
+                className={`flex items-center gap-1 sm:gap-1.5 rounded-xl px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium transition-all ${
                   active
                     ? "bg-primary text-primary-foreground shadow-glow-sm"
                     : done
@@ -719,7 +725,7 @@ export default function NewApplicationPage() {
                     : "bg-muted text-muted-foreground"
                 }`}
               >
-                <Icon className="h-3.5 w-3.5" />
+                <Icon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                 <span className="hidden sm:inline">{s.label}</span>
               </div>
             </div>
@@ -728,8 +734,8 @@ export default function NewApplicationPage() {
       </div>
 
       {step === "job" && (
-        <div className="surface-premium rounded-2xl p-6 card-spotlight">
-          <h3 className="text-base font-bold">Paste the Job Description</h3>
+        <div className="surface-premium rounded-xl sm:rounded-2xl p-4 sm:p-6 card-spotlight">
+          <h3 className="text-sm sm:text-base font-bold">Paste the Job Description</h3>
           <p className="mt-1 text-xs text-muted-foreground">We’ll extract keywords and build a quality signal.</p>
           <div className="mt-5 space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
@@ -817,8 +823,8 @@ export default function NewApplicationPage() {
       )}
 
       {step === "resume" && (
-        <div className="surface-premium rounded-2xl p-6 card-spotlight">
-          <h3 className="text-base font-bold">Upload Your Resume</h3>
+        <div className="surface-premium rounded-xl sm:rounded-2xl p-4 sm:p-6 card-spotlight">
+          <h3 className="text-sm sm:text-base font-bold">Upload Your Resume</h3>
           <p className="mt-1 text-xs text-muted-foreground">Optional but helps generate more accurate analysis.</p>
           <div className="mt-5 space-y-4">
             {/* Profile pre-fill */}
@@ -929,8 +935,8 @@ export default function NewApplicationPage() {
       )}
 
       {step === "review" && (
-        <div className="surface-premium rounded-2xl p-6 card-spotlight">
-          <h3 className="text-base font-bold">Review Confirmed Facts</h3>
+        <div className="surface-premium rounded-xl sm:rounded-2xl p-4 sm:p-6 card-spotlight">
+          <h3 className="text-sm sm:text-base font-bold">Review Confirmed Facts</h3>
           <p className="mt-1 text-xs text-muted-foreground">Everything looks right? Let’s generate your modules.</p>
           <div className="mt-5 space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">

@@ -125,14 +125,14 @@ export function PipelineAgentView({
 
   if (genError) {
     return (
-      <div className="surface-premium rounded-2xl">
-        <div className="flex flex-col items-center justify-center py-10 px-6 space-y-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-500/10">
-            <X className="h-7 w-7 text-rose-600" />
+      <div className="surface-premium rounded-xl sm:rounded-2xl">
+        <div className="flex flex-col items-center justify-center py-8 sm:py-10 px-4 sm:px-6 space-y-3 sm:space-y-4">
+          <div className="flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl bg-rose-500/10">
+            <X className="h-6 w-6 sm:h-7 sm:w-7 text-rose-600" />
           </div>
           <div className="text-center space-y-1 max-w-md">
-            <p className="text-base font-semibold text-destructive">Generation Failed</p>
-            <p className="text-sm text-muted-foreground">{genError}</p>
+            <p className="text-sm sm:text-base font-semibold text-destructive">Generation Failed</p>
+            <p className="text-xs sm:text-sm text-muted-foreground break-words">{genError}</p>
             {(genError.toLowerCase().includes("gemini") ||
               genError.toLowerCase().includes("api_key")) && (
               <p className="mt-2 text-xs text-muted-foreground">
@@ -164,33 +164,33 @@ export function PipelineAgentView({
   // ── Main pipeline view ───────────────────────────────────────
 
   return (
-    <div className="surface-premium rounded-2xl overflow-hidden">
+    <div className="surface-premium rounded-xl sm:rounded-2xl overflow-hidden">
       {/* Header */}
-      <div className="text-center pt-6 pb-3 px-6 space-y-2">
-        <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5">
+      <div className="text-center pt-4 sm:pt-6 pb-2 sm:pb-3 px-3 sm:px-6 space-y-1.5 sm:space-y-2">
+        <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 sm:px-4 py-1 sm:py-1.5">
           <Sparkles
-            className={`h-4 w-4 text-primary ${isComplete ? "" : "animate-pulse"}`}
+            className={`h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary ${isComplete ? "" : "animate-pulse"}`}
           />
-          <span className="text-sm font-semibold text-primary">
+          <span className="text-xs sm:text-sm font-semibold text-primary">
             {statusLabel}
           </span>
         </div>
-        <p className="text-sm text-muted-foreground min-h-[20px] transition-all duration-300">
+        <p className="text-xs sm:text-sm text-muted-foreground min-h-[18px] sm:min-h-[20px] transition-all duration-300 px-2">
           {genMessage || "Initializing agents..."}
         </p>
       </div>
 
       {/* Overall progress bar */}
-      <div className="px-6 pb-3">
-        <div className="flex items-center justify-between text-2xs text-muted-foreground mb-1.5">
-          <span className="font-mono tabular-nums font-medium text-foreground">
+      <div className="px-3 sm:px-6 pb-2 sm:pb-3">
+        <div className="flex items-center justify-between text-2xs text-muted-foreground mb-1 sm:mb-1.5">
+          <span className="font-mono tabular-nums font-medium text-foreground text-xs sm:text-sm">
             {progress}%
           </span>
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 text-[10px] sm:text-2xs">
             {formatElapsed(elapsedMs)}
           </span>
         </div>
-        <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
+        <div className="relative h-2 sm:h-2.5 w-full overflow-hidden rounded-full bg-muted">
           <div
             className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-blue-500 via-violet-500 to-emerald-500 transition-all duration-700 ease-out"
             style={{ width: `${Math.min(progress, 100)}%` }}
@@ -205,7 +205,7 @@ export function PipelineAgentView({
       </div>
 
       {/* Metrics ribbon */}
-      <div className="px-6 pb-3">
+      <div className="px-3 sm:px-6 pb-2 sm:pb-3">
         <AgentMetricsBar
           elapsedMs={elapsedMs}
           activeAgents={activeAgents}
@@ -216,7 +216,7 @@ export function PipelineAgentView({
       </div>
 
       {/* Agent timeline */}
-      <div className="px-6 pb-4">
+      <div className="px-3 sm:px-6 pb-3 sm:pb-4">
         <div className="space-y-0">
           {AGENT_PERSONAS.map((agent, i) => {
             const isDone = completedPhases.has(i);
@@ -248,13 +248,13 @@ export function PipelineAgentView({
 
       {/* Document readiness summary (visible after first docs are done) */}
       {completedCount >= 4 && (
-        <div className="px-6 pb-4">
-          <div className="glass-panel rounded-xl p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xs font-semibold text-foreground">Documents Preparing</span>
+        <div className="px-3 sm:px-6 pb-3 sm:pb-4">
+          <div className="glass-panel rounded-xl p-2.5 sm:p-3">
+            <div className="flex items-center gap-2 mb-1.5 sm:mb-2">
+              <FileText className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
+              <span className="text-[11px] sm:text-xs font-semibold text-foreground">Documents Preparing</span>
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-2 gap-1 sm:gap-1.5">
               {[
                 { name: "CV", done: completedCount >= 4 },
                 { name: "Cover Letter", done: completedCount >= 4 },
@@ -263,7 +263,7 @@ export function PipelineAgentView({
                 { name: "Learning Plan", done: completedCount >= 4 },
                 { name: "Gap Analysis", done: completedCount >= 3 },
               ].map((doc) => (
-                <div key={doc.name} className="flex items-center gap-1.5">
+                <div key={doc.name} className="flex items-center gap-1 sm:gap-1.5">
                   <CheckCircle2
                     className={`h-3 w-3 shrink-0 ${
                       doc.done && isComplete
@@ -273,7 +273,7 @@ export function PipelineAgentView({
                           : "text-muted-foreground/30"
                     }`}
                   />
-                  <span className={`text-[11px] ${doc.done ? "text-foreground" : "text-muted-foreground/50"}`}>
+                  <span className={`text-[10px] sm:text-[11px] ${doc.done ? "text-foreground" : "text-muted-foreground/50"}`}>
                     {doc.name}
                   </span>
                 </div>
@@ -284,13 +284,13 @@ export function PipelineAgentView({
       )}
 
       {/* Footer */}
-      <div className="px-6 pb-6 flex flex-col items-center gap-2">
+      <div className="px-3 sm:px-6 pb-4 sm:pb-6 flex flex-col items-center gap-2">
         {/* Contextual hint */}
-        <p className="text-xs text-muted-foreground text-center max-w-sm">
+        <p className="text-[10px] sm:text-xs text-muted-foreground text-center max-w-sm">
           {isComplete
             ? "All agents have completed their work. Your application pack is ready."
             : elapsedMs < 15_000
-              ? "Agents are warming up — typical build takes 1-2 minutes."
+              ? "Agents are warming up — typical build takes 2-3 minutes."
               : elapsedMs < 60_000
                 ? "Making great progress — your application is taking shape."
                 : elapsedMs < 300_000
@@ -301,7 +301,7 @@ export function PipelineAgentView({
         {isComplete ? (
           draftAppId && (
             <Button
-              className="rounded-xl shadow-glow-md"
+              className="rounded-xl shadow-glow-md w-full sm:w-auto"
               onClick={() => window.location.assign(`/applications/${draftAppId}`)}
             >
               <ArrowRight className="mr-2 h-4 w-4" />
@@ -311,7 +311,7 @@ export function PipelineAgentView({
         ) : (
           <Button
             variant="outline"
-            className="rounded-xl"
+            className="rounded-xl w-full sm:w-auto"
             disabled={!generating}
             onClick={onCancel}
           >

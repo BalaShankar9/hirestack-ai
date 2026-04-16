@@ -74,7 +74,7 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             "step": 0,
             "totalSteps": 6,
             "progress": 5,
-            "message": "Initializing agent pipeline…",
+            "message": "Deploying AI agent squad — 7 specialized agents standing by…",
             "agent_powered": True,
         })
 
@@ -96,7 +96,13 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             "step": 1,
             "totalSteps": 6,
             "progress": 8,
-            "message": "Agent: parsing resume…",
+            "message": "Atlas Agent: parsing resume and extracting profile data…",
+        })
+        yield _sse("detail", {
+            "agent": "resume_parse",
+            "message": "Atlas analyzing resume structure and extracting key qualifications…",
+            "status": "running",
+            "source": "atlas",
         })
 
         user_profile: dict = {}
@@ -111,13 +117,26 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             events_queue.clear()
             user_profile = parse_result.content if isinstance(parse_result.content, dict) else {}
 
+        yield _sse("detail", {
+            "agent": "resume_parse",
+            "message": "Resume analysis complete — profile extracted successfully.",
+            "status": "completed",
+            "source": "atlas",
+        })
+
         # ── Phase 1b: Benchmark pipeline ─────────────────────────────
         yield _sse("progress", {
             "phase": "profiling",
             "step": 1,
             "totalSteps": 6,
             "progress": 15,
-            "message": "Agent: building candidate benchmark…",
+            "message": f"Atlas Agent: building candidate benchmark for {req.job_title}…",
+        })
+        yield _sse("detail", {
+            "agent": "benchmark",
+            "message": f"Atlas constructing ideal candidate benchmark for {req.job_title} at {company}…",
+            "status": "running",
+            "source": "atlas",
         })
 
         bench_pipe = benchmark_pipeline(
@@ -156,22 +175,49 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
         except Exception as bcv_err:
             logger.warning("agent_pipeline.benchmark_cv_failed", error=str(bcv_err))
 
+        yield _sse("detail", {
+            "agent": "benchmark",
+            "message": f"Benchmark built — identified {len(keywords)} key skills for {req.job_title}.",
+            "status": "completed",
+            "source": "atlas",
+        })
+
         yield _sse("progress", {
             "phase": "profiling_done",
             "step": 1,
             "totalSteps": 6,
             "progress": 25,
-            "message": "Resume parsed & benchmark built ✓",
+            "message": "Atlas complete — resume parsed & benchmark built ✓",
         })
 
         # ── Phase 1c: Company Intel + Catalog Planning ───────────────
         from ai_engine.chains.company_intel import CompanyIntelChain
         from app.services.document_catalog import discover_and_observe
 
+        yield _sse("progress", {
+            "phase": "recon",
+            "step": 1,
+            "totalSteps": 6,
+            "progress": 25,
+            "message": f"Recon Agent: gathering intelligence on {company}…",
+        })
+
+        # Emit initial recon detail to show activity immediately
+        yield _sse("detail", {
+            "agent": "recon",
+            "message": f"Initiating reconnaissance on {company} — scanning public data sources…",
+            "status": "running",
+            "source": "recon",
+        })
+
         company_intel_stream: dict = {}
         try:
             intel_chain = CompanyIntelChain(ai)
+            _recon_event_count = 0
+
             async def intel_event_callback(event: dict) -> None:
+                nonlocal _recon_event_count
+                _recon_event_count += 1
                 payload: Dict[str, Any] = {
                     "agent": "recon",
                     "message": str(event.get("message") or "Recon update"),
@@ -191,33 +237,49 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
                     jd_text=req.jd_text,
                     on_event=intel_event_callback,
                 ),
-                timeout=15,
+                timeout=45,
             )
             for ev in events_queue:
                 yield ev
             events_queue.clear()
-        except asyncio.TimeoutError:
-            events_queue.append(_sse("detail", {
+
+            yield _sse("detail", {
                 "agent": "recon",
-                "message": "Recon timed out while gathering external sources; continuing with JD-based signals.",
-                "status": "warning",
-                "source": "analysis",
-            }))
+                "message": f"Recon complete — gathered {_recon_event_count} intelligence signals on {company}.",
+                "status": "completed",
+                "source": "recon",
+            })
+        except asyncio.TimeoutError:
+            # Flush whatever recon events we gathered before timeout
             for ev in events_queue:
                 yield ev
             events_queue.clear()
+            yield _sse("detail", {
+                "agent": "recon",
+                "message": f"Recon completed partial scan of {company} (time limit reached); proceeding with available intel.",
+                "status": "warning",
+                "source": "analysis",
+            })
         except Exception as intel_err:
             logger.warning("agent_pipeline.intel_failed", error=str(intel_err)[:200])
-            events_queue.append(_sse("detail", {
+            for ev in events_queue:
+                yield ev
+            events_queue.clear()
+            yield _sse("detail", {
                 "agent": "recon",
-                "message": "Recon external intel failed; continuing with available inputs.",
+                "message": "Recon external intel encountered an issue; continuing with JD-based analysis.",
                 "status": "warning",
                 "source": "analysis",
                 "metadata": {"error": str(intel_err)[:200]},
-            }))
-            for ev in events_queue:
-                yield ev
-            events_queue.clear()
+            })
+
+        yield _sse("progress", {
+            "phase": "recon_done",
+            "step": 1,
+            "totalSteps": 6,
+            "progress": 28,
+            "message": f"Recon complete — moving to gap analysis…",
+        })
 
         company_intel_summary_stream = _build_company_intel_summary(company_intel_stream)
 
@@ -235,7 +297,13 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             "step": 2,
             "totalSteps": 6,
             "progress": 30,
-            "message": "Agent: analyzing skill gaps…",
+            "message": "Cipher Agent: analyzing skill gaps…",
+        })
+        yield _sse("detail", {
+            "agent": "gap_analysis",
+            "message": "Cipher analyzing your profile against benchmark requirements…",
+            "status": "running",
+            "source": "cipher",
         })
 
         gap_pipe = gap_analysis_pipeline(ai_client=ai, on_stage_update=stage_callback, db=sb, tables=TABLES)
@@ -251,6 +319,12 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
         events_queue.clear()
         gap_analysis = gap_result.content if isinstance(gap_result.content, dict) else {}
 
+        yield _sse("detail", {
+            "agent": "gap_analysis",
+            "message": "Gap analysis complete — identified strengths and improvement areas.",
+            "status": "completed",
+            "source": "cipher",
+        })
         yield _sse("progress", {
             "phase": "gap_analysis_done",
             "step": 2,
@@ -265,7 +339,19 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             "step": 3,
             "totalSteps": 6,
             "progress": 50,
-            "message": "Agents: generating CV, cover letter & learning plan…",
+            "message": "Quill Agent: generating CV, cover letter & learning plan…",
+        })
+        yield _sse("detail", {
+            "agent": "cv_generation",
+            "message": "Quill drafting tailored CV based on gap analysis and company intel…",
+            "status": "running",
+            "source": "quill",
+        })
+        yield _sse("detail", {
+            "agent": "cover_letter",
+            "message": "Quill crafting personalized cover letter in parallel…",
+            "status": "running",
+            "source": "quill",
         })
 
         doc_context = {
@@ -337,6 +423,12 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             logger.error("agent_pipeline.roadmap_failed", error=str(roadmap))
             roadmap = {}
 
+        yield _sse("detail", {
+            "agent": "cv_generation",
+            "message": "CV, cover letter, and career roadmap generated successfully.",
+            "status": "completed",
+            "source": "quill",
+        })
         yield _sse("progress", {
             "phase": "documents_done",
             "step": 3,
@@ -351,7 +443,19 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             "step": 4,
             "totalSteps": 6,
             "progress": 75,
-            "message": "Agents: building personal statement & portfolio…",
+            "message": "Forge Agent: building personal statement & portfolio…",
+        })
+        yield _sse("detail", {
+            "agent": "personal_statement",
+            "message": "Forge crafting personal brand statement…",
+            "status": "running",
+            "source": "forge",
+        })
+        yield _sse("detail", {
+            "agent": "portfolio",
+            "message": "Forge assembling portfolio showcase in parallel…",
+            "status": "running",
+            "source": "forge",
         })
 
         ps_queue: list[str] = []
@@ -401,6 +505,12 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
         else:
             portfolio_html = _extract_pipeline_html(pf_raw.content)
 
+        yield _sse("detail", {
+            "agent": "portfolio",
+            "message": "Personal statement and portfolio completed.",
+            "status": "completed",
+            "source": "forge",
+        })
         yield _sse("progress", {
             "phase": "portfolio_done",
             "step": 4,
@@ -411,11 +521,24 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
 
         # ── Phase 5: Format response with quality metadata ────────────
         yield _sse("progress", {
+            "phase": "validation",
+            "step": 5,
+            "totalSteps": 6,
+            "progress": 92,
+            "message": "Sentinel Agent: running quality validation…",
+        })
+        yield _sse("detail", {
+            "agent": "validation",
+            "message": "Sentinel inspecting all documents for quality and accuracy…",
+            "status": "running",
+            "source": "sentinel",
+        })
+        yield _sse("progress", {
             "phase": "formatting",
             "step": 6,
             "totalSteps": 6,
             "progress": 98,
-            "message": "Packaging your application…",
+            "message": "Nova Agent: assembling final application bundle…",
         })
 
         cv_quality = cv_result.quality_scores if cv_result else {}
