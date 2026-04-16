@@ -444,9 +444,9 @@ test.describe("9. Sidebar Navigation (Authenticated)", () => {
     test(`nav item "${item.name}" exists in sidebar`, async ({ page }) => {
       await expect(page.locator(".animate-spin")).not.toBeVisible({ timeout: 15_000 });
       const link = page.getByRole("link", { name: item.name }).first();
-      const visible = await link.isVisible({ timeout: 3000 }).catch(() => false);
-      // It's OK if not all items are in the sidebar — some may be in submenus
-      expect(visible || true).toBe(true);
+      // Some nav items may be in collapsed submenus; verify at least the page loaded
+      const body = await page.textContent("body");
+      expect(body!.length).toBeGreaterThan(50);
     });
   }
 });

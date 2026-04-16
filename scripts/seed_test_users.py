@@ -34,6 +34,7 @@ if not SUPABASE_URL or not SERVICE_KEY:
 # ── Test Personas ────────────────────────────────────────────────────────────
 # Each persona gets a unique email, password, and profile data.
 # Passwords follow Supabase default policy: ≥6 chars.
+# This is a hardcoded test-only password — never use in production.
 
 TEST_PASSWORD = "TestPass!2026"
 
@@ -336,10 +337,10 @@ def seed():
     print("Test Credentials:")
     print("-" * 60)
     for u in created:
-        print(f"  {u['email']} / {TEST_PASSWORD}")
+        print(f"  {u['email']}")
         print(f"    Name: {u['name']} | Role: {u['role']}")
     print("-" * 60)
-    print(f"\nAll users use password: {TEST_PASSWORD}")
+    print("\nAll users use the password defined in TEST_PASSWORD variable.")
     print("\nYou can now log in to HireStack AI with any of these accounts")
     print("to test different user workflows and features.")
 
