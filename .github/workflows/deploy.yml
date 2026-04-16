@@ -38,9 +38,9 @@ jobs:
         run: |
           sleep 30
           for i in $(seq 1 12); do
-            HTTP=$(curl -sf -o /dev/null -w "%{http_code}" https://api.hirestack.tech/health 2>/dev/null || echo "000")
+            HTTP=$(curl -sf -o /dev/null -w "%{http_code}" https://hirestack-ai-production.up.railway.app/health 2>/dev/null || echo "000")
             if [ "$HTTP" = "200" ]; then
-              echo "::notice::Backend healthy — https://api.hirestack.tech/health"
+              echo "::notice::Backend healthy — https://hirestack-ai-production.up.railway.app/health"
               exit 0
             fi
             echo "Attempt $i/12 — HTTP $HTTP, retrying in 15s…"
@@ -59,9 +59,9 @@ jobs:
         run: |
           sleep 90
           for i in $(seq 1 12); do
-            HTTP=$(curl -sf -o /dev/null -w "%{http_code}" https://hirestack-ai.netlify.app/ 2>/dev/null || echo "000")
+            HTTP=$(curl -sf -o /dev/null -w "%{http_code}" https://hirestack.tech/ 2>/dev/null || echo "000")
             if [ "$HTTP" = "200" ]; then
-              echo "::notice::Frontend live — https://hirestack-ai.netlify.app"
+              echo "::notice::Frontend live — https://hirestack.tech"
               exit 0
             fi
             echo "Attempt $i/12 — HTTP $HTTP, retrying in 15s…"
