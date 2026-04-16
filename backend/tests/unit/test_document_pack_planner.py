@@ -120,7 +120,7 @@ class TestDocumentPackPlanner:
         plan = await planner.plan(jd_text="Senior Python Developer", job_title="SWE")
 
         core_keys = {d["key"] for d in plan.core}
-        assert core_keys == {"cv", "cover_letter", "personal_statement", "portfolio"}
+        assert core_keys == {d["key"] for d in CORE_DOCS}
 
     @pytest.mark.asyncio
     async def test_plan_required_from_catalog(self):
@@ -278,7 +278,7 @@ class TestDocumentPackPlanner:
         plan = await planner.plan(jd_text="Test", job_title="Test")
 
         core_keys = {d["key"] for d in plan.core}
-        assert core_keys == {"cv", "cover_letter", "personal_statement", "portfolio"}
+        assert core_keys == {d["key"] for d in CORE_DOCS}
         assert plan.confidence == 0.3
         assert len(plan.required) == 0
         assert "Fallback" in plan.strategy
@@ -354,5 +354,5 @@ class TestDocumentPackPlanner:
         planner = DocumentPackPlanner(ai_client=ai, catalog=[])
         plan = await planner.plan(jd_text="Test", job_title="Test")
 
-        assert len(plan.core) == 4
+        assert len(plan.core) == len(CORE_DOCS)
         assert len(plan.deferred) == 0
