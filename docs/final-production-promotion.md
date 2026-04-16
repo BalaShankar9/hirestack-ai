@@ -252,10 +252,36 @@ git push origin main  # triggers new deployment
 **⚠️ CONDITIONALLY READY FOR PRODUCTION**
 
 Upgrade to READY when:
-1. All 7 GitHub Actions secrets provisioned
+1. All 7 GitHub Actions secrets provisioned (see §3.1)
 2. Deploy workflow triggers and completes successfully (green in GitHub Actions)
 3. Health check returns 200 in deploy logs after at least one successful production deployment
 
+### What is now fully resolved (as of this pass)
+
+| Item | Status |
+|------|--------|
+| Deploy workflow activated | ✅ `.github/workflows/deploy.yml` live, CI-gated, retry health check |
+| Health check truthfulness | ✅ Returns 503 when GEMINI_API_KEY missing in production |
+| Smoke tests | ✅ 844 passed, 0 failed, 0 skipped |
+| Ruff lint | ✅ 0 errors (pre-existing F821 + F401 fixed) |
+| Frontend tsc | ✅ 0 errors |
+| Frontend ESLint | ✅ 0 warnings |
+| Frontend vitest | ✅ 22 files, 184/184 |
+| Security scan (no secrets in code) | ✅ PASS |
+| Database migration validation | ✅ 26 migrations, all valid |
+| mypy regression cap | ✅ 110 errors vs 120 cap |
+| CodeQL | ✅ 0 alerts |
+
+### What requires human action before READY
+
+| Remaining Manual Action | Owner |
+|------------------------|-------|
+| Add 7 GitHub Actions secrets (see §3.1) | DevOps |
+| Set Railway environment variables (see §3.2) | DevOps |
+| Rotate GEMINI_API_KEY (shared in chat 2026-04-16) | DevOps |
+| Apply DB migrations to production Supabase | DevOps |
+| Execute first deployment, confirm health check passes | DevOps |
+
 ---
 
-*Last updated: 2026-04-16 — Final Production Promotion Execution Pass*
+*Last updated: 2026-04-16 — Final Production Promotion Execution Pass (complete)*
