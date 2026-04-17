@@ -7,6 +7,7 @@ import type { ApplicationDoc, ModuleKey } from "@/lib/firestore";
 
 interface TimelineStep {
   label: string;
+  detail: string;
   done: boolean;
 }
 
@@ -15,28 +16,24 @@ function buildSteps(app: ApplicationDoc, evidenceCount: number): TimelineStep[] 
   const s = app.scores ?? {};
 
   const hasFacts = !!app.confirmedFacts;
-  const factsLocked = !!app.factsLocked;
   const benchmarkReady = m.benchmark?.state === "ready";
   const gapsReady = m.gaps?.state === "ready";
   const docsReady =
-    m.cv?.state === "ready" || m.coverLetter?.state === "ready" || m.personalStatement?.state === "ready";
-  const evidenceLinked = evidenceCount > 0 || (s.evidenceStrength ?? 0) > 0;
-  const atsChecked = (s.atsReadiness ?? 0) > 0;
+    m.cv?.state === "ready" && m.coverLetter?.state === "ready";
+  const polished = evidenceCount > 0 || (s.evidenceStrength ?? 0) > 0;
 
   const allModuleKeys: ModuleKey[] = [
     "benchmark", "gaps", "learningPlan", "cv", "coverLetter", "personalStatement", "portfolio",
   ];
   const allReady = allModuleKeys.every((k) => m[k]?.state === "ready");
+  const atsChecked = (s.atsReadiness ?? 0) > 0;
 
   return [
-    { label: "Inputs captured", done: hasFacts },
-    { label: "Facts confirmed", done: factsLocked },
-    { label: "Role analysed", done: benchmarkReady },
-    { label: "Gaps identified", done: gapsReady },
-    { label: "Documents generated", done: docsReady },
-    { label: "Evidence linked", done: evidenceLinked },
-    { label: "ATS checked", done: atsChecked },
-    { label: "Export ready", done: allReady },
+    { label: "Profile Ready", detail: "Resume & JD captured", done: hasFacts },
+    { label: "Analysis Complete", detail: "Benchmark & gaps scored", done: benchmarkReady && gapsReady },
+    { label: "Documents Tailored", detail: "CV & cover letter generated", done: docsReady },
+    { label: "Application Polished", detail: "Evidence linked & reviewed", done: polished },
+    { label: "Ready to Submit", detail: "ATS scored & all modules done", done: allReady && atsChecked },
   ];
 }
 
@@ -49,66 +46,51 @@ export function ReadinessTimeline({
 }) {
   const steps = useMemo(() => buildSteps(app, evidenceCount), [app, evidenceCount]);
   const completedCount = steps.filter((s) => s.done).length;
+  const pct = Math.round((completedCount / steps.length) * 100);
 
   return (
     <div className="surface-premium rounded-2xl p-4 card-spotlight">
       <div className="flex items-center justify-between mb-3">
         <div className="text-sm font-semibold">Application Readiness</div>
-        <span className="text-xs text-muted-foreground tabular-nums">
-          {completedCount}/{steps.length} stages
+        <span className={cn(
+          "text-xs font-semibold tabular-nums",
+          pct === 100 ? "text-emerald-500" : "text-muted-foreground",
+        )}>
+          {pct}%
         </span>
       </div>
 
-      {/* Desktop horizontal stepper */}
-      <div className="hidden sm:block">
-        <div className="flex items-center gap-0">
-          {steps.map((step, idx) => (
-            <div key={step.label} className="flex items-center flex-1 min-w-0">
-              <div className="flex flex-col items-center min-w-0">
-                {step.done ? (
-                  <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
-                ) : (
-                  <Circle className="h-5 w-5 text-muted-foreground/30 shrink-0" />
-                )}
-                <span
-                  className={cn(
-                    "mt-1.5 text-[10px] leading-tight text-center",
-                    step.done ? "text-foreground font-medium" : "text-muted-foreground",
-                  )}
-                >
-                  {step.label}
-                </span>
-              </div>
-              {idx < steps.length - 1 && (
-                <div
-                  className={cn(
-                    "h-0.5 flex-1 mx-1 mt-[-16px]",
-                    step.done ? "bg-emerald-500" : "bg-muted",
-                  )}
-                />
-              )}
-            </div>
-          ))}
-        </div>
+      {/* Progress bar */}
+      <div className="h-1.5 rounded-full bg-muted overflow-hidden mb-4">
+        <div
+          className={cn(
+            "h-full rounded-full transition-all duration-500",
+            pct === 100 ? "bg-emerald-500" : pct >= 60 ? "bg-primary" : "bg-amber-500",
+          )}
+          style={{ width: `${pct}%` }}
+        />
       </div>
 
-      {/* Mobile vertical stepper */}
-      <div className="sm:hidden space-y-1.5">
+      {/* Steps */}
+      <div className="space-y-2">
         {steps.map((step) => (
-          <div key={step.label} className="flex items-center gap-2">
+          <div key={step.label} className="flex items-center gap-2.5">
             {step.done ? (
               <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
             ) : (
               <Circle className="h-4 w-4 text-muted-foreground/30 shrink-0" />
             )}
-            <span
-              className={cn(
-                "text-xs",
-                step.done ? "text-foreground font-medium" : "text-muted-foreground",
-              )}
-            >
-              {step.label}
-            </span>
+            <div className="flex-1 min-w-0">
+              <span
+                className={cn(
+                  "text-xs leading-tight",
+                  step.done ? "text-foreground font-medium" : "text-muted-foreground",
+                )}
+              >
+                {step.label}
+              </span>
+              <span className="text-[10px] text-muted-foreground/60 ml-1.5">{step.detail}</span>
+            </div>
           </div>
         ))}
       </div>

@@ -2223,12 +2223,21 @@ async def recover_inflight_generation_jobs() -> int:
         from app.core.database import get_supabase, TABLES
 
         sb = get_supabase()
-        resp = await asyncio.to_thread(
-            lambda: sb.table(TABLES["generation_jobs"])
-            .select("id,user_id,status,application_id,requested_modules")
-            .in_("status", ["running", "queued"])
-            .execute()
-        )
+        try:
+            resp = await asyncio.to_thread(
+                lambda: sb.table(TABLES["generation_jobs"])
+                .select("id,user_id,status,application_id,requested_modules,recovery_attempts")
+                .in_("status", ["running", "queued"])
+                .execute()
+            )
+        except Exception:
+            # recovery_attempts column may not exist yet — fall back
+            resp = await asyncio.to_thread(
+                lambda: sb.table(TABLES["generation_jobs"])
+                .select("id,user_id,status,application_id,requested_modules")
+                .in_("status", ["running", "queued"])
+                .execute()
+            )
         inflight_jobs = resp.data or []
         if not inflight_jobs:
             _ACTIVE_GENERATION_TASKS.clear()
@@ -2294,8 +2303,52 @@ async def recover_inflight_generation_jobs() -> int:
                 except Exception as recovery_err:
                     logger.warning("job_recovery.state_check_failed", job_id=job_id, error=str(recovery_err))
 
-            # Fallback: mark as failed (same as v2 behavior) + reconcile module states
-            fail_msg = "Server restarted — please click Regenerate to try again"
+            # Fallback: re-queue the job so it auto-restarts instead of
+            # blanket-failing.  The user sees "Resuming…" instead of a dead error.
+            # We cap retry attempts to prevent infinite restart loops.
+            recovery_attempts = (job.get("recovery_attempts") or 0) + 1
+            max_recovery = 3
+
+            if recovery_attempts <= max_recovery:
+                try:
+                    await asyncio.to_thread(
+                        lambda jid=job_id, ra=recovery_attempts: sb.table(TABLES["generation_jobs"])
+                        .update({
+                            "status": "queued",
+                            "progress": 0,
+                            "error_message": None,
+                            "recovery_attempts": ra,
+                            "finished_at": None,
+                        })
+                        .eq("id", jid)
+                        .execute()
+                    )
+                except Exception:
+                    # recovery_attempts column may not exist — update without it
+                    await asyncio.to_thread(
+                        lambda jid=job_id: sb.table(TABLES["generation_jobs"])
+                        .update({
+                            "status": "queued",
+                            "progress": 0,
+                            "error_message": None,
+                            "finished_at": None,
+                        })
+                        .eq("id", jid)
+                        .execute()
+                    )
+                # Actually restart the job in-process
+                _user_id = job.get("user_id", "")
+                _start_generation_job(job_id, _user_id)
+                logger.info(
+                    "job_recovery.requeued",
+                    job_id=job_id,
+                    attempt=recovery_attempts,
+                )
+                recovered_count += 1
+                continue
+
+            # Exceeded max retries — fail permanently with clear message
+            fail_msg = "Generation failed after multiple server restarts. Please click Regenerate to try again."
             await asyncio.to_thread(
                 lambda jid=job_id: sb.table(TABLES["generation_jobs"])
                 .update({

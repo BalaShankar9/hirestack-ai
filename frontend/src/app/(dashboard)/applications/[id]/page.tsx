@@ -735,95 +735,73 @@ export default function ApplicationWorkspacePage() {
               router.replace(nextUrl);
             }}
           >
-            {/* ── Grouped Tab Navigation ── */}
+            {/* ── Flat Tab Navigation ── */}
             {(() => {
-              const analysisTabs = ["overview", "intel", "benchmark", "gaps", "learning"];
-              const docTabKeys = ["cv", "cover", "statement", "portfolio"];
+              const tailoredTabs = ["cv", "cover", "statement", "portfolio"];
               const extraDocKeys = app.generatedDocuments ? Object.keys(app.generatedDocuments).filter(k => app.generatedDocuments![k]) : [];
               const generated = app.generatedDocuments || {};
               const coreKeys = new Set(["cv", "cover_letter", "personal_statement", "portfolio"]);
               const hasUngenerated = (app.discoveredDocuments || []).some(
                 (d: any) => d.key && !generated[d.key] && !coreKeys.has(d.key)
               );
-              const allDocTabs = [
-                ...docTabKeys,
-                ...extraDocKeys.map(k => `extra-${k}`),
-                ...(hasUngenerated ? ["optional-docs"] : []),
-              ];
-              const toolsTabs = ["ats", "library", "export"];
+              const isTailoredActive = tailoredTabs.includes(tab) || tab.startsWith("extra-") || tab === "optional-docs";
 
-              const getCategory = (t: string) => {
-                if (analysisTabs.includes(t)) return "analysis";
-                if (allDocTabs.includes(t)) return "documents";
-                if (toolsTabs.includes(t)) return "tools";
-                return "analysis";
-              };
-              const activeCategory = getCategory(tab);
-
-              const catStyle = (cat: string) =>
-                `px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 cursor-pointer ${
-                  activeCategory === cat
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-background/50"
-                }`;
+              const triggerCls = "gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm";
+              const subTriggerCls = "gap-1.5 text-xs rounded-md data-[state=active]:bg-background data-[state=active]:shadow-sm";
 
               return (
                 <div className="space-y-2">
-                  {/* Primary category row */}
-                  <div className="flex gap-1 bg-muted/50 p-1 rounded-xl">
-                    <button type="button" className={catStyle("analysis")} onClick={() => setTab("overview")}>
-                      <span className="flex items-center gap-1.5"><Search className="h-3.5 w-3.5" />Analysis</span>
+                  {/* Primary flat navigation */}
+                  <TabsList className="w-full justify-start overflow-x-auto h-auto gap-1 bg-muted/50 p-1 rounded-xl">
+                    <TabsTrigger value="overview" className={triggerCls}><LayoutGrid className="h-3.5 w-3.5" />Overview</TabsTrigger>
+                    <TabsTrigger value="benchmark" className={triggerCls}><Target className="h-3.5 w-3.5" />Benchmark</TabsTrigger>
+                    <TabsTrigger value="gaps" className={triggerCls}><BarChart3 className="h-3.5 w-3.5" />Skills & Gaps</TabsTrigger>
+                    <TabsTrigger value="learning" className={triggerCls}><GraduationCap className="h-3.5 w-3.5" />Learning</TabsTrigger>
+                    {/* Tailored group — custom button since it maps to multiple sub-tab values */}
+                    <button
+                      type="button"
+                      role="tab"
+                      className={cn(
+                        "inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1.5 text-sm font-medium rounded-lg transition-all",
+                        isTailoredActive
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                      )}
+                      onClick={() => { if (!isTailoredActive) setTab("cv"); }}
+                    >
+                      <FileText className="h-3.5 w-3.5" />Tailored Docs
                     </button>
-                    <button type="button" className={catStyle("documents")} onClick={() => setTab("cv")}>
-                      <span className="flex items-center gap-1.5"><FileText className="h-3.5 w-3.5" />Documents</span>
-                    </button>
-                    <button type="button" className={catStyle("tools")} onClick={() => setTab("ats")}>
-                      <span className="flex items-center gap-1.5"><Package className="h-3.5 w-3.5" />Tools</span>
-                    </button>
-                  </div>
-                  {/* Secondary sub-tabs for active category */}
-                  <TabsList className="w-full justify-start overflow-x-auto h-auto gap-1 bg-transparent p-0">
-                    {activeCategory === "analysis" && (
-                      <>
-                        <TabsTrigger value="overview" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><LayoutGrid className="h-3.5 w-3.5" />Overview</TabsTrigger>
-                        <TabsTrigger value="intel" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><Search className="h-3.5 w-3.5" />Intel</TabsTrigger>
-                        <TabsTrigger value="benchmark" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><Target className="h-3.5 w-3.5" />Benchmark</TabsTrigger>
-                        <TabsTrigger value="gaps" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><BarChart3 className="h-3.5 w-3.5" />Gaps</TabsTrigger>
-                        <TabsTrigger value="learning" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><GraduationCap className="h-3.5 w-3.5" />Learning</TabsTrigger>
-                      </>
-                    )}
-                    {activeCategory === "documents" && (
-                      <>
-                        <TabsTrigger value="cv" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><FileText className="h-3.5 w-3.5" />CV</TabsTrigger>
-                        <TabsTrigger value="cover" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><FileText className="h-3.5 w-3.5" />Cover Letter</TabsTrigger>
-                        <TabsTrigger value="statement" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><PenTool className="h-3.5 w-3.5" />Statement</TabsTrigger>
-                        <TabsTrigger value="portfolio" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><FolderOpen className="h-3.5 w-3.5" />Portfolio</TabsTrigger>
-                        {extraDocKeys.map((key) => {
-                          const docInfo = (app.discoveredDocuments || []).find((d: any) => d.key === key);
-                          const label = docInfo?.label || key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
-                          return (
-                            <TabsTrigger key={key} value={`extra-${key}`} className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                              <Sparkles className="h-3 w-3 text-teal-500" />
-                              <span className="text-xs">{label}</span>
-                            </TabsTrigger>
-                          );
-                        })}
-                        {hasUngenerated && (
-                          <TabsTrigger value="optional-docs" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                            <Sparkles className="h-3 w-3 text-amber-500" />
-                            <span className="text-xs">Optional Docs</span>
-                          </TabsTrigger>
-                        )}
-                      </>
-                    )}
-                    {activeCategory === "tools" && (
-                      <>
-                        <TabsTrigger value="ats" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><FileSearch className="h-3.5 w-3.5" />ATS Score</TabsTrigger>
-                        <TabsTrigger value="library" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><Library className="h-3.5 w-3.5" />Library</TabsTrigger>
-                        <TabsTrigger value="export" className="gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm"><Package className="h-3.5 w-3.5" />Export</TabsTrigger>
-                      </>
-                    )}
+                    <TabsTrigger value="intel" className={triggerCls}><Search className="h-3.5 w-3.5" />Intel</TabsTrigger>
+                    <TabsTrigger value="ats" className={triggerCls}><FileSearch className="h-3.5 w-3.5" />ATS Score</TabsTrigger>
+                    <TabsTrigger value="library" className={triggerCls}><Library className="h-3.5 w-3.5" />Library</TabsTrigger>
+                    <TabsTrigger value="export" className={triggerCls}><Package className="h-3.5 w-3.5" />Export</TabsTrigger>
                   </TabsList>
+
+                  {/* Tailored document sub-tabs */}
+                  {isTailoredActive && (
+                    <TabsList className="w-full justify-start overflow-x-auto h-auto gap-1 bg-muted/30 p-1 rounded-lg">
+                      <TabsTrigger value="cv" className={subTriggerCls}><FileText className="h-3 w-3" />CV</TabsTrigger>
+                      <TabsTrigger value="cover" className={subTriggerCls}><FileText className="h-3 w-3" />Cover Letter</TabsTrigger>
+                      <TabsTrigger value="statement" className={subTriggerCls}><PenTool className="h-3 w-3" />Statement</TabsTrigger>
+                      <TabsTrigger value="portfolio" className={subTriggerCls}><FolderOpen className="h-3 w-3" />Portfolio</TabsTrigger>
+                      {extraDocKeys.map((key) => {
+                        const docInfo = (app.discoveredDocuments || []).find((d: any) => d.key === key);
+                        const label = docInfo?.label || key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+                        return (
+                          <TabsTrigger key={key} value={`extra-${key}`} className={subTriggerCls}>
+                            <Sparkles className="h-3 w-3 text-teal-500" />
+                            <span>{label}</span>
+                          </TabsTrigger>
+                        );
+                      })}
+                      {hasUngenerated && (
+                        <TabsTrigger value="optional-docs" className={subTriggerCls}>
+                          <Sparkles className="h-3 w-3 text-amber-500" />
+                          <span>More Docs</span>
+                        </TabsTrigger>
+                      )}
+                    </TabsList>
+                  )}
                 </div>
               );
             })()}
@@ -872,7 +850,7 @@ export default function ApplicationWorkspacePage() {
                 <ReadinessTimeline app={app} evidenceCount={evidence.length} />
               </div>
 
-              {/* ── Strategic Module Groups ── */}
+              {/* ── Module Overview ── */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold">Modules</h3>
@@ -891,13 +869,13 @@ export default function ApplicationWorkspacePage() {
                   </Button>
                 </div>
 
-                {/* Diagnose */}
+                {/* Analysis layer */}
                 <div>
-                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Diagnose</div>
+                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Analysis</div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <ModuleCard
                       title="Benchmark"
-                      description="Ideal candidate signal + rubric"
+                      description="Ideal candidate profile & scoring rubric"
                       status={modStatus("benchmark")}
                       icon={<Target className="h-5 w-5" />}
                       snippet={app.benchmark?.summary ? htmlSnippet(String(app.benchmark.summary)) : undefined}
@@ -905,8 +883,8 @@ export default function ApplicationWorkspacePage() {
                       onRegenerate={() => regenerate("benchmark")}
                     />
                     <ModuleCard
-                      title="Gap Analysis"
-                      description="Missing keywords + recommendations"
+                      title="Skills & Gaps"
+                      description="Compatibility score, missing keywords & fixes"
                       status={modStatus("gaps")}
                       icon={<Layers className="h-5 w-5" />}
                       snippet={app.gaps?.summary ? htmlSnippet(String(app.gaps.summary)) : undefined}
@@ -916,13 +894,13 @@ export default function ApplicationWorkspacePage() {
                   </div>
                 </div>
 
-                {/* Build */}
+                {/* Tailored Documents layer — unified card */}
                 <div>
-                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Build</div>
+                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Tailored Documents</div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <ModuleCard
                       title="Tailored CV"
-                      description="Edit, diff, version, iterate"
+                      description="ATS-optimized, keyword-rich, strategically enhanced"
                       status={modStatus("cv")}
                       icon={<FileText className="h-5 w-5" />}
                       snippet={cvLocal ? htmlSnippet(cvLocal) : undefined}
@@ -931,7 +909,7 @@ export default function ApplicationWorkspacePage() {
                     />
                     <ModuleCard
                       title="Cover Letter"
-                      description="Evidence-first narrative"
+                      description="Evidence-backed narrative for this role"
                       status={modStatus("coverLetter")}
                       icon={<FileText className="h-5 w-5" />}
                       snippet={clLocal ? htmlSnippet(clLocal) : undefined}
@@ -949,7 +927,7 @@ export default function ApplicationWorkspacePage() {
                     />
                     <ModuleCard
                       title="Portfolio & Evidence"
-                      description="Proof of knowledge + projects"
+                      description="Project showcase with impact metrics"
                       status={modStatus("portfolio")}
                       icon={<FolderOpen className="h-5 w-5" />}
                       snippet={portfolioLocal ? htmlSnippet(portfolioLocal) : undefined}
@@ -959,13 +937,13 @@ export default function ApplicationWorkspacePage() {
                   </div>
                 </div>
 
-                {/* Improve */}
+                {/* Growth layer */}
                 <div>
-                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Improve</div>
+                  <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Growth</div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <ModuleCard
                       title="Learning Plan"
-                      description="Skill sprints + outcomes practice"
+                      description="Sprint-based skill development roadmap"
                       status={modStatus("learningPlan")}
                       icon={<GraduationCap className="h-5 w-5" />}
                       snippet={app.learningPlan?.focus?.length ? htmlSnippet((app.learningPlan.focus as string[]).join(", ")) : undefined}
