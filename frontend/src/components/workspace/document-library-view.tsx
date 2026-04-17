@@ -25,7 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import type { DocumentLibraryItem, DocumentCategory } from "@/lib/firestore/models";
 import { DocumentUniverseGrid, type DocStatus } from "./document-universe-grid";
-import { TAILORED_UNIVERSE, BENCHMARK_UNIVERSE } from "@/lib/document-universe";
+import { DOCUMENT_UNIVERSE } from "@/lib/document-universe";
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
 
@@ -224,6 +224,25 @@ const TypeGroup = memo(function TypeGroup({ type, docs, onView, onGenerate, onDo
   const hasVersions = docs.length > 1;
   const readyCount = docs.filter((d) => d.status === "ready").length;
 
+  // Category analysis — show sub-groups when a type spans multiple categories
+  const categories = useMemo(() => {
+    const seen = new Set<DocumentCategory>();
+    for (const d of docs) seen.add(d.docCategory);
+    return [...seen];
+  }, [docs]);
+  const multiCategory = categories.length > 1;
+
+  const categoryGroups = useMemo(() => {
+    if (!multiCategory) return null;
+    const order: Record<string, number> = { tailored: 0, benchmark: 1, fixed: 2 };
+    return [...categories]
+      .sort((a, b) => (order[a] ?? 9) - (order[b] ?? 9))
+      .map(cat => ({
+        category: cat,
+        docs: docs.filter(d => d.docCategory === cat),
+      }));
+  }, [docs, categories, multiCategory]);
+
   return (
     <div className="rounded-xl border border-border/50 overflow-hidden transition-colors hover:border-border/80">
       {/* Type header — always visible */}
@@ -247,7 +266,9 @@ const TypeGroup = memo(function TypeGroup({ type, docs, onView, onGenerate, onDo
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold truncate">{docTypeLabel(type)}</span>
-            <CategoryPill category={latest.docCategory} />
+            {categories.map(cat => (
+              <CategoryPill key={cat} category={cat} />
+            ))}
             <StatusBadge status={latest.status} />
           </div>
           <div className="flex items-center gap-2 mt-0.5">
@@ -294,22 +315,47 @@ const TypeGroup = memo(function TypeGroup({ type, docs, onView, onGenerate, onDo
         </div>
       </div>
 
-      {/* Version history */}
+      {/* Version history — sub-grouped by category when applicable */}
       {expanded && hasVersions && (
         <div className="border-t border-border/30 px-3 pb-3 pt-2 space-y-1">
-          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-3 pb-1">
-            Version History
-          </p>
-          {docs.slice(1).map((doc) => (
-            <VersionRow
-              key={doc.id}
-              doc={doc}
-              isLatest={false}
-              onView={onView}
-              onGenerate={onGenerate}
-              onDownload={onDownload}
-            />
-          ))}
+          {multiCategory && categoryGroups ? (
+            categoryGroups.map(({ category, docs: catDocs }) => (
+              <div key={category} className="space-y-1">
+                <div className="flex items-center gap-2 px-3 pt-1.5 pb-0.5">
+                  <CategoryPill category={category} />
+                  <span className="text-[10px] text-muted-foreground">
+                    {catDocs.length} version{catDocs.length > 1 ? "s" : ""}
+                  </span>
+                </div>
+                {catDocs.map((doc) => (
+                  <VersionRow
+                    key={doc.id}
+                    doc={doc}
+                    isLatest={doc.id === latest.id}
+                    onView={onView}
+                    onGenerate={onGenerate}
+                    onDownload={onDownload}
+                  />
+                ))}
+              </div>
+            ))
+          ) : (
+            <>
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-3 pb-1">
+                Version History
+              </p>
+              {docs.slice(1).map((doc) => (
+                <VersionRow
+                  key={doc.id}
+                  doc={doc}
+                  isLatest={false}
+                  onView={onView}
+                  onGenerate={onGenerate}
+                  onDownload={onDownload}
+                />
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -427,7 +473,7 @@ export function DocumentLibraryView({
       {/* ── Document Universe — primary browsing interface ── */}
       <DocumentUniverseGrid
         title="All Document Types"
-        universe={[...TAILORED_UNIVERSE, ...BENCHMARK_UNIVERSE]}
+        universe={DOCUMENT_UNIVERSE}
         statusMap={(() => {
           const m = new Map<string, DocStatus>();
           for (const doc of allDocs) {
@@ -448,9 +494,10 @@ export function DocumentLibraryView({
           if (doc && onViewDocument) onViewDocument(doc);
         }}
         onGenerate={(key, label) => {
-          // Create a synthetic doc for the generate callback
+          // Create a synthetic doc — inherit category from existing doc or default to tailored
           if (onGenerateDocument) {
-            const category = BENCHMARK_UNIVERSE.some((d) => d.key === key) ? "benchmark" : "tailored";
+            const existingDoc = allDocs.find((d) => d.docType === key);
+            const category: DocumentCategory = existingDoc?.docCategory ?? "tailored";
             onGenerateDocument({
               id: "",
               userId: "",

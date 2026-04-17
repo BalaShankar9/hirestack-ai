@@ -1,10 +1,9 @@
 /**
- * Document Universe — the canonical registry of all application document types.
+ * Document Universe — the single canonical registry of every document type.
  *
- * Every document the platform can generate is registered here. Each entry
- * belongs to a tier (`benchmark` or `tailored`) and is flagged as either
- * part of the **recommended set** (the 7 highest-impact docs suggested for
- * every application) or the **extended catalogue** (available on demand).
+ * ONE master array used identically by Benchmark, Tailored, and Library.
+ * Each entry is flagged as **recommended** (highest-impact documents for
+ * every application) or part of the **extended catalogue** (on demand).
  *
  * The catalog is designed to grow: the backend `document_catalog` service
  * and `DocumentPackPlanner` agent can discover new document types from JD
@@ -17,17 +16,17 @@
 export interface UniverseDocType {
   /** Unique key matching backend doc_type / SEED_CATALOG key */
   key: string;
-  /** Human-readable label */
+  /** Human-readable label (no Benchmark/Tailored prefix — context comes from the generated instance) */
   label: string;
   /** Short description of what this document is for */
   description: string;
   /** Whether this is part of the recommended set */
   recommended: boolean;
-  /** Grouping category within the tier */
+  /** Grouping category */
   group: "recommended" | "professional" | "executive" | "academic" | "compliance" | "technical" | "creative";
 }
 
-/* ── Recommended Set (7 docs) ────────────────────────────────────── */
+/* ── Recommended Set (10 highest-impact docs) ────────────────────── */
 
 export const RECOMMENDED_KEYS = [
   "cv",
@@ -37,19 +36,25 @@ export const RECOMMENDED_KEYS = [
   "executive_summary",
   "elevator_pitch",
   "linkedin_summary",
+  "skills_matrix",
+  "interview_preparation",
+  "competency_framework",
 ] as const;
 
-/* ── Tailored Document Universe ──────────────────────────────────── */
+/* ── Master Document Universe ────────────────────────────────────── */
 
-export const TAILORED_UNIVERSE: UniverseDocType[] = [
-  // ── Recommended Set ──
-  { key: "cv",                  label: "Tailored CV",               description: "ATS-optimised CV tailored to the role's exact requirements",                    recommended: true,  group: "recommended" },
-  { key: "cover_letter",        label: "Cover Letter",              description: "Evidence-backed narrative connecting your experience to the role",              recommended: true,  group: "recommended" },
-  { key: "personal_statement",  label: "Personal Statement",        description: "Compelling motivation narrative — authentic, specific, memorable",              recommended: true,  group: "recommended" },
-  { key: "portfolio",           label: "Portfolio & Evidence",       description: "Curated project showcase proving real capability with outcomes",               recommended: true,  group: "recommended" },
-  { key: "executive_summary",   label: "Executive Summary",         description: "One-page leadership snapshot for senior and executive roles",                  recommended: true,  group: "recommended" },
-  { key: "elevator_pitch",      label: "Elevator Pitch",            description: "30-second verbal summary of your candidacy — ready to deliver",                recommended: true,  group: "recommended" },
-  { key: "linkedin_summary",    label: "LinkedIn Summary",          description: "Keyword-rich LinkedIn About section aligned to target role",                   recommended: true,  group: "recommended" },
+export const DOCUMENT_UNIVERSE: UniverseDocType[] = [
+  // ── Recommended Set (10) ──
+  { key: "cv",                    label: "CV / Résumé",                  description: "ATS-optimised CV tailored to the role's exact requirements",                recommended: true,  group: "recommended" },
+  { key: "cover_letter",          label: "Cover Letter",                 description: "Evidence-backed narrative connecting your experience to the role",          recommended: true,  group: "recommended" },
+  { key: "personal_statement",    label: "Personal Statement",           description: "Compelling motivation narrative — authentic, specific, memorable",          recommended: true,  group: "recommended" },
+  { key: "portfolio",             label: "Portfolio & Evidence",          description: "Curated project showcase proving real capability with outcomes",           recommended: true,  group: "recommended" },
+  { key: "executive_summary",     label: "Executive Summary",            description: "One-page leadership snapshot for senior and executive roles",              recommended: true,  group: "recommended" },
+  { key: "elevator_pitch",        label: "Elevator Pitch",               description: "30-second verbal summary of your candidacy — ready to deliver",            recommended: true,  group: "recommended" },
+  { key: "linkedin_summary",      label: "LinkedIn Summary",             description: "Keyword-rich LinkedIn About section aligned to target role",               recommended: true,  group: "recommended" },
+  { key: "skills_matrix",         label: "Skills Matrix",                description: "Complete skills-to-requirements mapping matrix",                           recommended: true,  group: "recommended" },
+  { key: "interview_preparation", label: "Interview Preparation Guide",  description: "Ideal interview answers and preparation framework",                       recommended: true,  group: "recommended" },
+  { key: "competency_framework",  label: "Competency Framework",         description: "Role competency model with proficiency levels",                            recommended: true,  group: "recommended" },
   // ── Professional ──
   { key: "references_list",     label: "References List",           description: "Formatted reference sheet with contact details and relationship context",       recommended: false, group: "professional" },
   { key: "follow_up_email",     label: "Follow-Up Email",           description: "Post-interview follow-up reinforcing key strengths and fit",                   recommended: false, group: "professional" },
@@ -62,7 +67,7 @@ export const TAILORED_UNIVERSE: UniverseDocType[] = [
   { key: "salary_negotiation_script", label: "Salary Negotiation Script", description: "Data-backed negotiation talking points for offer stage",                 recommended: false, group: "professional" },
   { key: "networking_email",    label: "Networking Email",           description: "Professional outreach template for hiring managers or referrals",              recommended: false, group: "professional" },
   { key: "linkedin_recommendation_request", label: "LinkedIn Recommendation Request", description: "Template request to former colleagues for LinkedIn endorsement", recommended: false, group: "professional" },
-  // ── Executive ──
+  // ── Executive & Leadership ──
   { key: "ninety_day_plan",     label: "90-Day Plan",               description: "Structured onboarding plan demonstrating strategic thinking",                  recommended: false, group: "executive" },
   { key: "thirty_sixty_ninety_day_plan", label: "30-60-90 Day Plan", description: "Phased integration plan for leadership and management roles",                recommended: false, group: "executive" },
   { key: "leadership_philosophy", label: "Leadership Philosophy",   description: "Your leadership approach, style, and team-building principles",               recommended: false, group: "executive" },
@@ -75,7 +80,7 @@ export const TAILORED_UNIVERSE: UniverseDocType[] = [
   { key: "publications_list",  label: "Publications List",          description: "Formatted bibliography of your published work",                               recommended: false, group: "academic" },
   { key: "thesis_abstract",    label: "Thesis Abstract",            description: "Concise summary of thesis research and findings",                             recommended: false, group: "academic" },
   { key: "grant_proposal",     label: "Grant Proposal",             description: "Funding application narrative with objectives and methodology",               recommended: false, group: "academic" },
-  // ── Compliance ──
+  // ── Compliance & Formal ──
   { key: "selection_criteria",  label: "Selection Criteria Response", description: "Point-by-point response to formal selection criteria",                       recommended: false, group: "compliance" },
   { key: "diversity_statement", label: "Diversity Statement",       description: "Commitment to diversity, equity, and inclusion",                               recommended: false, group: "compliance" },
   { key: "safety_statement",   label: "Safety Statement",           description: "Workplace safety awareness and commitment",                                   recommended: false, group: "compliance" },
@@ -91,7 +96,7 @@ export const TAILORED_UNIVERSE: UniverseDocType[] = [
   { key: "writing_sample",     label: "Writing Sample",             description: "Professional writing sample demonstrating communication ability",              recommended: false, group: "technical" },
   { key: "case_study",         label: "Case Study",                 description: "Problem-solution-result narrative proving impact",                             recommended: false, group: "technical" },
   { key: "project_proposal",   label: "Project Proposal",           description: "Proposed project plan demonstrating initiative and methodology",              recommended: false, group: "technical" },
-  // ── Creative ──
+  // ── Creative & Media ──
   { key: "design_portfolio",   label: "Design Portfolio",           description: "Visual portfolio for design, UX, and creative roles",                         recommended: false, group: "creative" },
   { key: "clinical_portfolio", label: "Clinical Portfolio",         description: "Clinical experience portfolio for healthcare professionals",                   recommended: false, group: "creative" },
   { key: "speaker_bio",        label: "Speaker Bio",                description: "Speaking engagement biographical summary",                                    recommended: false, group: "creative" },
@@ -101,42 +106,28 @@ export const TAILORED_UNIVERSE: UniverseDocType[] = [
   { key: "speaking_proposal",  label: "Speaking Proposal",          description: "Conference talk proposal with abstract and bio",                              recommended: false, group: "creative" },
 ];
 
-/* ── Benchmark Document Universe ─────────────────────────────────── */
-
-export const BENCHMARK_UNIVERSE: UniverseDocType[] = [
-  { key: "cv",                    label: "Benchmark CV",                  description: "The ideal candidate's CV for this exact role",                    recommended: true,  group: "recommended" },
-  { key: "cover_letter",          label: "Benchmark Cover Letter",        description: "The perfect cover letter for this opportunity",                   recommended: true,  group: "recommended" },
-  { key: "personal_statement",    label: "Benchmark Personal Statement",  description: "Gold-standard personal statement for this role",                  recommended: true,  group: "recommended" },
-  { key: "executive_summary",     label: "Benchmark Executive Summary",   description: "Ideal executive summary matching role requirements",              recommended: true,  group: "recommended" },
-  { key: "skills_matrix",         label: "Benchmark Skills Matrix",       description: "Complete skills-to-requirements mapping matrix",                  recommended: true,  group: "recommended" },
-  { key: "interview_preparation", label: "Benchmark Interview Guide",     description: "Ideal interview answers and preparation framework",               recommended: true,  group: "recommended" },
-  { key: "competency_framework",  label: "Benchmark Competency Framework", description: "Role competency model with proficiency levels",                  recommended: true,  group: "recommended" },
-  // Extended benchmark docs
-  { key: "portfolio",             label: "Benchmark Portfolio",           description: "Gold-standard project portfolio for this role",                   recommended: false, group: "technical" },
-  { key: "elevator_pitch",        label: "Benchmark Elevator Pitch",     description: "Perfect 30-second pitch for this opportunity",                    recommended: false, group: "professional" },
-  { key: "selection_criteria",    label: "Benchmark Selection Criteria",  description: "Model responses to formal selection criteria",                    recommended: false, group: "compliance" },
-  { key: "ninety_day_plan",       label: "Benchmark 90-Day Plan",        description: "Ideal onboarding plan for this role",                             recommended: false, group: "executive" },
-  { key: "technical_assessment",  label: "Benchmark Technical Assessment", description: "Model technical demonstration for this role",                   recommended: false, group: "technical" },
-];
+/** @deprecated Use DOCUMENT_UNIVERSE — unified single registry */
+export const TAILORED_UNIVERSE = DOCUMENT_UNIVERSE;
+/** @deprecated Use DOCUMENT_UNIVERSE — unified single registry */
+export const BENCHMARK_UNIVERSE = DOCUMENT_UNIVERSE;
 
 /* ── Group metadata ──────────────────────────────────────────────── */
 
 export const GROUP_META: Record<string, { label: string; order: number }> = {
-  recommended:  { label: "Recommended",        order: 0 },
-  professional: { label: "Professional",       order: 1 },
+  recommended:  { label: "Recommended",            order: 0 },
+  professional: { label: "Professional",           order: 1 },
   executive:    { label: "Executive & Leadership", order: 2 },
-  academic:     { label: "Academic",           order: 3 },
-  compliance:   { label: "Compliance & Formal", order: 4 },
-  technical:    { label: "Technical",          order: 5 },
-  creative:     { label: "Creative & Media",   order: 6 },
+  academic:     { label: "Academic",               order: 3 },
+  compliance:   { label: "Compliance & Formal",    order: 4 },
+  technical:    { label: "Technical",              order: 5 },
+  creative:     { label: "Creative & Media",       order: 6 },
 };
 
 /* ── Utility ─────────────────────────────────────────────────────── */
 
 /** Look up a universe entry by key */
-export function findUniverseDoc(key: string, tier: "tailored" | "benchmark" = "tailored"): UniverseDocType | undefined {
-  const universe = tier === "benchmark" ? BENCHMARK_UNIVERSE : TAILORED_UNIVERSE;
-  return universe.find((d) => d.key === key);
+export function findUniverseDoc(key: string, _tier?: "tailored" | "benchmark"): UniverseDocType | undefined {
+  return DOCUMENT_UNIVERSE.find((d) => d.key === key);
 }
 
 /** Merge universe definitions with actual generated doc data */

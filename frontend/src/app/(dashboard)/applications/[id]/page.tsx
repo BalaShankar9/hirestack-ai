@@ -93,7 +93,7 @@ import { useDownloadGate } from "@/hooks/use-download-gate";
 import { ATSScorePanel } from "@/components/workspace/ats-score-panel";
 import { DocumentLibraryView } from "@/components/workspace/document-library-view";
 import { DocumentUniverseGrid, type DocStatus } from "@/components/workspace/document-universe-grid";
-import { BENCHMARK_UNIVERSE, TAILORED_UNIVERSE } from "@/lib/document-universe";
+import { DOCUMENT_UNIVERSE } from "@/lib/document-universe";
 import { SignupModal } from "@/components/auth/signup-modal";
 import { cn } from "@/lib/utils";
 
@@ -1384,7 +1384,7 @@ export default function ApplicationWorkspacePage() {
                   <Separator className="mb-5" />
                   <DocumentUniverseGrid
                     title="Benchmark Document Universe"
-                    universe={BENCHMARK_UNIVERSE}
+                    universe={DOCUMENT_UNIVERSE}
                     statusMap={(() => {
                       const m = new Map<string, DocStatus>();
                       if (app.benchmarkDocuments) {
@@ -1849,7 +1849,7 @@ export default function ApplicationWorkspacePage() {
                 <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                   <DocumentUniverseGrid
                     title="Tailored Document Universe"
-                    universe={TAILORED_UNIVERSE}
+                    universe={DOCUMENT_UNIVERSE}
                     statusMap={(() => {
                       const m = new Map<string, DocStatus>();
                       // Core docs from inline state
