@@ -5,7 +5,8 @@ const withBundleAnalyzer = require("@next/bundle-analyzer")({
 
 const nextConfig = {
   poweredByHeader: false,
-  output: "standalone",
+  // standalone is for Docker; Netlify plugin handles its own output
+  ...(process.env.NETLIFY ? {} : { output: "standalone" }),
   reactStrictMode: true,
   // Prevent dev/build (or multiple dev servers) from corrupting each other's output.
   // - Default build output remains `.next`
@@ -63,7 +64,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https:",
               "font-src 'self' data:",
-              `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.up.railway.app https://api.hirestack.tech${isDev ? " http://localhost:* http://127.0.0.1:* ws://localhost:*" : ""}`,
+              `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.up.railway.app${isDev ? " http://localhost:* http://127.0.0.1:* ws://localhost:*" : ""}`,
               "frame-ancestors 'none'",
             ].join("; "),
           },

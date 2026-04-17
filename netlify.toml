@@ -7,7 +7,7 @@
   NODE_VERSION = "20"
   # NEXT_PUBLIC_* vars are set in Netlify dashboard.
   # This fallback ensures builds work even without dashboard config.
-  NEXT_PUBLIC_API_URL = "https://api.hirestack.tech"
+  NEXT_PUBLIC_API_URL = "https://hirestack-ai-production.up.railway.app"
   NEXT_PUBLIC_AI_ENABLED = "true"
 
 [[plugins]]
