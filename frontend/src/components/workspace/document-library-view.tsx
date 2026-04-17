@@ -22,7 +22,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import type { DocumentLibraryItem, DocumentCategory } from "@/lib/firestore/models";
+import { DocumentUniverseGrid, type DocStatus } from "./document-universe-grid";
+import { TAILORED_UNIVERSE, BENCHMARK_UNIVERSE } from "@/lib/document-universe";
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
 
@@ -91,6 +94,17 @@ function formatDate(ts: number): string {
   if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`;
   if (diff < 604800_000) return `${Math.floor(diff / 86400_000)}d ago`;
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** Rank status for picking the "best" — lower is better */
+function statusRank(status: string): number {
+  switch (status) {
+    case "ready": return 0;
+    case "generating": return 1;
+    case "planned": return 2;
+    case "error": return 3;
+    default: return 9;
+  }
 }
 
 /* ── Status badge ────────────────────────────────────────────────── */
@@ -491,6 +505,58 @@ export function DocumentLibraryView({
           ))}
         </div>
       )}
+
+      {/* ── Document Universe — show all possible doc types ── */}
+      <Separator className="my-2" />
+      <DocumentUniverseGrid
+        title="Document Universe"
+        universe={[...TAILORED_UNIVERSE, ...BENCHMARK_UNIVERSE]}
+        statusMap={(() => {
+          const m = new Map<string, DocStatus>();
+          for (const doc of allDocs) {
+            const existing = m.get(doc.docType);
+            // Keep best status: ready > generating > planned > error
+            if (!existing || statusRank(doc.status) < statusRank(existing.status)) {
+              m.set(doc.docType, {
+                status: doc.status as DocStatus["status"],
+                version: doc.version,
+                updatedAt: doc.updatedAt,
+              });
+            }
+          }
+          return m;
+        })()}
+        onView={(key) => {
+          const doc = allDocs.find((d) => d.docType === key && d.status === "ready");
+          if (doc && onViewDocument) onViewDocument(doc);
+        }}
+        onGenerate={(key, label) => {
+          // Create a synthetic doc for the generate callback
+          if (onGenerateDocument) {
+            const category = BENCHMARK_UNIVERSE.some((d) => d.key === key) ? "benchmark" : "tailored";
+            onGenerateDocument({
+              id: "",
+              userId: "",
+              applicationId: "",
+              docType: key,
+              docCategory: category as DocumentCategory,
+              label,
+              htmlContent: "",
+              metadata: {},
+              version: 1,
+              status: "planned",
+              errorMessage: "",
+              source: "user_request",
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            });
+          }
+        }}
+        onDownload={(key) => {
+          const doc = allDocs.find((d) => d.docType === key && d.status === "ready");
+          if (doc && onDownloadDocument) onDownloadDocument(doc);
+        }}
+      />
     </div>
   );
 }

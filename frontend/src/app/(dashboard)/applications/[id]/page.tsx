@@ -92,6 +92,8 @@ import { useAgentStatus } from "@/hooks/use-agent-status";
 import { useDownloadGate } from "@/hooks/use-download-gate";
 import { ATSScorePanel } from "@/components/workspace/ats-score-panel";
 import { DocumentLibraryView } from "@/components/workspace/document-library-view";
+import { DocumentUniverseGrid, type DocStatus } from "@/components/workspace/document-universe-grid";
+import { BENCHMARK_UNIVERSE, TAILORED_UNIVERSE } from "@/lib/document-universe";
 import { SignupModal } from "@/components/auth/signup-modal";
 import { cn } from "@/lib/utils";
 
@@ -744,7 +746,7 @@ export default function ApplicationWorkspacePage() {
               const hasUngenerated = (app.discoveredDocuments || []).some(
                 (d: any) => d.key && !generated[d.key] && !coreKeys.has(d.key)
               );
-              const isTailoredActive = tailoredTabs.includes(tab) || tab.startsWith("extra-") || tab === "optional-docs";
+              const isTailoredActive = tailoredTabs.includes(tab) || tab.startsWith("extra-") || tab === "optional-docs" || tab === "all-docs";
 
               const triggerCls = "gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm";
               const subTriggerCls = "gap-1.5 text-xs rounded-md data-[state=active]:bg-background data-[state=active]:shadow-sm";
@@ -800,6 +802,10 @@ export default function ApplicationWorkspacePage() {
                           <span>More Docs</span>
                         </TabsTrigger>
                       )}
+                      <TabsTrigger value="all-docs" className={subTriggerCls}>
+                        <Layers className="h-3 w-3" />
+                        <span>All Documents</span>
+                      </TabsTrigger>
                     </TabsList>
                   )}
                 </div>
@@ -1372,6 +1378,40 @@ export default function ApplicationWorkspacePage() {
                     </div>
                   </div>
                 )}
+
+                {/* Benchmark Document Universe — all possible benchmark doc types */}
+                {app.benchmark && (
+                  <div className="mt-6">
+                    <Separator className="mb-5" />
+                    <DocumentUniverseGrid
+                      title="Benchmark Document Universe"
+                      universe={BENCHMARK_UNIVERSE}
+                      statusMap={(() => {
+                        const m = new Map<string, DocStatus>();
+                        if (app.benchmarkDocuments) {
+                          for (const [key, html] of Object.entries(app.benchmarkDocuments)) {
+                            if (html) m.set(key, { status: "ready" });
+                          }
+                        }
+                        if (app.benchmark?.benchmarkCvHtml) m.set("cv", { status: "ready" });
+                        return m;
+                      })()}
+                      onView={(key) => {
+                        // Scroll to the matching details element if it exists
+                        const el = document.querySelector(`details summary span`);
+                        if (el) el.closest("details")?.setAttribute("open", "");
+                      }}
+                      onGenerate={async (key, label) => {
+                        try {
+                          await generateDocumentInLibrary(key, "benchmark", appId, label);
+                          toast({ title: "Generation started", description: `Generating benchmark ${label}…` });
+                        } catch {
+                          toast({ title: "Generation failed", variant: "error" });
+                        }
+                      }}
+                    />
+                  </div>
+                )}
               </div>
               </SectionErrorBoundary>
             </TabsContent>
@@ -1804,6 +1844,54 @@ export default function ApplicationWorkspacePage() {
                 </TabsContent>
               );
             })()}
+
+            {/* ── All Documents Universe sub-tab (Tailored) ── */}
+            <TabsContent value="all-docs" className="mt-4">
+              <SectionErrorBoundary label="All Documents">
+                <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
+                  <DocumentUniverseGrid
+                    title="Tailored Document Universe"
+                    universe={TAILORED_UNIVERSE}
+                    statusMap={(() => {
+                      const m = new Map<string, DocStatus>();
+                      // Core docs from inline state
+                      if (app.cvHtml) m.set("cv", { status: "ready" });
+                      if (app.coverLetterHtml) m.set("cover_letter", { status: "ready" });
+                      if (app.personalStatementHtml) m.set("personal_statement", { status: "ready" });
+                      if (app.portfolioHtml) m.set("portfolio", { status: "ready" });
+                      // Discovered/generated extra docs
+                      if (app.generatedDocuments) {
+                        for (const [key, html] of Object.entries(app.generatedDocuments)) {
+                          if (html) m.set(key, { status: "ready" });
+                        }
+                      }
+                      // Discovered but ungenerated docs → planned
+                      if (app.discoveredDocuments) {
+                        for (const doc of app.discoveredDocuments as any[]) {
+                          if (doc.key && !m.has(doc.key)) m.set(doc.key, { status: "planned" });
+                        }
+                      }
+                      return m;
+                    })()}
+                    onView={(key) => {
+                      const tabMap: Record<string, string> = {
+                        cv: "cv", cover_letter: "cover", personal_statement: "statement", portfolio: "portfolio",
+                      };
+                      if (tabMap[key]) { setTab(tabMap[key]); return; }
+                      if (app.generatedDocuments?.[key]) { setTab(`extra-${key}`); }
+                    }}
+                    onGenerate={async (key, label) => {
+                      try {
+                        await generateDocumentInLibrary(key, "tailored", appId, label);
+                        toast({ title: "Generation started", description: `Generating ${label}…` });
+                      } catch {
+                        toast({ title: "Generation failed", variant: "error" });
+                      }
+                    }}
+                  />
+                </div>
+              </SectionErrorBoundary>
+            </TabsContent>
 
             {/* ── ATS Score Tab ── */}
             <TabsContent value="ats" className="mt-4">
