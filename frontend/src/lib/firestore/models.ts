@@ -481,15 +481,20 @@ export type ResourceCategory =
   | "resume_writing"
   | "interview_prep"
   | "salary_negotiation"
+  | "career_strategy"
   | "career_development"
   | "networking"
   | "industry_knowledge"
   | "soft_skills"
   | "technical_skills"
   | "job_search"
-  | "personal_branding";
+  | "personal_branding"
+  | "skill_development"
+  | "general";
 
-export type ResourceType = "guide" | "template" | "book" | "video" | "course" | "article" | "tool" | "checklist";
+export type ResourceType =
+  | "guide" | "template" | "book" | "video" | "course" | "article"
+  | "tool" | "checklist" | "cheatsheet" | "reference" | "tutorial" | "podcast";
 export type ResourceDifficulty = "beginner" | "intermediate" | "advanced";
 
 export interface KnowledgeResource {
@@ -501,14 +506,16 @@ export interface KnowledgeResource {
   difficulty: ResourceDifficulty;
   url?: string | null;
   content_html?: string | null;
-  thumbnail_url?: string | null;
-  author?: string | null;
-  estimated_minutes?: number | null;
+  cover_image_url?: string | null;
+  provider?: string | null;
+  estimated_time?: string | null;
   skills: string[];
-  featured: boolean;
-  rating_avg: number;
-  rating_count: number;
+  tags?: string[];
+  is_featured: boolean;
+  is_published?: boolean;
+  sort_order?: number;
   created_at: string;
+  updated_at?: string;
 }
 
 export type ProgressStatus = "saved" | "in_progress" | "completed";

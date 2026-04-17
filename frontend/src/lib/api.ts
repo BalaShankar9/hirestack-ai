@@ -565,6 +565,14 @@ class APIClient {
       this.request("/knowledge/recommendations/generate", { method: "POST" }),
     dismissRecommendation: async (recId: string) =>
       this.request(`/knowledge/recommendations/${recId}/dismiss`, { method: "POST" }),
+    /** Get ALL user documents across every application (for global library view). */
+    getAllDocuments: async (params?: { category?: string; limit?: number }) => {
+      const qs = new URLSearchParams();
+      if (params?.category) qs.set("category", params.category);
+      if (params?.limit) qs.set("limit", String(params.limit));
+      const q = qs.toString();
+      return this.request(`/documents/library/all${q ? `?${q}` : ""}`);
+    },
   };
 
   /* ── Global Skills & Development ────────────────────────────────── */

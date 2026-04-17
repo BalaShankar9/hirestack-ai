@@ -80,6 +80,34 @@ async def get_library_summary(
     return {"summary": summary}
 
 
+@router.get("/documents/library/all")
+@limiter.limit("30/minute")
+async def get_all_documents(
+    request: Request,
+    category: Optional[str] = Query(None, pattern=r"^(benchmark|fixed|tailored)$"),
+    limit: int = Query(100, ge=1, le=500),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Get ALL user documents across every application — for the global sidebar library."""
+    from app.core.database import get_supabase, TABLES
+
+    user_id = current_user.get("id") or current_user.get("uid") or current_user.get("sub")
+    sb = get_supabase()
+
+    def _query():
+        q = sb.table(TABLES["document_library"]).select(
+            "id, doc_type, doc_category, label, status, version, source, "
+            "application_id, created_at, updated_at"
+        ).eq("user_id", user_id).order("updated_at", desc=True).limit(limit)
+        if category:
+            q = q.eq("doc_category", category)
+        return q.execute()
+
+    import asyncio
+    result = await asyncio.get_event_loop().run_in_executor(None, _query)
+    return {"documents": result.data or []}
+
+
 @router.get("/documents/library/{doc_id}")
 @limiter.limit("30/minute")
 async def get_document(
