@@ -121,6 +121,13 @@ export function PipelineAgentView({
   const isComplete = progress >= 100;
   const statusLabel = getStatusLabel(progress, generating, isComplete);
 
+  // Visible agents: only show agents up to the highest touched index + 1
+  // so they appear one-by-one like a live feed instead of all at once.
+  const highestVisible = isComplete
+    ? AGENT_PERSONAS.length - 1
+    : Math.max(activePhaseIdx, ...Array.from(completedPhases), 0);
+  const visibleCount = Math.min(highestVisible + 2, AGENT_PERSONAS.length); // +1 for "next up" peek
+
   // ── Error state ──────────────────────────────────────────────
 
   if (genError) {
@@ -184,7 +191,7 @@ export function PipelineAgentView({
       <div className="px-6 pb-3">
         <div className="flex items-center justify-between text-2xs text-muted-foreground mb-1.5">
           <span className="font-mono tabular-nums font-medium text-foreground">
-            {progress}%
+            {progress < 100 ? progress.toFixed(1) : "100"}%
           </span>
           <span className="flex items-center gap-1">
             {formatElapsed(elapsedMs)}
@@ -215,10 +222,10 @@ export function PipelineAgentView({
         />
       </div>
 
-      {/* Agent timeline */}
+      {/* Agent timeline — agents appear one-by-one as they activate */}
       <div className="px-6 pb-4">
         <div className="space-y-0">
-          {AGENT_PERSONAS.map((agent, i) => {
+          {AGENT_PERSONAS.slice(0, visibleCount).map((agent, i) => {
             const isDone = completedPhases.has(i);
             const isActive = i === activePhaseIdx && !isDone;
             const isFailed = false; // Could be extended per-phase
@@ -239,7 +246,8 @@ export function PipelineAgentView({
                 status={status}
                 latencyMs={phaseLatencies[i]}
                 logs={phaseLogs[i] || []}
-                isLast={i === AGENT_PERSONAS.length - 1}
+                isLast={i === visibleCount - 1}
+                staggerDelay={i * 0.12}
               />
             );
           })}

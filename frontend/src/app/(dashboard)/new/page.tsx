@@ -250,7 +250,8 @@ export default function NewApplicationPage() {
 
   // Step 4: Generate — real-time SSE progress
   const [generating, setGenerating] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [rawProgress, setRawProgress] = useState(0);
+  const [smoothProgress, setSmoothProgress] = useState(0);
   const [genError, setGenError] = useState<string | null>(null);
   const [genMessage, setGenMessage] = useState("");
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -261,6 +262,51 @@ export default function NewApplicationPage() {
   const [phaseLogs, setPhaseLogs] = useState<Record<number, string[]>>({});
   const restoreRef = useRef(false);
   const redirectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const smoothTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Smooth progress interpolation — crawls towards rawProgress so the bar
+  // moves continuously between the coarse backend jumps (5→8→15→25→…).
+  useEffect(() => {
+    if (smoothTimerRef.current) clearInterval(smoothTimerRef.current);
+    if (!generating && rawProgress >= 100) {
+      setSmoothProgress(100);
+      return;
+    }
+    if (!generating) return;
+
+    smoothTimerRef.current = setInterval(() => {
+      setSmoothProgress((prev) => {
+        if (prev >= rawProgress) return prev;
+        // Close 15% of the remaining gap each tick (200ms) — fast at first, eases near target
+        const gap = rawProgress - prev;
+        const step = Math.max(0.1, gap * 0.15);
+        const next = prev + step;
+        return next >= rawProgress ? rawProgress : Math.round(next * 10) / 10;
+      });
+    }, 200);
+
+    return () => {
+      if (smoothTimerRef.current) clearInterval(smoothTimerRef.current);
+    };
+  }, [rawProgress, generating]);
+
+  // Alias so the rest of the code keeps using "progress"
+  const progress = smoothProgress;
+  const setProgress = setRawProgress;
+
+  // Auto-complete all phases below the active one so earlier agents show
+  // as done even if the backend skips an explicit "_done" event.
+  useEffect(() => {
+    if (activePhaseIdx <= 0) return;
+    setCompletedPhases((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (let i = 0; i < activePhaseIdx; i++) {
+        if (!next.has(i)) { next.add(i); changed = true; }
+      }
+      return changed ? next : prev;
+    });
+  }, [activePhaseIdx]);
 
   const { data: generationJob } = useGenerationJob(activeJobId);
   const generationJobStatus = generationJob?.status ?? null;
@@ -518,6 +564,7 @@ export default function NewApplicationPage() {
     setGenerating(true);
     setGenError(null);
     setProgress(0);
+    setSmoothProgress(0);
     setGenMessage("Initializing AI engine…");
     setElapsedMs(0);
     setCompletedPhases(new Set());
@@ -582,7 +629,9 @@ export default function NewApplicationPage() {
           appendPhaseLog(phaseIdx, p.message);
         }
 
-        // Mark phases that are done
+        // Mark phases that are done — either explicit "_done" suffix or
+        // auto-complete all phases below the newly active one (handles
+        // backends that skip "recon_done" etc.)
         if (p.phase.endsWith("_done") || p.phase === "complete") {
           setCompletedPhases((prev) => {
             const next = new Set(prev);
@@ -594,16 +643,34 @@ export default function NewApplicationPage() {
 
       const handleDetail = (event: PipelineDetailEvent) => {
         const phaseIdx = getPhaseIndexFromDetail(event);
-        if (phaseIdx >= 0 && (event.status === "running" || event.status === "completed")) {
-          setActivePhaseIdx(phaseIdx);
+        if (phaseIdx >= 0) {
+          if (event.status === "running" || event.status === "completed") {
+            setActivePhaseIdx(phaseIdx);
+          }
+          if (event.status === "completed") {
+            setCompletedPhases((prev) => {
+              const next = new Set(prev);
+              next.add(phaseIdx);
+              return next;
+            });
+          }
         }
         appendPhaseLog(phaseIdx, formatDetailLine(event));
       };
 
       const handleAgentEvent = (event: PipelineAgentEvent) => {
         const phaseIdx = getPhaseIndexFromAgentEvent(event);
-        if (phaseIdx >= 0 && event.status === "running") {
-          setActivePhaseIdx(phaseIdx);
+        if (phaseIdx >= 0) {
+          if (event.status === "running") {
+            setActivePhaseIdx(phaseIdx);
+          }
+          if (event.status === "completed") {
+            setCompletedPhases((prev) => {
+              const next = new Set(prev);
+              next.add(phaseIdx);
+              return next;
+            });
+          }
         }
         appendPhaseLog(phaseIdx, formatAgentLine(event));
       };

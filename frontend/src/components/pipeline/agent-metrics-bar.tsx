@@ -48,7 +48,7 @@ export const AgentMetricsBar = memo(function AgentMetricsBar({
     {
       icon: Activity,
       label: "Progress",
-      value: `${progress}%`,
+      value: `${progress < 100 ? progress.toFixed(1) : "100"}%`,
       pulse: false,
     },
   ];

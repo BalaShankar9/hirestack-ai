@@ -290,6 +290,17 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             company_intel=company_intel_stream,
         )
 
+        # Mark Recon (company intel) as done before moving to next phases
+        yield _sse("progress", {
+            "phase": "recon_done",
+            "step": 0,
+            "totalSteps": 6,
+            "progress": 28,
+            "message": "Intel gathered ✓",
+        })
+        yield _agent_sse("recon", "complete", "completed", message="Intel gathering complete")
+        await asyncio.sleep(0.01)  # Force flush
+
         # ── Phase 2: Gap analysis pipeline ───────────────────────────
         yield _sse("progress", {
             "phase": "gap_analysis",

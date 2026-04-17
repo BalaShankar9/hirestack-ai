@@ -18,6 +18,7 @@ interface AgentTimelineCardProps {
   logs: string[];
   isLast: boolean;
   errorMessage?: string;
+  staggerDelay?: number;
 }
 
 function formatLatency(ms: number): string {
@@ -52,6 +53,7 @@ export const AgentTimelineCard = memo(function AgentTimelineCard({
   logs,
   isLast,
   errorMessage,
+  staggerDelay = 0,
 }: AgentTimelineCardProps) {
   const logEndRef = useRef<HTMLDivElement>(null);
   const isOpen = status === "running" || status === "failed";
@@ -65,9 +67,9 @@ export const AgentTimelineCard = memo(function AgentTimelineCard({
   return (
     <motion.div
       className="flex gap-3 relative"
-      initial={{ opacity: 0, x: -10 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.3 }}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, delay: staggerDelay, ease: "easeOut" }}
     >
       {/* Timeline connector */}
       <div className="flex flex-col items-center shrink-0 w-6">
