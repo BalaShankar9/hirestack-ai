@@ -397,7 +397,7 @@ export function DocumentLibraryView({
   const uniqueTypes = new Set(allDocs.map((d) => d.docType)).size;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* ── Header with stats ── */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex-1">
@@ -405,111 +405,28 @@ export function DocumentLibraryView({
             <FolderOpen className="h-5 w-5 text-primary" />
             <h3 className="text-base font-semibold">Document Library</h3>
           </div>
-          <div className="flex items-center gap-3 mt-1">
-            <span className="text-xs text-muted-foreground">
-              {readyCount}/{totalDocs} ready
-            </span>
-            <span className="text-xs text-muted-foreground">·</span>
-            <span className="text-xs text-muted-foreground">
-              {uniqueTypes} document type{uniqueTypes !== 1 ? "s" : ""}
-            </span>
-            {generatingCount > 0 && (
-              <>
-                <span className="text-xs text-muted-foreground">·</span>
-                <span className="text-xs text-primary flex items-center gap-1">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  {generatingCount} generating
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Search + filter toggle */}
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search documents…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-8 w-48 rounded-lg border border-border/60 bg-background pl-8 pr-3 text-xs outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-colors"
-            />
-          </div>
-          <Button
-            variant={showFilters ? "secondary" : "ghost"}
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => setShowFilters(!showFilters)}
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
-
-      {/* ── Filter bar ── */}
-      {showFilters && (
-        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border/50 p-3">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Category</span>
-            <div className="flex gap-1">
-              {(["all", "tailored", "benchmark", "fixed"] as FilterCategory[]).map((c) => (
-                <FilterPill key={c} label={c === "all" ? "All" : c.charAt(0).toUpperCase() + c.slice(1)} active={filterCat === c} onClick={() => setFilterCat(c)} />
-              ))}
-            </div>
-          </div>
-          <div className="h-5 w-px bg-border/60" />
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Status</span>
-            <div className="flex gap-1">
-              {(["all", "ready", "generating", "planned", "error"] as FilterStatus[]).map((s) => (
-                <FilterPill key={s} label={s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)} active={filterStatus === s} onClick={() => setFilterStatus(s)} />
-              ))}
-            </div>
-          </div>
-          <div className="h-5 w-px bg-border/60" />
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Sort</span>
-            <div className="flex gap-1">
-              {([["type", "Name"], ["date", "Newest"], ["status", "Status"]] as [SortMode, string][]).map(([mode, label]) => (
-                <FilterPill key={mode} label={label} active={sortMode === mode} onClick={() => setSortMode(mode)} />
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Document groups ── */}
-      {groups.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <FolderOpen className="h-10 w-10 text-muted-foreground/30 mb-3" />
-          <p className="text-sm font-medium text-muted-foreground">No documents found</p>
-          <p className="text-xs text-muted-foreground/70 mt-1">
-            {search || filterCat !== "all" || filterStatus !== "all"
-              ? "Try adjusting your filters or search query"
-              : "Documents will appear here once generation begins"}
+          <p className="text-xs text-muted-foreground mt-0.5">
+            All document types available for this application — browse, generate, and manage.
           </p>
         </div>
-      ) : (
-        <div className="space-y-2">
-          {groups.map((g) => (
-            <TypeGroup
-              key={g.type}
-              type={g.type}
-              docs={g.docs}
-              onView={onViewDocument}
-              onGenerate={onGenerateDocument}
-              onDownload={onDownloadDocument}
-            />
-          ))}
-        </div>
-      )}
+        {readyCount > 0 && (
+          <div className="flex items-center gap-3">
+            <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-0">
+              {readyCount} ready
+            </Badge>
+            {generatingCount > 0 && (
+              <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-0 gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {generatingCount} generating
+              </Badge>
+            )}
+          </div>
+        )}
+      </div>
 
-      {/* ── Document Universe — show all possible doc types ── */}
-      <Separator className="my-2" />
+      {/* ── Document Universe — primary browsing interface ── */}
       <DocumentUniverseGrid
-        title="Document Universe"
+        title="All Document Types"
         universe={[...TAILORED_UNIVERSE, ...BENCHMARK_UNIVERSE]}
         statusMap={(() => {
           const m = new Map<string, DocStatus>();
@@ -557,6 +474,99 @@ export function DocumentLibraryView({
           if (doc && onDownloadDocument) onDownloadDocument(doc);
         }}
       />
+
+      {/* ── Generated Documents — version history & management ── */}
+      {totalDocs > 0 && (
+        <>
+          <Separator />
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <History className="h-4 w-4 text-muted-foreground" />
+                  <h4 className="text-sm font-semibold">Generated Documents</h4>
+                  <span className="text-[11px] text-muted-foreground">
+                    {readyCount}/{totalDocs} ready · {uniqueTypes} type{uniqueTypes !== 1 ? "s" : ""}
+                  </span>
+                </div>
+              </div>
+              {/* Search + filter toggle */}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Search documents…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="h-8 w-48 rounded-lg border border-border/60 bg-background pl-8 pr-3 text-xs outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-colors"
+                  />
+                </div>
+                <Button
+                  variant={showFilters ? "secondary" : "ghost"}
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setShowFilters(!showFilters)}
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            {/* ── Filter bar ── */}
+            {showFilters && (
+              <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border/50 p-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Category</span>
+                  <div className="flex gap-1">
+                    {(["all", "tailored", "benchmark", "fixed"] as FilterCategory[]).map((c) => (
+                      <FilterPill key={c} label={c === "all" ? "All" : c.charAt(0).toUpperCase() + c.slice(1)} active={filterCat === c} onClick={() => setFilterCat(c)} />
+                    ))}
+                  </div>
+                </div>
+                <div className="h-5 w-px bg-border/60" />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Status</span>
+                  <div className="flex gap-1">
+                    {(["all", "ready", "generating", "planned", "error"] as FilterStatus[]).map((s) => (
+                      <FilterPill key={s} label={s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)} active={filterStatus === s} onClick={() => setFilterStatus(s)} />
+                    ))}
+                  </div>
+                </div>
+                <div className="h-5 w-px bg-border/60" />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Sort</span>
+                  <div className="flex gap-1">
+                    {([["type", "Name"], ["date", "Newest"], ["status", "Status"]] as [SortMode, string][]).map(([mode, label]) => (
+                      <FilterPill key={mode} label={label} active={sortMode === mode} onClick={() => setSortMode(mode)} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Document groups ── */}
+            {groups.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <p className="text-xs text-muted-foreground">No matching documents</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {groups.map((g) => (
+                  <TypeGroup
+                    key={g.type}
+                    type={g.type}
+                    docs={g.docs}
+                    onView={onViewDocument}
+                    onGenerate={onGenerateDocument}
+                    onDownload={onDownloadDocument}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

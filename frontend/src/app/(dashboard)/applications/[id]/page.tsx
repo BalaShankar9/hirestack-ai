@@ -1380,38 +1380,36 @@ export default function ApplicationWorkspacePage() {
                 )}
 
                 {/* Benchmark Document Universe — all possible benchmark doc types */}
-                {app.benchmark && (
-                  <div className="mt-6">
-                    <Separator className="mb-5" />
-                    <DocumentUniverseGrid
-                      title="Benchmark Document Universe"
-                      universe={BENCHMARK_UNIVERSE}
-                      statusMap={(() => {
-                        const m = new Map<string, DocStatus>();
-                        if (app.benchmarkDocuments) {
-                          for (const [key, html] of Object.entries(app.benchmarkDocuments)) {
-                            if (html) m.set(key, { status: "ready" });
-                          }
+                <div className="mt-6">
+                  <Separator className="mb-5" />
+                  <DocumentUniverseGrid
+                    title="Benchmark Document Universe"
+                    universe={BENCHMARK_UNIVERSE}
+                    statusMap={(() => {
+                      const m = new Map<string, DocStatus>();
+                      if (app.benchmarkDocuments) {
+                        for (const [key, html] of Object.entries(app.benchmarkDocuments)) {
+                          if (html) m.set(key, { status: "ready" });
                         }
-                        if (app.benchmark?.benchmarkCvHtml) m.set("cv", { status: "ready" });
-                        return m;
-                      })()}
-                      onView={(key) => {
-                        // Scroll to the matching details element if it exists
-                        const el = document.querySelector(`details summary span`);
-                        if (el) el.closest("details")?.setAttribute("open", "");
-                      }}
-                      onGenerate={async (key, label) => {
-                        try {
-                          await generateDocumentInLibrary(key, "benchmark", appId, label);
-                          toast({ title: "Generation started", description: `Generating benchmark ${label}…` });
-                        } catch {
-                          toast({ title: "Generation failed", variant: "error" });
-                        }
-                      }}
-                    />
-                  </div>
-                )}
+                      }
+                      if (app.benchmark?.benchmarkCvHtml) m.set("cv", { status: "ready" });
+                      return m;
+                    })()}
+                    onView={(key) => {
+                      // Scroll to the matching details element if it exists
+                      const el = document.querySelector(`details summary span`);
+                      if (el) el.closest("details")?.setAttribute("open", "");
+                    }}
+                    onGenerate={async (key, label) => {
+                      try {
+                        await generateDocumentInLibrary(key, "benchmark", appId, label);
+                        toast({ title: "Generation started", description: `Generating benchmark ${label}…` });
+                      } catch {
+                        toast({ title: "Generation failed", variant: "error" });
+                      }
+                    }}
+                  />
+                </div>
               </div>
               </SectionErrorBoundary>
             </TabsContent>

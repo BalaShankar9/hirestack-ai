@@ -10,7 +10,7 @@ import {
   Clock,
   AlertCircle,
   Loader2,
-  Crown,
+  Star,
   ChevronRight,
   Search,
 } from "lucide-react";
@@ -42,8 +42,8 @@ interface DocumentUniverseGridProps {
   onDownload?: (key: string) => void;
   /** Title override */
   title?: string;
-  /** Whether to show the core package section */
-  showCoreSection?: boolean;
+  /** Whether to show the recommended section */
+  showRecommendedSection?: boolean;
   /** Whether to show search */
   showSearch?: boolean;
 }
@@ -126,9 +126,9 @@ const DocCard = memo(function DocCard({ def, status, onView, onGenerate, onDownl
           <span className={`text-sm font-medium truncate ${!status ? "text-muted-foreground/70" : ""}`}>
             {def.label}
           </span>
-          {def.core && (
-            <Badge variant="secondary" className="text-[9px] gap-0.5 bg-amber-500/10 text-amber-600 border-0 px-1.5 py-0">
-              <Crown className="h-2.5 w-2.5" /> Core
+          {def.recommended && (
+            <Badge variant="secondary" className="text-[9px] gap-0.5 bg-primary/10 text-primary border-0 px-1.5 py-0">
+              <Star className="h-2.5 w-2.5" /> Recommended
             </Badge>
           )}
         </div>
@@ -223,13 +223,13 @@ export function DocumentUniverseGrid({
   onGenerate,
   onDownload,
   title,
-  showCoreSection = true,
+  showRecommendedSection = true,
   showSearch = true,
 }: DocumentUniverseGridProps) {
   const [search, setSearch] = useState("");
 
-  const coreDocs = useMemo(() => universe.filter((d) => d.core), [universe]);
-  const extendedDocs = useMemo(() => universe.filter((d) => !d.core), [universe]);
+  const recommendedDocs = useMemo(() => universe.filter((d) => d.recommended), [universe]);
+  const extendedDocs = useMemo(() => universe.filter((d) => !d.recommended), [universe]);
 
   // Group extended docs and filter by search
   const filteredExtended = useMemo(() => {
@@ -257,7 +257,7 @@ export function DocumentUniverseGrid({
 
   // Stats
   const totalReady = universe.filter((d) => statusMap.get(d.key)?.status === "ready").length;
-  const coreReady = coreDocs.filter((d) => statusMap.get(d.key)?.status === "ready").length;
+  const recommendedReady = recommendedDocs.filter((d) => statusMap.get(d.key)?.status === "ready").length;
 
   return (
     <div className="space-y-5">
@@ -285,21 +285,21 @@ export function DocumentUniverseGrid({
         </div>
       )}
 
-      {/* ── Core Package ── */}
-      {showCoreSection && coreDocs.length > 0 && (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.02] p-4 space-y-3">
+      {/* ── Recommended Documents ── */}
+      {showRecommendedSection && recommendedDocs.length > 0 && (
+        <div className="rounded-xl border border-primary/20 bg-primary/[0.02] p-4 space-y-3">
           <div className="flex items-center gap-2">
-            <Crown className="h-4 w-4 text-amber-500" />
-            <span className="text-sm font-semibold">Core Package</span>
-            <Badge variant="secondary" className="text-[10px] bg-amber-500/10 text-amber-600 border-0">
-              {coreReady}/{coreDocs.length} ready
+            <Star className="h-4 w-4 text-primary" />
+            <span className="text-sm font-semibold">Recommended</span>
+            <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-0">
+              {recommendedReady}/{recommendedDocs.length} ready
             </Badge>
             <span className="text-[11px] text-muted-foreground ml-1">
               Highest-impact documents for every application
             </span>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
-            {coreDocs.map((def) => (
+            {recommendedDocs.map((def) => (
               <DocCard
                 key={def.key}
                 def={def}
