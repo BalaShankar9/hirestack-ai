@@ -5,8 +5,23 @@
  * Fails loudly in development (console.error) and silently in production
  * so the app degrades gracefully instead of crashing.
  *
- * Add every `NEXT_PUBLIC_*` variable the app needs to the REQUIRED list.
+ * IMPORTANT: Next.js only performs static replacement of LITERAL
+ * `process.env.NEXT_PUBLIC_*` references. Dynamic access like
+ * `process.env[name]` does NOT work — the value will always be
+ * undefined at runtime. Therefore we build a lookup map from
+ * literal references below.
  */
+
+/**
+ * Build-time resolved env values.
+ * Each key MUST use a literal `process.env.NEXT_PUBLIC_*` expression
+ * so that Next.js replaces it at build time.
+ */
+const ENV_VALUES: Record<string, string | undefined> = {
+  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+};
 
 interface EnvSpec {
   name: string;
@@ -52,7 +67,7 @@ export function validateEnv(): EnvValidationResult {
   const warnings: string[] = [];
 
   for (const spec of ENV_SPECS) {
-    const value = process.env[spec.name] ?? "";
+    const value = ENV_VALUES[spec.name] ?? "";
 
     if (!value) {
       if (spec.required) {
