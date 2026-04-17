@@ -472,3 +472,149 @@ export interface DocumentLibrarySummary {
   fixed: { total: number; ready: number; generating: number; planned: number; error: number };
   tailored: { total: number; ready: number; generating: number; planned: number; error: number };
 }
+
+/* ------------------------------------------------------------------ */
+/*  Knowledge Library types                                            */
+/* ------------------------------------------------------------------ */
+
+export type ResourceCategory =
+  | "resume_writing"
+  | "interview_prep"
+  | "salary_negotiation"
+  | "career_development"
+  | "networking"
+  | "industry_knowledge"
+  | "soft_skills"
+  | "technical_skills"
+  | "job_search"
+  | "personal_branding";
+
+export type ResourceType = "guide" | "template" | "book" | "video" | "course" | "article" | "tool" | "checklist";
+export type ResourceDifficulty = "beginner" | "intermediate" | "advanced";
+
+export interface KnowledgeResource {
+  id: string;
+  title: string;
+  description: string;
+  category: ResourceCategory;
+  resource_type: ResourceType;
+  difficulty: ResourceDifficulty;
+  url?: string | null;
+  content_html?: string | null;
+  thumbnail_url?: string | null;
+  author?: string | null;
+  estimated_minutes?: number | null;
+  skills: string[];
+  featured: boolean;
+  rating_avg: number;
+  rating_count: number;
+  created_at: string;
+}
+
+export type ProgressStatus = "saved" | "in_progress" | "completed";
+
+export interface UserKnowledgeProgress {
+  id: string;
+  user_id: string;
+  resource_id: string;
+  status: ProgressStatus;
+  progress_pct: number;
+  rating?: number | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Global Skills & Development types                                  */
+/* ------------------------------------------------------------------ */
+
+export type SkillCategory =
+  | "technical"
+  | "soft_skill"
+  | "tool"
+  | "language"
+  | "framework"
+  | "methodology"
+  | "certification"
+  | "domain"
+  | "other";
+
+export type Proficiency = "beginner" | "intermediate" | "advanced" | "expert";
+
+export interface UserSkill {
+  id: string;
+  user_id: string;
+  skill_name: string;
+  category: SkillCategory;
+  proficiency: Proficiency;
+  years_experience?: number | null;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type GapStatus = "open" | "in_progress" | "closed" | "dismissed";
+export type GapSeverity = "critical" | "high" | "medium" | "low";
+
+export interface UserSkillGap {
+  id: string;
+  user_id: string;
+  skill_name: string;
+  gap_severity: GapSeverity;
+  current_level?: string | null;
+  target_level?: string | null;
+  frequency: number;
+  application_ids: string[];
+  priority_score: number;
+  status: GapStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export type GoalStatus = "active" | "completed" | "paused" | "archived";
+export type GoalType =
+  | "skill_acquisition"
+  | "certification"
+  | "career_transition"
+  | "promotion_readiness"
+  | "industry_knowledge"
+  | "general";
+
+export interface UserLearningGoal {
+  id: string;
+  user_id: string;
+  title: string;
+  description?: string | null;
+  target_skills: string[];
+  goal_type: GoalType;
+  status: GoalStatus;
+  target_date?: string | null;
+  progress_pct: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ResourceRecommendation {
+  id: string;
+  user_id: string;
+  resource_id: string;
+  reason: string;
+  relevance_score: number;
+  source_gap_id?: string | null;
+  source_goal_id?: string | null;
+  status: "pending" | "viewed" | "dismissed";
+  created_at: string;
+}
+
+export interface SkillsProfileSummary {
+  total_skills: number;
+  skills_by_category: Record<string, number>;
+  open_gaps: number;
+  critical_gaps: number;
+  high_gaps: number;
+  top_gaps: UserSkillGap[];
+  active_goals: number;
+  goals: UserLearningGoal[];
+}

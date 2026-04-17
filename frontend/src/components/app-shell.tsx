@@ -26,6 +26,8 @@ import {
   Target,
   Flame,
   Zap,
+  Library,
+  GraduationCap,
 } from "lucide-react";
 import React, { type ReactNode, useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/components/providers";
@@ -75,6 +77,8 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "Tools",
     items: [
+      { href: "/knowledge", label: "Knowledge Library", icon: Library, description: "Guides, templates & resources" },
+      { href: "/skills", label: "Skills & Development", icon: GraduationCap, description: "Skills, gaps & learning goals" },
       { href: "/ats-scanner", label: "ATS Scanner", icon: FileSearch, description: "Check ATS compatibility" },
       { href: "/interview", label: "Interview Prep", icon: MessageSquare, description: "AI interview coach" },
       { href: "/salary", label: "Salary Coach", icon: DollarSign, description: "Know your market value" },

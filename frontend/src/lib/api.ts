@@ -531,6 +531,66 @@ class APIClient {
     addComment: async (sessionId: string, data: { reviewer_name: string; comment_text: string; section?: string }) =>
       this.request(`/review/${sessionId}/comments`, { method: "POST", body: data }),
   };
+
+  /* ── Knowledge Library ──────────────────────────────────────────── */
+
+  knowledge = {
+    listResources: async (params?: {
+      category?: string;
+      type?: string;
+      difficulty?: string;
+      skill?: string;
+      search?: string;
+      featured?: boolean;
+      limit?: number;
+      offset?: number;
+    }) => {
+      const qs = new URLSearchParams();
+      if (params) {
+        Object.entries(params).forEach(([k, v]) => {
+          if (v !== undefined && v !== null) qs.set(k, String(v));
+        });
+      }
+      const q = qs.toString();
+      return this.request(`/knowledge/resources${q ? `?${q}` : ""}`);
+    },
+    getResource: async (id: string) => this.request(`/knowledge/resources/${id}`),
+    getProgress: async () => this.request("/knowledge/progress"),
+    saveProgress: async (data: { resource_id: string; status: string; progress_pct?: number }) =>
+      this.request("/knowledge/progress", { method: "POST", body: data }),
+    rate: async (data: { resource_id: string; rating: number }) =>
+      this.request("/knowledge/rate", { method: "POST", body: data }),
+    getRecommendations: async () => this.request("/knowledge/recommendations"),
+    generateRecommendations: async () =>
+      this.request("/knowledge/recommendations/generate", { method: "POST" }),
+    dismissRecommendation: async (recId: string) =>
+      this.request(`/knowledge/recommendations/${recId}/dismiss`, { method: "POST" }),
+  };
+
+  /* ── Global Skills & Development ────────────────────────────────── */
+
+  development = {
+    listSkills: async () => this.request("/development/skills"),
+    upsertSkill: async (data: { skill_name: string; category?: string; proficiency?: string; years_experience?: number; source?: string }) =>
+      this.request("/development/skills", { method: "POST", body: data }),
+    deleteSkill: async (skillId: string) =>
+      this.request(`/development/skills/${skillId}`, { method: "DELETE" }),
+    listGaps: async (status?: string) =>
+      this.request(`/development/gaps${status ? `?status=${status}` : ""}`),
+    syncGaps: async () =>
+      this.request("/development/gaps/sync", { method: "POST" }),
+    updateGap: async (gapId: string, data: { status: string }) =>
+      this.request(`/development/gaps/${gapId}`, { method: "PATCH" as any, body: data }),
+    listGoals: async (status?: string) =>
+      this.request(`/development/goals${status ? `?status=${status}` : ""}`),
+    createGoal: async (data: { title: string; description?: string; target_skills?: string[]; goal_type?: string; target_date?: string }) =>
+      this.request("/development/goals", { method: "POST", body: data }),
+    updateGoal: async (goalId: string, data: Record<string, any>) =>
+      this.request(`/development/goals/${goalId}`, { method: "PATCH" as any, body: data }),
+    deleteGoal: async (goalId: string) =>
+      this.request(`/development/goals/${goalId}`, { method: "DELETE" }),
+    getSummary: async () => this.request("/development/summary"),
+  };
 }
 
 export const api = new APIClient(API_URL);

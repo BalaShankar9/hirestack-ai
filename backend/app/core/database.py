@@ -228,6 +228,13 @@ TABLES = {
     "document_evolution": "document_evolution",
     # Model quality observations (cost optimizer persistence)
     "quality_observations": "quality_observations",
+    # Knowledge library & global skills
+    "knowledge_resources": "knowledge_resources",
+    "user_knowledge_progress": "user_knowledge_progress",
+    "user_skills": "user_skills",
+    "user_skill_gaps": "user_skill_gaps",
+    "user_learning_goals": "user_learning_goals",
+    "resource_recommendations": "resource_recommendations",
 }
 
 

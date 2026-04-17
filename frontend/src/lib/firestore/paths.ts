@@ -20,6 +20,13 @@ export const TABLES = {
   docVersions: "doc_versions",
   generationJobs: "generation_jobs",
   generationJobEvents: "generation_job_events",
+  // Knowledge Library & Global Skills
+  knowledgeResources: "knowledge_resources",
+  userKnowledgeProgress: "user_knowledge_progress",
+  userSkills: "user_skills",
+  userSkillGaps: "user_skill_gaps",
+  userLearningGoals: "user_learning_goals",
+  resourceRecommendations: "resource_recommendations",
 } as const;
 
 export type TableName = (typeof TABLES)[keyof typeof TABLES];
