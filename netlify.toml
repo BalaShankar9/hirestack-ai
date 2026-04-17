@@ -13,12 +13,7 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-# SPA fallback — let Next.js handle all routing
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-  conditions = {Role = ["admin"]}
+# Routing is handled by the Next.js adapter — no SPA fallback needed
 
 [[headers]]
   for = "/*"
