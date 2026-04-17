@@ -152,8 +152,6 @@ function LoginContent() {
     <div className="flex min-h-screen">
       {/* ── Left: Branding Panel ──────────────────── */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-primary via-violet-600 to-indigo-700">
-        {/* Aurora ambient background */}
-        <div className="aurora-bg" aria-hidden="true" />
         {/* Background decoration */}
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute -right-20 -top-20 h-[400px] w-[400px] rounded-full border-[50px] border-white/5" />
@@ -183,15 +181,15 @@ function LoginContent() {
 
             {/* Social proof */}
             <div className="mt-10 grid grid-cols-3 gap-4">
-              <div className="rounded-xl bg-white/10 p-3 backdrop-blur-sm glass-depth">
+              <div className="rounded-xl bg-white/10 p-3">
                 <div className="text-2xl font-bold text-white">6</div>
                 <div className="text-[11px] text-white/60">AI modules</div>
               </div>
-              <div className="rounded-xl bg-white/10 p-3 backdrop-blur-sm glass-depth">
+              <div className="rounded-xl bg-white/10 p-3">
                 <div className="text-2xl font-bold text-white">94%</div>
                 <div className="text-[11px] text-white/60">keyword coverage</div>
               </div>
-              <div className="rounded-xl bg-white/10 p-3 backdrop-blur-sm glass-depth">
+              <div className="rounded-xl bg-white/10 p-3">
                 <div className="text-2xl font-bold text-white">5 min</div>
                 <div className="text-[11px] text-white/60">to first result</div>
               </div>
@@ -205,7 +203,7 @@ function LoginContent() {
       </div>
 
       {/* ── Right: Auth Form ──────────────────────── */}
-      <div className="flex w-full flex-col items-center justify-center px-4 lg:w-1/2 noise-overlay">
+      <div className="flex w-full flex-col items-center justify-center px-4 lg:w-1/2">
         {/* Mobile back link + logo */}
         <div className="mb-8 flex w-full max-w-sm flex-col items-center gap-3 lg:hidden">
           <Link href="/" className="self-start flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">

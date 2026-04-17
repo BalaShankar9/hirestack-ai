@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import Script from "next/script";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Toaster } from "@/components/ui/toaster";
@@ -99,7 +98,6 @@ export default function RootLayout({
             <Toaster />
           </Providers>
         </ErrorBoundary>
-        <Script id="card-spotlight" src="/js/card-spotlight.js" strategy="afterInteractive" />
       </body>
     </html>
   );

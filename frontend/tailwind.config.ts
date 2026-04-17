@@ -82,9 +82,9 @@ const config: Config = {
         "2xs": ["0.65rem", { lineHeight: "0.85rem" }],
       },
       boxShadow: {
-        "glow-sm": "0 0 12px -3px hsl(var(--primary) / 0.2)",
-        "glow-md": "0 0 24px -4px hsl(var(--primary) / 0.25)",
-        "glow-lg": "0 0 40px -6px hsl(var(--primary) / 0.3)",
+        "glow-sm": "0 0 8px -3px hsl(var(--primary) / 0.12)",
+        "glow-md": "0 0 16px -4px hsl(var(--primary) / 0.15)",
+        "glow-lg": "0 0 24px -6px hsl(var(--primary) / 0.18)",
         "soft-sm": "0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04)",
         "soft-md": "0 4px 12px -2px rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.04)",
         "soft-lg": "0 10px 30px -4px rgb(0 0 0 / 0.08), 0 4px 8px -4px rgb(0 0 0 / 0.04)",

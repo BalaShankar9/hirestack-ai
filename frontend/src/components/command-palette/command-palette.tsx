@@ -31,7 +31,7 @@ export function CommandPalette() {
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" aria-hidden="true" />
       <div className="fixed top-[20%] left-1/2 -translate-x-1/2 w-full max-w-lg animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-200" onClick={(e) => e.stopPropagation()}>
         <Cmdk
-          className="rounded-2xl border border-border/30 bg-card/90 backdrop-blur-2xl shadow-2xl overflow-hidden"
+          className="rounded-2xl border border-border/30 bg-card shadow-2xl overflow-hidden"
           label="Command palette"
         >
           <Cmdk.Input

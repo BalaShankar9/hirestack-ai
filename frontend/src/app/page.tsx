@@ -240,12 +240,9 @@ export default function HomePage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background noise-overlay">
-      {/* Living aurora background */}
-      <div className="aurora-bg" aria-hidden="true" />
-
+    <div className="min-h-screen bg-background">
       {/* ── Header ── */}
-      <header ref={headerRef} className="fixed top-0 z-50 w-full border-b border-transparent bg-background/60 backdrop-blur-2xl elevation-on-scroll">
+      <header ref={headerRef} className="fixed top-0 z-50 w-full border-b border-transparent bg-background elevation-on-scroll">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
           <Link href="/" className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 shadow-glow-sm">
@@ -282,7 +279,7 @@ export default function HomePage() {
         </div>
 
         <div className="relative mx-auto max-w-6xl px-4 text-center">
-          <div className="mb-8 inline-flex items-center gap-2 rounded-full border bg-card/80 px-4 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-700">
+          <div className="mb-8 inline-flex items-center gap-2 rounded-full border bg-card px-4 py-1.5 text-xs font-medium text-muted-foreground animate-in fade-in slide-in-from-bottom-2 duration-700">
             <Zap className="h-3.5 w-3.5 text-primary" />
             Most candidates submit claims. The best submit proof.
           </div>

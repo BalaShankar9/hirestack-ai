@@ -164,9 +164,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     : user?.email?.slice(0, 2).toUpperCase() ?? "?";
 
   return (
-    <div className="app-frame noise-overlay flex min-h-screen bg-transparent">
-      {/* Living aurora background */}
-      <div className="aurora-bg" aria-hidden="true" />
+    <div className="app-frame flex min-h-screen bg-background">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] rounded-lg bg-card px-3 py-2 text-sm font-medium shadow-soft-md ring-2 ring-ring ring-offset-2 ring-offset-background"
@@ -458,7 +456,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* ── Main Content ──────────────────────────── */}
       <div className="relative z-10 flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <header className="surface-premium sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border/70 bg-background/70 px-4 lg:px-6">
+        <header className="surface-premium sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border/70 px-4 lg:px-6">
           <Button
             variant="ghost"
             size="icon"
