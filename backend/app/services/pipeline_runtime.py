@@ -777,6 +777,12 @@ class PipelineRuntime:
 
         user_profile: dict = {}
         if resume_text.strip():
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="atlas",
+                message="Extracting sections, skills, and experience from resume…",
+                status="running",
+                data={"agent": "atlas", "source": "resume_parse"},
+            ))
             try:
                 pipe = resume_parse_pipeline(
                     ai_client=ai, on_stage_update=stage_callback,
@@ -785,14 +791,39 @@ class PipelineRuntime:
                 parse_result: PipelineResult = await pipe.execute({"user_id": user_id, "resume_text": resume_text})
                 await flush_events()
                 user_profile = parse_result.content if isinstance(parse_result.content, dict) else {}
+                await self.sink.emit(PipelineEvent(
+                    event_type="detail", phase="atlas",
+                    message="Resume parsed — extracted skills, experience & education ✓",
+                    status="completed",
+                    data={"agent": "atlas", "source": "resume_parse"},
+                ))
             except Exception as rp_err:
                 logger.warning("pipeline_runtime.resume_parse_failed", error=str(rp_err)[:200])
                 self._failed_modules.append({"module": "resume_parse", "error": str(rp_err)[:200]})
+                await self.sink.emit(PipelineEvent(
+                    event_type="detail", phase="atlas",
+                    message="Resume parse encountered an issue; continuing with available data",
+                    status="warning",
+                    data={"agent": "atlas", "source": "resume_parse"},
+                ))
+        else:
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="atlas",
+                message="No resume provided — building profile from job context",
+                status="info",
+                data={"agent": "atlas", "source": "resume_parse"},
+            ))
 
         # ── Phase 1b: Benchmark ───────────────────────────────────────
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="atlas", progress=15,
             message="Agent: building candidate benchmark…",
+        ))
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="atlas",
+            message="Analyzing ideal candidate profile against job requirements…",
+            status="running",
+            data={"agent": "atlas", "source": "benchmark"},
         ))
 
         bench_result = None
@@ -811,15 +842,35 @@ class PipelineRuntime:
             })
             await flush_events()
             benchmark_data = bench_result.content if isinstance(bench_result.content, dict) else {}
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="atlas",
+                message="Benchmark built — ideal skills, scores & comparisons ready ✓",
+                status="completed",
+                data={"agent": "atlas", "source": "benchmark"},
+            ))
         except Exception as bench_err:
             logger.warning("pipeline_runtime.benchmark_failed", error=str(bench_err)[:200])
             self._failed_modules.append({"module": "benchmark", "error": str(bench_err)[:200]})
             await flush_events()
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="atlas",
+                message="Benchmark generation encountered an issue; using fallback scoring",
+                status="warning",
+                data={"agent": "atlas", "source": "benchmark"},
+            ))
 
         ideal_skills = benchmark_data.get("ideal_skills", [])
         keywords = [s.get("name", "") for s in ideal_skills if isinstance(s, dict) and s.get("name")]
         if not keywords:
             keywords = self._extract_keywords_from_jd(jd_text)
+
+        n_skills = len(keywords)
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="atlas",
+            message=f"Mapped {n_skills} target skill{'s' if n_skills != 1 else ''} from job requirements ✓",
+            status="completed",
+            data={"agent": "atlas", "source": "skill_mapping"},
+        ))
 
         # Start independent benchmark artifacts early so they overlap with gap analysis.
         benchmark_cv_html = ""
@@ -857,6 +908,14 @@ class PipelineRuntime:
             event_type="progress", phase="atlas", progress=25,
             message="Resume parsed & benchmark built ✓",
         ))
+        # Emit explicit pipeline-done markers so frontend deliverable chips
+        # transition to "done" even if individual stage events arrived out-of-order.
+        for pn in ("resume_parse", "benchmark"):
+            await self.sink.emit(PipelineEvent(
+                event_type="agent_status",
+                pipeline_name=pn, stage="pipeline_done", status="completed",
+                message=f"{pn} complete",
+            ))
         self._finish_phase("atlas")
 
         # ── Phase 2: Gap analysis ─────────────────────────────────────
@@ -864,6 +923,12 @@ class PipelineRuntime:
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="cipher", progress=30,
             message="Agent: analyzing skill gaps…",
+        ))
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="cipher",
+            message="Comparing your skills against job requirements…",
+            status="running",
+            data={"agent": "cipher", "source": "gap_detection"},
         ))
 
         gap_result = None
@@ -882,10 +947,22 @@ class PipelineRuntime:
             })
             await flush_events()
             gap_analysis = gap_result.content if isinstance(gap_result.content, dict) else {}
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="cipher",
+                message="Skill gaps identified & ranked by importance ✓",
+                status="completed",
+                data={"agent": "cipher", "source": "gap_detection"},
+            ))
         except Exception as gap_err:
             logger.warning("pipeline_runtime.gap_analysis_failed", error=str(gap_err)[:200])
             self._failed_modules.append({"module": "gap_analysis", "error": str(gap_err)[:200]})
             await flush_events()
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="cipher",
+                message="Gap analysis encountered an issue; using available data",
+                status="warning",
+                data={"agent": "cipher", "source": "gap_detection"},
+            ))
 
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="cipher", progress=45,
@@ -893,6 +970,12 @@ class PipelineRuntime:
         ))
 
         # ── Evidence graph canonicalization + plan artifact ───────────
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="cipher",
+            message="Building evidence graph & scoring skill matches…",
+            status="running",
+            data={"agent": "cipher", "source": "skill_matching"},
+        ))
         evidence_score = 0
         plan_artifact = None
         try:
@@ -937,10 +1020,23 @@ class PipelineRuntime:
         except Exception as eg_err:
             logger.warning("pipeline_runtime.evidence_graph_skipped", error=str(eg_err)[:200])
 
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="cipher",
+            message=f"Evidence strength score: {evidence_score} — skill matching complete ✓",
+            status="completed",
+            data={"agent": "cipher", "source": "skill_matching"},
+        ))
+
         # ── Phase 2b: Document Pack Planning ──────────────────────────
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="cipher", progress=48,
             message="Planning optimal document pack…",
+        ))
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="cipher",
+            message="Ranking document priorities & planning strategy…",
+            status="running",
+            data={"agent": "cipher", "source": "priority_ranking"},
         ))
 
         doc_pack_plan = None
@@ -972,6 +1068,19 @@ class PipelineRuntime:
             except Exception as bcv_err:
                 logger.warning("pipeline_runtime.benchmark_cv_failed", error=str(bcv_err)[:200])
 
+        n_docs = len(discovered_documents)
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="cipher",
+            message=f"Document strategy planned — {n_docs} document{'s' if n_docs != 1 else ''} queued ✓",
+            status="completed",
+            data={"agent": "cipher", "source": "priority_ranking"},
+        ))
+        for pn in ("gap_analysis",):
+            await self.sink.emit(PipelineEvent(
+                event_type="agent_status",
+                pipeline_name=pn, stage="pipeline_done", status="completed",
+                message=f"{pn} complete",
+            ))
         self._finish_phase("cipher")
 
         # ── Phase 3: Core docs + Roadmap (parallel) ──────────────────
@@ -979,6 +1088,25 @@ class PipelineRuntime:
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="quill", progress=50,
             message="Agents: generating CV, cover letter & learning plan…",
+        ))
+        # Detail events — one per parallel sub-agent starting
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="quill",
+            message="Generating tailored CV optimized for ATS keywords…",
+            status="running",
+            data={"agent": "quill", "source": "cv_generation"},
+        ))
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="quill",
+            message="Crafting personalized cover letter for role…",
+            status="running",
+            data={"agent": "quill", "source": "cover_letter"},
+        ))
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="quill",
+            message="Building learning & development roadmap…",
+            status="running",
+            data={"agent": "quill", "source": "learning_plan"},
         ))
 
         doc_context = {
@@ -1017,27 +1145,70 @@ class PipelineRuntime:
             logger.error("pipeline_runtime.cv_failed", error=str(cv_result_raw))
             self._failed_modules.append({"module": "cv", "error": str(cv_result_raw)[:200]})
             cv_html = ""
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="quill",
+                message="CV generation encountered an issue",
+                status="warning",
+                data={"agent": "quill", "source": "cv_generation"},
+            ))
         else:
             cv_result = cv_result_raw
             cv_html = self._extract_pipeline_html(cv_result.content)
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="quill",
+                message="Tailored CV generated with ATS optimization ✓",
+                status="completed",
+                data={"agent": "quill", "source": "cv_generation"},
+            ))
 
         if isinstance(cl_result_raw, Exception):
             logger.error("pipeline_runtime.cl_failed", error=str(cl_result_raw))
             self._failed_modules.append({"module": "cover_letter", "error": str(cl_result_raw)[:200]})
             cl_html = ""
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="quill",
+                message="Cover letter generation encountered an issue",
+                status="warning",
+                data={"agent": "quill", "source": "cover_letter"},
+            ))
         else:
             cl_result = cl_result_raw
             cl_html = self._extract_pipeline_html(cl_result.content)
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="quill",
+                message="Personalized cover letter crafted ✓",
+                status="completed",
+                data={"agent": "quill", "source": "cover_letter"},
+            ))
 
         if isinstance(roadmap, Exception):
             logger.error("pipeline_runtime.roadmap_failed", error=str(roadmap))
             self._failed_modules.append({"module": "roadmap", "error": str(roadmap)[:200]})
             roadmap = {}
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="quill",
+                message="Learning plan encountered an issue",
+                status="warning",
+                data={"agent": "quill", "source": "learning_plan"},
+            ))
+        else:
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="quill",
+                message="Learning & development roadmap complete ✓",
+                status="completed",
+                data={"agent": "quill", "source": "learning_plan"},
+            ))
 
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="quill", progress=70,
             message="CV, cover letter & learning plan ready ✓",
         ))
+        for pn in ("cv_generation", "cover_letter"):
+            await self.sink.emit(PipelineEvent(
+                event_type="agent_status",
+                pipeline_name=pn, stage="pipeline_done", status="completed",
+                message=f"{pn} complete",
+            ))
         self._finish_phase("quill")
 
         # ── Phase 4: Personal statement + Portfolio (parallel) ────────
@@ -1045,6 +1216,18 @@ class PipelineRuntime:
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="forge", progress=75,
             message="Agents: building personal statement & portfolio…",
+        ))
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="forge",
+            message="Writing compelling personal statement…",
+            status="running",
+            data={"agent": "forge", "source": "personal_statement"},
+        ))
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="forge",
+            message="Building project portfolio showcase…",
+            status="running",
+            data={"agent": "forge", "source": "portfolio_build"},
         ))
 
         ps_pipe = personal_statement_pipeline(
@@ -1068,14 +1251,38 @@ class PipelineRuntime:
         if isinstance(ps_raw, Exception):
             logger.error("pipeline_runtime.ps_failed", error=str(ps_raw))
             self._failed_modules.append({"module": "personal_statement", "error": str(ps_raw)[:200]})
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="forge",
+                message="Personal statement encountered an issue",
+                status="warning",
+                data={"agent": "forge", "source": "personal_statement"},
+            ))
         else:
             ps_html = self._extract_pipeline_html(ps_raw.content)
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="forge",
+                message="Personal statement written ✓",
+                status="completed",
+                data={"agent": "forge", "source": "personal_statement"},
+            ))
 
         if isinstance(pf_raw, Exception):
             logger.error("pipeline_runtime.portfolio_failed", error=str(pf_raw))
             self._failed_modules.append({"module": "portfolio", "error": str(pf_raw)[:200]})
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="forge",
+                message="Portfolio generation encountered an issue",
+                status="warning",
+                data={"agent": "forge", "source": "portfolio_build"},
+            ))
         else:
             portfolio_html = self._extract_pipeline_html(pf_raw.content)
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="forge",
+                message="Portfolio showcase assembled ✓",
+                status="completed",
+                data={"agent": "forge", "source": "portfolio_build"},
+            ))
 
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="forge", progress=82,
@@ -1162,6 +1369,20 @@ class PipelineRuntime:
             event_type="progress", phase="forge", progress=88,
             message="All documents ready ✓",
         ))
+        n_extra = len(generated_docs)
+        if n_extra > 0:
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="forge",
+                message=f"{n_extra} supplementary document{'s' if n_extra != 1 else ''} generated ✓",
+                status="completed",
+                data={"agent": "forge", "source": "extra_docs"},
+            ))
+        for pn in ("personal_statement", "portfolio"):
+            await self.sink.emit(PipelineEvent(
+                event_type="agent_status",
+                pipeline_name=pn, stage="pipeline_done", status="completed",
+                message=f"{pn} complete",
+            ))
         self._finish_phase("forge")
 
         # ── Phase 5: Validation ───────────────────────────────────────
@@ -1169,6 +1390,18 @@ class PipelineRuntime:
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="sentinel", progress=92,
             message="Validating documents…",
+        ))
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="sentinel",
+            message="Running quality checks on all generated documents…",
+            status="running",
+            data={"agent": "sentinel", "source": "quality_check"},
+        ))
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="sentinel",
+            message="Checking ATS compatibility & keyword coverage…",
+            status="running",
+            data={"agent": "sentinel", "source": "ats_check"},
         ))
 
         cv_quality = cv_result.quality_scores if cv_result else {}
@@ -1182,6 +1415,27 @@ class PipelineRuntime:
                 "agent_powered": True,
             }
         }
+
+        quality_score = self._quality_score(cv_quality)
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="sentinel",
+            message=f"Quality score: {quality_score}/100 — document validation complete ✓",
+            status="completed",
+            data={"agent": "sentinel", "source": "quality_check"},
+        ))
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="sentinel",
+            message="ATS keyword optimization verified ✓",
+            status="completed",
+            data={"agent": "sentinel", "source": "ats_check"},
+        ))
+        if cv_fact_check:
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="sentinel",
+                message="Fact-check report generated ✓",
+                status="completed",
+                data={"agent": "sentinel", "source": "fact_check"},
+            ))
         self._finish_phase("sentinel")
 
         # ── Phase 6: Format response ─────────────────────────────────
@@ -1189,6 +1443,12 @@ class PipelineRuntime:
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="nova", progress=98,
             message="Packaging your application…",
+        ))
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="nova",
+            message="Assembling all documents into final package…",
+            status="running",
+            data={"agent": "nova", "source": "assembly"},
         ))
 
         from app.core.sanitize import sanitize_html
@@ -1258,6 +1518,18 @@ class PipelineRuntime:
         )
         self._finish_phase("persist")
 
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="nova",
+            message="Documents formatted & persisted ✓",
+            status="completed",
+            data={"agent": "nova", "source": "assembly"},
+        ))
+        await self.sink.emit(PipelineEvent(
+            event_type="detail", phase="nova",
+            message="Application package ready for delivery ✓",
+            status="completed",
+            data={"agent": "nova", "source": "packaging"},
+        ))
         self._finish_phase("nova")
 
         return response

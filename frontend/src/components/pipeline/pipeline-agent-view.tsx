@@ -71,7 +71,7 @@ const AGENT_PERSONAS: AgentPersona[] = [
     subTasks: [
       { key: "resume_parse", label: "Resume Parsing", pipelineNames: ["resume_parse"] },
       { key: "benchmark", label: "Benchmark Building", pipelineNames: ["benchmark"] },
-      { key: "skill_mapping", label: "Skill Mapping" },
+      { key: "skill_mapping", label: "Skill Mapping", pipelineNames: ["atlas:skill_mapping"] },
     ],
   },
   {
@@ -82,8 +82,8 @@ const AGENT_PERSONAS: AgentPersona[] = [
     description: "Detects skill gaps and ranks improvement priorities",
     subTasks: [
       { key: "gap_detection", label: "Gap Detection", pipelineNames: ["gap_analysis"] },
-      { key: "skill_matching", label: "Skill Matching" },
-      { key: "priority_ranking", label: "Priority Ranking" },
+      { key: "skill_matching", label: "Skill Matching", pipelineNames: ["cipher:skill_matching"] },
+      { key: "priority_ranking", label: "Priority Ranking", pipelineNames: ["cipher:priority_ranking"] },
     ],
   },
   {
@@ -95,7 +95,7 @@ const AGENT_PERSONAS: AgentPersona[] = [
     subTasks: [
       { key: "cv_generation", label: "CV Generation", pipelineNames: ["cv_generation"] },
       { key: "cover_letter", label: "Cover Letter", pipelineNames: ["cover_letter"] },
-      { key: "learning_plan", label: "Learning Plan" },
+      { key: "learning_plan", label: "Learning Plan", pipelineNames: ["quill:learning_plan"] },
     ],
   },
   {
@@ -116,9 +116,9 @@ const AGENT_PERSONAS: AgentPersona[] = [
     accentColor: "emerald-500",
     description: "Validates quality, ATS compliance & fact-checks claims",
     subTasks: [
-      { key: "quality_check", label: "Quality Validation" },
-      { key: "ats_check", label: "ATS Compliance" },
-      { key: "fact_check", label: "Fact Verification" },
+      { key: "quality_check", label: "Quality Validation", pipelineNames: ["sentinel:quality_check"] },
+      { key: "ats_check", label: "ATS Compliance", pipelineNames: ["sentinel:ats_check"] },
+      { key: "fact_check", label: "Fact Verification", pipelineNames: ["sentinel:fact_check"] },
     ],
   },
   {
@@ -128,8 +128,8 @@ const AGENT_PERSONAS: AgentPersona[] = [
     accentColor: "primary",
     description: "Assembles and packages the final application bundle",
     subTasks: [
-      { key: "assembly", label: "Document Assembly" },
-      { key: "packaging", label: "Final Packaging" },
+      { key: "assembly", label: "Document Assembly", pipelineNames: ["nova:assembly"] },
+      { key: "packaging", label: "Final Packaging", pipelineNames: ["nova:packaging"] },
     ],
   },
 ];
@@ -225,7 +225,11 @@ function getDeliverableStatus(
   const phaseCompleted = completedPhases.has(d.readyWhenPhase);
   const pipelineCompleted = !d.pipelineName || pipelineStatuses[d.pipelineName] === "completed";
 
+  // Phase completion is the authoritative signal. If the owning phase is done,
+  // the deliverable is done — pipelineStatuses is a more granular overlay but
+  // must never contradict a completed phase (events can arrive out-of-order).
   if (phaseCompleted && pipelineCompleted) return "done";
+  if (phaseCompleted && !pipelineCompleted) return "done"; // phase wins
   if (activePhaseIdx === d.readyWhenPhase || (d.pipelineName && pipelineStatuses[d.pipelineName] === "running"))
     return "in-progress";
   return "waiting";

@@ -723,6 +723,17 @@ export default function NewApplicationPage() {
           appendPhaseLog(phaseIdx, p.message);
         }
 
+        // When a new phase starts, mark ALL previous phases as completed.
+        // This is the authoritative state transition — ensures deliverables
+        // and agent cards never show stale "in-progress" for finished phases.
+        if (phaseIdx > 0) {
+          setCompletedPhases((prev) => {
+            const next = new Set(prev);
+            for (let i = 0; i < phaseIdx; i++) next.add(i);
+            return next;
+          });
+        }
+
         // Explicit "_done" suffix (fallback path) — mark phase done and advance
         if (p.phase.endsWith("_done")) {
           setCompletedPhases((prev) => {
@@ -737,16 +748,13 @@ export default function NewApplicationPage() {
       };
 
       const handleDetail = (event: PipelineDetailEvent) => {
-        // Detail events carry per-source status (e.g. website crawl done).
-        // They do NOT indicate that the whole phase is done — only progress
-        // events drive phase transitions, so we just append the log line.
+        // Detail events carry per-source/per-step status for each agent.
         const phaseIdx = getPhaseIndexFromDetail(event);
         appendPhaseLog(phaseIdx, formatDetailLine(event));
 
-        // For Recon sub-agents: update pipelineStatuses so sub-task chips
-        // reflect real agent progress instead of a log-count heuristic.
-        if (event.agent === "recon" && event.source && event.status) {
-          const key = `recon:${event.source}`;
+        // Update pipelineStatuses so sub-task chips reflect real agent progress.
+        if (event.source && event.status) {
+          const key = `${event.agent}:${event.source}`;
           const mapped = event.status === "completed" ? "completed" : "running";
           setPipelineStatuses(prev => ({ ...prev, [key]: mapped }));
         }
@@ -754,16 +762,31 @@ export default function NewApplicationPage() {
 
       const handleAgentEvent = (event: PipelineAgentEvent) => {
         // Agent-status events carry per-stage status (drafter/critic/validator).
-        // A stage completing does NOT mean the whole phase is done — only
-        // progress events drive phase transitions.  We update pipelineStatuses
-        // for sub-task chips and append the log line.
         const phaseIdx = getPhaseIndexFromAgentEvent(event);
         appendPhaseLog(phaseIdx, formatAgentLine(event));
         if (event.pipeline_name) {
-          setPipelineStatuses(prev => ({
-            ...prev,
-            [event.pipeline_name]: event.status === "completed" ? "completed" : "running",
-          }));
+          // Only mark pipeline as "completed" on the terminal stage (validator)
+          // or explicit completion events. Intermediate stage completions should
+          // not prematurely mark the pipeline done, and new stages starting
+          // should not regress it back to "running" after validator completed.
+          setPipelineStatuses(prev => {
+            const current = prev[event.pipeline_name];
+            // Once completed, never regress
+            if (current === "completed") return prev;
+            // Terminal stages = pipeline done
+            if (event.stage === "validator" && event.status === "completed") {
+              return { ...prev, [event.pipeline_name]: "completed" };
+            }
+            // Pipeline-level completion marker (emitted by runtime)
+            if (event.stage === "pipeline_done" && event.status === "completed") {
+              return { ...prev, [event.pipeline_name]: "completed" };
+            }
+            // Any stage running = pipeline is running
+            if (event.status === "running" || event.status === "completed") {
+              return { ...prev, [event.pipeline_name]: "running" };
+            }
+            return prev;
+          });
         }
       };
 
