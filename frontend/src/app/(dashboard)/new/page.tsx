@@ -385,24 +385,37 @@ export default function NewApplicationPage() {
     if (paramCompany && !company) setCompany(paramCompany);
     if (paramJdText && !jdText) setJdText(paramJdText);
 
+    // Only restore session if explicitly linked via URL params (jobId in URL).
+    // Session storage is ONLY used to survive page refreshes during an active
+    // generation — never to hijack a fresh "New Application" click.
+    const hasExplicitGenerateLink = !!(paramJobId || paramAppId);
+
     let stored: { appId?: string; jobId?: string; step?: Step; savedAt?: number } | null = null;
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && hasExplicitGenerateLink) {
       try {
         const raw = window.sessionStorage.getItem(GENERATION_SESSION_KEY);
         stored = raw ? JSON.parse(raw) : null;
-        // Expire sessions older than 2 hours to avoid ghost IDs
-        if (stored?.savedAt && Date.now() - stored.savedAt > 2 * 60 * 60 * 1000) {
+        // Expire sessions older than 30 minutes
+        if (stored?.savedAt && Date.now() - stored.savedAt > 30 * 60 * 1000) {
           window.sessionStorage.removeItem(GENERATION_SESSION_KEY);
           stored = null;
         }
       } catch {
         stored = null;
       }
+    } else if (typeof window !== "undefined") {
+      // Fresh /new navigation — clear any stale generation session
+      window.sessionStorage.removeItem(GENERATION_SESSION_KEY);
     }
 
     const restoredAppId = paramAppId || stored?.appId || null;
     const restoredJobId = paramJobId || stored?.jobId || null;
-    const restoredStep = paramStep || stored?.step || (restoredJobId ? "generate" : null);
+
+    // Only jump to generate if we have an explicit job ID from URL params
+    // AND the required inputs for a step are present (or we trust the link).
+    const restoredStep = hasExplicitGenerateLink
+      ? (paramStep || stored?.step || (restoredJobId ? "generate" : null))
+      : (paramStep && paramStep !== "generate" ? paramStep : null);
 
     if (restoredAppId) setDraftAppId(restoredAppId);
     if (restoredJobId) setActiveJobId(restoredJobId);
@@ -419,7 +432,11 @@ export default function NewApplicationPage() {
     if (!generationJob) return;
 
     if (!draftAppId) setDraftAppId(generationJob.applicationId);
-    if (step !== "generate") setStep("generate");
+
+    // Only force-navigate to generate step for live (running/queued) jobs.
+    // Terminal states (succeeded/failed/cancelled) should NOT hijack the wizard.
+    const isLive = generationJob.status === "queued" || generationJob.status === "running";
+    if (isLive && step !== "generate") setStep("generate");
 
     setProgress(generationJob.progress);
     setGenMessage(
@@ -433,13 +450,16 @@ export default function NewApplicationPage() {
     setCompletedPhases(buildCompletedPhases(generationJob.completedSteps, generationJob.status));
     setActivePhaseIdx(generationJob.status === "succeeded" ? -1 : getPhaseIndexFromProgress(generationJob.phase ?? ""));
 
-    if (generationJob.status === "queued" || generationJob.status === "running") {
+    if (isLive) {
       setGenerating(true);
       setGenError(null);
+      persistGenerationSession(generationJob.applicationId, generationJob.id, "generate");
     } else if (generationJob.status === "succeeded") {
       setGenerating(false);
       setGenError(null);
       appendPhaseLog(6, "Final application bundle ready.");
+      // Clear session for terminal state — don't persist completed jobs
+      clearGenerationSession();
     } else {
       setGenerating(false);
       setGenError(
@@ -448,10 +468,10 @@ export default function NewApplicationPage() {
             ? "Generation cancelled."
             : "Generation failed — please try again.")
       );
+      // Clear session for terminal state
+      clearGenerationSession();
     }
-
-    persistGenerationSession(generationJob.applicationId, generationJob.id, "generate");
-  }, [generationJob, draftAppId, step, appendPhaseLog, persistGenerationSession]);
+  }, [generationJob, draftAppId, step, appendPhaseLog, persistGenerationSession, clearGenerationSession]);
 
   useEffect(() => {
     if (!activeJobId) return;
@@ -574,6 +594,13 @@ export default function NewApplicationPage() {
 
   /* ---- Generate (SSE-streamed) ---- */
   const handleGenerate = useCallback(async () => {
+    // Guard: never start generation without required inputs
+    if (!jobTitle.trim() || jdText.trim().length < 20) {
+      setGenError("Missing required inputs — please provide a job title and detailed job description.");
+      setStep("job");
+      return;
+    }
+
     // If a previous run is still in-flight, cancel it before starting a new one.
     abortRef.current?.abort();
     clearGenerationSession();
@@ -762,6 +789,9 @@ export default function NewApplicationPage() {
     }
   }
 
+  // Prerequisite check: generate step requires at minimum a job title + JD text
+  const canEnterGenerate = jobTitle.trim().length > 0 && jdText.trim().length > 20;
+
   function nextStep() {
     if (step === "job") {
       analyzeJD();
@@ -769,6 +799,11 @@ export default function NewApplicationPage() {
     } else if (step === "resume") {
       setStep("review");
     } else if (step === "review") {
+      if (!canEnterGenerate) {
+        toast({ title: "Missing required inputs", description: "Please provide a job title and a detailed job description before generating.", variant: "error" });
+        setStep("job");
+        return;
+      }
       setStep("generate");
       handleGenerate();
     }
