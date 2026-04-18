@@ -267,7 +267,7 @@ def _build_company_intel_summary(company_intel: Dict[str, Any]) -> str:
             parts.append(f"Recent news: {'; '.join(str(n) for n in news[:4])}")
         leaders = recent.get("leadership", [])
         if isinstance(leaders, list) and leaders:
-            parts.append(f"Leadership: {'; '.join(str(l) for l in leaders[:5])}")
+            parts.append(f"Leadership: {'; '.join(str(ldr) for ldr in leaders[:5])}")
         direction = recent.get("strategic_direction")
         if isinstance(direction, str) and direction.strip():
             parts.append(f"Strategic direction: {direction}")

@@ -81,7 +81,7 @@ class ApplicationBrief:
         This replaces the raw JD + resume + profile injection in every call.
         """
         sections = [
-            f"## Application Brief",
+            "## Application Brief",
             f"**Role:** {self.job_title} at {self.company_name}",
             f"**Level:** {self.experience_level} | **Match:** {self.match_score}%",
         ]

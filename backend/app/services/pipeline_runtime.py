@@ -1972,7 +1972,7 @@ class PipelineRuntime:
                 parts.append(f"RECENT NEWS: {'; '.join(str(n) for n in news[:4])}")
             leaders = recent.get("leadership", [])
             if isinstance(leaders, list) and leaders:
-                parts.append(f"LEADERSHIP: {'; '.join(str(l) for l in leaders[:5])}")
+                parts.append(f"LEADERSHIP: {'; '.join(str(ldr) for ldr in leaders[:5])}")
 
         # ── Hiring intelligence ───────────────────────────────
         hiring = company_intel.get("hiring_intelligence", {})
