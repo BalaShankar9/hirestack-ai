@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ScanSearch,
   SearchCode,
@@ -15,29 +15,143 @@ import {
   Radar,
   FileText,
   CheckCircle2,
+  Circle,
+  Loader2,
+  BarChart3,
+  BookOpen,
+  Mail,
+  FolderOpen,
   type LucideIcon,
 } from "lucide-react";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { AgentMetricsBar } from "./agent-metrics-bar";
 import { AgentTimelineCard } from "./agent-timeline-card";
 
-// ── Agent personas ───────────────────────────────────────────────
+// ── Agent personas with sub-tasks ─────────────────────────────────
+
+interface SubTask {
+  key: string;
+  label: string;
+  pipelineNames?: string[];
+}
 
 interface AgentPersona {
   name: string;
   role: string;
   icon: LucideIcon;
   accentColor: string;
+  description: string;
+  subTasks: SubTask[];
 }
 
 const AGENT_PERSONAS: AgentPersona[] = [
-  { name: "Recon", role: "Intel Gatherer", icon: Radar, accentColor: "cyan-500" },
-  { name: "Atlas", role: "Resume Analyst", icon: ScanSearch, accentColor: "blue-500" },
-  { name: "Cipher", role: "Gap Detector", icon: SearchCode, accentColor: "amber-500" },
-  { name: "Quill", role: "Document Architect", icon: PenTool, accentColor: "violet-500" },
-  { name: "Forge", role: "Portfolio Builder", icon: Hammer, accentColor: "teal-500" },
-  { name: "Sentinel", role: "Quality Inspector", icon: ShieldCheck, accentColor: "emerald-500" },
-  { name: "Nova", role: "Final Assembler", icon: PackageCheck, accentColor: "primary" },
+  {
+    name: "Recon",
+    role: "Intel Gatherer",
+    icon: Radar,
+    accentColor: "cyan-500",
+    description: "Researches company, role & market to build intelligence",
+    subTasks: [
+      { key: "company_research", label: "Company Research" },
+      { key: "source_analysis", label: "Source Analysis" },
+      { key: "intel_synthesis", label: "Intel Synthesis" },
+      { key: "strategy", label: "Strategy Building" },
+    ],
+  },
+  {
+    name: "Atlas",
+    role: "Resume Analyst",
+    icon: ScanSearch,
+    accentColor: "blue-500",
+    description: "Parses resume and builds detailed candidate benchmark",
+    subTasks: [
+      { key: "resume_parse", label: "Resume Parsing", pipelineNames: ["resume_parse"] },
+      { key: "benchmark", label: "Benchmark Building", pipelineNames: ["benchmark"] },
+      { key: "skill_mapping", label: "Skill Mapping" },
+    ],
+  },
+  {
+    name: "Cipher",
+    role: "Gap Detector",
+    icon: SearchCode,
+    accentColor: "amber-500",
+    description: "Detects skill gaps and ranks improvement priorities",
+    subTasks: [
+      { key: "gap_detection", label: "Gap Detection", pipelineNames: ["gap_analysis"] },
+      { key: "skill_matching", label: "Skill Matching" },
+      { key: "priority_ranking", label: "Priority Ranking" },
+    ],
+  },
+  {
+    name: "Quill",
+    role: "Document Architect",
+    icon: PenTool,
+    accentColor: "violet-500",
+    description: "Generates tailored CV, cover letter & learning plan",
+    subTasks: [
+      { key: "cv_generation", label: "CV Generation", pipelineNames: ["cv_generation"] },
+      { key: "cover_letter", label: "Cover Letter", pipelineNames: ["cover_letter"] },
+      { key: "learning_plan", label: "Learning Plan" },
+    ],
+  },
+  {
+    name: "Forge",
+    role: "Portfolio Builder",
+    icon: Hammer,
+    accentColor: "teal-500",
+    description: "Builds personal statement and professional portfolio",
+    subTasks: [
+      { key: "personal_statement", label: "Personal Statement", pipelineNames: ["personal_statement"] },
+      { key: "portfolio_build", label: "Portfolio", pipelineNames: ["portfolio"] },
+    ],
+  },
+  {
+    name: "Sentinel",
+    role: "Quality Inspector",
+    icon: ShieldCheck,
+    accentColor: "emerald-500",
+    description: "Validates quality, ATS compliance & fact-checks claims",
+    subTasks: [
+      { key: "quality_check", label: "Quality Validation" },
+      { key: "ats_check", label: "ATS Compliance" },
+      { key: "fact_check", label: "Fact Verification" },
+    ],
+  },
+  {
+    name: "Nova",
+    role: "Final Assembler",
+    icon: PackageCheck,
+    accentColor: "primary",
+    description: "Assembles and packages the final application bundle",
+    subTasks: [
+      { key: "assembly", label: "Document Assembly" },
+      { key: "packaging", label: "Final Packaging" },
+    ],
+  },
+];
+
+// ── Deliverables ────────────────────────────────────────────────
+
+interface Deliverable {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  readyWhenPhase: number;
+  pipelineName?: string;
+}
+
+const DELIVERABLES: Deliverable[] = [
+  { key: "intel", label: "Intel Report", icon: Radar, readyWhenPhase: 0 },
+  { key: "benchmark", label: "Benchmark", icon: BarChart3, readyWhenPhase: 1, pipelineName: "benchmark" },
+  { key: "gaps", label: "Gap Analysis", icon: SearchCode, readyWhenPhase: 2 },
+  { key: "cv", label: "Tailored CV", icon: FileText, readyWhenPhase: 3, pipelineName: "cv_generation" },
+  { key: "cover_letter", label: "Cover Letter", icon: Mail, readyWhenPhase: 3, pipelineName: "cover_letter" },
+  { key: "learning", label: "Learning Plan", icon: BookOpen, readyWhenPhase: 3 },
+  { key: "statement", label: "Statement", icon: PenTool, readyWhenPhase: 4, pipelineName: "personal_statement" },
+  { key: "portfolio", label: "Portfolio", icon: FolderOpen, readyWhenPhase: 4, pipelineName: "portfolio" },
+  { key: "quality", label: "Quality Score", icon: ShieldCheck, readyWhenPhase: 5 },
+  { key: "bundle", label: "Final Pack", icon: PackageCheck, readyWhenPhase: 6 },
 ];
 
 // ── Progress status labels ────────────────────────────────────────
@@ -45,12 +159,73 @@ const AGENT_PERSONAS: AgentPersona[] = [
 function getStatusLabel(progress: number, generating: boolean, isComplete: boolean): string {
   if (isComplete) return "Mission Complete";
   if (!generating) return "Mission Control";
-  if (progress < 10) return "Initializing Mission";
-  if (progress < 30) return "Intelligence Gathering";
-  if (progress < 50) return "Analysis Phase";
-  if (progress < 75) return "Document Generation";
-  if (progress < 90) return "Quality Assurance";
-  return "Finalizing";
+  if (progress < 5) return "Initializing Agents";
+  if (progress < 28) return "Intelligence Gathering";
+  if (progress < 32) return "Profile Analysis";
+  if (progress < 48) return "Gap Detection";
+  if (progress < 72) return "Document Generation";
+  if (progress < 89) return "Portfolio Building";
+  if (progress < 96) return "Quality Assurance";
+  return "Final Assembly";
+}
+
+// ── Sub-task status computation ──────────────────────────────────
+
+type AgentStatus = "waiting" | "running" | "done" | "failed";
+
+function computeSubTaskStatuses(
+  parentStatus: AgentStatus,
+  subTasks: SubTask[],
+  logCount: number,
+  pipelineStatuses: Record<string, "running" | "completed">,
+): Record<string, AgentStatus> {
+  const result: Record<string, AgentStatus> = {};
+
+  if (parentStatus === "done") {
+    for (const st of subTasks) result[st.key] = "done";
+    return result;
+  }
+
+  if (parentStatus === "waiting" || parentStatus === "failed") {
+    for (const st of subTasks) result[st.key] = parentStatus;
+    return result;
+  }
+
+  // parentStatus === "running"
+  for (let i = 0; i < subTasks.length; i++) {
+    const st = subTasks[i];
+    if (st.pipelineNames?.length) {
+      const pStatus = st.pipelineNames.reduce<AgentStatus>((acc, pn) => {
+        const s = pipelineStatuses[pn];
+        if (s === "completed") return "done";
+        if (s === "running" && acc !== "done") return "running";
+        return acc;
+      }, "waiting");
+      result[st.key] = pStatus;
+    } else {
+      // Auto-animated based on log count
+      if (logCount >= (i + 1) * 2 + 1) result[st.key] = "done";
+      else if (logCount >= i * 2 || i === 0) result[st.key] = "running";
+      else result[st.key] = "waiting";
+    }
+  }
+
+  return result;
+}
+
+function getDeliverableStatus(
+  d: Deliverable,
+  completedPhases: Set<number>,
+  activePhaseIdx: number,
+  pipelineStatuses: Record<string, "running" | "completed">,
+): "done" | "in-progress" | "waiting" {
+  const phaseCompleted = completedPhases.has(d.readyWhenPhase);
+  const pipelineCompleted = !d.pipelineName || pipelineStatuses[d.pipelineName] === "completed";
+
+  if (phaseCompleted && pipelineCompleted) return "done";
+  if (activePhaseIdx === d.readyWhenPhase || (d.pipelineName && pipelineStatuses[d.pipelineName] === "running"))
+    return "in-progress";
+  return "waiting";
 }
 
 // ── Props ────────────────────────────────────────────────────────
@@ -62,6 +237,7 @@ interface PipelineAgentViewProps {
   completedPhases: Set<number>;
   activePhaseIdx: number;
   logsByPhase?: Record<number, string[]>;
+  pipelineStatuses?: Record<string, "running" | "completed">;
   generating: boolean;
   genError: string | null;
   onCancel: () => void;
@@ -77,6 +253,8 @@ function formatElapsed(ms: number): string {
   return `${sec}s`;
 }
 
+const PHASE_LETTERS = ["R", "A", "C", "Q", "F", "S", "N"];
+
 // ── Component ────────────────────────────────────────────────────
 
 export function PipelineAgentView({
@@ -86,6 +264,7 @@ export function PipelineAgentView({
   completedPhases,
   activePhaseIdx,
   logsByPhase,
+  pipelineStatuses: pipelineStatusesProp,
   generating,
   genError,
   onCancel,
@@ -93,10 +272,29 @@ export function PipelineAgentView({
   draftAppId,
 }: PipelineAgentViewProps) {
   const phaseLogs = logsByPhase ?? {};
+  const pipelineStatuses = pipelineStatusesProp ?? {};
 
   // Track per-phase latencies
   const [phaseStartTimes, setPhaseStartTimes] = useState<Record<number, number>>({});
   const [phaseLatencies, setPhaseLatencies] = useState<Record<number, number>>({});
+
+  // Staggered reveal — all 7 agents appear with 120ms stagger
+  const [revealedCount, setRevealedCount] = useState(0);
+  useEffect(() => {
+    if (!generating && revealedCount === 0) return;
+    if (revealedCount >= AGENT_PERSONAS.length) return;
+    const timer = setTimeout(() => {
+      setRevealedCount((prev) => Math.min(prev + 1, AGENT_PERSONAS.length));
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [generating, revealedCount]);
+
+  // Kick off reveal when generation starts
+  useEffect(() => {
+    if (generating && revealedCount === 0) {
+      setRevealedCount(1);
+    }
+  }, [generating, revealedCount]);
 
   useEffect(() => {
     if (activePhaseIdx >= 0 && phaseStartTimes[activePhaseIdx] === undefined) {
@@ -121,12 +319,14 @@ export function PipelineAgentView({
   const isComplete = progress >= 100;
   const statusLabel = getStatusLabel(progress, generating, isComplete);
 
-  // Visible agents: only show agents up to the highest touched index + 1
-  // so they appear one-by-one like a live feed instead of all at once.
-  const highestVisible = isComplete
-    ? AGENT_PERSONAS.length - 1
-    : Math.max(activePhaseIdx, ...Array.from(completedPhases), 0);
-  const visibleCount = Math.min(highestVisible + 2, AGENT_PERSONAS.length); // +1 for "next up" peek
+  // Deliverable statuses
+  const deliverableStatuses = useMemo(() => {
+    const result: Record<string, "done" | "in-progress" | "waiting"> = {};
+    for (const d of DELIVERABLES) {
+      result[d.key] = getDeliverableStatus(d, completedPhases, activePhaseIdx, pipelineStatuses);
+    }
+    return result;
+  }, [completedPhases, activePhaseIdx, pipelineStatuses]);
 
   // ── Error state ──────────────────────────────────────────────
 
@@ -188,7 +388,7 @@ export function PipelineAgentView({
       </div>
 
       {/* Overall progress bar */}
-      <div className="px-6 pb-3">
+      <div className="px-6 pb-2">
         <div className="flex items-center justify-between text-2xs text-muted-foreground mb-1.5">
           <span className="font-mono tabular-nums font-medium text-foreground">
             {progress < 100 ? progress.toFixed(1) : "100"}%
@@ -211,6 +411,38 @@ export function PipelineAgentView({
         </div>
       </div>
 
+      {/* Phase indicators */}
+      <div className="px-6 pb-3 flex gap-1">
+        {AGENT_PERSONAS.map((agent, i) => {
+          const isDone = completedPhases.has(i);
+          const isActive = i === activePhaseIdx && !isDone;
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
+              <div
+                className={`h-1 w-full rounded-full transition-all duration-500 ${
+                  isDone
+                    ? "bg-emerald-500"
+                    : isActive
+                      ? "bg-blue-500 animate-pulse"
+                      : "bg-muted-foreground/15"
+                }`}
+              />
+              <span
+                className={`text-[9px] font-mono font-bold leading-none ${
+                  isDone
+                    ? "text-emerald-500"
+                    : isActive
+                      ? "text-blue-500"
+                      : "text-muted-foreground/30"
+                }`}
+              >
+                {PHASE_LETTERS[i]}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
       {/* Metrics ribbon */}
       <div className="px-6 pb-3">
         <AgentMetricsBar
@@ -222,18 +454,30 @@ export function PipelineAgentView({
         />
       </div>
 
-      {/* Agent timeline — agents appear one-by-one as they activate */}
+      {/* Agent Pipeline header */}
+      <div className="px-6 pb-2">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          Agent Pipeline
+        </h3>
+      </div>
+
+      {/* Agent timeline — all agents shown with staggered reveal */}
       <div className="px-6 pb-4">
         <div className="space-y-0">
-          {AGENT_PERSONAS.slice(0, visibleCount).map((agent, i) => {
+          {AGENT_PERSONAS.slice(0, revealedCount).map((agent, i) => {
             const isDone = completedPhases.has(i);
             const isActive = i === activePhaseIdx && !isDone;
-            const isFailed = false; // Could be extended per-phase
 
-            let status: "waiting" | "running" | "done" | "failed" = "waiting";
+            let status: AgentStatus = "waiting";
             if (isDone) status = "done";
             else if (isActive) status = "running";
-            else if (isFailed) status = "failed";
+
+            const subTaskStatuses = computeSubTaskStatuses(
+              status,
+              agent.subTasks,
+              (phaseLogs[i] || []).length,
+              pipelineStatuses,
+            );
 
             return (
               <AgentTimelineCard
@@ -243,57 +487,81 @@ export function PipelineAgentView({
                 role={agent.role}
                 icon={agent.icon}
                 accentColor={agent.accentColor}
+                description={agent.description}
                 status={status}
                 latencyMs={phaseLatencies[i]}
                 logs={phaseLogs[i] || []}
-                isLast={i === visibleCount - 1}
+                isLast={i === revealedCount - 1}
                 staggerDelay={i * 0.12}
+                subTasks={agent.subTasks.map((st) => ({ key: st.key, label: st.label }))}
+                subTaskStatuses={subTaskStatuses}
               />
             );
           })}
         </div>
       </div>
 
-      {/* Document readiness summary (visible after first docs are done) */}
-      {completedCount >= 4 && (
-        <div className="px-6 pb-4">
-          <div className="glass-panel rounded-xl p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xs font-semibold text-foreground">Documents Preparing</span>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {[
-                { name: "CV", done: completedCount >= 4 },
-                { name: "Cover Letter", done: completedCount >= 4 },
-                { name: "Personal Statement", done: completedCount >= 5 },
-                { name: "Portfolio", done: completedCount >= 5 },
-                { name: "Learning Plan", done: completedCount >= 4 },
-                { name: "Gap Analysis", done: completedCount >= 3 },
-              ].map((doc) => (
-                <div key={doc.name} className="flex items-center gap-1.5">
-                  <CheckCircle2
+      {/* Deliverables grid — always visible */}
+      <div className="px-6 pb-4">
+        <div className="glass-panel rounded-xl p-3">
+          <div className="flex items-center gap-2 mb-2.5">
+            <FileText className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs font-semibold text-foreground">Deliverables</span>
+            <span className="ml-auto text-[10px] font-mono text-muted-foreground">
+              {DELIVERABLES.filter((d) => deliverableStatuses[d.key] === "done").length}/{DELIVERABLES.length}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+            {DELIVERABLES.map((d) => {
+              const dStatus = deliverableStatuses[d.key];
+              const Icon = d.icon;
+              return (
+                <div
+                  key={d.key}
+                  className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 transition-all duration-300 ${
+                    dStatus === "done"
+                      ? "bg-emerald-500/10"
+                      : dStatus === "in-progress"
+                        ? "bg-blue-500/10"
+                        : "bg-muted/50"
+                  }`}
+                >
+                  {dStatus === "done" ? (
+                    <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500" />
+                  ) : dStatus === "in-progress" ? (
+                    <Loader2 className="h-3 w-3 shrink-0 text-blue-500 animate-spin" />
+                  ) : (
+                    <Circle className="h-3 w-3 shrink-0 text-muted-foreground/30" />
+                  )}
+                  <Icon
                     className={`h-3 w-3 shrink-0 ${
-                      doc.done && isComplete
+                      dStatus === "done"
                         ? "text-emerald-500"
-                        : doc.done
-                          ? "text-primary animate-pulse"
+                        : dStatus === "in-progress"
+                          ? "text-blue-500"
                           : "text-muted-foreground/30"
                     }`}
                   />
-                  <span className={`text-[11px] ${doc.done ? "text-foreground" : "text-muted-foreground/50"}`}>
-                    {doc.name}
+                  <span
+                    className={`text-[10px] leading-tight truncate ${
+                      dStatus === "done"
+                        ? "text-foreground font-medium"
+                        : dStatus === "in-progress"
+                          ? "text-foreground"
+                          : "text-muted-foreground/50"
+                    }`}
+                  >
+                    {d.label}
                   </span>
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
         </div>
-      )}
+      </div>
 
       {/* Footer */}
       <div className="px-6 pb-6 flex flex-col items-center gap-2">
-        {/* Contextual hint */}
         <p className="text-xs text-muted-foreground text-center max-w-sm">
           {isComplete
             ? "All agents have completed their work. Your application pack is ready."

@@ -189,6 +189,21 @@ function buildPhaseLogsFromEvents(events: GenerationJobEventDoc[]): Record<numbe
   return logs;
 }
 
+function buildPipelineStatusesFromEvents(events: GenerationJobEventDoc[]): Record<string, "running" | "completed"> {
+  const statuses: Record<string, "running" | "completed"> = {};
+  for (const event of events) {
+    if (event.eventName === "agent_status") {
+      const payload = event.payload ?? {};
+      const name = String(payload.pipeline_name ?? event.agentName ?? "");
+      const status = String(payload.status ?? event.status ?? "");
+      if (name) {
+        statuses[name] = status === "completed" ? "completed" : "running";
+      }
+    }
+  }
+  return statuses;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Page Component                                                      */
 /* ------------------------------------------------------------------ */
@@ -260,6 +275,7 @@ export default function NewApplicationPage() {
   const [completedPhases, setCompletedPhases] = useState<Set<number>>(new Set());
   const [activePhaseIdx, setActivePhaseIdx] = useState(-1);
   const [phaseLogs, setPhaseLogs] = useState<Record<number, string[]>>({});
+  const [pipelineStatuses, setPipelineStatuses] = useState<Record<string, "running" | "completed">>({});
   const restoreRef = useRef(false);
   const redirectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const smoothTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -440,6 +456,7 @@ export default function NewApplicationPage() {
   useEffect(() => {
     if (!activeJobId) return;
     setPhaseLogs(buildPhaseLogsFromEvents(generationEvents));
+    setPipelineStatuses(buildPipelineStatusesFromEvents(generationEvents));
   }, [activeJobId, generationEvents]);
 
   useEffect(() => {
@@ -570,6 +587,7 @@ export default function NewApplicationPage() {
     setCompletedPhases(new Set());
     setActivePhaseIdx(0); // Start with Recon (intel agent) as active
     setPhaseLogs({});
+    setPipelineStatuses({});
 
     const uid = user?.uid || user?.id;
     if (!uid) {
@@ -673,6 +691,12 @@ export default function NewApplicationPage() {
           }
         }
         appendPhaseLog(phaseIdx, formatAgentLine(event));
+        if (event.pipeline_name) {
+          setPipelineStatuses(prev => ({
+            ...prev,
+            [event.pipeline_name]: event.status === "completed" ? "completed" : "running",
+          }));
+        }
       };
 
       await generateApplicationModules(appId, uid, confirmedFacts, undefined, handleProgress, {
@@ -1070,6 +1094,7 @@ export default function NewApplicationPage() {
           completedPhases={completedPhases}
           activePhaseIdx={activePhaseIdx}
           logsByPhase={phaseLogs}
+          pipelineStatuses={pipelineStatuses}
           generating={generating}
           genError={genError}
           onCancel={() => {
@@ -1091,6 +1116,7 @@ export default function NewApplicationPage() {
             setProgress(0);
             setGenMessage("");
             setPhaseLogs({});
+            setPipelineStatuses({});
             setCompletedPhases(new Set());
             setActivePhaseIdx(-1);
             setActiveJobId(null);
