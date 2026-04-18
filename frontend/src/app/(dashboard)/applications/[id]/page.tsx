@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   ArrowRight,
   BookOpen,
@@ -11,6 +12,7 @@ import {
   RefreshCw,
   Sparkles,
   Target,
+  AlertTriangle,
   Download,
   ClipboardCopy,
   FileArchive,
@@ -35,6 +37,8 @@ import {
   Archive,
   CircleDot,
   ChevronDown,
+  MessageSquare,
+  DollarSign,
 } from "lucide-react";
 import { useAuth } from "@/components/providers";
 import {
@@ -741,6 +745,7 @@ export default function ApplicationWorkspacePage() {
             {/* ── Flat Tab Navigation ── */}
             {(() => {
               const tailoredTabs = ["cv", "cover", "statement", "portfolio"];
+              const benchmarkTabs = ["bench-cv", "bench-cl", "bench-ps", "bench-analysis", "bench-all"];
               const extraDocKeys = app.generatedDocuments ? Object.keys(app.generatedDocuments).filter(k => app.generatedDocuments![k]) : [];
               const generated = app.generatedDocuments || {};
               const coreKeys = new Set(["cv", "cover_letter", "personal_statement", "portfolio"]);
@@ -748,6 +753,7 @@ export default function ApplicationWorkspacePage() {
                 (d: any) => d.key && !generated[d.key] && !coreKeys.has(d.key)
               );
               const isTailoredActive = tailoredTabs.includes(tab) || tab.startsWith("extra-") || tab === "optional-docs" || tab === "all-docs";
+              const isBenchmarkActive = tab === "benchmark" || benchmarkTabs.includes(tab);
 
               const triggerCls = "gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm";
               const subTriggerCls = "gap-1.5 text-xs rounded-md data-[state=active]:bg-background data-[state=active]:shadow-sm";
@@ -757,7 +763,20 @@ export default function ApplicationWorkspacePage() {
                   {/* Primary flat navigation */}
                   <TabsList className="w-full justify-start overflow-x-auto h-auto gap-1 bg-muted/50 p-1 rounded-xl">
                     <TabsTrigger value="overview" className={triggerCls}><LayoutGrid className="h-3.5 w-3.5" />Overview</TabsTrigger>
-                    <TabsTrigger value="benchmark" className={triggerCls}><Target className="h-3.5 w-3.5" />Benchmark</TabsTrigger>
+                    {/* Benchmark group — custom button since it maps to multiple sub-tab values */}
+                    <button
+                      type="button"
+                      role="tab"
+                      className={cn(
+                        "inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1.5 text-sm font-medium rounded-lg transition-all",
+                        isBenchmarkActive
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                      )}
+                      onClick={() => { if (!isBenchmarkActive) setTab("bench-cv"); }}
+                    >
+                      <Target className="h-3.5 w-3.5" />Benchmark
+                    </button>
                     <TabsTrigger value="gaps" className={triggerCls}><BarChart3 className="h-3.5 w-3.5" />Skills & Gaps</TabsTrigger>
                     <TabsTrigger value="learning" className={triggerCls}><GraduationCap className="h-3.5 w-3.5" />Learning</TabsTrigger>
                     {/* Tailored group — custom button since it maps to multiple sub-tab values */}
@@ -779,6 +798,17 @@ export default function ApplicationWorkspacePage() {
                     <TabsTrigger value="library" className={triggerCls}><Library className="h-3.5 w-3.5" />Knowledge</TabsTrigger>
                     <TabsTrigger value="export" className={triggerCls}><Package className="h-3.5 w-3.5" />Export</TabsTrigger>
                   </TabsList>
+
+                  {/* Benchmark document sub-tabs */}
+                  {isBenchmarkActive && (
+                    <TabsList className="w-full justify-start overflow-x-auto h-auto gap-1 bg-muted/30 p-1 rounded-lg">
+                      <TabsTrigger value="bench-cv" className={subTriggerCls}><FileText className="h-3 w-3" />Benchmark CV</TabsTrigger>
+                      <TabsTrigger value="bench-cl" className={subTriggerCls}><FileText className="h-3 w-3" />Cover Letter</TabsTrigger>
+                      <TabsTrigger value="bench-ps" className={subTriggerCls}><PenTool className="h-3 w-3" />Personal Statement</TabsTrigger>
+                      <TabsTrigger value="bench-analysis" className={subTriggerCls}><BarChart3 className="h-3 w-3" />Analysis</TabsTrigger>
+                      <TabsTrigger value="bench-all" className={subTriggerCls}><Layers className="h-3 w-3" />All Documents</TabsTrigger>
+                    </TabsList>
+                  )}
 
                   {/* Tailored document sub-tabs */}
                   {isTailoredActive && (
@@ -816,6 +846,47 @@ export default function ApplicationWorkspacePage() {
             <TabsContent value="overview" className="mt-4">
               <SectionErrorBoundary label="Mission Control">
               <div className="space-y-5">
+
+              {/* ── Failed Modules Banner ── */}
+              {(() => {
+                const moduleLabels: Record<string, string> = {
+                  benchmark: "Benchmark", gaps: "Skills & Gaps", learningPlan: "Learning Plan",
+                  cv: "Tailored CV", coverLetter: "Cover Letter", personalStatement: "Personal Statement",
+                  portfolio: "Portfolio", scorecard: "Scorecard",
+                };
+                const failedMods = Object.entries(app?.modules ?? {})
+                  .filter(([, v]) => (v as any)?.state === "error")
+                  .map(([k]) => k);
+                if (failedMods.length === 0) return null;
+                return (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-4">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                          {failedMods.length === 1 ? "1 module needs attention" : `${failedMods.length} modules need attention`}
+                        </h4>
+                        <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                          {failedMods.map(k => moduleLabels[k] ?? k).join(", ")} didn&apos;t generate successfully. You can retry individually or regenerate everything.
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {failedMods.map(k => (
+                            <Button key={k} variant="outline" size="sm" className="h-7 gap-1.5 rounded-lg text-xs border-amber-300 dark:border-amber-700" onClick={() => regenerate(k as ModuleKey)} disabled={regeneratingModule === k || regeneratingAll}>
+                              <RefreshCw className="h-3 w-3" /> {moduleLabels[k] ?? k}
+                            </Button>
+                          ))}
+                          {failedMods.length > 1 && (
+                            <Button variant="default" size="sm" className="h-7 gap-1.5 rounded-lg text-xs" onClick={regenerateAll} disabled={regeneratingAll || !!regeneratingModule}>
+                              {regeneratingAll ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                              Retry All Failed
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* ── Next Best Action ── */}
               {(() => {
@@ -973,7 +1044,7 @@ export default function ApplicationWorkspacePage() {
               <SectionErrorBoundary label="Intel">
               {(() => {
                 const intel = app?.companyIntel;
-                if (!intel || Object.keys(intel).length === 0) {
+                if (!intel || Object.keys(intel).length === 0 || (intel.confidence === "low" && !intel.company_overview)) {
                   return (
                     <div className="rounded-2xl border border-dashed bg-card/50 p-10 text-center">
                       <Search className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
@@ -981,6 +1052,16 @@ export default function ApplicationWorkspacePage() {
                       <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
                         Company intel is gathered during application generation. Enter a company name and generate to see results.
                       </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-4 gap-2 rounded-xl"
+                        onClick={regenerateAll}
+                        disabled={regeneratingAll || !!regeneratingModule}
+                      >
+                        {regeneratingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                        {regeneratingAll ? "Working…" : "Regenerate Application"}
+                      </Button>
                     </div>
                   );
                 }
@@ -1202,12 +1283,164 @@ export default function ApplicationWorkspacePage() {
               </SectionErrorBoundary>
             </TabsContent>
 
-            <TabsContent value="benchmark" className="mt-4">
-              <SectionErrorBoundary label="Benchmark">
+            {/* ── Benchmark Sub-Tabs ──────────────────────────── */}
+            {["bench-cv", "bench-cl", "bench-ps"].map((tabKey) => {
+              const docMap: Record<string, { title: string; subtitle: string; field: string; tailoredField: string; filename: string; docType: "cv" | "coverLetter" | "personalStatement" | "portfolio" }> = {
+                "bench-cv": {
+                  title: "Benchmark CV",
+                  subtitle: "A full reference CV — your name with benchmark-level experience. Read-only north star.",
+                  field: "cv",
+                  tailoredField: "cvHtml",
+                  filename: "HireStack_Benchmark_CV",
+                  docType: "cv",
+                },
+                "bench-cl": {
+                  title: "Benchmark Cover Letter",
+                  subtitle: "The ideal cover letter for this role — reference quality to measure against.",
+                  field: "cover_letter",
+                  tailoredField: "coverLetterHtml",
+                  filename: "HireStack_Benchmark_Cover_Letter",
+                  docType: "coverLetter",
+                },
+                "bench-ps": {
+                  title: "Benchmark Personal Statement",
+                  subtitle: "The ideal personal statement — benchmark-quality motivation narrative.",
+                  field: "personal_statement",
+                  tailoredField: "personalStatementHtml",
+                  filename: "HireStack_Benchmark_Personal_Statement",
+                  docType: "personalStatement",
+                },
+              };
+              const meta = docMap[tabKey]!;
+              const benchDocs = app.benchmarkDocuments || {};
+              const html = tabKey === "bench-cv"
+                ? (benchDocs["cv"] || app.benchmark?.benchmarkCvHtml || "")
+                : (benchDocs[meta.field] || "");
+              const tailoredHtml = (app as any)[meta.tailoredField] || "";
+
+              return (
+                <TabsContent key={tabKey} value={tabKey} className="mt-4">
+                  <SectionErrorBoundary label={meta.title}>
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold">{meta.title}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">{meta.subtitle}</div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {html && (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5 rounded-xl text-xs"
+                                onClick={async () => {
+                                  try {
+                                    await downloadPdf(html, {
+                                      filename: meta.filename,
+                                      documentType: meta.docType,
+                                    });
+                                  } catch {
+                                    toast({ title: "Export failed", description: "Could not generate PDF.", variant: "error" });
+                                  }
+                                }}
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                                PDF
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5 rounded-xl text-xs"
+                                onClick={async () => {
+                                  try {
+                                    await downloadDocx(html, {
+                                      filename: meta.filename,
+                                      documentType: meta.docType,
+                                    });
+                                  } catch {
+                                    toast({ title: "Export failed", description: "Could not generate Word doc.", variant: "error" });
+                                  }
+                                }}
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                                Word
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5 rounded-xl text-xs"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(stripHtml(html));
+                                  toast.success("Copied!", `${meta.title} text copied to clipboard.`);
+                                }}
+                              >
+                                <ClipboardCopy className="h-3.5 w-3.5" />
+                                Copy
+                              </Button>
+                            </>
+                          )}
+                          <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => regenerate("benchmark")} disabled={regeneratingModule === "benchmark"}>
+                            {regeneratingModule === "benchmark" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                            {regeneratingModule === "benchmark" ? "Working…" : "Regenerate"}
+                          </Button>
+                        </div>
+                      </div>
+
+                      <Separator className="my-4" />
+
+                      {html ? (
+                        <div className="mx-auto max-w-[800px]">
+                          <div
+                            className="doc-preview"
+                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
+                          />
+                        </div>
+                      ) : (
+                        <EmptyState
+                          title={`${meta.title} not generated yet.`}
+                          body="Run the wizard generation or regenerate the benchmark module."
+                          action={<Button onClick={() => regenerate("benchmark")} disabled={regeneratingModule === "benchmark"}>Generate benchmark</Button>}
+                        />
+                      )}
+
+                      {/* Diff comparison with tailored version */}
+                      {html && tailoredHtml && (
+                        <details className="mt-4">
+                          <summary className="cursor-pointer text-xs font-medium text-primary hover:underline">
+                            Compare with your Tailored version
+                          </summary>
+                          <div className="mt-3 grid gap-4 md:grid-cols-2">
+                            <div>
+                              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Benchmark (Target)</div>
+                              <div className="rounded-lg border p-3 max-h-[400px] overflow-y-auto">
+                                <div className="prose prose-sm dark:prose-invert max-w-none text-xs" dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }} />
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Your Tailored Version</div>
+                              <div className="rounded-lg border p-3 max-h-[400px] overflow-y-auto">
+                                <div className="prose prose-sm dark:prose-invert max-w-none text-xs" dangerouslySetInnerHTML={{ __html: sanitizeHtml(tailoredHtml) }} />
+                              </div>
+                            </div>
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  </div>
+                  </SectionErrorBoundary>
+                </TabsContent>
+              );
+            })}
+
+            {/* ── Benchmark Analysis Sub-Tab ──────────────────── */}
+            <TabsContent value="bench-analysis" className="mt-4">
+              <SectionErrorBoundary label="Benchmark Analysis">
               <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <div className="text-sm font-semibold">Benchmark — Ideal Candidate</div>
+                    <div className="text-sm font-semibold">Benchmark — Ideal Candidate Analysis</div>
                     <div className="mt-1 text-xs text-muted-foreground">
                       AI-generated profile of the perfect candidate. Your north star.
                     </div>
@@ -1280,137 +1513,126 @@ export default function ApplicationWorkspacePage() {
                         <KeywordChips keywords={app.benchmark.keywords ?? []} isCovered={() => true} />
                       </div>
                     </div>
-
-                    {/* ── Benchmark Ideal CV ─────────────────────────── */}
-                    {app.benchmark.benchmarkCvHtml && (
-                      <div className="mt-2">
-                        <div className="flex items-center justify-between mb-3">
-                          <div>
-                            <div className="text-xs font-semibold">Ideal Candidate CV</div>
-                            <div className="mt-0.5 text-[10px] text-muted-foreground">
-                              A full reference CV — your name with benchmark-level experience. Read-only north star.
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1.5 rounded-xl text-xs"
-                              onClick={async () => {
-                                try {
-                                  await downloadPdf(app.benchmark?.benchmarkCvHtml ?? "", {
-                                    filename: "HireStack_Benchmark_CV",
-                                    documentType: "cv",
-                                  });
-                                } catch (err) {
-                                  toast({ title: "Export failed", description: "Could not generate PDF.", variant: "error" });
-                                }
-                              }}
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                              PDF
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1.5 rounded-xl text-xs"
-                              onClick={() => {
-                                navigator.clipboard.writeText(
-                                  stripHtml(app.benchmark?.benchmarkCvHtml || "")
-                                );
-                                toast.success("Copied!", "Benchmark CV text copied to clipboard.");
-                              }}
-                            >
-                              <ClipboardCopy className="h-3.5 w-3.5" />
-                              Copy
-                            </Button>
-                          </div>
-                        </div>
-                        <div className="mx-auto max-w-[800px]">
-                          <div
-                            className="doc-preview"
-                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(app.benchmark?.benchmarkCvHtml || "") }}
-                          />
-                        </div>
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <EmptyState
                     title="Benchmark not generated yet."
                     body="Run the wizard generation or regenerate the module here."
-                    action={<Button onClick={() => regenerate("benchmark")} loading={regeneratingModule === "benchmark"}>Generate benchmark</Button>}
+                    action={<Button onClick={() => regenerate("benchmark")} disabled={regeneratingModule === "benchmark"}>Generate benchmark</Button>}
                   />
                 )}
+              </div>
+              </SectionErrorBoundary>
+            </TabsContent>
 
-                {/* Benchmark Documents — Perfect 100% Application */}
-                {app.benchmarkDocuments && Object.keys(app.benchmarkDocuments).length > 0 && (
-                  <div className="mt-6">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10">
-                        <Target className="h-4 w-4 text-emerald-500" />
+            {/* ── Benchmark All Documents Sub-Tab ─────────────── */}
+            <TabsContent value="bench-all" className="mt-4">
+              <SectionErrorBoundary label="Benchmark Documents">
+              <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
+                {/* Legacy benchmarkDocuments not shown by sub-tabs (e.g. from on-demand gen) */}
+                {(() => {
+                  const benchDocs = app.benchmarkDocuments || {};
+                  const shownKeys = new Set(["cv", "cover_letter", "personal_statement"]);
+                  const extraBenchDocs = Object.entries(benchDocs).filter(([k, html]) => html && !shownKeys.has(k));
+                  if (extraBenchDocs.length === 0) return null;
+                  return (
+                    <div className="mb-6">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10">
+                          <Target className="h-4 w-4 text-emerald-500" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold">Additional Benchmark Documents</p>
+                          <p className="text-xs text-muted-foreground">On-demand benchmark documents — use as reference</p>
+                        </div>
+                        <Badge variant="outline" className="ml-auto text-[10px] border-emerald-500/30 text-emerald-500">
+                          {extraBenchDocs.length} documents
+                        </Badge>
                       </div>
-                      <div>
-                        <p className="text-sm font-semibold">Perfect Application Documents</p>
-                        <p className="text-xs text-muted-foreground">100% match benchmark — use as reference to improve yours</p>
-                      </div>
-                      <Badge variant="outline" className="ml-auto text-[10px] border-emerald-500/30 text-emerald-500">
-                        {Object.keys(app.benchmarkDocuments).length} documents
-                      </Badge>
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {Object.entries(app.benchmarkDocuments).map(([key, html]) => {
-                        if (!html) return null;
-                        const docInfo = (app.discoveredDocuments || []).find((d: any) => d.key === key);
-                        const label = docInfo?.label || key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
-                        return (
-                          <details key={key} className="rounded-xl border bg-card/50 overflow-hidden group">
-                            <summary className="px-4 py-2.5 flex items-center gap-2 cursor-pointer list-none select-none hover:bg-muted/30 transition-colors">
-                              <FileText className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                              <span className="text-xs font-medium flex-1">{label}</span>
-                              <span className="text-[9px] text-emerald-500 font-mono">100%</span>
-                            </summary>
-                            <div className="border-t p-4 max-h-[400px] overflow-y-auto">
-                              <div className="prose prose-sm dark:prose-invert max-w-none text-xs" dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }} />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {extraBenchDocs.map(([key, html]) => {
+                          const docInfo = (app.discoveredDocuments || []).find((d: any) => d.key === key);
+                          const label = docInfo?.label || key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+                          return (
+                            <div key={key} className="rounded-xl border bg-card/50 p-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="h-3.5 w-3.5 text-emerald-500" />
+                                  <span className="text-xs font-semibold">{label}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0"
+                                    onClick={async () => {
+                                      try {
+                                        await downloadPdf(html, { filename: `HireStack_Benchmark_${key}`, documentType: "cv" });
+                                      } catch { toast({ title: "Export failed", variant: "error" }); }
+                                    }}
+                                  >
+                                    <Download className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(stripHtml(html));
+                                      toast.success("Copied!", `${label} copied to clipboard.`);
+                                    }}
+                                  >
+                                    <ClipboardCopy className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </div>
+                              <div className="max-h-[300px] overflow-y-auto rounded-lg border p-3">
+                                <div className="prose prose-sm dark:prose-invert max-w-none text-xs" dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }} />
+                              </div>
                             </div>
-                          </details>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
+                      <Separator className="my-5" />
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
-                {/* Benchmark Document Universe — all possible benchmark doc types */}
-                <div className="mt-6">
-                  <Separator className="mb-5" />
-                  <DocumentUniverseGrid
-                    title="Benchmark Document Universe"
-                    universe={DOCUMENT_UNIVERSE}
-                    statusMap={(() => {
-                      const m = new Map<string, DocStatus>();
-                      if (app.benchmarkDocuments) {
-                        for (const [key, html] of Object.entries(app.benchmarkDocuments)) {
-                          if (html) m.set(key, { status: "ready" });
-                        }
-                      }
-                      if (app.benchmark?.benchmarkCvHtml) m.set("cv", { status: "ready" });
-                      return m;
-                    })()}
-                    onView={(key) => {
-                      // Scroll to the matching details element if it exists
-                      const el = document.querySelector(`details summary span`);
-                      if (el) el.closest("details")?.setAttribute("open", "");
-                    }}
-                    onGenerate={async (key, label) => {
-                      try {
-                        await generateDocumentInLibrary(key, "benchmark", appId, label);
-                        toast({ title: "Generation started", description: `Generating benchmark ${label}…` });
-                      } catch {
-                        toast({ title: "Generation failed", variant: "error" });
-                      }
-                    }}
-                  />
-                </div>
+                <DocumentUniverseGrid
+                  title="Benchmark Document Universe"
+                  universe={DOCUMENT_UNIVERSE}
+                  statusMap={(() => {
+                    const m = new Map<string, DocStatus>();
+                    const benchDocs = app.benchmarkDocuments || {};
+                    for (const [key, html] of Object.entries(benchDocs)) {
+                      if (html) m.set(key, { status: "ready", htmlContent: html });
+                    }
+                    if (app.benchmark?.benchmarkCvHtml) m.set("cv", { status: "ready", htmlContent: app.benchmark.benchmarkCvHtml });
+                    return m;
+                  })()}
+                  onView={(key) => {
+                    const benchDocs = app.benchmarkDocuments || {};
+                    if (key === "cv") setTab("bench-cv");
+                    else if (key === "cover_letter" && benchDocs["cover_letter"]) setTab("bench-cl");
+                    else if (key === "personal_statement" && benchDocs["personal_statement"]) setTab("bench-ps");
+                  }}
+                  onDownload={async (key) => {
+                    const benchDocs = app.benchmarkDocuments || {};
+                    const html = key === "cv" ? (benchDocs["cv"] || app.benchmark?.benchmarkCvHtml || "") : (benchDocs[key] || "");
+                    if (!html) { toast({ title: "No content", description: "Document not generated yet.", variant: "error" }); return; }
+                    try {
+                      await downloadPdf(html, { filename: `HireStack_Benchmark_${key}`, documentType: "cv" });
+                    } catch { toast({ title: "Export failed", variant: "error" }); }
+                  }}
+                  onGenerate={async (key, label) => {
+                    try {
+                      await generateDocumentInLibrary(key, "benchmark", appId, label);
+                      toast({ title: "Generation started", description: `Generating benchmark ${label}…` });
+                    } catch {
+                      toast({ title: "Generation failed", variant: "error" });
+                    }
+                  }}
+                />
               </div>
               </SectionErrorBoundary>
             </TabsContent>
@@ -1529,7 +1751,7 @@ export default function ApplicationWorkspacePage() {
 
                 <Separator className="my-4" />
 
-                {app.learningPlan ? (
+                {app.learningPlan && (app.learningPlan.focus?.length || app.learningPlan.plan?.length || app.learningPlan.resources?.length) ? (
                   <div className="space-y-4">
                     <div>
                       <div className="text-xs font-semibold">Focus</div>
@@ -1721,6 +1943,44 @@ export default function ApplicationWorkspacePage() {
                       <div className="border-b bg-muted/20 px-5 py-3 flex items-center justify-between">
                         <h3 className="text-sm font-semibold">{label}</h3>
                         <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5 rounded-xl text-xs h-7"
+                            onClick={async () => {
+                              try {
+                                await downloadPdf(html, { filename: `HireStack_${key}`, documentType: "cv" });
+                              } catch { toast({ title: "Export failed", variant: "error" }); }
+                            }}
+                          >
+                            <Download className="h-3 w-3" />
+                            PDF
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5 rounded-xl text-xs h-7"
+                            onClick={async () => {
+                              try {
+                                await downloadDocx(html, { filename: `HireStack_${key}`, documentType: "cv" });
+                              } catch { toast({ title: "Export failed", variant: "error" }); }
+                            }}
+                          >
+                            <Download className="h-3 w-3" />
+                            Word
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1.5 rounded-xl text-xs h-7"
+                            onClick={() => {
+                              navigator.clipboard.writeText(stripHtml(html));
+                              toast.success("Copied!", `${label} copied to clipboard.`);
+                            }}
+                          >
+                            <ClipboardCopy className="h-3 w-3" />
+                            Copy
+                          </Button>
                           {benchmarkHtml && (
                             <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-500">
                               Benchmark available
@@ -1879,6 +2139,17 @@ export default function ApplicationWorkspacePage() {
                       if (tabMap[key]) { setTab(tabMap[key]); return; }
                       if (app.generatedDocuments?.[key]) { setTab(`extra-${key}`); }
                     }}
+                    onDownload={async (key) => {
+                      const coreMap: Record<string, string> = {
+                        cv: app.cvHtml || "", cover_letter: app.coverLetterHtml || "",
+                        personal_statement: app.personalStatementHtml || "", portfolio: app.portfolioHtml || "",
+                      };
+                      const html = coreMap[key] ?? app.generatedDocuments?.[key] ?? "";
+                      if (!html) { toast({ title: "No content", description: "Document not generated yet.", variant: "error" }); return; }
+                      try {
+                        await downloadPdf(html, { filename: `HireStack_${key}`, documentType: "cv" });
+                      } catch { toast({ title: "Export failed", variant: "error" }); }
+                    }}
                     onGenerate={async (key, label) => {
                       try {
                         await generateDocumentInLibrary(key, "tailored", appId, label);
@@ -1967,6 +2238,18 @@ export default function ApplicationWorkspacePage() {
                       setExporting(true);
                       try {
                         await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: "zip_all" } });
+                        // Collect extra documents from benchmark + generated docs
+                        const extras: Array<{ name: string; html: string; type?: string; category?: string }> = [];
+                        // Benchmark documents
+                        const benchDocs = app.benchmarkDocuments || {};
+                        for (const [key, html] of Object.entries(benchDocs)) {
+                          if (html) extras.push({ name: `Benchmark_${key.replace(/_/g, "_")}`, html: html as string, category: "benchmark" });
+                        }
+                        // Extra generated documents
+                        const genDocs = app.generatedDocuments || {};
+                        for (const [key, html] of Object.entries(genDocs)) {
+                          if (html) extras.push({ name: key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()).replace(/\s+/g, "_"), html: html as string, category: "tailored" });
+                        }
                         await downloadAllAsZip({
                           jobTitle: app.confirmedFacts?.jobTitle || "Role",
                           company: app.confirmedFacts?.company || "Company",
@@ -1977,6 +2260,7 @@ export default function ApplicationWorkspacePage() {
                           learningPlanHtml: app.learningPlan ? buildLearningPlanHtml(app.learningPlan) : undefined,
                           benchmarkHtml: app.benchmark ? buildBenchmarkHtml(app.benchmark, app.confirmedFacts?.jobTitle || "") : undefined,
                           gapAnalysisHtml: app.gaps ? buildGapAnalysisHtml(app.gaps) : undefined,
+                          extraDocuments: extras,
                         });
                       } catch (err) {
                         toast({ title: "Export failed", description: "Could not generate ZIP.", variant: "error" });
@@ -2137,6 +2421,70 @@ export default function ApplicationWorkspacePage() {
                       navigator.clipboard.writeText(stripHtml(html));
                     }}
                   />
+
+                  {/* ── Dynamic Benchmark Document Cards ── */}
+                  {Object.entries(app.benchmarkDocuments || {}).map(([key, html]) => {
+                    if (!html) return null;
+                    const label = `Benchmark ${key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}`;
+                    const fname = `HireStack_Benchmark_${key}`;
+                    return (
+                      <ExportCard
+                        key={`bench-${key}`}
+                        title={label}
+                        description="Ideal-candidate benchmark version."
+                        hasContent
+                        gate={gatedDownload}
+                        onDownloadPdf={async () => {
+                          if (!user) return;
+                          await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: `bench_${key}_pdf` } });
+                          await downloadPdf(html as string, { filename: fname, documentType: "cv" });
+                        }}
+                        onDownloadDocx={async () => {
+                          if (!user) return;
+                          await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: `bench_${key}_docx` } });
+                          await downloadDocx(html as string, { filename: fname, documentType: "cv" });
+                        }}
+                        onDownloadImage={async () => {
+                          if (!user) return;
+                          await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: `bench_${key}_jpg` } });
+                          await downloadImage(html as string, { filename: fname, documentType: "cv", format: "jpg" });
+                        }}
+                        onCopyText={() => navigator.clipboard.writeText(stripHtml(html as string))}
+                      />
+                    );
+                  })}
+
+                  {/* ── Dynamic Generated Document Cards ── */}
+                  {Object.entries(app.generatedDocuments || {}).map(([key, html]) => {
+                    if (!html) return null;
+                    const label = key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+                    const fname = `HireStack_${key}`;
+                    return (
+                      <ExportCard
+                        key={`gen-${key}`}
+                        title={label}
+                        description="AI-generated tailored document."
+                        hasContent
+                        gate={gatedDownload}
+                        onDownloadPdf={async () => {
+                          if (!user) return;
+                          await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: `gen_${key}_pdf` } });
+                          await downloadPdf(html as string, { filename: fname, documentType: "cv" });
+                        }}
+                        onDownloadDocx={async () => {
+                          if (!user) return;
+                          await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: `gen_${key}_docx` } });
+                          await downloadDocx(html as string, { filename: fname, documentType: "cv" });
+                        }}
+                        onDownloadImage={async () => {
+                          if (!user) return;
+                          await trackEvent(user.uid, { name: "export_clicked", appId, properties: { type: `gen_${key}_jpg` } });
+                          await downloadImage(html as string, { filename: fname, documentType: "cv", format: "jpg" });
+                        }}
+                        onCopyText={() => navigator.clipboard.writeText(stripHtml(html as string))}
+                      />
+                    );
+                  })}
                 </div>
 
                 <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
@@ -2246,6 +2594,25 @@ export default function ApplicationWorkspacePage() {
               return typeof topFix === "string" ? topFix : undefined;
             })()}
           />
+
+          {/* Quick-action links to sidebar tools with application context */}
+          <div className="rounded-2xl border bg-card p-4 shadow-soft-sm space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Quick Tools</div>
+            <Link href={`/interview?appId=${appId}`} className="flex items-center gap-2 rounded-xl border p-3 hover:bg-muted/50 transition-colors group">
+              <MessageSquare className="h-4 w-4 text-blue-500" />
+              <div className="min-w-0">
+                <div className="text-sm font-medium group-hover:text-primary transition-colors">Practice Interview</div>
+                <div className="text-2xs text-muted-foreground">Pre-filled with this role&apos;s context</div>
+              </div>
+            </Link>
+            <Link href={`/salary?appId=${appId}`} className="flex items-center gap-2 rounded-xl border p-3 hover:bg-muted/50 transition-colors group">
+              <DollarSign className="h-4 w-4 text-emerald-500" />
+              <div className="min-w-0">
+                <div className="text-sm font-medium group-hover:text-primary transition-colors">Salary Coach</div>
+                <div className="text-2xs text-muted-foreground">Market data for this role</div>
+              </div>
+            </Link>
+          </div>
         </div>
       </div>
 

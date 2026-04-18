@@ -443,6 +443,23 @@ class AgentPipeline:
         enriched_context.setdefault("pipeline", self.name)
         enriched_context.setdefault("pipeline_name", self.name)
 
+        # ── Cost optimization: inject application brief if available ──
+        # When an ApplicationBrief is present, agents use its compact
+        # to_prompt_context() (~1.5-3K tokens) instead of raw JD/resume/profile
+        # (~10-25K tokens). This saves ~80% input tokens per call.
+        application_brief = context.get("application_brief")
+        if application_brief is not None:
+            enriched_context["application_brief"] = application_brief
+            # Provide the compact prompt context for all agents
+            if hasattr(application_brief, "to_prompt_context"):
+                enriched_context["brief_context"] = application_brief.to_prompt_context()
+            logger.info(
+                "pipeline_brief_injected",
+                pipeline=self.name,
+                brief_hash=getattr(application_brief, "brief_hash", "?"),
+                match_score=getattr(application_brief, "match_score", 0),
+            )
+
         # v3: resume support — determine which stages to skip
         _STAGE_ORDER = ["researcher", "drafter", "critic", "optimizer", "fact_checker", "optimizer_final_analysis", "validator"]
         resume_from = context.get("resume_from_stage")

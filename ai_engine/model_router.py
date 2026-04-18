@@ -24,25 +24,29 @@ logger = logging.getLogger("hirestack.model_router")
 # ═══════════════════════════════════════════════════════════════════════
 
 _DEFAULT_ROUTES = {
-    # Analysis / structured reasoning — higher-capability model
-    "reasoning":          "gemini-2.5-pro",
-    "research":           "gemini-2.5-pro",
-    "fact_checking":      "gemini-2.5-pro",
-    # Structured output / classification
-    "structured_output":  "gemini-2.5-pro",
-    "validation":         "gemini-2.5-flash",
-    "optimization":       "gemini-2.5-pro",
-    # Creative / drafting — flash handles these well at lower cost
-    "creative":           "gemini-2.5-flash",
-    "drafting":           "gemini-2.5-flash",
-    "critique":           "gemini-2.5-flash",
-    # Synthesis — sub-agent Phase 2 LLM calls (moderate complexity)
-    "synthesis":          "gemini-2.5-flash",
-    # General / fallback
-    "general":            "gemini-2.5-pro",
-    # ── Tiered document generation (H3 cost reduction) ──────────────
-    "quality_doc":        "gemini-2.5-pro",
-    "fast_doc":           "gemini-2.0-flash",
+    # ── Tier 1: Pro only — complex reasoning that needs highest capability ──
+    "reasoning":          "gemini-2.5-pro",      # multi-step logic, complex analysis
+    "fact_checking":      "gemini-2.5-pro",      # cross-reference verification
+    "quality_doc":        "gemini-2.5-pro",      # final document generation (CV, CL)
+
+    # ── Tier 2: Flash — good reasoning at 17x cheaper input, 17x cheaper output ──
+    "research":           "gemini-2.5-flash",    # evidence gathering (was Pro — Flash is sufficient)
+    "structured_output":  "gemini-2.5-flash",    # JSON extraction (was Pro — Flash handles schemas well)
+    "optimization":       "gemini-2.5-flash",    # ATS/readability passes (was Pro)
+    "creative":           "gemini-2.5-flash",    # drafting, brainstorming
+    "drafting":           "gemini-2.5-flash",    # initial document drafts
+    "critique":           "gemini-2.5-flash",    # review passes
+    "synthesis":          "gemini-2.5-flash",    # sub-agent synthesis
+    "validation":         "gemini-2.5-flash",    # output validation
+    "general":            "gemini-2.5-flash",    # general tasks (was Pro)
+
+    # ── Tier 3: 2.0 Flash — cheapest, for extraction & simple tasks ──
+    "extraction":         "gemini-2.0-flash",    # keyword extraction, parsing
+    "classification":     "gemini-2.0-flash",    # simple categorization
+    "brief_computation":  "gemini-2.5-flash",    # application brief generation
+    "fast_doc":           "gemini-2.0-flash",    # quick previews / drafts
+    "summarization":      "gemini-2.0-flash",    # text summarization
+    "formatting":         "gemini-2.0-flash",    # HTML formatting, cleanup
 }
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -51,19 +55,29 @@ _DEFAULT_ROUTES = {
 # ═══════════════════════════════════════════════════════════════════════
 
 _DEFAULT_CASCADE = {
+    # Tier 1: Pro → Flash failover
     "reasoning":          ["gemini-2.5-pro", "gemini-2.5-flash"],
-    "research":           ["gemini-2.5-pro", "gemini-2.5-flash"],
     "fact_checking":      ["gemini-2.5-pro", "gemini-2.5-flash"],
-    "structured_output":  ["gemini-2.5-pro", "gemini-2.5-flash"],
-    "validation":         ["gemini-2.5-flash", "gemini-2.5-pro"],
-    "optimization":       ["gemini-2.5-pro", "gemini-2.5-flash"],
+    "quality_doc":        ["gemini-2.5-pro", "gemini-2.5-flash"],
+
+    # Tier 2: Flash → Pro failover (prefer cheaper, fall back to stronger)
+    "research":           ["gemini-2.5-flash", "gemini-2.5-pro"],
+    "structured_output":  ["gemini-2.5-flash", "gemini-2.5-pro"],
+    "optimization":       ["gemini-2.5-flash", "gemini-2.5-pro"],
     "creative":           ["gemini-2.5-flash", "gemini-2.5-pro"],
     "drafting":           ["gemini-2.5-flash", "gemini-2.5-pro"],
     "critique":           ["gemini-2.5-flash", "gemini-2.5-pro"],
     "synthesis":          ["gemini-2.5-flash", "gemini-2.5-pro"],
-    "general":            ["gemini-2.5-pro", "gemini-2.5-flash"],
-    "quality_doc":        ["gemini-2.5-pro", "gemini-2.5-flash"],
+    "validation":         ["gemini-2.5-flash", "gemini-2.5-pro"],
+    "general":            ["gemini-2.5-flash", "gemini-2.5-pro"],
+
+    # Tier 3: 2.0 Flash → 2.5 Flash → Pro failover
+    "extraction":         ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
+    "classification":     ["gemini-2.0-flash", "gemini-2.5-flash"],
+    "brief_computation":  ["gemini-2.5-flash", "gemini-2.5-pro"],
     "fast_doc":           ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
+    "summarization":      ["gemini-2.0-flash", "gemini-2.5-flash"],
+    "formatting":         ["gemini-2.0-flash", "gemini-2.5-flash"],
 }
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -356,3 +370,69 @@ def reload_routes() -> None:
     global _routes, _cascade
     _routes = None
     _cascade = None
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Task Complexity Analyzer — route based on input complexity, not just type
+# ═══════════════════════════════════════════════════════════════════════
+
+# Cost per 1M tokens (USD) — used to pick cheapest viable model
+_MODEL_COST_PER_M_INPUT = {
+    "gemini-2.0-flash": 0.04,    # cheapest
+    "gemini-2.5-flash": 0.075,   # mid-tier
+    "gemini-2.5-pro": 1.25,      # premium
+}
+
+
+def estimate_task_complexity(
+    task_type: str,
+    input_tokens: int = 0,
+    requires_reasoning: bool = False,
+    requires_structured_output: bool = False,
+) -> str:
+    """Estimate complexity and return optimal model.
+
+    This goes beyond static task_type routing by considering the actual
+    input size and task requirements.
+
+    Rules:
+    - Very short inputs (<500 tokens) + no reasoning → 2.0 Flash
+    - Medium inputs + no complex reasoning → 2.5 Flash
+    - Complex reasoning or quality-critical → 2.5 Pro
+    - Structured output extraction → 2.5 Flash (handles schemas well)
+    """
+    # Task types that always need Pro regardless of input size
+    _PRO_REQUIRED = {"reasoning", "fact_checking", "quality_doc"}
+
+    if task_type in _PRO_REQUIRED and requires_reasoning:
+        return "gemini-2.5-pro"
+
+    # Simple extraction / classification — always cheapest
+    _ALWAYS_CHEAP = {"extraction", "classification", "summarization", "formatting"}
+    if task_type in _ALWAYS_CHEAP:
+        return "gemini-2.0-flash"
+
+    # Short inputs can use the cheapest viable model
+    if input_tokens < 500 and not requires_reasoning:
+        return "gemini-2.0-flash"
+
+    if input_tokens < 2000 and not requires_reasoning:
+        return "gemini-2.5-flash"
+
+    # Default: use the standard route for this task type
+    return resolve_model(task_type, "gemini-2.5-flash")
+
+
+def estimate_call_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    """Estimate cost in USD for a single LLM call."""
+    cost_in = _MODEL_COST_PER_M_INPUT.get(model, 1.25)
+    # Output cost ratios
+    _OUTPUT_RATIO = {
+        "gemini-2.0-flash": 0.15 / 0.04,
+        "gemini-2.5-flash": 0.30 / 0.075,
+        "gemini-2.5-pro": 5.00 / 1.25,
+    }
+    ratio = _OUTPUT_RATIO.get(model, 4.0)
+    cost_out = cost_in * ratio
+
+    return (input_tokens * cost_in / 1_000_000) + (output_tokens * cost_out / 1_000_000)

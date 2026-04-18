@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/providers";
 import api from "@/lib/api";
 import type { SalaryAnalysis } from "@/types";
@@ -25,6 +26,8 @@ function fmt(n: number, currency = "$") {
 
 export default function SalaryCoachPage() {
   const { user, session: authSession } = useAuth();
+  const searchParams = useSearchParams();
+  const appId = searchParams.get("appId");
   const [jobTitle, setJobTitle] = useState("");
   const [company, setCompany] = useState("");
   const [location, setLocation] = useState("");
@@ -64,6 +67,36 @@ export default function SalaryCoachPage() {
       });
     }).catch((e) => console.error("Failed to load profile for salary", e));
   }, [authSession?.access_token]);
+
+  // Load application context if appId is provided (e.g. from workspace sidebar link)
+  useEffect(() => {
+    if (!appId || !user?.id) return;
+
+    import("@/lib/supabase").then(({ supabase }) => {
+      (async () => {
+        try {
+          const { data: app } = await supabase
+            .from("applications")
+            .select("title, confirmed_facts, gaps")
+            .eq("id", appId)
+            .eq("user_id", user.id)
+            .maybeSingle();
+          if (!app) return;
+          // Auto-fill from application data
+          if (app.title) setJobTitle(prev => prev || app.title);
+          const facts = app.confirmed_facts || {};
+          if (facts.company) setCompany(prev => prev || facts.company);
+          if (facts.location) setLocation(prev => prev || facts.location);
+          // Use gap analysis strengths as skills context
+          const gapData = app.gaps || {};
+          const strengths = (gapData.strengths || []).slice(0, 10).join(", ");
+          if (strengths) setProfileSkills(prev => prev || strengths);
+        } catch (e) {
+          console.warn("[Salary] Failed to load app context:", e);
+        }
+      })();
+    });
+  }, [appId, user?.id]);
 
   const analyze = async () => {
     if (!jobTitle.trim()) return;

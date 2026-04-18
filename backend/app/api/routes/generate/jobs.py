@@ -454,8 +454,37 @@ async def _persist_generation_result_to_application(
     if company_intel is not None:
         patch["company_intel"] = company_intel
 
+    # ── Content-aware module state: only mark "ready" if actual content exists ──
     for module_key in requested_modules:
-        modules[module_key] = {"state": "ready", "updatedAt": timestamp}
+        has_content = False
+        if module_key == "benchmark":
+            has_content = bool(patch.get("benchmark"))
+        elif module_key == "gaps":
+            has_content = bool(patch.get("gaps"))
+        elif module_key == "learningPlan":
+            lp = result.get("learningPlan", {})
+            has_content = bool(lp.get("focus") or lp.get("plan") or lp.get("resources"))
+        elif module_key == "cv":
+            has_content = bool((patch.get("cv_html") or "").strip())
+        elif module_key == "coverLetter":
+            has_content = bool((patch.get("cover_letter_html") or "").strip())
+        elif module_key == "personalStatement":
+            has_content = bool((patch.get("personal_statement_html") or "").strip())
+        elif module_key == "portfolio":
+            has_content = bool((patch.get("portfolio_html") or "").strip())
+        elif module_key == "scorecard":
+            has_content = bool(patch.get("scorecard") or patch.get("scores"))
+        else:
+            has_content = True  # Unknown modules default to ready
+
+        if has_content:
+            modules[module_key] = {"state": "ready", "updatedAt": timestamp}
+        else:
+            modules[module_key] = {
+                "state": "error",
+                "updatedAt": timestamp,
+                "error": f"{module_key} produced no content. Try regenerating this module.",
+            }
     patch["modules"] = modules
 
     await _persist_application_patch(sb, tables, application_id, patch)
@@ -484,6 +513,92 @@ async def _persist_generation_result_to_application(
         )
     except Exception as dl_err:
         logger.warning("job_runner.document_library_sync_failed", application_id=application_id, error=str(dl_err))
+
+    # ── Post-generation platform hooks (non-blocking) ────────────────
+    try:
+        await _run_post_generation_hooks(
+            sb, tables,
+            user_id=user_id,
+            application_id=application_id,
+            result=result,
+            requested=requested,
+            application_row=application_row,
+        )
+    except Exception as hook_err:
+        logger.warning("job_runner.post_generation_hooks_failed", application_id=application_id, error=str(hook_err))
+
+
+async def _run_post_generation_hooks(
+    sb: Any,
+    tables: Dict[str, str],
+    *,
+    user_id: str,
+    application_id: str,
+    result: Dict[str, Any],
+    requested: set,
+    application_row: Dict[str, Any],
+) -> None:
+    """Run platform-level sync after generation completes.
+
+    These hooks connect the workspace-level generation to the broader platform
+    intelligence layer (global skills, knowledge recommendations, career snapshots).
+    All hooks are best-effort — failures are logged but never block the generation result.
+    """
+
+    # 1. Auto-sync global skill gaps from the new gap analysis
+    if "gaps" in requested and result.get("gaps"):
+        try:
+            from app.services.global_skills import GlobalSkillsService
+            skills_svc = GlobalSkillsService()
+            await skills_svc.sync_gaps_from_applications(user_id)
+            logger.info("post_gen.skills_gaps_synced", user_id=user_id, application_id=application_id)
+        except Exception as e:
+            logger.warning("post_gen.skills_gaps_sync_failed", error=str(e)[:200])
+
+    # 2. Auto-extract skills from resume/profile into user_skills table
+    confirmed_facts = application_row.get("confirmed_facts") or {}
+    resume_text = confirmed_facts.get("resume", {}).get("text", "") if isinstance(confirmed_facts.get("resume"), dict) else ""
+    benchmark_data = result.get("benchmark") or {}
+    # Extract skills from benchmark keywords + gap strengths
+    skills_to_upsert = []
+    for kw in (benchmark_data.get("keywords") or [])[:20]:
+        if isinstance(kw, str) and kw.strip():
+            skills_to_upsert.append({"skill_name": kw.strip(), "source": "gap_analysis", "category": "technical"})
+    for strength in (result.get("gaps") or {}).get("strengths", [])[:15]:
+        if isinstance(strength, str) and strength.strip():
+            skills_to_upsert.append({"skill_name": strength.strip(), "source": "gap_analysis", "category": "technical"})
+
+    if skills_to_upsert:
+        try:
+            from app.services.global_skills import GlobalSkillsService
+            skills_svc = GlobalSkillsService()
+            for skill_data in skills_to_upsert:
+                try:
+                    await skills_svc.upsert_skill(user_id, skill_data)
+                except Exception:
+                    pass  # Skip individual skill failures
+            logger.info("post_gen.skills_extracted", user_id=user_id, count=len(skills_to_upsert))
+        except Exception as e:
+            logger.warning("post_gen.skills_extraction_failed", error=str(e)[:200])
+
+    # 3. Auto-generate knowledge recommendations based on new gaps
+    if "gaps" in requested:
+        try:
+            from app.services.knowledge_library import KnowledgeLibraryService
+            knowledge_svc = KnowledgeLibraryService()
+            await knowledge_svc.generate_recommendations(user_id)
+            logger.info("post_gen.knowledge_recs_generated", user_id=user_id)
+        except Exception as e:
+            logger.warning("post_gen.knowledge_recs_failed", error=str(e)[:200])
+
+    # 4. Auto-capture a career snapshot for the analytics timeline
+    try:
+        from app.services.career_analytics import CareerAnalyticsService
+        career_svc = CareerAnalyticsService()
+        await career_svc.capture_snapshot(user_id)
+        logger.info("post_gen.career_snapshot_captured", user_id=user_id)
+    except Exception as e:
+        logger.warning("post_gen.career_snapshot_failed", error=str(e)[:200])
 
 
 async def _sync_document_library(
@@ -1092,8 +1207,11 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         from ai_engine.chains.document_generator import DocumentGeneratorChain
         from ai_engine.chains.career_consultant import CareerConsultantChain
         from ai_engine.chains.validator import ValidatorChain
+        from ai_engine.application_brief import compute_application_brief
+        from ai_engine.cache import get_pipeline_cache
 
         ai = AIClient()
+        pipeline_cache = get_pipeline_cache()
         company_str = company_name or "the company"
 
         await emit_progress("initializing", 0, 5, "Initializing AI engine…")
@@ -1124,7 +1242,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
                         jd_text=jd_text_val,
                         on_event=on_recon_event,
                     ),
-                    timeout=15,
+                    timeout=30,
                 )
             except asyncio.TimeoutError:
                 await emit_detail(
@@ -1166,6 +1284,30 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             await emit_error("Generation cancelled.", 499)
             return
 
+        # ── Cost optimization: compute ApplicationBrief once ──────────
+        # This compact structured brief (~1.5-3K tokens) replaces injecting
+        # raw JD (5-15K) + resume (3-8K) + profile (2-5K) into every LLM call.
+        # Uses Flash model — one cheap call saves thousands of tokens per pipeline.
+        application_brief = None
+        try:
+            application_brief = await compute_application_brief(
+                jd_text=jd_text_val,
+                resume_text=resume_text_val,
+                job_title=job_title,
+                company=company_name,
+                company_intel=company_intel,
+                ai_client=ai,
+            )
+            logger.info(
+                "job_runner.brief_computed",
+                job_id=job_id,
+                brief_hash=application_brief.brief_hash,
+                match_score=application_brief.match_score,
+            )
+        except Exception as brief_err:
+            logger.warning("job_runner.brief_failed", job_id=job_id, error=str(brief_err)[:200])
+            # Non-fatal: pipelines will fall back to raw context injection
+
         profiler = RoleProfilerChain(ai)
         benchmark_chain = BenchmarkBuilderChain(ai)
 
@@ -1195,16 +1337,81 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         )
 
         benchmark_cv_html = ""
+        benchmark_cl_html = ""
+        benchmark_ps_html = ""
         try:
-            benchmark_cv_html = await benchmark_chain.create_benchmark_cv_html(
+            from ai_engine.chains.adaptive_document import AdaptiveDocumentChain as _AdaptiveDocChain
+
+            # Build a benchmark context for AdaptiveDocumentChain
+            _ideal_profile = benchmark_data.get("ideal_profile", {})
+            _merged_profile = dict(user_profile)
+            _merged_profile["title"] = _ideal_profile.get("title") or _merged_profile.get("title", "")
+            _merged_profile["summary"] = _ideal_profile.get("summary") or _merged_profile.get("summary", "")
+            _user_skills = user_profile.get("skills") or []
+            _ideal_skills_list = benchmark_data.get("ideal_skills") or []
+            _existing_names = {s.get("name", "").lower() for s in _user_skills if isinstance(s, dict)}
+            _merged_skills = list(_user_skills) + [
+                {"name": s["name"], "level": s.get("level", "advanced"), "category": s.get("category", "technical")}
+                for s in _ideal_skills_list
+                if isinstance(s, dict) and s.get("name", "").lower() not in _existing_names
+            ]
+            _merged_profile["skills"] = _merged_skills
+            _benchmark_ctx = {
+                "profile": _merged_profile,
+                "jd_text": jd_text_val,
+                "job_title": job_title,
+                "company": company_str,
+                "industry": "professional",
+                "tone": "professional",
+                "benchmark_keywords": ", ".join(
+                    s.get("name", "") for s in _ideal_skills_list[:15] if isinstance(s, dict)
+                ),
+            }
+
+            _bench_doc_chain = _AdaptiveDocChain(ai)
+
+            # Generate benchmark CV, Cover Letter, and Personal Statement in parallel
+            _bcv_task = benchmark_chain.create_benchmark_cv_html(
                 user_profile=user_profile,
                 benchmark_data=benchmark_data,
                 job_title=job_title,
                 company=company_str,
                 jd_text=jd_text_val,
             )
+            _bcl_task = _bench_doc_chain.generate(
+                doc_type="cover_letter",
+                doc_label="Cover Letter",
+                context=_benchmark_ctx,
+                mode="benchmark",
+            )
+            _bps_task = _bench_doc_chain.generate(
+                doc_type="personal_statement",
+                doc_label="Personal Statement",
+                context=_benchmark_ctx,
+                mode="benchmark",
+            )
+
+            _bcv_result, _bcl_result, _bps_result = await asyncio.gather(
+                _bcv_task, _bcl_task, _bps_task, return_exceptions=True,
+            )
+
+            if isinstance(_bcv_result, str):
+                benchmark_cv_html = _bcv_result
+            else:
+                logger.warning("job_stream.benchmark_cv_failed", error=str(_bcv_result))
+
+            if isinstance(_bcl_result, str):
+                benchmark_cl_html = _bcl_result
+            else:
+                logger.warning("job_stream.benchmark_cl_failed", error=str(_bcl_result))
+
+            if isinstance(_bps_result, str):
+                benchmark_ps_html = _bps_result
+            else:
+                logger.warning("job_stream.benchmark_ps_failed", error=str(_bps_result))
+
         except Exception as bcv_err:
-            logger.warning("job_stream.benchmark_cv_failed", error=str(bcv_err))
+            logger.warning("job_stream.benchmark_docs_failed", error=str(bcv_err))
 
         await emit_progress("profiling_done", 2, 28, "Atlas finished the resume and benchmark analysis ✓")
         if await check_cancel():
@@ -1280,6 +1487,9 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             # H1-3: pass structured intel object + digest for per-doc-type injection
             "company_intel_obj": company_intel,
             "company_intel_digest": company_intel.get("application_strategy_digest", ""),
+            # Cost optimization: application brief replaces raw context in agents
+            "application_brief": application_brief,
+            "brief_context": application_brief.to_prompt_context() if application_brief else None,
         }
 
         def _ctx_for_pipeline(pipeline_name: str) -> dict:
@@ -1465,6 +1675,18 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             benchmark_cv_html=benchmark_cv_html,
             atlas_diagnostics=_build_atlas_diagnostics(user_profile, benchmark_data),
         )
+
+        # ── Attach benchmark document set (CV + Cover Letter + Personal Statement) ──
+        _benchmark_docs: Dict[str, str] = {}
+        if benchmark_cv_html:
+            _benchmark_docs["cv"] = benchmark_cv_html
+        if benchmark_cl_html:
+            _benchmark_docs["cover_letter"] = benchmark_cl_html
+        if benchmark_ps_html:
+            _benchmark_docs["personal_statement"] = benchmark_ps_html
+        if _benchmark_docs:
+            response["benchmarkDocuments"] = _benchmark_docs
+
         response["meta"] = {
             **(response.get("meta") or {}),
             "company_intel": company_intel,
@@ -1473,6 +1695,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             "citations": cv_result.citations if cv_result else None,
             "evidence_summary": _build_evidence_summary(cv_result) if cv_result else None,
             "workflow_state": cv_result.workflow_state if cv_result else None,
+            "application_brief": application_brief.to_dict() if application_brief else None,
         }
 
         await emit_detail("nova", "Final application bundle ready.", "completed", "formatting")
@@ -1967,6 +2190,73 @@ async def replay_generation_job(
             status_code=500,
             detail="Replay analysis failed",
         )
+
+
+# ── Post-generation platform sync (P2-05) ─────────────────────────────
+
+@router.post("/post-hooks/{application_id}")
+@limiter.limit("5/minute")
+async def trigger_post_generation_hooks(
+    request: Request,
+    application_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Trigger platform-level sync hooks for a completed application.
+
+    This endpoint is called by the frontend after generation completes to
+    ensure global skills, knowledge recommendations, and career snapshots
+    are synced — especially useful as a fallback when the automatic hooks
+    inside the generation pipeline encounter transient failures.
+    """
+    validate_uuid(application_id, "application_id")
+    from app.core.database import get_supabase, TABLES
+
+    sb = get_supabase()
+    user_id = current_user.get("id") or current_user.get("uid") or current_user.get("sub")
+
+    # Verify application exists and belongs to user
+    app_resp = await asyncio.to_thread(
+        lambda: sb.table(TABLES["applications"])
+        .select("id,user_id,gaps,benchmark,learning_plan,confirmed_facts,modules")
+        .eq("id", application_id)
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if not app_resp.data:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    app_row = app_resp.data
+    # Build a result dict from the stored application data
+    result = {}
+    if app_row.get("gaps"):
+        result["gaps"] = app_row["gaps"]
+    if app_row.get("benchmark"):
+        result["benchmark"] = app_row["benchmark"]
+    if app_row.get("learning_plan"):
+        result["learningPlan"] = app_row["learning_plan"]
+
+    # Only run hooks if the application actually has generated content
+    requested = set(result.keys()) | {"gaps"}
+
+    hooks_result = {"synced": []}
+    try:
+        await _run_post_generation_hooks(
+            sb, TABLES,
+            user_id=user_id,
+            application_id=application_id,
+            result=result,
+            requested=requested,
+            application_row=app_row,
+        )
+        hooks_result["synced"] = ["skills_gaps", "skills_extraction", "knowledge_recommendations", "career_snapshot"]
+        hooks_result["status"] = "completed"
+    except Exception as e:
+        logger.warning("post_hooks_endpoint_failed", application_id=application_id, error=str(e)[:200])
+        hooks_result["status"] = "partial"
+        hooks_result["error"] = str(e)[:200]
+
+    return hooks_result
 
 
 # ── Job status polling (P2-04) ────────────────────────────────────────

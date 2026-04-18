@@ -6,6 +6,12 @@ Uses an in-memory LRU with optional Redis backend for persistence across restart
 Cache hits avoid LLM calls entirely — same input always yields same output
 for deterministic temperatures (≤0.3). Higher temperatures are cached too
 but with a shorter TTL since results may vary.
+
+v2 additions:
+- Cross-user JD analysis cache (content-addressed by JD hash)
+- Pipeline result cache (skip unchanged modules on re-generation)
+- Cache tier awareness (separate pools for different TTL classes)
+- Cache statistics per task_type for cost optimization visibility
 """
 from __future__ import annotations
 
@@ -204,3 +210,165 @@ def get_ai_cache() -> AIResponseCache:
                 max_entries=2000,
             )
     return _cache_instance
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Cross-user JD analysis cache
+#  Content-addressed by JD text hash — shareable across all users
+#  applying to the same job description.
+# ═══════════════════════════════════════════════════════════════════════
+
+class JDAnalysisCache:
+    """Cache JD-level analysis (benchmark, keywords, requirements) by JD hash.
+
+    Since many users may apply to the same job posting, the JD analysis
+    (benchmark profile, keyword extraction, requirement parsing) is identical
+    regardless of the applicant. This cache prevents re-computing it.
+
+    TTL: 4 hours (JD content doesn't change frequently).
+    """
+
+    def __init__(self, max_entries: int = 500) -> None:
+        self._store: OrderedDict[str, tuple[float, Any]] = OrderedDict()
+        self._max = max_entries
+        self._hits = 0
+        self._misses = 0
+
+    @staticmethod
+    def hash_jd(jd_text: str, job_title: str = "") -> str:
+        """Content-addressed hash for a job description."""
+        normalized = json.dumps({
+            "jd": jd_text.strip()[:8000],
+            "title": job_title.strip().lower(),
+        }, sort_keys=True)
+        return "jd_" + hashlib.sha256(normalized.encode()).hexdigest()[:16]
+
+    def get(self, jd_hash: str) -> Optional[Any]:
+        entry = self._store.get(jd_hash)
+        if entry is None:
+            self._misses += 1
+            return None
+        expires_at, value = entry
+        if time.monotonic() > expires_at:
+            self._store.pop(jd_hash, None)
+            self._misses += 1
+            return None
+        self._store.move_to_end(jd_hash)
+        self._hits += 1
+        return value
+
+    def put(self, jd_hash: str, value: Any, ttl: float = 14400.0) -> None:
+        """Store JD analysis (default TTL: 4 hours)."""
+        self._store[jd_hash] = (time.monotonic() + ttl, value)
+        self._store.move_to_end(jd_hash)
+        while len(self._store) > self._max:
+            self._store.popitem(last=False)
+
+    @property
+    def stats(self) -> Dict[str, Any]:
+        total = self._hits + self._misses
+        return {
+            "hits": self._hits,
+            "misses": self._misses,
+            "hit_rate_pct": round((self._hits / max(1, total)) * 100, 1),
+            "size": len(self._store),
+        }
+
+
+_jd_cache_instance: Optional[JDAnalysisCache] = None
+
+
+def get_jd_cache() -> JDAnalysisCache:
+    """Get the singleton JD analysis cache."""
+    global _jd_cache_instance
+    if _jd_cache_instance is None:
+        _jd_cache_instance = JDAnalysisCache()
+    return _jd_cache_instance
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Pipeline result cache — skip unchanged modules on regeneration
+# ═══════════════════════════════════════════════════════════════════════
+
+class PipelineResultCache:
+    """Cache pipeline outputs keyed by (application_id, module, input_hash).
+
+    When a user re-generates, we check if the inputs for each module
+    have changed. If not, we reuse the previous output — skipping
+    the entire pipeline for that module.
+
+    Input hash includes: brief_hash + module-specific config.
+    """
+
+    def __init__(self, max_entries: int = 300) -> None:
+        self._store: OrderedDict[str, tuple[float, Any]] = OrderedDict()
+        self._max = max_entries
+        self._hits = 0
+        self._misses = 0
+
+    @staticmethod
+    def make_key(application_id: str, module: str, input_hash: str) -> str:
+        return f"pr_{application_id}_{module}_{input_hash}"
+
+    def get(self, key: str) -> Optional[Any]:
+        entry = self._store.get(key)
+        if entry is None:
+            self._misses += 1
+            return None
+        expires_at, value = entry
+        if time.monotonic() > expires_at:
+            self._store.pop(key, None)
+            self._misses += 1
+            return None
+        self._store.move_to_end(key)
+        self._hits += 1
+        logger.info("pipeline_result_cache_hit: key=%s", key[:60])
+        return value
+
+    def put(self, key: str, value: Any, ttl: float = 7200.0) -> None:
+        """Store pipeline result (default TTL: 2 hours)."""
+        self._store[key] = (time.monotonic() + ttl, value)
+        self._store.move_to_end(key)
+        while len(self._store) > self._max:
+            self._store.popitem(last=False)
+
+    def invalidate_application(self, application_id: str) -> int:
+        """Invalidate all cached results for a given application."""
+        keys_to_remove = [k for k in self._store if f"_{application_id}_" in k]
+        for k in keys_to_remove:
+            self._store.pop(k, None)
+        return len(keys_to_remove)
+
+    @property
+    def stats(self) -> Dict[str, Any]:
+        total = self._hits + self._misses
+        return {
+            "hits": self._hits,
+            "misses": self._misses,
+            "hit_rate_pct": round((self._hits / max(1, total)) * 100, 1),
+            "size": len(self._store),
+        }
+
+
+_pipeline_cache_instance: Optional[PipelineResultCache] = None
+
+
+def get_pipeline_cache() -> PipelineResultCache:
+    """Get the singleton pipeline result cache."""
+    global _pipeline_cache_instance
+    if _pipeline_cache_instance is None:
+        _pipeline_cache_instance = PipelineResultCache()
+    return _pipeline_cache_instance
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Aggregate cache stats (for monitoring / cost dashboard)
+# ═══════════════════════════════════════════════════════════════════════
+
+def get_all_cache_stats() -> Dict[str, Any]:
+    """Return stats from all cache layers."""
+    return {
+        "ai_response_cache": get_ai_cache().stats,
+        "jd_analysis_cache": get_jd_cache().stats,
+        "pipeline_result_cache": get_pipeline_cache().stats,
+    }

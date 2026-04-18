@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/providers";
 import { toast } from "@/hooks/use-toast";
 import api from "@/lib/api";
@@ -117,6 +118,8 @@ function TimerRing({ timeLeft, total = 90, size = 48 }: { timeLeft: number; tota
 
 export default function InterviewSimulatorPage() {
   const { user, session: authSession } = useAuth();
+  const searchParams = useSearchParams();
+  const appId = searchParams.get("appId");
   const [phase, setPhase] = useState<Phase>("setup");
   const [mode, setMode] = useState<InterviewMode>("practice");
 
@@ -137,6 +140,39 @@ export default function InterviewSimulatorPage() {
       setJobTitle(prev => p.title && !prev ? p.title : prev);
     }).catch((e) => console.error("Failed to load profile for interview", e));
   }, [authSession?.access_token]);
+
+  // Load application context if appId is provided (e.g. from workspace "Practice Interview" link)
+  useEffect(() => {
+    if (!appId || !user?.id) return;
+
+    import("@/lib/supabase").then(({ supabase }) => {
+      (async () => {
+        try {
+          const { data: app } = await supabase
+            .from("applications")
+            .select("title, confirmed_facts, gaps, benchmark")
+            .eq("id", appId)
+            .eq("user_id", user.id)
+            .maybeSingle();
+          if (!app) return;
+          // Auto-fill job title from application
+          if (app.title) setJobTitle(prev => prev || app.title);
+          // Build richer profile summary from application gap analysis
+          const gapData = app.gaps || {};
+          const strengths = (gapData.strengths || []).slice(0, 10).join(", ");
+          const missingKeywords = (gapData.missingKeywords || []).slice(0, 10).join(", ");
+          if (strengths) {
+            setProfileSkills(prev => prev || strengths);
+            setProfileSummary(prev =>
+              prev || `Strengths: ${strengths}. Areas to improve: ${missingKeywords}`
+            );
+          }
+        } catch (e) {
+          console.warn("[Interview] Failed to load app context:", e);
+        }
+      })();
+    });
+  }, [appId, user?.id]);
 
   // Setup
   const [jobTitle, setJobTitle] = useState("");

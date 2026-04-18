@@ -259,6 +259,15 @@ export default function SkillsDevelopmentPage() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  // Auto-sync gaps from applications on first load if none exist
+  useEffect(() => {
+    if (loading || syncing) return;
+    if (gaps.length === 0 && skills.length === 0) {
+      handleSyncGaps();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
   const handleAddSkill = async (data: any) => {
     try {
       await api.development.upsertSkill(data);

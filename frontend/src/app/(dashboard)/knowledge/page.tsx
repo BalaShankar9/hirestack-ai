@@ -314,6 +314,15 @@ export default function KnowledgeLibraryPage() {
   useEffect(() => { loadResources(); }, [loadResources]);
   useEffect(() => { loadProgress(); loadRecommendations(); loadDocuments(); }, [loadProgress, loadRecommendations, loadDocuments]);
 
+  // Auto-generate recommendations if none exist on first load
+  useEffect(() => {
+    if (loading || recsLoading) return;
+    if (recommendations.length === 0 && resources.length > 0) {
+      handleGenerateRecs();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
   /* ── Actions ───────────────────────────────────────────────────── */
 
   const handleProgress = async (resourceId: string, status: "saved" | "in_progress" | "completed") => {

@@ -519,6 +519,23 @@ async function syncAutoTasks(
   }
 }
 
+/**
+ * Fire-and-forget: ask the backend to run platform-level sync hooks
+ * (global skills/gaps, knowledge recommendations, career snapshot).
+ * Called after generation succeeds as a fallback for the automatic
+ * backend hooks.
+ */
+export async function triggerPostGenerationSync(appId: string, userId: string): Promise<void> {
+  try {
+    const { default: apiClient } = await import("@/lib/api");
+    await apiClient.request(`/generate/post-hooks/${appId}`, { method: "POST" });
+    console.log("[HireStack] Post-generation platform sync completed for", appId);
+  } catch (err) {
+    // Non-blocking — the backend hooks should have already run
+    console.warn("[HireStack] Post-generation sync request failed:", (err as any)?.message ?? err);
+  }
+}
+
 export async function generateApplicationModules(
   appId: string,
   userId: string,
@@ -974,6 +991,14 @@ export async function generateApplicationModules(
         }
       }
       console.log("[HireStack] AI pipeline succeeded on attempt", attempt);
+
+      // Trigger platform-level sync (global skills, knowledge recs, career snapshot).
+      // This is best-effort — the backend also runs these hooks, so this is a fallback
+      // to ensure sync happens even if the backend hooks encountered transient failures.
+      triggerPostGenerationSync(appId, userId).catch((err) => {
+        console.warn("[HireStack] Post-generation platform sync failed (non-blocking):", (err as any)?.message ?? err);
+      });
+
       return; // Success
     } catch (apiError: any) {
       lastError = apiError;

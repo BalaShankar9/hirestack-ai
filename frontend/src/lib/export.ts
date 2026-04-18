@@ -563,6 +563,8 @@ export interface DocumentBundle {
   learningPlanHtml?: string;
   benchmarkHtml?: string;
   gapAnalysisHtml?: string;
+  /** Additional documents (benchmark docs, generated docs, library items) */
+  extraDocuments?: Array<{ name: string; html: string; type?: string; category?: string }>;
 }
 
 /**
@@ -606,6 +608,18 @@ export async function downloadAllAsZip(
   }
   if (bundle.gapAnalysisHtml) {
     pdfTasks.push({ name: "07_Gap_Analysis", html: bundle.gapAnalysisHtml, type: "gapAnalysis" });
+  }
+
+  // Extra documents (benchmark docs, generated docs, library items)
+  if (bundle.extraDocuments) {
+    let idx = pdfTasks.length + 1;
+    for (const extra of bundle.extraDocuments) {
+      if (!extra.html) continue;
+      const num = String(idx).padStart(2, "0");
+      const safeName = extra.name.replace(/[^a-zA-Z0-9_\-\s]/g, "").replace(/\s+/g, "_");
+      pdfTasks.push({ name: `${num}_${safeName}`, html: extra.html, type: (extra.type as ExportOptions["documentType"]) || "cv" });
+      idx++;
+    }
   }
 
   if (pdfTasks.length === 0) {
