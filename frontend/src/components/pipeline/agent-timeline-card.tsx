@@ -72,19 +72,19 @@ export const AgentTimelineCard = memo(function AgentTimelineCard({
   const isOpen = status === "running" || status === "failed" || expanded;
 
   useEffect(() => {
-    if (status === "running" && logEndRef.current) {
+    if (logEndRef.current) {
       logEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
-  }, [status, logs.length]);
+  }, [logs.length]);
 
-  // Auto-expand on running, auto-collapse when done (unless user expanded)
+  // Auto-expand when agent starts working. Stay expanded when done so logs
+  // remain visible — users can manually collapse via click.
   useEffect(() => {
     if (status === "running") setExpanded(true);
-    else if (status === "done") setExpanded(false);
   }, [status]);
 
   const hasSubTasks = subTasks && subTasks.length > 0 && subTaskStatuses;
-  const logMaxHeight = status === "running" ? "max-h-40" : "max-h-28";
+  const logMaxHeight = status === "running" ? "max-h-56" : "max-h-44";
 
   return (
     <motion.div

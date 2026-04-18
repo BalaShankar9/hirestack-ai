@@ -313,8 +313,17 @@ export function PipelineAgentView({
     });
   }, [completedPhases, elapsedMs, phaseStartTimes, phaseLatencies]);
 
-  // Derived metrics
-  const activeAgents = activePhaseIdx >= 0 && !completedPhases.has(activePhaseIdx) ? 1 : 0;
+  // Derived metrics — count agents that have events but aren't done yet
+  const activeAgents = useMemo(() => {
+    if (!generating) return 0;
+    let count = 0;
+    for (let i = 0; i < AGENT_PERSONAS.length; i++) {
+      const isDone = completedPhases.has(i);
+      const isActive = i === activePhaseIdx && !isDone;
+      if (isActive) count++;
+    }
+    return count;
+  }, [generating, completedPhases, activePhaseIdx]);
   const completedCount = completedPhases.size;
   const isComplete = progress >= 100;
   const statusLabel = getStatusLabel(progress, generating, isComplete);

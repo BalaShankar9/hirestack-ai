@@ -113,6 +113,18 @@ function formatAgentLine(event: PipelineAgentEvent): string {
 const GENERATION_SESSION_KEY = "hirestack_active_generation";
 const TOTAL_PHASES = 7;
 
+// Per-phase progress ranges [floor, ceiling] derived from backend checkpoints.
+// Used for log-based micro-progress so the bar advances between coarse jumps.
+const PHASE_PROGRESS_RANGES: [number, number][] = [
+  [3, 14],   // 0 Recon
+  [15, 28],  // 1 Atlas
+  [30, 50],  // 2 Cipher
+  [50, 72],  // 3 Quill
+  [75, 88],  // 4 Forge
+  [88, 96],  // 5 Sentinel
+  [96, 100], // 6 Nova
+];
+
 function resolveStepParam(value: string | null): Step | null {
   if (!value) return null;
   if (value === "1" || value === "job") return "job";
@@ -279,6 +291,9 @@ export default function NewApplicationPage() {
   const restoreRef = useRef(false);
   const redirectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const smoothTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // When true, the SSE stream callbacks are the primary event source.
+  // DB-event rebuilds are skipped to avoid duplicate/bursty state overwrites.
+  const sseActiveRef = useRef(false);
 
   // Smooth progress interpolation — crawls towards rawProgress so the bar
   // moves continuously between the coarse backend jumps (5→8→15→25→…).
@@ -351,6 +366,17 @@ export default function NewApplicationPage() {
         [phaseIdx]: [...existing, cleaned].slice(-60),
       };
     });
+
+    // Micro-progress: each log line nudges rawProgress within the phase range,
+    // so the bar moves responsively even between backend checkpoint events.
+    if (phaseIdx >= 0 && phaseIdx < PHASE_PROGRESS_RANGES.length) {
+      const [floor, ceiling] = PHASE_PROGRESS_RANGES[phaseIdx];
+      setRawProgress((prev) => {
+        if (prev >= ceiling) return prev;
+        const bump = Math.max(0.3, (ceiling - floor) * 0.04);
+        return Math.min(Math.round((prev + bump) * 10) / 10, ceiling);
+      });
+    }
   }, []);
 
   const persistGenerationSession = useCallback((appId: string | null, jobId: string | null, nextStep: Step) => {
@@ -438,6 +464,11 @@ export default function NewApplicationPage() {
     const isLive = generationJob.status === "queued" || generationJob.status === "running";
     if (isLive && step !== "generate") setStep("generate");
 
+    // During active SSE streaming, SSE callbacks handle progress/phase/logs
+    // incrementally for smooth updates. Only use generationJob for terminal
+    // state detection — skip overwriting live SSE-driven state.
+    if (sseActiveRef.current && isLive) return;
+
     setProgress(generationJob.progress);
     setGenMessage(
       generationJob.message
@@ -475,6 +506,9 @@ export default function NewApplicationPage() {
 
   useEffect(() => {
     if (!activeJobId) return;
+    // During active SSE streaming, SSE callbacks handle state incrementally.
+    // Only rebuild from DB events on recovery (page refresh / reconnect).
+    if (sseActiveRef.current) return;
     setPhaseLogs(buildPhaseLogsFromEvents(generationEvents));
     setPipelineStatuses(buildPipelineStatusesFromEvents(generationEvents));
   }, [activeJobId, generationEvents]);
@@ -605,6 +639,7 @@ export default function NewApplicationPage() {
     abortRef.current?.abort();
     clearGenerationSession();
     setActiveJobId(null);
+    sseActiveRef.current = true;
     setGenerating(true);
     setGenError(null);
     setProgress(0);
@@ -683,6 +718,11 @@ export default function NewApplicationPage() {
             if (phaseIdx >= 0) next.add(phaseIdx);
             return next;
           });
+          // Auto-advance: mark next phase as active so the next agent
+          // transitions to "running" immediately instead of stalling.
+          if (phaseIdx >= 0 && phaseIdx + 1 < TOTAL_PHASES && p.phase !== "complete") {
+            setActivePhaseIdx(phaseIdx + 1);
+          }
         }
       };
 
@@ -698,6 +738,10 @@ export default function NewApplicationPage() {
               next.add(phaseIdx);
               return next;
             });
+            // Auto-advance to next phase
+            if (phaseIdx + 1 < TOTAL_PHASES) {
+              setActivePhaseIdx(phaseIdx + 1);
+            }
           }
         }
         appendPhaseLog(phaseIdx, formatDetailLine(event));
@@ -715,6 +759,10 @@ export default function NewApplicationPage() {
               next.add(phaseIdx);
               return next;
             });
+            // Auto-advance to next phase
+            if (phaseIdx + 1 < TOTAL_PHASES) {
+              setActivePhaseIdx(phaseIdx + 1);
+            }
           }
         }
         appendPhaseLog(phaseIdx, formatAgentLine(event));
@@ -772,6 +820,7 @@ export default function NewApplicationPage() {
         elapsedRef.current = null;
       }
       abortRef.current = null;
+      sseActiveRef.current = false;
     }
   }, [activePhaseIdx, appendPhaseLog, user, draftAppId, jobTitle, company, jdText, resumeText, confirmedFacts, clearGenerationSession, persistGenerationSession, router]);
 
