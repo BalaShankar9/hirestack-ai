@@ -92,10 +92,10 @@ export const ReplayDrawer = memo(function ReplayDrawer({
             (replayReport.is_failure ?? replayReport.job_status === "failed") ? "bg-destructive/10" : "bg-amber-50"
           }`}>
             <div className="font-semibold">
-              {replayReport.failure_class.replace(/_/g, " ")}
+              {(replayReport.failure_class ?? "unknown").replace(/_/g, " ")}
             </div>
             <div className="text-muted-foreground mt-0.5">
-              {FAILURE_CLASS_LABELS[replayReport.failure_class] || replayReport.likely_root_cause}
+              {FAILURE_CLASS_LABELS[replayReport.failure_class ?? "unknown"] || replayReport.likely_root_cause || "No root cause identified"}
             </div>
           </div>
 

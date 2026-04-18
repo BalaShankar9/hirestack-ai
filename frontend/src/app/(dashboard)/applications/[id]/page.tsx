@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
+  AlertCircle,
   ArrowRight,
   BookOpen,
   FileText,
@@ -177,7 +178,7 @@ export default function ApplicationWorkspacePage() {
 
   const { user, session } = useAuth();
   const userId = user?.uid || user?.id || null;
-  const { data: app, loading } = useApplication(appId);
+  const { data: app, loading, error: appError } = useApplication(appId);
   const { data: evidence = [] } = useEvidence(userId, appId, 200);
   const { data: tasks = [], stats: taskStats } = useTasks(userId, appId, 200);
 
@@ -604,6 +605,28 @@ export default function ApplicationWorkspacePage() {
             <Skeleton className="h-[160px] w-full rounded-2xl" />
             <Skeleton className="h-[120px] w-full rounded-2xl" />
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!app && appError) {
+    return (
+      <div className="flex min-h-[400px] flex-col items-center justify-center gap-4 text-center">
+        <AlertCircle className="h-12 w-12 text-destructive/50" />
+        <div>
+          <h2 className="text-lg font-semibold">Failed to load application</h2>
+          <p className="mt-1 text-sm text-muted-foreground max-w-md">
+            We couldn&apos;t fetch this application. This may be a temporary network issue.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="default" onClick={() => window.location.reload()}>
+            Try again
+          </Button>
+          <Button variant="outline" onClick={() => router.push("/dashboard")}>
+            Back to dashboard
+          </Button>
         </div>
       </div>
     );
@@ -1075,11 +1098,11 @@ export default function ApplicationWorkspacePage() {
                 const competitive = intel.market_position || intel.competitive_position || {};
                 const confidence = intel.confidence || "unknown";
                 const workCulture = culture.work_environment || culture.work_culture;
-                const newsHighlights = news.news_highlights || news.highlights || [];
-                const growthSignals = news.growth_signals || [];
-                const interviewTopics = strategy.interview_prep_topics || strategy.interview_topics || [];
-                const techStack = tech.tech_stack || tech.programming_languages || [];
-                const productList = tech.products || products.main_products || [];
+                const newsHighlights = Array.isArray(news.news_highlights || news.highlights) ? (news.news_highlights || news.highlights) : [];
+                const growthSignals = Array.isArray(news.growth_signals) ? news.growth_signals : [];
+                const interviewTopics = Array.isArray(strategy.interview_prep_topics || strategy.interview_topics) ? (strategy.interview_prep_topics || strategy.interview_topics) : [];
+                const techStack = Array.isArray(tech.tech_stack || tech.programming_languages) ? (tech.tech_stack || tech.programming_languages) : [];
+                const productList = Array.isArray(tech.products || products.main_products) ? (tech.products || products.main_products) : [];
 
                 return (
                   <div className="space-y-4">
@@ -1093,7 +1116,7 @@ export default function ApplicationWorkspacePage() {
                         <Shield className="h-3 w-3" />
                         {confidence} confidence intel
                       </div>
-                      {intel.data_sources?.length > 0 && (
+                      {Array.isArray(intel.data_sources) && intel.data_sources.length > 0 && (
                         <span className="text-[10px] text-muted-foreground">
                           Sources: {intel.data_sources.join(", ")}
                         </span>
@@ -1115,14 +1138,14 @@ export default function ApplicationWorkspacePage() {
                     </div>
 
                     {/* Culture & Values */}
-                    {(culture.core_values?.length > 0 || workCulture || culture.mission_statement) && (
+                    {(Array.isArray(culture.core_values) && culture.core_values.length > 0 || workCulture || culture.mission_statement) && (
                       <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                         <h3 className="flex items-center gap-2 font-semibold text-sm mb-3">
                           <Users className="h-4 w-4 text-violet-500" /> Culture & Values
                         </h3>
                         {culture.mission_statement && <p className="text-sm italic text-muted-foreground mb-3">&ldquo;{culture.mission_statement}&rdquo;</p>}
                         {workCulture && <p className="text-sm text-muted-foreground mb-2"><strong>Work culture:</strong> {workCulture}</p>}
-                        {culture.core_values?.length > 0 && (
+                        {Array.isArray(culture.core_values) && culture.core_values.length > 0 && (
                           <div className="flex flex-wrap gap-1.5">
                             {culture.core_values.map((v: string, i: number) => (
                               <span key={i} className="rounded-full bg-violet-500/10 px-2.5 py-0.5 text-[10px] font-medium text-violet-600">{v}</span>
@@ -1183,13 +1206,13 @@ export default function ApplicationWorkspacePage() {
                     )}
 
                     {/* Application Strategy — the golden section */}
-                    {(strategy.keywords_to_use?.length > 0 || strategy.things_to_mention?.length > 0) && (
+                    {(Array.isArray(strategy.keywords_to_use) && strategy.keywords_to_use.length > 0 || Array.isArray(strategy.things_to_mention) && strategy.things_to_mention.length > 0) && (
                       <div className="rounded-2xl border-2 border-primary/20 bg-primary/[0.02] p-5 shadow-soft-sm">
                         <h3 className="flex items-center gap-2 font-semibold text-sm mb-3">
                           <Lightbulb className="h-4 w-4 text-primary" /> Application Strategy
                         </h3>
                         <div className="grid md:grid-cols-2 gap-4">
-                          {strategy.keywords_to_use?.length > 0 && (
+                          {Array.isArray(strategy.keywords_to_use) && strategy.keywords_to_use.length > 0 && (
                             <div>
                               <span className="text-[10px] text-muted-foreground block mb-1.5 uppercase font-semibold">Keywords to include</span>
                               <div className="flex flex-wrap gap-1">
@@ -1199,7 +1222,7 @@ export default function ApplicationWorkspacePage() {
                               </div>
                             </div>
                           )}
-                          {strategy.values_to_emphasize?.length > 0 && (
+                          {Array.isArray(strategy.values_to_emphasize) && strategy.values_to_emphasize.length > 0 && (
                             <div>
                               <span className="text-[10px] text-muted-foreground block mb-1.5 uppercase font-semibold">Values to emphasize</span>
                               <div className="flex flex-wrap gap-1">
@@ -1209,7 +1232,7 @@ export default function ApplicationWorkspacePage() {
                               </div>
                             </div>
                           )}
-                          {strategy.things_to_mention?.length > 0 && (
+                          {Array.isArray(strategy.things_to_mention) && strategy.things_to_mention.length > 0 && (
                             <div>
                               <span className="text-[10px] text-muted-foreground block mb-1.5 uppercase font-semibold">Mention in cover letter</span>
                               <ul className="space-y-1">
@@ -1234,7 +1257,7 @@ export default function ApplicationWorkspacePage() {
                             </div>
                           )}
                         </div>
-                        {strategy.things_to_avoid?.length > 0 && (
+                        {Array.isArray(strategy.things_to_avoid) && strategy.things_to_avoid.length > 0 && (
                           <div className="mt-3 pt-3 border-t">
                             <span className="text-[10px] text-destructive/80 block mb-1 uppercase font-semibold">Avoid</span>
                             <div className="flex flex-wrap gap-1">
@@ -1248,13 +1271,13 @@ export default function ApplicationWorkspacePage() {
                     )}
 
                     {/* Competitive Position */}
-                    {(competitive.competitors?.length > 0 || competitive.differentiators?.length > 0) && (
+                    {(Array.isArray(competitive.competitors) && competitive.competitors.length > 0 || Array.isArray(competitive.differentiators) && competitive.differentiators.length > 0) && (
                       <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
                         <h3 className="flex items-center gap-2 font-semibold text-sm mb-3">
                           <BarChart3 className="h-4 w-4 text-blue-500" /> Competitive Landscape
                         </h3>
                         <div className="grid md:grid-cols-2 gap-4">
-                          {competitive.competitors?.length > 0 && (
+                          {Array.isArray(competitive.competitors) && competitive.competitors.length > 0 && (
                             <div>
                               <span className="text-[10px] text-muted-foreground block mb-1.5">Competitors</span>
                               <div className="flex flex-wrap gap-1.5">
@@ -1264,7 +1287,7 @@ export default function ApplicationWorkspacePage() {
                               </div>
                             </div>
                           )}
-                          {competitive.differentiators?.length > 0 && (
+                          {Array.isArray(competitive.differentiators) && competitive.differentiators.length > 0 && (
                             <div>
                               <span className="text-[10px] text-muted-foreground block mb-1.5">What makes them unique</span>
                               <ul className="space-y-1">
@@ -2500,6 +2523,7 @@ export default function ApplicationWorkspacePage() {
         </div>
 
         <div className="space-y-4 lg:sticky lg:top-6 h-fit">
+          <SectionErrorBoundary label="Sidebar">
           {/* Agent Timeline Rail — replaces basic progress when stages are available */}
           {(agentState.isRunning || agentState.stages.length > 0) && (
             <div className="rounded-2xl border p-4 bg-card shadow-soft-sm">
@@ -2613,6 +2637,7 @@ export default function ApplicationWorkspacePage() {
               </div>
             </Link>
           </div>
+          </SectionErrorBoundary>
         </div>
       </div>
 

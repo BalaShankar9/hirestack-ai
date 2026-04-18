@@ -73,7 +73,7 @@ export function mapApplicationRow(row: any): ApplicationDoc {
     updatedAt: ts(row.updated_at),
     confirmedFacts: row.confirmed_facts ?? undefined,
     factsLocked: row.facts_locked ?? false,
-    modules: { ...DEFAULT_MODULES, ...(row.modules ?? {}) },
+    modules: { ...DEFAULT_MODULES, ...(row.modules && typeof row.modules === "object" && !Array.isArray(row.modules) ? row.modules : {}) },
     benchmark: row.benchmark ?? undefined,
     gaps: row.gaps ?? undefined,
     learningPlan: row.learning_plan ?? undefined,

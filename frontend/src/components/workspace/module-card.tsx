@@ -92,22 +92,22 @@ export function ModuleCard({
         </div>
       </div>
 
-      {(status.state === "generating" || status.state === "queued") && (
+      {(status?.state === "generating" || status?.state === "queued") && (
         <div className="mt-3 animate-fade-in">
-          <Progress value={status.progress ?? 0} className="h-2" />
+          <Progress value={status?.progress ?? 0} className="h-2" />
           <div className="mt-1 text-[11px] text-muted-foreground">
-            Building module… {status.progress ?? 0}%
+            Building module… {status?.progress ?? 0}%
           </div>
         </div>
       )}
 
-      {status.state === "error" && status.error ? (
+      {status?.state === "error" && status?.error ? (
         <div className="mt-3 rounded-xl border border-rose-300/50 bg-rose-500/10 p-3 text-xs text-rose-700 animate-fade-in dark:border-rose-400/30 dark:text-rose-300">
           {status.error}
         </div>
       ) : null}
 
-      {status.state === "ready" && snippet ? (
+      {status?.state === "ready" && snippet ? (
         <div className="mt-3 rounded-xl bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground leading-snug line-clamp-2 animate-fade-in" aria-label="Content preview">
           {snippet}
         </div>
