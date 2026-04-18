@@ -7,6 +7,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   usePathname: () => "/salary",
+  useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock("next/link", () => ({
   default: ({ href, children, ...props }: any) => <a href={href} {...props}>{children}</a>,

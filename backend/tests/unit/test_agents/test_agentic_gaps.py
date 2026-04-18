@@ -344,10 +344,10 @@ class TestModelRouterAgents:
 
     def test_model_router_different_models_for_heavy_vs_light(self):
         from ai_engine.model_router import resolve_model
-        research_model = resolve_model("research", "fallback")
-        validation_model = resolve_model("validation", "fallback")
-        # Research should use the heavier model, validation the lighter one
-        assert "pro" in research_model or research_model != validation_model
+        reasoning_model = resolve_model("reasoning", "fallback")
+        extraction_model = resolve_model("extraction", "fallback")
+        # Reasoning (tier-1) should use a heavier model than extraction (tier-3)
+        assert "pro" in reasoning_model or reasoning_model != extraction_model
 
 
 # ═══════════════════════════════════════════════════════════════════════
