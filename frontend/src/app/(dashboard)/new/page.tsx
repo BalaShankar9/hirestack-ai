@@ -742,6 +742,14 @@ export default function NewApplicationPage() {
         // events drive phase transitions, so we just append the log line.
         const phaseIdx = getPhaseIndexFromDetail(event);
         appendPhaseLog(phaseIdx, formatDetailLine(event));
+
+        // For Recon sub-agents: update pipelineStatuses so sub-task chips
+        // reflect real agent progress instead of a log-count heuristic.
+        if (event.agent === "recon" && event.source && event.status) {
+          const key = `recon:${event.source}`;
+          const mapped = event.status === "completed" ? "completed" : "running";
+          setPipelineStatuses(prev => ({ ...prev, [key]: mapped }));
+        }
       };
 
       const handleAgentEvent = (event: PipelineAgentEvent) => {

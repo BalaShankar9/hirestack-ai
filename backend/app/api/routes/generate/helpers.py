@@ -174,7 +174,7 @@ def _build_company_intel_summary(company_intel: Dict[str, Any]) -> str:
     parts: List[str] = []
 
     # Company overview
-    desc = overview.get("description")
+    desc = overview.get("description") or overview.get("elevator_pitch")
     if isinstance(desc, str) and desc.strip():
         parts.append(f"Company: {desc.strip()}")
     industry = overview.get("industry")
@@ -185,6 +185,9 @@ def _build_company_intel_summary(company_intel: Dict[str, Any]) -> str:
     stage = overview.get("stage")
     if size or stage:
         parts.append(f"Size/stage: {size or 'Unknown'} / {stage or 'Unknown'}")
+    hq = overview.get("headquarters")
+    if isinstance(hq, str) and hq.strip() and hq.lower() != "unknown":
+        parts.append(f"HQ: {hq}")
 
     # Core values and mission
     core_values = culture.get("core_values")
@@ -198,6 +201,9 @@ def _build_company_intel_summary(company_intel: Dict[str, Any]) -> str:
     work_style = culture.get("work_style")
     if isinstance(work_style, str) and work_style.strip() and work_style.lower() != "unknown":
         parts.append(f"Work style: {work_style}")
+    thrives = culture.get("what_kind_of_person_thrives")
+    if isinstance(thrives, str) and thrives.strip():
+        parts.append(f"Ideal candidate profile: {thrives}")
 
     # Tech stack (critical for tailored CVs/cover letters)
     tech_stack = tech.get("tech_stack") or tech.get("jd_tech_stack", {})
@@ -228,6 +234,9 @@ def _build_company_intel_summary(company_intel: Dict[str, Any]) -> str:
     target = products.get("target_market")
     if isinstance(target, str) and target.strip():
         parts.append(f"Target market: {target}")
+    comp_adv = products.get("competitive_advantage")
+    if isinstance(comp_adv, str) and comp_adv.strip():
+        parts.append(f"Competitive advantage: {comp_adv}")
 
     # Hiring intelligence
     must_have = hiring.get("must_have_skills")
@@ -243,6 +252,35 @@ def _build_company_intel_summary(company_intel: Dict[str, Any]) -> str:
             parts.append(f"Seniority target: {level}")
     elif isinstance(seniority, str) and seniority:
         parts.append(f"Seniority signals: {seniority}")
+    impresses = hiring.get("what_impresses_interviewers")
+    if isinstance(impresses, str) and impresses.strip():
+        parts.append(f"What impresses interviewers: {impresses}")
+    hidden = hiring.get("hidden_requirements")
+    if isinstance(hidden, list) and hidden:
+        parts.append(f"Hidden requirements: {'; '.join(str(h) for h in hidden[:4])}")
+
+    # Recent developments & leadership
+    recent = company_intel.get("recent_developments", {})
+    if isinstance(recent, dict):
+        news = recent.get("news_highlights", [])
+        if isinstance(news, list) and news:
+            parts.append(f"Recent news: {'; '.join(str(n) for n in news[:4])}")
+        leaders = recent.get("leadership", [])
+        if isinstance(leaders, list) and leaders:
+            parts.append(f"Leadership: {'; '.join(str(l) for l in leaders[:5])}")
+        direction = recent.get("strategic_direction")
+        if isinstance(direction, str) and direction.strip():
+            parts.append(f"Strategic direction: {direction}")
+
+    # Market position
+    market = company_intel.get("market_position", {})
+    if isinstance(market, dict):
+        comps = market.get("competitors", [])
+        if isinstance(comps, list) and comps:
+            parts.append(f"Competitors: {', '.join(str(c) for c in comps[:6])}")
+        growth = market.get("growth_trajectory")
+        if isinstance(growth, str) and growth.strip():
+            parts.append(f"Growth trajectory: {growth}")
 
     # Application strategy
     keywords = strategy.get("keywords_to_use")

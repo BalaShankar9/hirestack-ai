@@ -53,10 +53,13 @@ const AGENT_PERSONAS: AgentPersona[] = [
     accentColor: "cyan-500",
     description: "Researches company, role & market to build intelligence",
     subTasks: [
-      { key: "company_research", label: "Company Research" },
-      { key: "source_analysis", label: "Source Analysis" },
-      { key: "intel_synthesis", label: "Intel Synthesis" },
-      { key: "strategy", label: "Strategy Building" },
+      { key: "website_crawl", label: "Website Crawl", pipelineNames: ["recon:website"] },
+      { key: "github_scan", label: "GitHub Analysis", pipelineNames: ["recon:github"] },
+      { key: "careers_ats", label: "Careers & ATS", pipelineNames: ["recon:careers"] },
+      { key: "jd_analysis", label: "JD Analysis", pipelineNames: ["recon:job_description"] },
+      { key: "market_intel", label: "Market Research", pipelineNames: ["recon:market"] },
+      { key: "profile_synthesis", label: "Profile Synthesis", pipelineNames: ["recon:analysis"] },
+      { key: "strategy", label: "Strategy", pipelineNames: ["recon:strategy"] },
     ],
   },
   {

@@ -29,11 +29,14 @@ _PAGE_PATHS = [
     ("leadership", "/leadership"),
     ("blog", "/blog"),
     ("news", "/news"),
+    ("press", "/press"),
     ("products", "/products"),
     ("solutions", "/solutions"),
     ("pricing", "/pricing"),
     ("values", "/values"),
     ("culture", "/culture"),
+    ("engineering", "/engineering"),
+    ("investors", "/investors"),
 ]
 
 _USER_AGENT = "Mozilla/5.0 (compatible; HireStack-AI/2.0; Career Intelligence)"
@@ -205,7 +208,7 @@ class WebsiteIntelAgent(SubAgent):
                 full_text_parts.append(f"Title: {data['title']}")
             if data.get("description"):
                 full_text_parts.append(f"Description: {data['description']}")
-            full_text_parts.append(data.get("body", "")[:3000])
+            full_text_parts.append(data.get("body", "")[:4000])
             full_text_parts.append("")
 
         confidence = min(0.95, 0.3 + pages_found * 0.1)
@@ -217,7 +220,7 @@ class WebsiteIntelAgent(SubAgent):
                 "pages_found": pages_found,
                 "page_names": list(page_data.keys()),
                 "page_data": {k: {kk: vv[:500] for kk, vv in v.items()} for k, v in page_data.items()},
-                "full_text": "\n".join(full_text_parts)[:12000],
+                "full_text": "\n".join(full_text_parts)[:16000],
                 "social_links": page_data.get("homepage", {}).get("social_links", ""),
             },
             evidence_items=evidence_items,

@@ -105,7 +105,7 @@ export const AgentTimelineCard = memo(function AgentTimelineCard({
   }, [status]);
 
   const hasSubTasks = subTasks && subTasks.length > 0 && subTaskStatuses;
-  const logMaxHeight = status === "running" ? "max-h-56" : "max-h-44";
+  const logMaxHeight = status === "running" ? "max-h-72" : "max-h-56";
 
   return (
     <motion.div
@@ -274,20 +274,40 @@ export const AgentTimelineCard = memo(function AgentTimelineCard({
                       </p>
                     </div>
                   )}
-                  {visibleLogs.map((line, i) => (
-                    <motion.p
-                      key={i}
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.15 }}
-                      className="text-[10px] font-mono text-zinc-400 leading-relaxed"
-                    >
-                      <span className="text-zinc-600 mr-2 select-none">
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      {line}
-                    </motion.p>
-                  ))}
+                  {visibleLogs.map((line, i) => {
+                    const srcMatch = line.match(/^\[(\w+)\]\s/);
+                    const srcKey = srcMatch?.[1]?.toLowerCase() ?? "";
+                    const srcColor: Record<string, string> = {
+                      website: "text-cyan-400",
+                      github: "text-violet-400",
+                      careers: "text-amber-400",
+                      job_description: "text-blue-400",
+                      market: "text-teal-400",
+                      analysis: "text-indigo-400",
+                      strategy: "text-orange-400",
+                    };
+                    const lineColor = srcColor[srcKey] || "text-zinc-400";
+                    const tagColor = srcColor[srcKey] || "text-zinc-500";
+                    return (
+                      <motion.p
+                        key={i}
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.15 }}
+                        className={`text-[10px] font-mono leading-relaxed ${lineColor}`}
+                      >
+                        <span className="text-zinc-600 mr-2 select-none">
+                          {String(i + 1).padStart(2, "0")}
+                        </span>
+                        {srcMatch ? (
+                          <>
+                            <span className={`${tagColor} font-semibold`}>[{srcMatch[1]}]</span>
+                            {" "}{line.slice(srcMatch[0].length)}
+                          </>
+                        ) : line}
+                      </motion.p>
+                    );
+                  })}
                   {status === "running" && visibleLogs.length > 0 && (
                     <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-zinc-800/30">
                       <Loader2 className="h-3 w-3 text-primary/50 animate-spin" />

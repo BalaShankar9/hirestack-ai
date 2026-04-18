@@ -45,6 +45,13 @@ JOB TITLE: {job_title}
 === JD ANALYSIS DATA ===
 {jd_data}
 
+=== MARKET & NEWS DATA ===
+{market_data}
+
+Think deeply about the company's identity: what kind of people thrive there,
+what the engineering team values, how the company positions itself, and what
+undercurrents in the data reveal about its trajectory and culture.
+
 Return a JSON object:
 {{
   "company_overview": {{
@@ -58,6 +65,7 @@ Return a JSON object:
     "offices": ["other locations"],
     "website": "Main URL",
     "description": "2-3 sentence factual description",
+    "elevator_pitch": "One-line summary of what they do and why it matters",
     "section_confidence": "high/medium/low"
   }},
   "culture_and_values": {{
@@ -66,8 +74,10 @@ Return a JSON object:
     "work_style": "Remote / Hybrid / On-site / Flexible",
     "work_environment": "Day-to-day culture description",
     "team_structure": "How teams are organized",
+    "decision_making": "Top-down / Consensus / Autonomous",
     "diversity_and_inclusion": "DEI signals",
     "employee_benefits": ["Benefits found"],
+    "what_kind_of_person_thrives": "Profile of someone who succeeds here",
     "red_flags": ["Concerns identified"],
     "section_confidence": "high/medium/low"
   }},
@@ -78,6 +88,7 @@ Return a JSON object:
     "infrastructure": ["Cloud, CI/CD, monitoring"],
     "methodologies": ["Agile, Scrum, etc."],
     "engineering_culture": "Engineering approach description",
+    "engineering_values": ["What the eng team cares about — shipping speed, code quality, testing, etc."],
     "open_source": "OSS involvement",
     "github_stats": {{
       "org_name": "",
@@ -95,6 +106,7 @@ Return a JSON object:
     "target_market": "B2B / B2C / Enterprise / Developer",
     "pricing_model": "Model or Unknown",
     "key_features": ["Features found"],
+    "competitive_advantage": "What makes their product unique",
     "recent_launches": ["Recent updates"],
     "section_confidence": "high/medium/low"
   }},
@@ -104,13 +116,15 @@ Return a JSON object:
     "market_trends": ["Industry trends"],
     "challenges": ["Challenges"],
     "growth_trajectory": "Trajectory assessment",
+    "funding_and_financials": "Known funding rounds, revenue signals, or financial health indicators",
     "section_confidence": "high/medium/low"
   }},
   "recent_developments": {{
     "news_highlights": ["Recent developments"],
     "growth_signals": ["Growth indicators"],
-    "leadership": ["Key leaders"],
+    "leadership": ["Key leaders with titles"],
     "awards_recognition": ["Awards"],
+    "strategic_direction": "Where the company appears to be heading based on signals",
     "section_confidence": "high/medium/low"
   }},
   "hiring_intelligence": {{
@@ -122,7 +136,8 @@ Return a JSON object:
     "salary_range": "If available",
     "must_have_skills": ["Non-negotiable"],
     "nice_to_have_skills": ["Preferred"],
-    "hidden_requirements": ["Unstated but inferred"],
+    "hidden_requirements": ["Unstated but inferred from company context"],
+    "what_impresses_interviewers": "Based on company values and culture, what would stand out",
     "section_confidence": "high/medium/low"
   }}
 }}"""
@@ -141,10 +156,11 @@ class CompanyProfileAgent(SubAgent):
 
         # Gather raw data from sibling agents
         raw = context.get("raw_intel", {})
-        website_data = json.dumps(raw.get("website_intel", {}), default=str)[:5000]
-        github_data = json.dumps(raw.get("github_intel", {}), default=str)[:3000]
-        careers_data = json.dumps(raw.get("careers_intel", {}), default=str)[:3000]
-        jd_data = json.dumps(raw.get("jd_intel", {}), default=str)[:3000]
+        website_data = json.dumps(raw.get("website_intel", {}), default=str)[:8000]
+        github_data = json.dumps(raw.get("github_intel", {}), default=str)[:4000]
+        careers_data = json.dumps(raw.get("careers_intel", {}), default=str)[:4000]
+        jd_data = json.dumps(raw.get("jd_intel", {}), default=str)[:4000]
+        market_data = json.dumps(raw.get("market_position", {}), default=str)[:4000]
 
         if on_event:
             await _emit(on_event, "Synthesizing company profile from all sources…", "running", "analysis")
@@ -156,13 +172,14 @@ class CompanyProfileAgent(SubAgent):
             github_data=github_data or "Not available",
             careers_data=careers_data or "Not available",
             jd_data=jd_data or "Not available",
+            market_data=market_data or "Not available",
         )
 
         try:
             result = await self.ai_client.complete_json(
                 prompt=prompt,
                 system=_SYSTEM,
-                max_tokens=4000,
+                max_tokens=5000,
                 temperature=0.2,
                 task_type="reasoning",
             )

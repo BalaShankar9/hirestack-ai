@@ -92,10 +92,10 @@ class ApplicationStrategyAgent(SubAgent):
         on_event = context.get("on_event")
 
         raw = context.get("raw_intel", {})
-        company_profile = json.dumps(raw.get("company_profile", {}), default=str)[:5000]
-        jd_analysis = json.dumps(raw.get("jd_intel", {}), default=str)[:3000]
-        market_intel = json.dumps(raw.get("market_position", {}), default=str)[:2000]
-        careers_intel = json.dumps(raw.get("careers_intel", {}), default=str)[:2000]
+        company_profile = json.dumps(raw.get("company_profile", {}), default=str)[:6000]
+        jd_analysis = json.dumps(raw.get("jd_intel", {}), default=str)[:4000]
+        market_intel = json.dumps(raw.get("market_position", {}), default=str)[:3000]
+        careers_intel = json.dumps(raw.get("careers_intel", {}), default=str)[:3000]
 
         if on_event:
             await _emit(on_event, "Building application strategy from intel…", "running", "strategy")
@@ -113,7 +113,7 @@ class ApplicationStrategyAgent(SubAgent):
             result = await self.ai_client.complete_json(
                 prompt=prompt,
                 system=_SYSTEM,
-                max_tokens=3000,
+                max_tokens=4000,
                 temperature=0.3,
                 task_type="reasoning",
             )
