@@ -1,15 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import { motion } from "framer-motion";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/components/providers";
 import api from "@/lib/api";
 import type {
   KnowledgeResource,
   UserKnowledgeProgress,
-  ResourceRecommendation,
   ResourceCategory,
-  ResourceType,
   ResourceDifficulty,
 } from "@/lib/firestore/models";
 import { Button } from "@/components/ui/button";
@@ -27,13 +25,22 @@ import {
   Bookmark,
   Play,
   Loader2,
-  Filter,
   Sparkles,
   X,
-  ChevronDown,
   FileText,
+  RefreshCw,
+  Lightbulb,
+  FolderOpen,
+  TrendingUp,
+  BarChart3,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { ResourceViewer } from "@/components/knowledge/resource-viewer";
+import { DOCUMENT_UNIVERSE } from "@/lib/document-universe";
+import { DocumentUniverseGrid, type DocStatus } from "@/components/workspace/document-universe-grid";
+
+/* ── Types ─────────────────────────────────────────────────────────── */
+type TabKey = "learn" | "library" | "recommended" | "documents";
 
 /* ── Constants ─────────────────────────────────────────────────────── */
 
@@ -88,12 +95,14 @@ const DIFFICULTY_COLORS: Record<string, string> = {
 function ResourceCard({
   resource,
   progress,
+  onClick,
   onSave,
   onStart,
   onComplete,
 }: {
   resource: KnowledgeResource;
   progress?: UserKnowledgeProgress;
+  onClick: () => void;
   onSave: () => void;
   onStart: () => void;
   onComplete: () => void;
@@ -108,11 +117,12 @@ function ResourceCard({
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      className="group rounded-xl border bg-card p-5 shadow-soft-sm hover:shadow-soft-md transition-all duration-200"
+      className="group rounded-xl border bg-card p-5 shadow-soft-sm hover:shadow-soft-md transition-all duration-200 cursor-pointer"
+      onClick={onClick}
     >
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <Badge variant="secondary" className={cn("text-2xs", CATEGORY_COLORS[resource.category])}>
               {resource.category.replace(/_/g, " ")}
             </Badge>
@@ -153,7 +163,7 @@ function ResourceCard({
         </div>
       )}
 
-      <div className="flex items-center gap-2 pt-2 border-t">
+      <div className="flex items-center gap-2 pt-2 border-t" onClick={(e) => e.stopPropagation()}>
         {resource.url && (
           <Button size="sm" variant="outline" className="text-xs h-7" asChild>
             <a href={resource.url} target="_blank" rel="noopener noreferrer">
@@ -179,6 +189,65 @@ function ResourceCard({
   );
 }
 
+/* ── Recommendation Card ───────────────────────────────────────────── */
+
+function RecommendationCard({
+  rec,
+  onOpen,
+  onDismiss,
+}: {
+  rec: any;
+  onOpen: () => void;
+  onDismiss: () => void;
+}) {
+  const resource = rec.knowledge_resources || rec;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-xl border bg-card p-5 shadow-soft-sm hover:shadow-soft-md transition-all duration-200 cursor-pointer"
+      onClick={onOpen}
+    >
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <h3 className="font-semibold text-sm leading-snug line-clamp-2 flex-1">
+          {resource.title || "Recommended Resource"}
+        </h3>
+        <Button size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0" onClick={(e) => { e.stopPropagation(); onDismiss(); }}>
+          <X className="h-3 w-3" />
+        </Button>
+      </div>
+      {resource.description && (
+        <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{resource.description}</p>
+      )}
+      {rec.reason && (
+        <div className="rounded-lg bg-primary/5 border border-primary/10 p-3 mb-3">
+          <div className="flex items-start gap-2">
+            <Lightbulb className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+            <p className="text-xs text-primary/80 leading-relaxed">{rec.reason}</p>
+          </div>
+        </div>
+      )}
+      <div className="flex items-center gap-2 flex-wrap">
+        {resource.category && (
+          <Badge variant="secondary" className={cn("text-2xs", CATEGORY_COLORS[resource.category])}>
+            {resource.category.replace(/_/g, " ")}
+          </Badge>
+        )}
+        {resource.difficulty && (
+          <Badge variant="outline" className={cn("text-2xs", DIFFICULTY_COLORS[resource.difficulty])}>
+            {resource.difficulty}
+          </Badge>
+        )}
+        {resource.estimated_time && (
+          <span className="text-2xs text-muted-foreground flex items-center gap-1">
+            <Clock className="h-3 w-3" /> {resource.estimated_time}
+          </span>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
 /* ── Main Page ─────────────────────────────────────────────────────── */
 
 export default function KnowledgeLibraryPage() {
@@ -188,14 +257,18 @@ export default function KnowledgeLibraryPage() {
   const [recommendations, setRecommendations] = useState<any[]>([]);
   const [userDocs, setUserDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [recsLoading, setRecsLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [difficulty, setDifficulty] = useState("");
-  const [tab, setTab] = useState<"browse" | "saved" | "recommended" | "documents">("browse");
+  const [tab, setTab] = useState<TabKey>("learn");
+  const [viewingResource, setViewingResource] = useState<KnowledgeResource | null>(null);
 
   useEffect(() => {
     if (session?.access_token) api.setToken(session.access_token);
   }, [session?.access_token]);
+
+  /* ── Data loaders ──────────────────────────────────────────────── */
 
   const loadResources = useCallback(async () => {
     setLoading(true);
@@ -241,6 +314,8 @@ export default function KnowledgeLibraryPage() {
   useEffect(() => { loadResources(); }, [loadResources]);
   useEffect(() => { loadProgress(); loadRecommendations(); loadDocuments(); }, [loadProgress, loadRecommendations, loadDocuments]);
 
+  /* ── Actions ───────────────────────────────────────────────────── */
+
   const handleProgress = async (resourceId: string, status: "saved" | "in_progress" | "completed") => {
     try {
       await api.knowledge.saveProgress({
@@ -255,11 +330,75 @@ export default function KnowledgeLibraryPage() {
     }
   };
 
-  const filteredForTab = tab === "saved"
-    ? resources.filter((r) => progressMap[r.id])
-    : tab === "recommended"
-    ? resources.filter((r) => recommendations.some((rec: any) => rec.resource_id === r.id))
-    : resources;
+  const handleGenerateRecs = async () => {
+    setRecsLoading(true);
+    try {
+      await api.knowledge.generateRecommendations();
+      await loadRecommendations();
+      toast({ title: "Recommendations updated" });
+    } catch {
+      toast({ title: "Failed to generate recommendations", variant: "error" });
+    } finally {
+      setRecsLoading(false);
+    }
+  };
+
+  const handleDismissRec = async (recId: string) => {
+    try {
+      await api.knowledge.dismissRecommendation(recId);
+      setRecommendations((prev) => prev.filter((r) => r.id !== recId));
+    } catch {}
+  };
+
+  /* ── Derived data ──────────────────────────────────────────────── */
+
+  const savedResources = useMemo(
+    () => resources.filter((r) => progressMap[r.id]?.status === "saved"),
+    [resources, progressMap]
+  );
+  const inProgressResources = useMemo(
+    () => resources.filter((r) => progressMap[r.id]?.status === "in_progress"),
+    [resources, progressMap]
+  );
+  const completedResources = useMemo(
+    () => resources.filter((r) => progressMap[r.id]?.status === "completed"),
+    [resources, progressMap]
+  );
+
+  const docStatusMap = useMemo(() => {
+    const map = new Map<string, DocStatus>();
+    for (const doc of userDocs) {
+      if (doc.doc_type) {
+        map.set(doc.doc_type, {
+          status: doc.status || "planned",
+          version: doc.version,
+          updatedAt: doc.updated_at ? new Date(doc.updated_at).getTime() : undefined,
+          label: doc.label,
+        });
+      }
+    }
+    return map;
+  }, [userDocs]);
+
+  const groupedDocs = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    for (const doc of userDocs) {
+      const key = doc.doc_type || "other";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(doc);
+    }
+    return groups;
+  }, [userDocs]);
+
+  /* ── Helpers ───────────────────────────────────────────────────── */
+
+  const openResource = (r: KnowledgeResource) => setViewingResource(r);
+
+  const findResourceForRec = (rec: any): KnowledgeResource | null => {
+    const nested = rec.knowledge_resources;
+    if (nested) return nested as KnowledgeResource;
+    return resources.find((r) => r.id === rec.resource_id) || null;
+  };
 
   return (
     <div className="container max-w-6xl py-8 space-y-6">
@@ -269,168 +408,329 @@ export default function KnowledgeLibraryPage() {
           <Library className="h-6 w-6 text-primary" /> Knowledge Library
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Free guides, templates, books, and resources to level up your career
+          Guides, resources, and documents to level up your career
         </p>
       </div>
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b pb-0">
-        {(["browse", "saved", "recommended", "documents"] as const).map((t) => (
+        {([
+          { key: "learn" as TabKey, label: "Learn", icon: BookOpen },
+          { key: "library" as TabKey, label: "My Library", icon: FolderOpen },
+          { key: "recommended" as TabKey, label: "Recommended", icon: Sparkles },
+          { key: "documents" as TabKey, label: "My Documents", icon: FileText },
+        ]).map(({ key, label, icon: Icon }) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            key={key}
+            onClick={() => setTab(key)}
             className={cn(
-              "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
-              tab === t ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+              "px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5",
+              tab === key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
             )}
           >
-            {t === "browse" ? "Browse" : t === "saved" ? "My Library" : t === "recommended" ? "Recommended" : "My Documents"}
-            {t === "recommended" && recommendations.length > 0 && (
-              <Badge className="ml-1.5 text-2xs" variant="secondary">{recommendations.length}</Badge>
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+            {key === "recommended" && recommendations.length > 0 && (
+              <Badge className="ml-1 text-2xs h-4 min-w-[16px] px-1" variant="secondary">{recommendations.length}</Badge>
             )}
-            {t === "documents" && userDocs.length > 0 && (
-              <Badge className="ml-1.5 text-2xs" variant="secondary">{userDocs.length}</Badge>
+            {key === "library" && Object.keys(progressMap).length > 0 && (
+              <Badge className="ml-1 text-2xs h-4 min-w-[16px] px-1" variant="secondary">{Object.keys(progressMap).length}</Badge>
             )}
           </button>
         ))}
       </div>
 
-      {/* Filters (browse tab) */}
-      {tab === "browse" && (
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search resources..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-9 text-sm"
-            />
+      {/* ── Learn Tab ─────────────────────────────────────────────── */}
+      {tab === "learn" && (
+        <>
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search resources..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 h-9 text-sm"
+              />
+            </div>
+            <select
+              title="Filter by category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="h-9 rounded-md border bg-background px-3 text-sm"
+            >
+              {CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+            <select
+              title="Filter by difficulty"
+              value={difficulty}
+              onChange={(e) => setDifficulty(e.target.value)}
+              className="h-9 rounded-md border bg-background px-3 text-sm"
+            >
+              {DIFFICULTIES.map((d) => (
+                <option key={d.value} value={d.value}>{d.label}</option>
+              ))}
+            </select>
+            {(category || difficulty || search) && (
+              <Button size="sm" variant="ghost" className="h-9 text-xs" onClick={() => { setCategory(""); setDifficulty(""); setSearch(""); }}>
+                <X className="h-3 w-3 mr-1" /> Clear
+              </Button>
+            )}
           </div>
-          <select
-            title="Filter by category"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="h-9 rounded-md border bg-background px-3 text-sm"
-          >
-            {CATEGORIES.map((c) => (
-              <option key={c.value} value={c.value}>{c.label}</option>
-            ))}
-          </select>
-          <select
-            title="Filter by difficulty"
-            value={difficulty}
-            onChange={(e) => setDifficulty(e.target.value)}
-            className="h-9 rounded-md border bg-background px-3 text-sm"
-          >
-            {DIFFICULTIES.map((d) => (
-              <option key={d.value} value={d.value}>{d.label}</option>
-            ))}
-          </select>
-          {(category || difficulty || search) && (
-            <Button size="sm" variant="ghost" className="h-9 text-xs" onClick={() => { setCategory(""); setDifficulty(""); setSearch(""); }}>
-              <X className="h-3 w-3 mr-1" /> Clear
-            </Button>
+
+          {/* Recommended banner */}
+          {recommendations.length > 0 && (
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Sparkles className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Personalized for you</p>
+                  <p className="text-xs text-muted-foreground">{recommendations.length} resources matched to your skill gaps</p>
+                </div>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => setTab("recommended")}>View All</Button>
+            </div>
           )}
-        </div>
+
+          {/* Resource grid */}
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : resources.length === 0 ? (
+            <div className="text-center py-20 text-muted-foreground">
+              <BookOpen className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">No resources found</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {resources.map((r) => (
+                <ResourceCard
+                  key={r.id}
+                  resource={r}
+                  progress={progressMap[r.id]}
+                  onClick={() => openResource(r)}
+                  onSave={() => handleProgress(r.id, "saved")}
+                  onStart={() => handleProgress(r.id, "in_progress")}
+                  onComplete={() => handleProgress(r.id, "completed")}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
-      {/* Recommended banner */}
-      {tab === "browse" && recommendations.length > 0 && (
-        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Sparkles className="h-5 w-5 text-primary" />
-            <div>
-              <p className="text-sm font-medium">Personalized for you</p>
-              <p className="text-xs text-muted-foreground">{recommendations.length} resources matched to your skill gaps</p>
+      {/* ── My Library Tab ────────────────────────────────────────── */}
+      {tab === "library" && (
+        <>
+          {/* Stats strip */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="rounded-xl border bg-card p-4 text-center">
+              <div className="text-2xl font-bold text-blue-600">{inProgressResources.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">In Progress</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4 text-center">
+              <div className="text-2xl font-bold text-amber-600">{savedResources.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">Saved</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4 text-center">
+              <div className="text-2xl font-bold text-green-600">{completedResources.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">Completed</p>
             </div>
           </div>
-          <Button size="sm" variant="outline" onClick={() => setTab("recommended")}>
-            View All
-          </Button>
-        </div>
+
+          {Object.keys(progressMap).length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground">
+              <Bookmark className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm font-medium mb-1">Your library is empty</p>
+              <p className="text-xs mb-4">Save or start resources from the Learn tab to see them here</p>
+              <Button size="sm" variant="outline" onClick={() => setTab("learn")}>
+                <BookOpen className="h-3.5 w-3.5 mr-1.5" /> Browse Resources
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Continue Learning */}
+              {inProgressResources.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                    <Play className="h-4 w-4 text-blue-500" /> Continue Learning
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {inProgressResources.map((r) => (
+                      <ResourceCard key={r.id} resource={r} progress={progressMap[r.id]} onClick={() => openResource(r)} onSave={() => handleProgress(r.id, "saved")} onStart={() => handleProgress(r.id, "in_progress")} onComplete={() => handleProgress(r.id, "completed")} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Saved for Later */}
+              {savedResources.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                    <Bookmark className="h-4 w-4 text-amber-500" /> Saved for Later
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {savedResources.map((r) => (
+                      <ResourceCard key={r.id} resource={r} progress={progressMap[r.id]} onClick={() => openResource(r)} onSave={() => handleProgress(r.id, "saved")} onStart={() => handleProgress(r.id, "in_progress")} onComplete={() => handleProgress(r.id, "completed")} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Completed */}
+              {completedResources.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-green-500" /> Completed
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {completedResources.map((r) => (
+                      <ResourceCard key={r.id} resource={r} progress={progressMap[r.id]} onClick={() => openResource(r)} onSave={() => handleProgress(r.id, "saved")} onStart={() => handleProgress(r.id, "in_progress")} onComplete={() => handleProgress(r.id, "completed")} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
 
-      {/* Resource grid */}
-      {tab === "documents" ? (
-        /* ── My Documents tab ─────────────────────────────────────── */
-        userDocs.length === 0 ? (
-          <div className="text-center py-20 text-muted-foreground">
-            <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
-            <p className="text-sm">No documents yet — create an application to generate documents</p>
+      {/* ── Recommended Tab ───────────────────────────────────────── */}
+      {tab === "recommended" && (
+        <>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-primary" /> Recommended for You
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Resources matched to your skill gaps and career goals</p>
+            </div>
+            <Button size="sm" variant="outline" onClick={handleGenerateRecs} disabled={recsLoading}>
+              {recsLoading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+              {recommendations.length > 0 ? "Refresh" : "Generate"}
+            </Button>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {userDocs.map((doc: any) => (
-              <motion.div
-                key={doc.id}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="group rounded-xl border bg-card p-5 shadow-soft-sm hover:shadow-soft-md transition-all duration-200"
-              >
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Badge variant="secondary" className={cn("text-2xs",
-                        doc.doc_category === "tailored" ? "bg-violet-500/10 text-violet-600" :
-                        doc.doc_category === "benchmark" ? "bg-amber-500/10 text-amber-600" :
-                        "bg-blue-500/10 text-blue-600"
-                      )}>
-                        {doc.doc_category}
-                      </Badge>
-                      <Badge variant="outline" className={cn("text-2xs",
-                        doc.status === "ready" ? "text-green-600" :
-                        doc.status === "generating" ? "text-blue-600" :
-                        doc.status === "error" ? "text-red-600" : "text-muted-foreground"
-                      )}>
-                        {doc.status}
-                      </Badge>
-                    </div>
-                    <h3 className="font-semibold text-sm leading-snug line-clamp-2">
-                      {doc.label || doc.doc_type?.replace(/_/g, " ")}
-                    </h3>
-                  </div>
-                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                </div>
-                <p className="text-xs text-muted-foreground mb-2">
-                  {doc.doc_type?.replace(/_/g, " ")}
-                  {doc.version && doc.version > 1 ? ` · v${doc.version}` : ""}
-                </p>
-                {doc.updated_at && (
-                  <p className="text-2xs text-muted-foreground flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    {new Date(doc.updated_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                  </p>
-                )}
-              </motion.div>
-            ))}
-          </div>
-        )
-      ) : loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : filteredForTab.length === 0 ? (
-        <div className="text-center py-20 text-muted-foreground">
-          <BookOpen className="h-10 w-10 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">
-            {tab === "saved" ? "No saved resources yet" : tab === "recommended" ? "No recommendations yet — sync your skill gaps first" : "No resources found"}
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredForTab.map((r) => (
-            <ResourceCard
-              key={r.id}
-              resource={r}
-              progress={progressMap[r.id]}
-              onSave={() => handleProgress(r.id, "saved")}
-              onStart={() => handleProgress(r.id, "in_progress")}
-              onComplete={() => handleProgress(r.id, "completed")}
-            />
-          ))}
-        </div>
+
+          {recsLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : recommendations.length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground">
+              <TrendingUp className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm font-medium mb-1">No recommendations yet</p>
+              <p className="text-xs mb-4">Generate personalized recommendations based on your profile and skill gaps</p>
+              <Button size="sm" onClick={handleGenerateRecs}>
+                <Sparkles className="h-3.5 w-3.5 mr-1.5" /> Generate Recommendations
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {recommendations.map((rec) => (
+                <RecommendationCard
+                  key={rec.id}
+                  rec={rec}
+                  onOpen={() => {
+                    const r = findResourceForRec(rec);
+                    if (r) openResource(r);
+                  }}
+                  onDismiss={() => handleDismissRec(rec.id)}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
+
+      {/* ── My Documents Tab ──────────────────────────────────────── */}
+      {tab === "documents" && (
+        <>
+          {/* Full Document Universe Grid */}
+          <div>
+            <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-primary" /> Document Universe
+            </h2>
+            <p className="text-xs text-muted-foreground mb-4">
+              All {DOCUMENT_UNIVERSE.length} document types — generated docs show status overlays
+            </p>
+            <DocumentUniverseGrid universe={DOCUMENT_UNIVERSE} statusMap={docStatusMap} />
+          </div>
+
+          {/* Generated Documents History */}
+          {userDocs.length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" /> Generated Documents
+              </h2>
+              <div className="space-y-4">
+                {Object.entries(groupedDocs).map(([docType, docs]) => (
+                  <div key={docType} className="rounded-xl border bg-card p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-sm font-medium capitalize">{docType.replace(/_/g, " ")}</h3>
+                      <Badge variant="secondary" className="text-2xs">{docs.length} version{docs.length > 1 ? "s" : ""}</Badge>
+                    </div>
+                    <div className="space-y-2">
+                      {docs.map((doc: any) => (
+                        <div key={doc.id} className="flex items-center justify-between text-xs border-t pt-2 first:border-0 first:pt-0">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className={cn("text-2xs",
+                              doc.status === "ready" ? "text-green-600 border-green-200" :
+                              doc.status === "generating" ? "text-blue-600 border-blue-200" :
+                              doc.status === "error" ? "text-red-600 border-red-200" : ""
+                            )}>
+                              {doc.status}
+                            </Badge>
+                            <Badge variant="secondary" className={cn("text-2xs",
+                              doc.doc_category === "tailored" ? "bg-violet-500/10 text-violet-600" :
+                              doc.doc_category === "benchmark" ? "bg-amber-500/10 text-amber-600" :
+                              "bg-blue-500/10 text-blue-600"
+                            )}>
+                              {doc.doc_category}
+                            </Badge>
+                            {doc.version && doc.version > 1 && (
+                              <span className="text-muted-foreground">v{doc.version}</span>
+                            )}
+                          </div>
+                          {doc.updated_at && (
+                            <span className="text-muted-foreground flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {new Date(doc.updated_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {userDocs.length === 0 && (
+            <div className="text-center py-12 text-muted-foreground border rounded-xl bg-card">
+              <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm font-medium mb-1">No generated documents yet</p>
+              <p className="text-xs">Create an application workspace to start generating documents</p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Resource Viewer Slide-over ────────────────────────────── */}
+      <AnimatePresence>
+        {viewingResource && (
+          <ResourceViewer
+            resource={viewingResource}
+            progress={progressMap[viewingResource.id]}
+            onClose={() => setViewingResource(null)}
+            onSave={() => handleProgress(viewingResource.id, "saved")}
+            onStart={() => handleProgress(viewingResource.id, "in_progress")}
+            onComplete={() => handleProgress(viewingResource.id, "completed")}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

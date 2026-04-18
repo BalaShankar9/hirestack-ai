@@ -93,6 +93,7 @@ import { useDownloadGate } from "@/hooks/use-download-gate";
 import { ATSScorePanel } from "@/components/workspace/ats-score-panel";
 import { DocumentLibraryView } from "@/components/workspace/document-library-view";
 import { DocumentUniverseGrid, type DocStatus } from "@/components/workspace/document-universe-grid";
+import { WorkspaceKnowledgePanel } from "@/components/workspace/workspace-knowledge-panel";
 import { DOCUMENT_UNIVERSE } from "@/lib/document-universe";
 import { SignupModal } from "@/components/auth/signup-modal";
 import { cn } from "@/lib/utils";
@@ -775,7 +776,7 @@ export default function ApplicationWorkspacePage() {
                     </button>
                     <TabsTrigger value="intel" className={triggerCls}><Search className="h-3.5 w-3.5" />Intel</TabsTrigger>
                     <TabsTrigger value="ats" className={triggerCls}><FileSearch className="h-3.5 w-3.5" />ATS Score</TabsTrigger>
-                    <TabsTrigger value="library" className={triggerCls}><Library className="h-3.5 w-3.5" />Library</TabsTrigger>
+                    <TabsTrigger value="library" className={triggerCls}><Library className="h-3.5 w-3.5" />Knowledge</TabsTrigger>
                     <TabsTrigger value="export" className={triggerCls}><Package className="h-3.5 w-3.5" />Export</TabsTrigger>
                   </TabsList>
 
@@ -1898,8 +1899,16 @@ export default function ApplicationWorkspacePage() {
               </SectionErrorBoundary>
             </TabsContent>
 
-            {/* ── Document Library Tab ── */}
-            <TabsContent value="library" className="mt-4">
+            {/* ── Knowledge & Document Library Tab ── */}
+            <TabsContent value="library" className="mt-4 space-y-6">
+              {/* Workspace-scoped learning resources */}
+              <SectionErrorBoundary label="Learning Resources">
+                <div className="rounded-2xl border bg-card p-5 shadow-soft-sm">
+                  <WorkspaceKnowledgePanel applicationId={appId} />
+                </div>
+              </SectionErrorBoundary>
+
+              {/* Document library */}
               <SectionErrorBoundary label="Document Library">
                 {docLibraryLoading ? (
                   <div className="flex items-center justify-center py-12">
