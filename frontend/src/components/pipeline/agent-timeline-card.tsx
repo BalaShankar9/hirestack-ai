@@ -71,11 +71,32 @@ export const AgentTimelineCard = memo(function AgentTimelineCard({
   const [expanded, setExpanded] = useState(false);
   const isOpen = status === "running" || status === "failed" || expanded;
 
+  // ── Staggered log reveal ─────────────────────────────────────
+  // Reveals one new log entry every ~120ms while the agent is running,
+  // so the feed feels like a real-time stream instead of dumping lines.
+  const [revealCount, setRevealCount] = useState(logs.length);
+
+  useEffect(() => {
+    // When the agent is done/failed, snap to full so remaining logs appear
+    if (status !== "running") {
+      setRevealCount(logs.length);
+      return;
+    }
+    // While running, stagger new entries one at a time
+    if (revealCount >= logs.length) return;
+    const timer = setTimeout(() => {
+      setRevealCount((c) => c + 1);
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [revealCount, logs.length, status]);
+
+  const visibleLogs = logs.slice(0, revealCount);
+
   useEffect(() => {
     if (logEndRef.current) {
       logEndRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
-  }, [logs.length]);
+  }, [visibleLogs.length]);
 
   // Auto-expand when agent starts working. Stay expanded when done so logs
   // remain visible — users can manually collapse via click.
@@ -245,12 +266,15 @@ export const AgentTimelineCard = memo(function AgentTimelineCard({
             >
               <ScrollArea className={`${logMaxHeight} rounded-lg bg-zinc-950/80 dark:bg-zinc-950/50 border border-zinc-800/50`}>
                 <div className="p-3 space-y-0.5" role="log" aria-live="polite">
-                  {logs.length === 0 && status === "running" && (
-                    <p className="text-[10px] text-zinc-500 font-mono italic">
-                      Initializing...
-                    </p>
+                  {visibleLogs.length === 0 && status === "running" && (
+                    <div className="flex items-center gap-2 py-1">
+                      <Loader2 className="h-3 w-3 text-primary/40 animate-spin" />
+                      <p className="text-[10px] text-zinc-500 font-mono">
+                        Connecting to agent…
+                      </p>
+                    </div>
                   )}
-                  {logs.map((line, i) => (
+                  {visibleLogs.map((line, i) => (
                     <motion.p
                       key={i}
                       initial={{ opacity: 0, y: 5 }}
@@ -264,7 +288,7 @@ export const AgentTimelineCard = memo(function AgentTimelineCard({
                       {line}
                     </motion.p>
                   ))}
-                  {status === "running" && logs.length > 0 && (
+                  {status === "running" && visibleLogs.length > 0 && (
                     <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-zinc-800/30">
                       <Loader2 className="h-3 w-3 text-primary/50 animate-spin" />
                       <span className="text-[9px] font-mono text-zinc-500">Streaming…</span>

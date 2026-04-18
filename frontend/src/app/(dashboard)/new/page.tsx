@@ -56,34 +56,47 @@ const STEPS: { key: Step; label: string; icon: any }[] = [
 ];
 
 const PROGRESS_PHASE_TO_INDEX: Record<string, number> = {
+  // Canonical PipelineRuntime path (atlas, cipher, quill …)
   initializing: 0,
   recon: 0,
   recon_done: 0,
+  atlas: 1,
   profiling: 1,
   profiling_done: 1,
+  cipher: 2,
   gap_analysis: 2,
   gap_analysis_done: 2,
+  quill: 3,
   documents: 3,
   documents_done: 3,
+  forge: 4,
   portfolio: 4,
   portfolio_done: 4,
+  sentinel: 5,
   validation: 5,
   validation_done: 5,
+  nova: 6,
   formatting: 6,
   complete: 6,
 };
 
 const PIPELINE_TO_INDEX: Record<string, number> = {
   recon: 0,
+  atlas: 1,
   resume_parse: 1,
   benchmark: 1,
+  cipher: 2,
   gap_analysis: 2,
+  quill: 3,
   cv_generation: 3,
   cover_letter: 3,
   career_roadmap: 3,
+  forge: 4,
   personal_statement: 4,
   portfolio: 4,
+  sentinel: 5,
   validation: 5,
+  nova: 6,
   pipeline: 6,
 };
 
@@ -705,66 +718,38 @@ export default function NewApplicationPage() {
 
         const phaseIdx = getPhaseIndexFromProgress(p.phase);
         if (phaseIdx >= 0) {
-          setActivePhaseIdx(phaseIdx);
+          // Forward-only — never regress activePhaseIdx on out-of-order events
+          setActivePhaseIdx((prev) => Math.max(prev, phaseIdx));
           appendPhaseLog(phaseIdx, p.message);
         }
 
-        // Mark phases that are done — either explicit "_done" suffix or
-        // auto-complete all phases below the newly active one (handles
-        // backends that skip "recon_done" etc.)
-        if (p.phase.endsWith("_done") || p.phase === "complete") {
+        // Explicit "_done" suffix (fallback path) — mark phase done and advance
+        if (p.phase.endsWith("_done")) {
           setCompletedPhases((prev) => {
             const next = new Set(prev);
             if (phaseIdx >= 0) next.add(phaseIdx);
             return next;
           });
-          // Auto-advance: mark next phase as active so the next agent
-          // transitions to "running" immediately instead of stalling.
-          if (phaseIdx >= 0 && phaseIdx + 1 < TOTAL_PHASES && p.phase !== "complete") {
-            setActivePhaseIdx(phaseIdx + 1);
+          if (phaseIdx >= 0 && phaseIdx + 1 < TOTAL_PHASES) {
+            setActivePhaseIdx((prev) => Math.max(prev, phaseIdx + 1));
           }
         }
       };
 
       const handleDetail = (event: PipelineDetailEvent) => {
+        // Detail events carry per-source status (e.g. website crawl done).
+        // They do NOT indicate that the whole phase is done — only progress
+        // events drive phase transitions, so we just append the log line.
         const phaseIdx = getPhaseIndexFromDetail(event);
-        if (phaseIdx >= 0) {
-          if (event.status === "running" || event.status === "completed") {
-            setActivePhaseIdx(phaseIdx);
-          }
-          if (event.status === "completed") {
-            setCompletedPhases((prev) => {
-              const next = new Set(prev);
-              next.add(phaseIdx);
-              return next;
-            });
-            // Auto-advance to next phase
-            if (phaseIdx + 1 < TOTAL_PHASES) {
-              setActivePhaseIdx(phaseIdx + 1);
-            }
-          }
-        }
         appendPhaseLog(phaseIdx, formatDetailLine(event));
       };
 
       const handleAgentEvent = (event: PipelineAgentEvent) => {
+        // Agent-status events carry per-stage status (drafter/critic/validator).
+        // A stage completing does NOT mean the whole phase is done — only
+        // progress events drive phase transitions.  We update pipelineStatuses
+        // for sub-task chips and append the log line.
         const phaseIdx = getPhaseIndexFromAgentEvent(event);
-        if (phaseIdx >= 0) {
-          if (event.status === "running") {
-            setActivePhaseIdx(phaseIdx);
-          }
-          if (event.status === "completed") {
-            setCompletedPhases((prev) => {
-              const next = new Set(prev);
-              next.add(phaseIdx);
-              return next;
-            });
-            // Auto-advance to next phase
-            if (phaseIdx + 1 < TOTAL_PHASES) {
-              setActivePhaseIdx(phaseIdx + 1);
-            }
-          }
-        }
         appendPhaseLog(phaseIdx, formatAgentLine(event));
         if (event.pipeline_name) {
           setPipelineStatuses(prev => ({
