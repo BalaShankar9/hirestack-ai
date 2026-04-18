@@ -654,9 +654,9 @@ class PipelineRuntime:
             "portfolio": portfolio_pipeline,
         }
 
-        events_queue: list[PipelineEvent] = []
-
         async def stage_callback(event: dict) -> None:
+            """Emit agent_status events directly so the frontend sees
+            real-time sub-agent progress instead of batched updates."""
             pe = PipelineEvent(
                 event_type="agent_status",
                 pipeline_name=event.get("pipeline_name", ""),
@@ -665,12 +665,7 @@ class PipelineRuntime:
                 latency_ms=event.get("latency_ms", 0),
                 message=event.get("message", ""),
             )
-            events_queue.append(pe)
-
-        async def flush_events() -> None:
-            for ev in events_queue:
-                await self.sink.emit(ev)
-            events_queue.clear()
+            await self.sink.emit(pe)
 
         # ── Phase 0: Company Intelligence (best-effort, parallel-ready) ─
         self._begin_phase("recon")
@@ -789,7 +784,6 @@ class PipelineRuntime:
                     db=sb, tables=tables, user_id=user_id,
                 )
                 parse_result: PipelineResult = await pipe.execute({"user_id": user_id, "resume_text": resume_text})
-                await flush_events()
                 user_profile = parse_result.content if isinstance(parse_result.content, dict) else {}
                 await self.sink.emit(PipelineEvent(
                     event_type="detail", phase="atlas",
@@ -840,7 +834,6 @@ class PipelineRuntime:
                 "jd_text": jd_text,
                 "user_profile": user_profile,
             })
-            await flush_events()
             benchmark_data = bench_result.content if isinstance(bench_result.content, dict) else {}
             await self.sink.emit(PipelineEvent(
                 event_type="detail", phase="atlas",
@@ -851,7 +844,6 @@ class PipelineRuntime:
         except Exception as bench_err:
             logger.warning("pipeline_runtime.benchmark_failed", error=str(bench_err)[:200])
             self._failed_modules.append({"module": "benchmark", "error": str(bench_err)[:200]})
-            await flush_events()
             await self.sink.emit(PipelineEvent(
                 event_type="detail", phase="atlas",
                 message="Benchmark generation encountered an issue; using fallback scoring",
@@ -945,7 +937,6 @@ class PipelineRuntime:
                 "job_title": job_title,
                 "company": company,
             })
-            await flush_events()
             gap_analysis = gap_result.content if isinstance(gap_result.content, dict) else {}
             await self.sink.emit(PipelineEvent(
                 event_type="detail", phase="cipher",
@@ -956,7 +947,6 @@ class PipelineRuntime:
         except Exception as gap_err:
             logger.warning("pipeline_runtime.gap_analysis_failed", error=str(gap_err)[:200])
             self._failed_modules.append({"module": "gap_analysis", "error": str(gap_err)[:200]})
-            await flush_events()
             await self.sink.emit(PipelineEvent(
                 event_type="detail", phase="cipher",
                 message="Gap analysis encountered an issue; using available data",
@@ -1130,13 +1120,35 @@ class PipelineRuntime:
         )
         consultant = CareerConsultantChain(ai)
 
+        # Wrap each parallel task to emit mid-phase progress as they complete
+        async def _run_cv():
+            r = await cv_pipe.execute(doc_context)
+            await self.sink.emit(PipelineEvent(
+                event_type="progress", phase="quill", progress=58,
+                message="CV generation complete, finishing others…",
+            ))
+            return r
+
+        async def _run_cl():
+            r = await cl_pipe.execute(doc_context)
+            await self.sink.emit(PipelineEvent(
+                event_type="progress", phase="quill", progress=63,
+                message="Cover letter complete, finishing others…",
+            ))
+            return r
+
+        async def _run_roadmap():
+            r = await consultant.generate_roadmap(gap_analysis, user_profile, job_title, company)
+            await self.sink.emit(PipelineEvent(
+                event_type="progress", phase="quill", progress=67,
+                message="Learning plan complete…",
+            ))
+            return r
+
         cv_result_raw, cl_result_raw, roadmap = await asyncio.gather(
-            cv_pipe.execute(doc_context),
-            cl_pipe.execute(doc_context),
-            consultant.generate_roadmap(gap_analysis, user_profile, job_title, company),
+            _run_cv(), _run_cl(), _run_roadmap(),
             return_exceptions=True,
         )
-        await flush_events()
 
         cv_result: PipelineResult | None = None
         cl_result: PipelineResult | None = None
@@ -1239,12 +1251,27 @@ class PipelineRuntime:
             db=sb, tables=tables, user_id=user_id,
         )
 
+        async def _run_ps():
+            r = await ps_pipe.execute(doc_context)
+            await self.sink.emit(PipelineEvent(
+                event_type="progress", phase="forge", progress=79,
+                message="Personal statement complete…",
+            ))
+            return r
+
+        async def _run_pf():
+            r = await pf_pipe.execute(doc_context)
+            await self.sink.emit(PipelineEvent(
+                event_type="progress", phase="forge", progress=81,
+                message="Portfolio complete…",
+            ))
+            return r
+
         ps_raw, pf_raw = await asyncio.gather(
-            ps_pipe.execute(doc_context),
+            _run_ps(), _run_pf(),
             pf_pipe.execute(doc_context),
             return_exceptions=True,
         )
-        await flush_events()
 
         ps_html = ""
         portfolio_html = ""

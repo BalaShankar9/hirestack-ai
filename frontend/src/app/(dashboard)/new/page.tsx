@@ -756,7 +756,11 @@ export default function NewApplicationPage() {
         if (event.source && event.status) {
           const key = `${event.agent}:${event.source}`;
           const mapped = event.status === "completed" ? "completed" : "running";
-          setPipelineStatuses(prev => ({ ...prev, [key]: mapped }));
+          setPipelineStatuses(prev => {
+            // Never regress from completed
+            if (prev[key] === "completed") return prev;
+            return { ...prev, [key]: mapped };
+          });
         }
       };
 
