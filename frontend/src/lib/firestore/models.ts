@@ -301,7 +301,31 @@ export interface EventDoc {
   createdAt: number;
 }
 
-export type GenerationJobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+export type GenerationJobStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "succeeded_with_warnings"
+  | "failed"
+  | "cancelled";
+
+/**
+ * Returns true when a job's status indicates the job is in a terminal,
+ * usable state — the documents are available and the user can navigate
+ * to the workspace. Includes succeeded_with_warnings so users with
+ * partial output are not stranded.
+ */
+export const TERMINAL_USABLE_JOB_STATUSES: ReadonlySet<GenerationJobStatus> = new Set([
+  "succeeded",
+  "succeeded_with_warnings",
+]);
+
+export function isTerminalUsableJobStatus(
+  status: GenerationJobStatus | string | null | undefined,
+): boolean {
+  if (!status) return false;
+  return TERMINAL_USABLE_JOB_STATUSES.has(status as GenerationJobStatus);
+}
 
 export interface GenerationJobDoc {
   id: string;

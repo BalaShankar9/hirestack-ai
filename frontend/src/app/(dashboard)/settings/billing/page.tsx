@@ -23,6 +23,7 @@ export default function BillingPage() {
   }, [session?.access_token]);
 
   const usage = billing?.usage || {};
+  const billingDisabled = billing?.plan === "billing_disabled" || billing?.billing_enabled === false;
 
   return (
     <RoleGate feature="billing" title="Usage" features={["View usage statistics"]}>
@@ -35,6 +36,24 @@ export default function BillingPage() {
           <p className="text-xs text-muted-foreground">Monitor your account usage</p>
         </div>
       </div>
+
+      {billingDisabled && !loading ? (
+        <div
+          role="status"
+          className="rounded-2xl border border-amber-300 bg-amber-50 p-5 shadow-soft-sm dark:border-amber-700/60 dark:bg-amber-950/40"
+        >
+          <h2 className="font-semibold text-sm text-amber-900 dark:text-amber-100">
+            Beta access — billing is disabled
+          </h2>
+          <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
+            HireStack AI is currently in private beta. Billing has not been enabled
+            for this environment, so you will not be charged and all features
+            available to your account are unrestricted. Usage metering still runs
+            so we can give you a clean billing transition once the platform exits
+            beta.
+          </p>
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="text-center py-12"><Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" /></div>

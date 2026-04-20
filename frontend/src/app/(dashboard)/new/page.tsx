@@ -148,7 +148,9 @@ function resolveStepParam(value: string | null): Step | null {
 }
 
 function buildCompletedPhases(completedSteps: number, status?: string | null): Set<number> {
-  const completedCount = status === "succeeded"
+  // Both 'succeeded' and 'succeeded_with_warnings' mark all phases done —
+  // the warnings flag is about validation findings, not phase completion.
+  const completedCount = status === "succeeded" || status === "succeeded_with_warnings"
     ? TOTAL_PHASES
     : Math.max(0, Math.min(TOTAL_PHASES, completedSteps));
 
@@ -354,7 +356,8 @@ export default function NewApplicationPage() {
 
   const { data: generationJob } = useGenerationJob(activeJobId);
   const generationJobStatus = generationJob?.status ?? null;
-  const isGenerationJobLive = !generationJobStatus || generationJobStatus === "queued" || generationJobStatus === "running";
+  const isGenerationJobLive =
+    !generationJobStatus || generationJobStatus === "queued" || generationJobStatus === "running";
   const { data: generationEvents = [] } = useGenerationJobEvents(activeJobId, 600, {
     live: isGenerationJobLive,
   });
@@ -482,26 +485,36 @@ export default function NewApplicationPage() {
     // state detection — skip overwriting live SSE-driven state.
     if (sseActiveRef.current && isLive) return;
 
+    const isTerminalUsable =
+      generationJob.status === "succeeded" || generationJob.status === "succeeded_with_warnings";
+
     setProgress(generationJob.progress);
     setGenMessage(
       generationJob.message
         || (generationJob.status === "succeeded"
           ? "Your application is ready! 🎉"
+          : generationJob.status === "succeeded_with_warnings"
+          ? "Application ready with validation warnings — review before submitting."
           : generationJob.status === "cancelled"
           ? "Generation cancelled."
           : "Resuming generation…")
     );
     setCompletedPhases(buildCompletedPhases(generationJob.completedSteps, generationJob.status));
-    setActivePhaseIdx(generationJob.status === "succeeded" ? -1 : getPhaseIndexFromProgress(generationJob.phase ?? ""));
+    setActivePhaseIdx(isTerminalUsable ? -1 : getPhaseIndexFromProgress(generationJob.phase ?? ""));
 
     if (isLive) {
       setGenerating(true);
       setGenError(null);
       persistGenerationSession(generationJob.applicationId, generationJob.id, "generate");
-    } else if (generationJob.status === "succeeded") {
+    } else if (isTerminalUsable) {
       setGenerating(false);
       setGenError(null);
-      appendPhaseLog(6, "Final application bundle ready.");
+      appendPhaseLog(
+        6,
+        generationJob.status === "succeeded_with_warnings"
+          ? "Final application bundle ready (with validation warnings)."
+          : "Final application bundle ready.",
+      );
       // Clear session for terminal state — don't persist completed jobs
       clearGenerationSession();
     } else {
@@ -564,7 +577,13 @@ export default function NewApplicationPage() {
       redirectRef.current = null;
     }
 
-    if (step !== "generate" || generationJobStatus !== "succeeded" || !generationJobApplicationId) return;
+    // Redirect on either clean success or success-with-warnings — the
+    // documents exist either way and the workspace will surface the
+    // validation findings. Stranding the user on this page when the
+    // backend persisted succeeded_with_warnings was the lying-state bug.
+    const isTerminalUsable =
+      generationJobStatus === "succeeded" || generationJobStatus === "succeeded_with_warnings";
+    if (step !== "generate" || !isTerminalUsable || !generationJobApplicationId) return;
 
     redirectRef.current = setTimeout(() => {
       clearGenerationSession();
