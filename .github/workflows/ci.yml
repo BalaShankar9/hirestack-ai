@@ -104,3 +104,33 @@ jobs:
             echo "::error::.env file is tracked by git"
             exit 1
           fi
+
+  # ── Dependency vulnerability scan ─────────────────────
+  # Advisory: surfaces known CVEs but does NOT fail the build, so a
+  # zero-day disclosure can't block a hotfix. Promote to required once
+  # the baseline is clean and we have a patch SLA in place.
+  deps-audit:
+    name: Dependency CVE scan
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: pip-audit (backend)
+        run: |
+          pip install -q pip-audit
+          pip-audit -r backend/requirements.txt --strict || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm audit (frontend, prod deps only)
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high || true
