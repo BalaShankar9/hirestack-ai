@@ -694,10 +694,56 @@ async def prometheus_metrics():
     except Exception:
         pass
 
+    # ── W8: circuit-breaker state per provider ─────────────────────
+    # Encoded as numeric so Prometheus alerting can fire on != 0:
+    #   0 = closed (healthy), 1 = half_open (probing), 2 = open (failing fast)
+    try:
+        from app.core.circuit_breaker import _breakers, CircuitState
+        _state_code = {
+            CircuitState.CLOSED: 0,
+            CircuitState.HALF_OPEN: 1,
+            CircuitState.OPEN: 2,
+        }
+        if _breakers:
+            lines.append("# HELP hirestack_circuit_breaker_state Circuit breaker state (0=closed,1=half_open,2=open)")
+            lines.append("# TYPE hirestack_circuit_breaker_state gauge")
+            lines.append("# HELP hirestack_circuit_breaker_failures Failure count per breaker")
+            lines.append("# TYPE hirestack_circuit_breaker_failures gauge")
+            for _name, _br in _breakers.items():
+                _safe = _name.replace("-", "_").replace(".", "_").replace("/", "_")
+                lines.append(
+                    f'hirestack_circuit_breaker_state{{name="{_safe}"}} {_state_code.get(_br.state, 0)}'
+                )
+                lines.append(
+                    f'hirestack_circuit_breaker_failures{{name="{_safe}"}} {int(_br.failure_count)}'
+                )
+    except Exception:
+        pass
+
     from starlette.responses import Response
     return Response(
         content="\n".join(lines) + "\n",
         media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
+
+
+# ── W8: split liveness from readiness ─────────────────────────────────
+# /health does heavy DB+Redis+AI checks → great for readiness, BAD for
+# liveness: a flaky dependency would cause k8s to restart healthy pods,
+# masking the real issue and making outages worse. /livez is the cheap
+# yes-I-am-still-running probe.
+
+@app.get("/livez", tags=["Health"], include_in_schema=False)
+async def liveness_probe():
+    """Lightweight liveness probe.
+
+    Returns 200 iff the event loop is responsive. NEVER touches DB,
+    Redis, or external APIs. Designed for kubelet liveness probes —
+    use /health for readiness instead.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"status": "alive", "version": settings.app_version},
     )
 
 
