@@ -796,7 +796,7 @@ async def _finalize_orphaned_job(
         job = job_resp.data if job_resp else None
         if not job:
             return
-        if job.get("status") in {"succeeded", "failed", "cancelled"}:
+        if job.get("status") in {"succeeded", "succeeded_with_warnings", "failed", "cancelled"}:
             return  # already terminal — nothing to do
 
         # Mark job terminal
@@ -1164,15 +1164,34 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         if output_scores:
             result.setdefault("meta", {})["output_scores"] = output_scores
 
+        # ── Critic gate enforcement: pipeline_runtime stamps a `validation`
+        # block onto the result. If the v4 ValidationCritic flagged the run
+        # as failed (any error-severity finding), we keep the generated
+        # documents but downgrade the job status so the UI can show the
+        # validation banner. Default to "succeeded" when the validation
+        # block is absent (legacy paths that don't run the v4 critic).
+        validation_meta = (result or {}).get("validation") or {}
+        validation_passed = validation_meta.get("passed", True)
+        final_status = "succeeded" if validation_passed else "succeeded_with_warnings"
+        final_message = (
+            "Generation complete."
+            if validation_passed
+            else (
+                f"Generation complete with validation warnings "
+                f"({validation_meta.get('error_count', 0)} errors, "
+                f"{validation_meta.get('warning_count', 0)} warnings)."
+            )
+        )
+
         await _persist_generation_job_update(
             sb,
             TABLES,
             job_id,
             {
-                "status": "succeeded",
+                "status": final_status,
                 "progress": 100,
                 "phase": "complete",
-                "message": "Generation complete.",
+                "message": final_message,
                 "current_agent": "nova",
                 "completed_steps": _JOB_TOTAL_STEPS,
                 "total_steps": _JOB_TOTAL_STEPS,
@@ -1821,12 +1840,26 @@ async def _run_generation_job_inner_runtime(job_id: str, user_id: str) -> None:
             except Exception as dpp_err:
                 logger.warning("job_runtime.doc_pack_plan_persist_failed", error=str(dpp_err)[:200])
 
-        # Mark job complete with all fields
+        # Mark job complete with all fields. Honor the v4 critic gate: if
+        # the runtime stamped result.validation.passed = False, downgrade
+        # status to succeeded_with_warnings so the UI can react.
+        _validation_meta = (result or {}).get("validation") or {}
+        _validation_passed = _validation_meta.get("passed", True)
+        _final_status = "succeeded" if _validation_passed else "succeeded_with_warnings"
+        _final_message = (
+            "Generation complete."
+            if _validation_passed
+            else (
+                f"Generation complete with validation warnings "
+                f"({_validation_meta.get('error_count', 0)} errors, "
+                f"{_validation_meta.get('warning_count', 0)} warnings)."
+            )
+        )
         _job_update: dict = {
-                "status": "succeeded",
+                "status": _final_status,
                 "progress": 100,
                 "phase": "complete",
-                "message": "Generation complete.",
+                "message": _final_message,
                 "current_agent": "nova",
                 "completed_steps": _JOB_TOTAL_STEPS,
                 "total_steps": _JOB_TOTAL_STEPS,
@@ -2067,7 +2100,7 @@ async def stream_generation_job(
             )
             latest_job = latest_job_resp.data or {}
             status = latest_job.get("status")
-            if status in {"succeeded", "failed", "cancelled"}:
+            if status in {"succeeded", "succeeded_with_warnings", "failed", "cancelled"}:
                 final_events = await asyncio.to_thread(
                     lambda: sb.table(TABLES["generation_job_events"])
                     .select("*")
@@ -2364,7 +2397,7 @@ async def retry_generation_modules(
         raise HTTPException(status_code=404, detail="Generation job not found")
 
     orig_job = orig_job_resp.data[0]
-    if orig_job.get("status") not in {"succeeded", "failed", "cancelled"}:
+    if orig_job.get("status") not in {"succeeded", "succeeded_with_warnings", "failed", "cancelled"}:
         raise HTTPException(
             status_code=409,
             detail="Can only retry modules from a completed, failed, or cancelled job",

@@ -2076,6 +2076,39 @@ class PipelineRuntime:
             )
             passed = report_passed(report)
 
+            # ── ENFORCE the gate by stamping the response.
+            # The job runner reads response["validation"] and downgrades the
+            # job status to "succeeded_with_warnings" when passed=False, so
+            # the UI can surface the failure without losing already-generated
+            # documents. This is the contract the audit demanded: a failure
+            # signal that actually flips persisted job state.
+            error_findings = [
+                f for f in report.findings
+                if getattr(f.severity, "value", str(f.severity)) == "error"
+            ]
+            warning_findings = [
+                f for f in report.findings
+                if getattr(f.severity, "value", str(f.severity)) == "warning"
+            ]
+            response["validation"] = {
+                "passed": bool(passed),
+                "overall_score": float(report.overall_score),
+                "docs_passed": int(report.docs_passed),
+                "docs_failed": int(report.docs_failed),
+                "error_count": len(error_findings),
+                "warning_count": len(warning_findings),
+                "finding_count": len(report.findings),
+                "findings_summary": [
+                    {
+                        "code": f.code,
+                        "severity": getattr(f.severity, "value", str(f.severity)),
+                        "message": f.message,
+                        "doc_type": getattr(f, "doc_type", None),
+                    }
+                    for f in report.findings[:20]
+                ],
+            }
+
             if getattr(self, "_artifact_store", None) is not None:
                 try:
                     await self._artifact_store.put(
