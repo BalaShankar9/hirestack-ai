@@ -564,26 +564,47 @@ class AgentPipeline:
                 for src in ev_sources:
                     src_str = str(src)
                     if ":" in src_str:
-                        pool_val = src_str.split(":", 1)[1]
-                        pool_val = pool_val.split("(")[0].strip()
+                        pool_name, _, raw_val = src_str.partition(":")
+                        # Strip "(fuzzy)" or any other parenthetical annotation
+                        pool_val = raw_val.split("(")[0].strip()
+                        pool_name = pool_name.strip().lower()
                         if pool_val:
-                            matches = ledger.find_by_text(pool_val)
-                            for match in matches[:2]:
-                                if match.id not in matched_ids:
-                                    matched_ids.append(match.id)
+                            # v9: deterministic pool lookup first (O(items) but
+                            # exact-match, no fuzzy text drift). Falls back to
+                            # text matching only if no pool-tagged item exists.
+                            pool_matches = ledger.find_by_pool_value(pool_name, pool_val)
+                            if pool_matches:
+                                for match in pool_matches[:2]:
+                                    if match.id not in matched_ids:
+                                        matched_ids.append(match.id)
+                            else:
+                                matches = ledger.find_by_text(pool_val)
+                                for match in matches[:2]:
+                                    if match.id not in matched_ids:
+                                        matched_ids.append(match.id)
 
                 if not matched_ids:
                     source_ref = claim.get("source_reference", "")
                     if source_ref:
                         for ref_part in source_ref.split(","):
                             ref_part = ref_part.strip()
+                            pool_hint = ""
                             if ":" in ref_part:
-                                ref_part = ref_part.split(":", 1)[1].split("(")[0].strip()
+                                pool_hint, _, ref_val = ref_part.partition(":")
+                                ref_part = ref_val.split("(")[0].strip()
+                                pool_hint = pool_hint.strip().lower()
                             if ref_part and len(ref_part) > 2:
-                                matches = ledger.find_by_text(ref_part)
-                                for match in matches[:2]:
-                                    if match.id not in matched_ids:
-                                        matched_ids.append(match.id)
+                                # Try pool lookup first if we have a hint
+                                if pool_hint:
+                                    pool_matches = ledger.find_by_pool_value(pool_hint, ref_part)
+                                    for match in pool_matches[:2]:
+                                        if match.id not in matched_ids:
+                                            matched_ids.append(match.id)
+                                if not matched_ids:
+                                    matches = ledger.find_by_text(ref_part)
+                                    for match in matches[:2]:
+                                        if match.id not in matched_ids:
+                                            matched_ids.append(match.id)
 
                 evidence_tiers = [
                     item.tier
@@ -1401,6 +1422,7 @@ class AgentPipeline:
             cited_count=len(cited_ids),
             tier_distribution=tier_dist,
         )
+        metrics.record_citation_coverage(_compute_citation_coverage(citations))
         if critic_result and critic_result.quality_scores:
             metrics.record_quality_scores(critic_result.quality_scores)
         metrics.snapshot_cost_end()

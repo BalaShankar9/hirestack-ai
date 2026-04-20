@@ -244,6 +244,31 @@ class EvidenceLedger:
             if fragment_lower in i.text.lower()
         ]
 
+    def find_by_pool_value(self, pool: str, value: str) -> list[EvidenceItem]:
+        """Exact, deterministic lookup by (pool, value) metadata pair.
+
+        Items added via populate_from_profile are tagged with
+        ``metadata['pool']`` (skill | company | title | cert | education)
+        and ``metadata['value']`` (the lower-cased canonical value).
+        Fact-checker tools emit source markers in the same vocabulary
+        (``"skill:python"``), so the orchestrator can resolve a marker
+        to a stable evidence_id without text matching.
+
+        This is the deterministic path used by
+        ``_rebuild_citations_from_fact_check``; it falls back to
+        :meth:`find_by_text` when an item wasn't pool-tagged (legacy
+        profile shapes, externally-added evidence, etc.).
+        """
+        if not pool or not value:
+            return []
+        value_lower = value.strip().lower()
+        pool_lower = pool.strip().lower()
+        return [
+            i for i in self._items.values()
+            if i.metadata.get("pool") == pool_lower
+            and i.metadata.get("value") == value_lower
+        ]
+
     def confirm(self, evidence_id: str, sub_agent: str) -> None:
         """Record that *sub_agent* independently confirmed this evidence.
 
@@ -346,7 +371,11 @@ def populate_from_profile(ledger: EvidenceLedger, user_profile: dict) -> None:
                 source=EvidenceSource.PROFILE,
                 source_field=f"skills[{i}]",
                 text=name,
-                metadata={"endorsements": skill.get("endorsements", 0) if isinstance(skill, dict) else 0},
+                metadata={
+                    "endorsements": skill.get("endorsements", 0) if isinstance(skill, dict) else 0,
+                    "pool": "skill",
+                    "value": name.strip().lower(),
+                },
             )
 
     # Experience
@@ -363,6 +392,7 @@ def populate_from_profile(ledger: EvidenceLedger, user_profile: dict) -> None:
                 source=EvidenceSource.PROFILE,
                 source_field=f"experience[{i}].title",
                 text=title,
+                metadata={"pool": "title", "value": title.strip().lower()},
             )
         if company:
             ledger.add(
@@ -370,6 +400,7 @@ def populate_from_profile(ledger: EvidenceLedger, user_profile: dict) -> None:
                 source=EvidenceSource.PROFILE,
                 source_field=f"experience[{i}].company",
                 text=company,
+                metadata={"pool": "company", "value": company.strip().lower()},
             )
         if desc:
             ledger.add(
@@ -409,6 +440,7 @@ def populate_from_profile(ledger: EvidenceLedger, user_profile: dict) -> None:
                     source=EvidenceSource.PROFILE,
                     source_field=f"education[{i}].{k}",
                     text=str(val),
+                    metadata={"pool": "education", "value": str(val).strip().lower()},
                 )
 
     # Certifications
@@ -423,6 +455,7 @@ def populate_from_profile(ledger: EvidenceLedger, user_profile: dict) -> None:
                 source=EvidenceSource.PROFILE,
                 source_field=f"certifications[{i}]",
                 text=name,
+                metadata={"pool": "cert", "value": name.strip().lower()},
             )
 
     # Summary / headline

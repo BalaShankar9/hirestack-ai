@@ -8,7 +8,7 @@ The summary can be persisted alongside the trace record for offline analysis.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 import structlog
 
@@ -19,6 +19,8 @@ class PipelineMetrics:
     """Collects and emits structured observability metrics for a pipeline run."""
 
     def __init__(self, pipeline_id: str, pipeline_name: str, user_id: str):
+        self._citation_coverage: Optional[float] = None
+        self._citation_coverage_threshold: float = 0.6
         self.pipeline_id = pipeline_id
         self.pipeline_name = pipeline_name
         self.user_id = user_id
@@ -45,6 +47,28 @@ class PipelineMetrics:
         self._stage_latencies[stage] = latency_ms
 
     # ── Evidence coverage ─────────────────────────────────────────
+
+    def record_citation_coverage(self, coverage: Optional[float], threshold: float = 0.6) -> None:
+        """Record claim->evidence link coverage and emit SLO breach warning.
+
+        coverage: fraction of fact-check claims linked to >=1 evidence id (0.0-1.0)
+        threshold: minimum acceptable coverage; below this we log a structured
+                   warning so on-call can detect citation linker degradation
+                   without waiting for a user-visible quality drop.
+        None means no citations were produced (skip case) and is not scored.
+        """
+        self._citation_coverage = coverage
+        self._citation_coverage_threshold = threshold
+        if coverage is not None and coverage < threshold:
+            logger.warning(
+                "pipeline_citation_coverage_slo_breach",
+                pipeline_id=self.pipeline_id,
+                pipeline=self.pipeline_name,
+                user_id=self.user_id,
+                coverage=coverage,
+                threshold=threshold,
+                gap=round(threshold - coverage, 3),
+            )
 
     def record_evidence_stats(
         self,
@@ -165,6 +189,8 @@ class PipelineMetrics:
                 "details": self._contract_issues,
             },
             "evidence": self._evidence_stats,
+            "citation_coverage": self._citation_coverage,
+            "citation_coverage_threshold": self._citation_coverage_threshold,
             "quality_scores": self._quality_scores,
             "final_analysis": self._final_analysis,
             "cost": self._compute_pipeline_cost(),

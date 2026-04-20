@@ -3,6 +3,10 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  schedule:
+    # Nightly @ 06:00 UTC — runs the full eval gate on main so prompt/model
+    # drift surfaces even when no PR has touched the agent code.
+    - cron: "0 6 * * *"
   workflow_dispatch:
   workflow_call:
 
