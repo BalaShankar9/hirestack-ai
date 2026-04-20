@@ -747,6 +747,9 @@ class PipelineRuntime:
         self._orchestration_bus = orchestration_bus
         self._orchestration_bridge = orchestration_bridge
 
+        # Per-stage critic summaries (best-effort).
+        sentinel_validation: Optional[Dict[str, Any]] = None
+
         # ── Phase 0: Company Intelligence (best-effort, parallel-ready) ─
         self._begin_phase("recon")
         if progress_calc is not None:
@@ -1031,6 +1034,26 @@ class PipelineRuntime:
             event_type="progress", phase="atlas", progress=25,
             message="Resume parsed & benchmark built ✓",
         ))
+        # Per-stage critic gate (soft-fail): benchmark artifact validation.
+        try:
+            atlas_artifact = self._build_benchmark_profile_artifact(
+                job_title=job_title,
+                company=company,
+                benchmark_data=benchmark_data,
+            )
+            await self._run_critic_gate(
+                phase="atlas",
+                artifact=atlas_artifact,
+                review="benchmark",
+                user_id=user_id,
+                progress_pass=24,
+                progress_fail=20,
+                message_pass="Benchmark critic gate passed.",
+                message_fail="Benchmark critic gate found issues; continuing.",
+            )
+        except Exception as atlas_gate_err:
+            logger.warning("pipeline_runtime.atlas_gate_failed", error=str(atlas_gate_err)[:200])
+
         # Emit explicit pipeline-done markers so frontend deliverable chips
         # transition to "done" even if individual stage events arrived out-of-order.
         for pn in ("resume_parse", "benchmark"):
@@ -1309,6 +1332,23 @@ class PipelineRuntime:
             status="completed",
             data={"agent": "cipher", "source": "priority_ranking"},
         ))
+
+        # Per-stage critic gate (soft-fail): gap map validation.
+        try:
+            cipher_artifact = self._build_skill_gap_map_artifact(gap_analysis=gap_analysis)
+            await self._run_critic_gate(
+                phase="cipher",
+                artifact=cipher_artifact,
+                review="gap_map",
+                user_id=user_id,
+                progress_pass=46,
+                progress_fail=42,
+                message_pass="Gap-map critic gate passed.",
+                message_fail="Gap-map critic gate found issues; continuing.",
+            )
+        except Exception as cipher_gate_err:
+            logger.warning("pipeline_runtime.cipher_gate_failed", error=str(cipher_gate_err)[:200])
+
         for pn in ("gap_analysis",):
             await self.sink.emit(PipelineEvent(
                 event_type="agent_status",
@@ -1459,6 +1499,32 @@ class PipelineRuntime:
             event_type="progress", phase="quill", progress=70,
             message="CV, cover letter & learning plan ready ✓",
         ))
+
+        # Per-stage critic gate (soft-fail): partial tailored docs after Quill.
+        # This intentionally checks only docs available by this phase.
+        try:
+            quill_bundle = self._build_tailored_bundle_artifact(
+                cv_html=cv_html,
+                cl_html=cl_html,
+                ps_html="",
+                portfolio_html="",
+                resume_html=resume_html,
+                application_id=self.config.application_id or None,
+                created_by_agent="quill",
+            )
+            await self._run_critic_gate(
+                phase="quill",
+                artifact=quill_bundle,
+                review="documents",
+                user_id=user_id,
+                progress_pass=69,
+                progress_fail=65,
+                message_pass="Quill document critic gate passed.",
+                message_fail="Quill document critic gate found issues; continuing.",
+            )
+        except Exception as quill_gate_err:
+            logger.warning("pipeline_runtime.quill_gate_failed", error=str(quill_gate_err)[:200])
+
         for pn in ("cv_generation", "cover_letter"):
             await self.sink.emit(PipelineEvent(
                 event_type="agent_status",
@@ -1646,6 +1712,36 @@ class PipelineRuntime:
                 status="completed",
                 data={"agent": "forge", "source": "extra_docs"},
             ))
+
+        # Per-stage critic gate (soft-fail): full tailored docs after Forge.
+        try:
+            forge_bundle = self._build_tailored_bundle_artifact(
+                cv_html=cv_html,
+                cl_html=cl_html,
+                ps_html=ps_html,
+                portfolio_html=portfolio_html,
+                resume_html=resume_html,
+                application_id=self.config.application_id or None,
+                created_by_agent="forge",
+            )
+            required_mods = [
+                m for m in (self.config.requested_modules or [])
+                if m in {"cv", "resume", "cover_letter", "personal_statement", "portfolio"}
+            ]
+            await self._run_critic_gate(
+                phase="forge",
+                artifact=forge_bundle,
+                review="documents",
+                user_id=user_id,
+                required_modules=required_mods or None,
+                progress_pass=87,
+                progress_fail=83,
+                message_pass="Forge document critic gate passed.",
+                message_fail="Forge document critic gate found issues; continuing.",
+            )
+        except Exception as forge_gate_err:
+            logger.warning("pipeline_runtime.forge_gate_failed", error=str(forge_gate_err)[:200])
+
         for pn in ("personal_statement", "portfolio"):
             await self.sink.emit(PipelineEvent(
                 event_type="agent_status",
@@ -1705,6 +1801,37 @@ class PipelineRuntime:
                 status="completed",
                 data={"agent": "sentinel", "source": "fact_check"},
             ))
+
+        # Per-stage critic gate (soft-fail): canonical validation outcome for
+        # downstream status finalisation. This is what jobs.py consumes.
+        try:
+            sentinel_bundle = self._build_tailored_bundle_artifact(
+                cv_html=cv_html,
+                cl_html=cl_html,
+                ps_html=ps_html,
+                portfolio_html=portfolio_html,
+                resume_html=resume_html or benchmark_resume_html,
+                application_id=self.config.application_id or None,
+                created_by_agent="sentinel",
+            )
+            required_mods = [
+                m for m in (self.config.requested_modules or [])
+                if m in {"cv", "resume", "cover_letter", "personal_statement", "portfolio"}
+            ]
+            sentinel_validation = await self._run_critic_gate(
+                phase="sentinel",
+                artifact=sentinel_bundle,
+                review="documents",
+                user_id=user_id,
+                required_modules=required_mods or None,
+                progress_pass=95,
+                progress_fail=90,
+                message_pass="Validation critic gate passed.",
+                message_fail="Validation critic gate failed; continuing with warnings.",
+            )
+        except Exception as sentinel_gate_err:
+            logger.warning("pipeline_runtime.sentinel_gate_failed", error=str(sentinel_gate_err)[:200])
+
         self._finish_phase("sentinel")
 
         # ── Phase 6: Format response ─────────────────────────────────
@@ -1745,6 +1872,8 @@ class PipelineRuntime:
                 benchmark_cv_html=sanitize_html(benchmark_cv_html) if benchmark_cv_html else "",
                 resume_html=sanitize_html(effective_resume_html) if effective_resume_html else "",
             )
+            if sentinel_validation is not None:
+                response["validation"] = sentinel_validation
         except Exception as fmt_err:
             logger.exception("pipeline_runtime.format_response_failed", error=str(fmt_err)[:300])
             self._failed_modules.append({"module": "format_response", "error": str(fmt_err)[:200]})
@@ -1759,6 +1888,7 @@ class PipelineRuntime:
                     "portfolio": sanitize_html(portfolio_html) if portfolio_html else "",
                     "resume": sanitize_html(effective_resume_html) if effective_resume_html else "",
                 },
+                "validation": sentinel_validation if sentinel_validation is not None else validation,
                 "_recovered_from_format_error": True,
             }
 
@@ -1840,6 +1970,35 @@ class PipelineRuntime:
             status="completed",
             data={"agent": "nova", "source": "packaging"},
         ))
+
+        # Per-stage critic gate (soft-fail): final assembled pack sanity check.
+        try:
+            final_pack = self._build_final_pack_artifact(
+                benchmark_data=benchmark_data,
+                gap_analysis=gap_analysis,
+                company=company,
+                company_intel=company_intel,
+                cv_html=cv_html,
+                cl_html=cl_html,
+                ps_html=ps_html,
+                portfolio_html=portfolio_html,
+                resume_html=effective_resume_html,
+                sentinel_validation=sentinel_validation,
+                elapsed_seconds=0.0,
+            )
+            await self._run_critic_gate(
+                phase="nova",
+                artifact=final_pack,
+                review="final_pack",
+                user_id=user_id,
+                progress_pass=99,
+                progress_fail=97,
+                message_pass="Final-pack critic gate passed.",
+                message_fail="Final-pack critic gate found issues; continuing.",
+            )
+        except Exception as nova_gate_err:
+            logger.warning("pipeline_runtime.nova_gate_failed", error=str(nova_gate_err)[:200])
+
         self._finish_phase("nova")
 
         return response
@@ -2093,17 +2252,17 @@ class PipelineRuntime:
             response["validation"] = {
                 "passed": bool(passed),
                 "overall_score": float(report.overall_score),
-                "docs_passed": int(report.docs_passed),
-                "docs_failed": int(report.docs_failed),
+                "docs_passed": list(report.docs_passed),
+                "docs_failed": list(report.docs_failed),
                 "error_count": len(error_findings),
                 "warning_count": len(warning_findings),
                 "finding_count": len(report.findings),
                 "findings_summary": [
                     {
-                        "code": f.code,
+                        "code": f.rule,
                         "severity": getattr(f.severity, "value", str(f.severity)),
                         "message": f.message,
-                        "doc_type": getattr(f, "doc_type", None),
+                        "doc_type": getattr(f, "target_doc_type", None),
                     }
                     for f in report.findings[:20]
                 ],
@@ -2174,6 +2333,400 @@ class PipelineRuntime:
         return response
 
     # ── Helpers ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _build_benchmark_profile_artifact(
+        *,
+        job_title: str,
+        company: str,
+        benchmark_data: Dict[str, Any],
+    ) -> Any:
+        from ai_engine.agents.artifact_contracts import (
+            BenchmarkProfile,
+            BenchmarkSkill,
+            EvidenceTier,
+        )
+
+        ideal_skills = benchmark_data.get("ideal_skills")
+        skills: List[BenchmarkSkill] = []
+        if isinstance(ideal_skills, list):
+            for raw in ideal_skills:
+                if not isinstance(raw, dict):
+                    continue
+                name = str(raw.get("name") or "").strip()
+                if not name:
+                    continue
+                level = str(raw.get("level") or "intermediate").lower()
+                if level not in {"expert", "advanced", "intermediate", "beginner"}:
+                    level = "intermediate"
+                importance = str(raw.get("importance") or "important").lower()
+                if importance not in {"critical", "important", "preferred"}:
+                    importance = "important"
+                years = raw.get("years")
+                if not isinstance(years, int):
+                    years = 0
+                category = str(raw.get("category") or "technical").lower()
+                if category not in {"technical", "soft", "domain"}:
+                    category = "technical"
+                skills.append(BenchmarkSkill(
+                    name=name,
+                    level=level,
+                    years=years,
+                    category=category,
+                    importance=importance,
+                ))
+
+        ideal_profile = benchmark_data.get("ideal_profile") if isinstance(benchmark_data.get("ideal_profile"), dict) else {}
+        summary = str(ideal_profile.get("summary") or "").strip()
+        years_exp = ideal_profile.get("years_experience")
+        if not isinstance(years_exp, int):
+            years_exp = 0
+
+        return BenchmarkProfile(
+            application_id=None,
+            created_by_agent="atlas",
+            confidence=0.7,
+            evidence_tier=EvidenceTier.DERIVED,
+            job_title=job_title,
+            company=company,
+            summary=summary,
+            years_experience=years_exp,
+            skills=skills,
+            certifications=benchmark_data.get("certifications", []) if isinstance(benchmark_data.get("certifications"), list) else [],
+            education=benchmark_data.get("education", []) if isinstance(benchmark_data.get("education"), list) else [],
+            experience=benchmark_data.get("ideal_experience", []) if isinstance(benchmark_data.get("ideal_experience"), list) else [],
+            scoring_weights=benchmark_data.get("scoring_weights", {}) if isinstance(benchmark_data.get("scoring_weights"), dict) else {},
+        )
+
+    @staticmethod
+    def _build_skill_gap_map_artifact(*, gap_analysis: Dict[str, Any]) -> Any:
+        from ai_engine.agents.artifact_contracts import (
+            EvidenceTier,
+            SkillGap,
+            SkillGapMap,
+            SkillStrength,
+        )
+
+        raw_score = gap_analysis.get("compatibility_score", 0.0)
+        try:
+            score = float(raw_score)
+        except Exception:
+            score = 0.0
+        if score > 1.0:
+            score = score / 100.0
+        score = max(0.0, min(1.0, score))
+
+        gaps: List[SkillGap] = []
+        for g in gap_analysis.get("skill_gaps", []) if isinstance(gap_analysis.get("skill_gaps"), list) else []:
+            if not isinstance(g, dict):
+                continue
+            skill = str(g.get("skill") or "").strip()
+            if not skill:
+                continue
+            user_level = str(g.get("current_level") or "none").lower()
+            if user_level not in {"expert", "advanced", "intermediate", "beginner", "none"}:
+                user_level = "none"
+            target_level = str(g.get("required_level") or "intermediate").lower()
+            if target_level not in {"expert", "advanced", "intermediate", "beginner"}:
+                target_level = "intermediate"
+            severity = str(g.get("gap_severity") or "medium").lower()
+            severity_map = {
+                "critical": "critical",
+                "high": "high",
+                "significant": "high",
+                "moderate": "medium",
+                "medium": "medium",
+                "minor": "low",
+                "low": "low",
+            }
+            severity = severity_map.get(severity, "medium")
+            gaps.append(SkillGap(
+                skill=skill,
+                user_level=user_level,
+                target_level=target_level,
+                severity=severity,
+                closing_strategy=str(g.get("recommendation") or "").strip() or None,
+            ))
+
+        strengths: List[SkillStrength] = []
+        for s in gap_analysis.get("strengths", []) if isinstance(gap_analysis.get("strengths"), list) else []:
+            if isinstance(s, dict):
+                area = str(s.get("area") or "").strip()
+                if not area:
+                    continue
+                strengths.append(SkillStrength(area=area, evidence=str(s.get("description") or "").strip()))
+
+        transferable = gap_analysis.get("transferable_skills", []) if isinstance(gap_analysis.get("transferable_skills"), list) else []
+        risk_areas = gap_analysis.get("risk_areas", []) if isinstance(gap_analysis.get("risk_areas"), list) else []
+
+        return SkillGapMap(
+            application_id=None,
+            created_by_agent="cipher",
+            confidence=0.7,
+            evidence_tier=EvidenceTier.DERIVED,
+            overall_alignment=score,
+            gaps=gaps,
+            strengths=strengths,
+            transferable_skills=[str(x) for x in transferable if str(x).strip()],
+            risk_areas=[str(x) for x in risk_areas if str(x).strip()],
+        )
+
+    @staticmethod
+    def _build_tailored_bundle_artifact(
+        *,
+        cv_html: str,
+        cl_html: str,
+        ps_html: str,
+        portfolio_html: str,
+        resume_html: str,
+        application_id: Optional[str],
+        created_by_agent: str,
+    ) -> Any:
+        from ai_engine.agents.artifact_contracts import (
+            DocumentRecord,
+            EvidenceTier,
+            TailoredDocumentBundle,
+        )
+
+        docs: Dict[str, str] = {
+            "cv": cv_html,
+            "cover_letter": cl_html,
+            "personal_statement": ps_html,
+            "portfolio": portfolio_html,
+            "resume": resume_html,
+        }
+
+        records: Dict[str, DocumentRecord] = {}
+        for key, html in docs.items():
+            html_clean = (html or "").strip()
+            if not html_clean:
+                continue
+            records[key] = DocumentRecord(
+                doc_type=key,
+                label=key.replace("_", " ").title(),
+                html_content=html_clean,
+                word_count=len(html_clean.split()),
+            )
+
+        return TailoredDocumentBundle(
+            application_id=application_id,
+            created_by_agent=created_by_agent,
+            confidence=0.7,
+            evidence_tier=EvidenceTier.DERIVED,
+            documents=records,
+        )
+
+    @staticmethod
+    def _build_final_pack_artifact(
+        *,
+        benchmark_data: Dict[str, Any],
+        gap_analysis: Dict[str, Any],
+        company: str,
+        company_intel: Dict[str, Any],
+        cv_html: str,
+        cl_html: str,
+        ps_html: str,
+        portfolio_html: str,
+        resume_html: str,
+        sentinel_validation: Optional[Dict[str, Any]],
+        elapsed_seconds: float,
+    ) -> Any:
+        from ai_engine.agents.artifact_contracts import (
+            CompanyIntelReport,
+            EvidenceTier,
+            FinalApplicationPack,
+            ValidationReport,
+            ValidationFinding,
+        )
+
+        benchmark_artifact = PipelineRuntime._build_benchmark_profile_artifact(
+            job_title=str(benchmark_data.get("job_title") or ""),
+            company=str(benchmark_data.get("company") or company or ""),
+            benchmark_data=benchmark_data,
+        )
+        gap_artifact = PipelineRuntime._build_skill_gap_map_artifact(gap_analysis=gap_analysis)
+        tailored_bundle = PipelineRuntime._build_tailored_bundle_artifact(
+            cv_html=cv_html,
+            cl_html=cl_html,
+            ps_html=ps_html,
+            portfolio_html=portfolio_html,
+            resume_html=resume_html,
+            application_id=None,
+            created_by_agent="nova",
+        )
+
+        intel_summary = ""
+        if isinstance(company_intel, dict):
+            intel_summary = str(company_intel.get("summary") or company_intel.get("company_summary") or "")
+        intel_artifact = CompanyIntelReport(
+            application_id=None,
+            created_by_agent="recon",
+            confidence=0.7,
+            evidence_tier=EvidenceTier.DERIVED,
+            company=company,
+            summary=intel_summary,
+            raw=company_intel if isinstance(company_intel, dict) else {},
+        )
+
+        validation_artifact = None
+        if sentinel_validation:
+            findings: List[ValidationFinding] = []
+            for f in sentinel_validation.get("findings_summary", []) if isinstance(sentinel_validation.get("findings_summary"), list) else []:
+                if not isinstance(f, dict):
+                    continue
+                sev = str(f.get("severity") or "warning")
+                if sev not in {"error", "warning", "info"}:
+                    sev = "warning"
+                findings.append(ValidationFinding(
+                    severity=sev,
+                    rule=str(f.get("code") or "runtime.critic"),
+                    message=str(f.get("message") or ""),
+                    target_doc_type=str(f.get("doc_type") or ""),
+                ))
+            validation_artifact = ValidationReport(
+                application_id=None,
+                created_by_agent="validation_critic",
+                confidence=1.0,
+                evidence_tier=EvidenceTier.DERIVED,
+                overall_score=float(sentinel_validation.get("overall_score", 0.0) or 0.0),
+                findings=findings,
+                docs_passed=[str(x) for x in (sentinel_validation.get("docs_passed") or [])],
+                docs_failed=[str(x) for x in (sentinel_validation.get("docs_failed") or [])],
+            )
+
+        return FinalApplicationPack(
+            application_id=None,
+            created_by_agent="nova",
+            confidence=0.7,
+            evidence_tier=EvidenceTier.DERIVED,
+            benchmark=benchmark_artifact,
+            company_intel=intel_artifact,
+            gap_map=gap_artifact,
+            tailored_docs=tailored_bundle,
+            validation=validation_artifact,
+            elapsed_seconds=max(0.0, float(elapsed_seconds or 0.0)),
+        )
+
+    async def _run_critic_gate(
+        self,
+        *,
+        phase: str,
+        artifact: Any,
+        review: str,
+        user_id: str,
+        required_modules: Optional[List[str]] = None,
+        progress_pass: int,
+        progress_fail: int,
+        message_pass: str,
+        message_fail: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Run ValidationCritic as a soft gate and emit a phase-scoped signal.
+
+        This never raises. On any failure we log and return None so pipeline
+        progress is not blocked.
+        """
+        try:
+            from ai_engine.agents.validation_critic import ValidationCritic, report_passed
+
+            critic = ValidationCritic()
+            if review == "benchmark":
+                report = critic.review_benchmark(artifact)
+            elif review == "gap_map":
+                report = critic.review_gap_map(artifact)
+            elif review == "documents":
+                report = critic.review_documents(artifact, required_modules=required_modules)
+            elif review == "final_pack":
+                report = critic.review_final_pack(artifact)
+            elif review == "plan":
+                report = critic.review_plan(artifact)
+            else:
+                logger.warning("pipeline_runtime.critic_unknown_review", phase=phase, review=review)
+                return None
+
+            passed = bool(report_passed(report))
+            error_findings = [f for f in report.findings if getattr(f, "severity", "") == "error"]
+            warning_findings = [f for f in report.findings if getattr(f, "severity", "") == "warning"]
+
+            summary = {
+                "passed": passed,
+                "overall_score": float(report.overall_score),
+                "docs_passed": list(report.docs_passed),
+                "docs_failed": list(report.docs_failed),
+                "error_count": len(error_findings),
+                "warning_count": len(warning_findings),
+                "finding_count": len(report.findings),
+                "findings_summary": [
+                    {
+                        "code": getattr(f, "rule", "runtime.critic"),
+                        "severity": getattr(f, "severity", "warning"),
+                        "message": getattr(f, "message", ""),
+                        "doc_type": getattr(f, "target_doc_type", None),
+                    }
+                    for f in report.findings[:20]
+                ],
+            }
+
+            if getattr(self, "_artifact_store", None) is not None:
+                try:
+                    await self._artifact_store.put(
+                        report,
+                        user_id=user_id,
+                        agent_name="validation_critic",
+                        artifact_type="ValidationReport",
+                    )
+                except Exception as artifact_err:
+                    logger.warning(
+                        "pipeline_runtime.critic_artifact_persist_failed",
+                        phase=phase,
+                        error=str(artifact_err)[:200],
+                    )
+
+            await self.sink.emit(PipelineEvent(
+                event_type="validation_passed" if passed else "validation_failed",
+                phase=phase,
+                progress=progress_pass if passed else progress_fail,
+                message=message_pass if passed else message_fail,
+                status="completed" if passed else "warning",
+                data={
+                    "overall_score": summary["overall_score"],
+                    "docs_passed": summary["docs_passed"],
+                    "docs_failed": summary["docs_failed"],
+                    "error_count": summary["error_count"],
+                    "warning_count": summary["warning_count"],
+                    "finding_count": summary["finding_count"],
+                },
+            ))
+
+            try:
+                from ai_engine.agents.orchestration import (
+                    EventLevel as _EL,
+                    OrchestrationEvent as _OE,
+                )
+
+                bus = getattr(self, "_orchestration_bus", None)
+                if bus is not None:
+                    await bus.publish(_OE(
+                        event_name=(
+                            "orchestration.validation_passed"
+                            if passed else "orchestration.validation_failed"
+                        ),
+                        application_id=self.config.application_id or None,
+                        agent_name="validation_critic",
+                        level=_EL.INFO if passed else _EL.WARNING,
+                        message=(message_pass if passed else message_fail),
+                        data={
+                            "phase": phase,
+                            "progress": progress_pass if passed else progress_fail,
+                            **summary,
+                        },
+                    ))
+            except Exception:
+                pass
+
+            return summary
+        except Exception as critic_err:
+            logger.warning("pipeline_runtime.critic_gate_skipped", phase=phase, error=str(critic_err)[:200])
+            return None
 
     async def _persist_to_document_library(
         self,
