@@ -921,7 +921,29 @@ class PipelineRuntime:
         # First-time consumers self.await_company_intel() with a strict
         # timeout. Net p95 saving: ~15-25s on cold runs.
         intel_task: Optional[asyncio.Task] = None
+        # ── W4: try prefetch cache first ─────────────────────────────
+        # If POST /api/intel/prefetch was called for this (jd_text, job_title)
+        # earlier, the intel result is already sitting in JDAnalysisCache
+        # under the "intel_" namespace. Skip the launch, resolve the awaitable
+        # synchronously, and shave ~8-20s off the pipeline.
         try:
+            from ai_engine.cache import get_jd_cache, JDAnalysisCache
+            intel_cache_key = "intel_" + JDAnalysisCache.hash_jd(jd_text, job_title)
+            cached_intel = get_jd_cache().get(intel_cache_key)
+        except Exception:
+            cached_intel = None
+        if isinstance(cached_intel, dict) and cached_intel:
+            async def _cached_intel_future() -> Dict[str, Any]:
+                return cached_intel  # type: ignore[return-value]
+            intel_task = asyncio.create_task(
+                _cached_intel_future(), name="recon.company_intel_cached"
+            )
+            self._intel_task = intel_task
+            self._intel_started_at = time.perf_counter()
+            logger.info("pipeline_runtime.intel_cache_hit",
+                        key=intel_cache_key[:24])
+        else:
+          try:
             from ai_engine.chains.company_intel import CompanyIntelChain
             intel_chain = CompanyIntelChain(ai)
             intel_task = asyncio.create_task(
@@ -936,7 +958,7 @@ class PipelineRuntime:
             # Stash on self so any consumer in this run can await it.
             self._intel_task = intel_task
             self._intel_started_at = time.perf_counter()
-        except Exception as intel_setup_err:
+          except Exception as intel_setup_err:
             logger.warning("pipeline_runtime.intel_setup_failed",
                            error=str(intel_setup_err)[:200])
             self._failed_modules.append(
@@ -945,7 +967,7 @@ class PipelineRuntime:
             self._finish_phase("recon")
             self._intel_task = None
             self._intel_started_at = None
-        else:
+          else:
             # Recon is now "in flight" — phase will be finalised when the
             # first downstream consumer awaits company_intel. Keep the
             # phase counter "open" by skipping _finish_phase here; it's
