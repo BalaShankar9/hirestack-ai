@@ -1,5 +1,11 @@
 """
 Billing routes — Stripe checkout, portal, webhooks, plan info
+
+Feature flag: set BILLING_ENABLED=true to expose Stripe checkout / portal
+endpoints. Defaults to false so a fresh deployment cannot accidentally
+attempt charges before Stripe credentials are wired. The /status and
+/quota-check endpoints remain available so the frontend can render a
+clean "billing disabled" state without breaking dashboards.
 """
 from typing import Dict, Any
 from urllib.parse import urlparse
@@ -16,6 +22,25 @@ import structlog
 
 logger = structlog.get_logger()
 router = APIRouter()
+
+
+def _billing_enabled() -> bool:
+    """Single source of truth for whether the billing surface is live."""
+    return _os.getenv("BILLING_ENABLED", "false").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def _require_billing_enabled() -> None:
+    if not _billing_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Billing is currently disabled. The platform is in beta; "
+                "set BILLING_ENABLED=true once Stripe credentials are "
+                "configured."
+            ),
+        )
 
 # Dynamic frontend URL: prefer FRONTEND_URL env, fall back to first CORS origin
 _FRONTEND_URL = _os.getenv("FRONTEND_URL", "https://hirestack.tech")
@@ -49,7 +74,23 @@ async def get_billing_status(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get current plan, usage, and limits.
-    TESTING MODE: returns pro plan with unlimited limits if no org/sub found."""
+
+    When BILLING_ENABLED=false, returns a permissive 'billing_disabled'
+    plan so the frontend can render dashboards without 503s. When the
+    flag is on but no org/sub exists, returns conservative free defaults."""
+    if not _billing_enabled():
+        return {
+            "plan": "billing_disabled",
+            "plan_name": "Beta (Billing Disabled)",
+            "billing_enabled": False,
+            "usage": {},
+            "limits": {
+                "applications": -1, "exports": -1, "ats_scans": -1,
+                "ai_calls": -1, "members": -1, "candidates": -1,
+            },
+            "status": "active",
+        }
+
     from app.services.org import OrgService
     org_service = OrgService()
     try:
@@ -82,6 +123,7 @@ async def create_checkout(
     req: CheckoutRequest, current_user: Dict[str, Any] = Depends(get_current_user
 )):
     """Create a Stripe checkout session for upgrading."""
+    _require_billing_enabled()
     if req.plan not in ("pro", "enterprise"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid plan")
 
@@ -109,6 +151,7 @@ async def create_portal(
     request: Request,
     current_user: Dict[str, Any] = Depends(get_current_user)):
     """Open Stripe billing portal for managing subscription."""
+    _require_billing_enabled()
     from app.services.org import OrgService
     org_service = OrgService()
     orgs = await org_service.get_user_orgs(current_user["id"])
@@ -126,6 +169,7 @@ async def create_portal(
 @limiter.limit("100/minute")
 async def stripe_webhook(request: Request):
     """Handle Stripe webhook events."""
+    _require_billing_enabled()
     import os
     payload = await request.body()
     sig = request.headers.get("stripe-signature", "")
