@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import inspect
 
-import pytest
 
 from app.services import quality_scorer as qs
 from app.core.metrics import MetricsCollector

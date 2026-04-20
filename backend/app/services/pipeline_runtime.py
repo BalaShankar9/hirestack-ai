@@ -1928,12 +1928,17 @@ class PipelineRuntime:
             from app.core.metrics import MetricsCollector
 
             docs_to_score: Dict[str, str] = {}
-            if cv_html: docs_to_score["cv"] = cv_html
-            if cl_html: docs_to_score["cover_letter"] = cl_html
-            if ps_html: docs_to_score["personal_statement"] = ps_html
-            if portfolio_html: docs_to_score["portfolio"] = portfolio_html
+            if cv_html:
+                docs_to_score["cv"] = cv_html
+            if cl_html:
+                docs_to_score["cover_letter"] = cl_html
+            if ps_html:
+                docs_to_score["personal_statement"] = ps_html
+            if portfolio_html:
+                docs_to_score["portfolio"] = portfolio_html
             effective_resume = resume_html or benchmark_resume_html
-            if effective_resume: docs_to_score["resume"] = effective_resume
+            if effective_resume:
+                docs_to_score["resume"] = effective_resume
             for k, v in (generated_docs or {}).items():
                 if isinstance(v, str) and v.strip() and k not in docs_to_score:
                     docs_to_score[k] = v
@@ -2470,7 +2475,7 @@ class PipelineRuntime:
             if getattr(self, "_artifact_store", None) is not None:
                 try:
                     await self._artifact_store.put(
-                        report, user_id=user_id,
+                        report, user_id=self.config.user_id,
                         agent_name="validation_critic",
                         artifact_type="ValidationReport",
                     )

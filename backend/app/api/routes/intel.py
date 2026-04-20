@@ -33,11 +33,10 @@ browsing job postings.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 from typing import Any, Dict, Optional
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_current_user
