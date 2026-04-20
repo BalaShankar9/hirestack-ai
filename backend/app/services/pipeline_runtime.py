@@ -61,6 +61,15 @@ class RuntimeConfig:
 #  Event system — pluggable sinks decouple orchestration from delivery
 # ═══════════════════════════════════════════════════════════════════════
 
+# W7: explicit schema version on every outbound pipeline event envelope.
+# Frontend / webhook / any external consumer can pin to a major version
+# and reject payloads whose major differs. Bump this constant (and the
+# frontend's matching MIN_ACCEPTED_SCHEMA) only for breaking changes.
+# MINOR bumps mean additive fields (safe). MAJOR bumps mean removed or
+# renamed fields (breaking).
+PIPELINE_EVENT_SCHEMA_VERSION = "1.0"
+
+
 @dataclass
 class PipelineEvent:
     """A single event emitted during pipeline execution."""
@@ -112,6 +121,7 @@ class SSESink(EventSink):
     async def emit(self, event: PipelineEvent) -> None:
         if event.event_type == "agent_status":
             sse_data = {
+                "schema_version": PIPELINE_EVENT_SCHEMA_VERSION,
                 "pipeline_name": event.pipeline_name,
                 "stage": event.stage,
                 "status": event.status,
@@ -121,6 +131,7 @@ class SSESink(EventSink):
             sse_str = f"event: agent_status\ndata: {json.dumps(sse_data)}\n\n"
         else:
             sse_data = {
+                "schema_version": PIPELINE_EVENT_SCHEMA_VERSION,
                 "phase": event.phase,
                 "progress": event.progress,
                 "message": event.message,
