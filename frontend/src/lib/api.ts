@@ -231,6 +231,27 @@ class APIClient {
     return this.request(`/benchmark/job/${jobId}`);
   }
 
+  // Intel prefetch (W4) — speculatively warm up company intelligence
+  // the moment a JD is selected. Best-effort: swallow errors so UX
+  // never breaks if the endpoint is unreachable.
+  async prefetchIntel(params: {
+    jd_text: string;
+    job_title: string;
+    company: string;
+    company_url?: string | null;
+  }): Promise<{ status: "cached" | "queued" | "skipped"; jd_hash: string } | null> {
+    try {
+      return await this.request<{
+        status: "cached" | "queued" | "skipped";
+        jd_hash: string;
+      }>("/intel/prefetch", { method: "POST", body: params });
+    } catch (e) {
+      // Prefetch failures must NEVER surface to the user — this is a
+      // speculative warm-up, not a critical path.
+      return null;
+    }
+  }
+
   // Gap Analysis
   async analyzeGaps(profileId: string, benchmarkId: string) {
     return this.request("/gaps/analyze", {
