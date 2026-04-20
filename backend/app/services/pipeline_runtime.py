@@ -667,8 +667,93 @@ class PipelineRuntime:
             )
             await self.sink.emit(pe)
 
+        # ── v4 orchestration: BuildPlan + ArtifactStore + EventBusBridge ─
+        # Wires the new typed orchestration foundation in beside the existing
+        # 7-phase execution path. Failures here never abort the pipeline —
+        # the legacy path is still authoritative this round; the v4 layer
+        # adds a typed BuildPlan artifact + Critic gates + truthful progress
+        # + a bridge that forwards typed OrchestrationEvents onto the same
+        # PipelineEvent sink so any future agent emits land in SSE/DB.
+        build_plan = None
+        artifact_store = None
+        progress_calc = None
+        orchestration_bus = None
+        orchestration_bridge = None
+        try:
+            from ai_engine.agents.build_planner import BuildPlanner
+            from ai_engine.agents.orchestration import InMemoryEventBus
+            from app.services.artifact_store import ArtifactStore as _ArtifactStore
+            from app.services.event_bus_bridge import EventBusBridge
+            from app.services.progress_calculator import ProgressCalculator
+
+            orchestration_bus = InMemoryEventBus()
+            orchestration_bridge = EventBusBridge(orchestration_bus, self.sink)
+            artifact_store = _ArtifactStore(sb, tables)
+            build_plan = BuildPlanner().plan(
+                application_id=self.config.application_id or None,
+                job_title=job_title,
+                company=company,
+                requested_modules=self.config.requested_modules,
+            )
+            progress_calc = ProgressCalculator(plan=build_plan)
+            # Persist the plan for replay / Mission Control.
+            await artifact_store.put(
+                build_plan,
+                user_id=user_id,
+                agent_name="build_planner",
+                artifact_type="BuildPlan",
+            )
+            await self.sink.emit(PipelineEvent(
+                event_type="plan_created",
+                phase="recon",
+                progress=1,
+                message="Build plan created.",
+                data={
+                    "stage_count": len(build_plan.stages),
+                    "stage_ids": [s.stage_id for s in build_plan.stages],
+                    "modules": build_plan.requested_modules,
+                },
+            ))
+            # Also publish through the typed bus so the bridge round-trips
+            # and we have at least one verified end-to-end forward in prod.
+            try:
+                from ai_engine.agents.orchestration import (
+                    EventLevel as _EL,
+                    OrchestrationEvent as _OE,
+                )
+                await orchestration_bus.publish(_OE(
+                    event_name="orchestration.plan_created",
+                    application_id=self.config.application_id or None,
+                    agent_name="build_planner",
+                    level=_EL.INFO,
+                    message="Build plan created.",
+                    data={
+                        "phase": "recon",
+                        "progress": 1,
+                        "stage_count": len(build_plan.stages),
+                        "stage_ids": [s.stage_id for s in build_plan.stages],
+                        "modules": build_plan.requested_modules,
+                    },
+                ))
+            except Exception:
+                pass
+        except Exception as plan_err:
+            logger.warning("pipeline_runtime.build_plan_skipped",
+                           error=str(plan_err)[:200])
+        # Stash on self so the rest of the pipeline (and tests) can reach it.
+        self._build_plan = build_plan
+        self._artifact_store = artifact_store
+        self._progress_calc = progress_calc
+        self._orchestration_bus = orchestration_bus
+        self._orchestration_bridge = orchestration_bridge
+
         # ── Phase 0: Company Intelligence (best-effort, parallel-ready) ─
         self._begin_phase("recon")
+        if progress_calc is not None:
+            try:
+                progress_calc.mark_started("recon.intel")
+            except Exception:
+                pass
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="recon", progress=3,
             message="Gathering company intelligence…",
@@ -770,6 +855,41 @@ class PipelineRuntime:
             message="Agent: parsing resume…",
         ))
 
+        # ── Seed planned document library rows so the UI shows all 6 ─
+        # benchmark slots immediately as "planned", flipping to "ready"
+        # or "error" as each generation completes. Best-effort — never
+        # fatal: a failure here just means the UI catches up at persist.
+        application_id = self.config.application_id
+        if application_id and "document_library" in tables:
+            try:
+                from app.services.document_library import DocumentLibraryService as _DLS
+                _seed_service = _DLS(sb, tables)
+                # Only seed if no benchmark rows exist yet for this app — re-runs
+                # of the same application should reuse existing planned rows.
+                _existing = await _seed_service.get_application_documents(user_id, application_id)
+                _has_bench = bool(_existing.get("benchmark"))
+                _has_tailored = bool(_existing.get("tailored"))
+                if not _has_bench:
+                    await _seed_service.create_benchmark_library(user_id, application_id)
+                    logger.info("pipeline_runtime.benchmark_planned_seeded", application_id=application_id)
+                if not _has_tailored:
+                    # Seed canonical tailored slots up-front (CV, Resume, Cover
+                    # Letter, Personal Statement, Portfolio). Planner-driven
+                    # extras land later via persist's upsert.
+                    await _seed_service.create_tailored_documents_from_plan(
+                        user_id, application_id,
+                        [
+                            {"key": "cv", "label": "Tailored CV"},
+                            {"key": "resume", "label": "Tailored Résumé"},
+                            {"key": "cover_letter", "label": "Tailored Cover Letter"},
+                            {"key": "personal_statement", "label": "Tailored Personal Statement"},
+                            {"key": "portfolio", "label": "Tailored Portfolio"},
+                        ],
+                    )
+                    logger.info("pipeline_runtime.tailored_planned_seeded", application_id=application_id)
+            except Exception as seed_err:
+                logger.warning("pipeline_runtime.seed_planned_rows_failed", error=str(seed_err)[:200])
+
         user_profile: dict = {}
         if resume_text.strip():
             await self.sink.emit(PipelineEvent(
@@ -865,8 +985,12 @@ class PipelineRuntime:
         ))
 
         # Start independent benchmark artifacts early so they overlap with gap analysis.
+        # Both CV (long-form) and Resume (1-2 page) are first-class benchmark documents.
         benchmark_cv_html = ""
+        benchmark_resume_html = ""
+        resume_html = ""  # tailored resume — defined here to avoid late-stage NameError in Nova
         benchmark_cv_task: Optional[asyncio.Task[str]] = None
+        benchmark_resume_task: Optional[asyncio.Task[str]] = None
         doc_pack_plan_task: Optional[asyncio.Task[Any]] = None
 
         try:
@@ -874,6 +998,13 @@ class PipelineRuntime:
             bc = BenchmarkBuilderChain(ai)
             benchmark_cv_task = asyncio.create_task(
                 bc.create_benchmark_cv_html(
+                    user_profile=user_profile, benchmark_data=benchmark_data,
+                    job_title=job_title, company=company, jd_text=jd_text,
+                )
+            )
+            # Resume = US-style 1–2 page achievement-focused, generated alongside CV.
+            benchmark_resume_task = asyncio.create_task(
+                bc.create_resume_html(
                     user_profile=user_profile, benchmark_data=benchmark_data,
                     job_title=job_title, company=company, jd_text=jd_text,
                 )
@@ -1057,6 +1188,119 @@ class PipelineRuntime:
                 benchmark_cv_html = await benchmark_cv_task
             except Exception as bcv_err:
                 logger.warning("pipeline_runtime.benchmark_cv_failed", error=str(bcv_err)[:200])
+
+        if benchmark_resume_task is not None:
+            try:
+                benchmark_resume_html = await benchmark_resume_task
+            except Exception as br_err:
+                logger.warning("pipeline_runtime.benchmark_resume_failed", error=str(br_err)[:200])
+
+        # ── Generate benchmark core document set (canonical 6) ────────
+        # The canonical Benchmark base set is: CV, Resume, Cover Letter,
+        # Personal Statement, Portfolio, Learning Plan.
+        # CV + Resume are already running in parallel above (benchmark_cv_task /
+        # benchmark_resume_task). Here we generate the remaining 4 with per-doc
+        # isolation: each gets its own try/except so one failure cannot collapse
+        # the whole benchmark foundation. Learning Plan is sourced from Quill's
+        # roadmap result later — we record a placeholder here so the UI shows
+        # all 6 prefixed slots from the start.
+        benchmark_documents: Dict[str, str] = {}
+        # cover_letter, personal_statement, portfolio generated here.
+        # learning_plan is filled later when roadmap completes.
+        BENCHMARK_REMAINING_TYPES = [
+            ("cover_letter", "Cover Letter"),
+            ("personal_statement", "Personal Statement"),
+            ("portfolio", "Portfolio"),
+        ]
+        try:
+            from ai_engine.chains.adaptive_document import AdaptiveDocumentChain
+            bench_adaptive = AdaptiveDocumentChain(ai)
+            intel_summary = ""
+            if company_intel and isinstance(company_intel, dict):
+                intel_summary = company_intel.get("summary", "")
+
+            bench_context = {
+                "job_title": job_title,
+                "company": company,
+                "jd_text": jd_text,
+                "user_profile": user_profile,
+                "benchmark_data": benchmark_data,
+                "gap_analysis": gap_analysis,
+                "strengths_summary": ", ".join(
+                    s.get("area", "") for s in gap_analysis.get("strengths", [])[:8]
+                    if isinstance(s, dict)
+                ) or "None identified",
+                "benchmark_keywords": ", ".join(keywords[:15]),
+                "company_intel": intel_summary,
+            }
+
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="cipher",
+                message="Generating benchmark document foundation (canonical 6 docs)…",
+                status="running",
+                data={"agent": "cipher", "source": "benchmark_core_docs"},
+            ))
+
+            # Per-doc isolation: each generation runs with its own try/except +
+            # one bounded retry. Failures are recorded but never block other docs.
+            async def _gen_with_retry(doc_key: str, doc_label: str) -> Optional[str]:
+                for attempt in (1, 2):
+                    try:
+                        result = await bench_adaptive.generate(
+                            doc_type=doc_key,
+                            doc_label=doc_label,
+                            context=bench_context,
+                            mode="benchmark",
+                        )
+                        if isinstance(result, str) and result.strip():
+                            return result
+                    except Exception as ex:
+                        logger.warning(
+                            f"pipeline_runtime.benchmark_core_{doc_key}_attempt_{attempt}_failed",
+                            error=str(ex)[:200],
+                        )
+                        if attempt == 1:
+                            await asyncio.sleep(1.5)
+                            continue
+                self._failed_modules.append({"module": f"benchmark_{doc_key}", "error": "generation_failed_after_retry"})
+                return None
+
+            # Run remaining 3 in parallel — isolated, so one failure cannot
+            # take down the others.
+            bench_tasks = [
+                _gen_with_retry(key, label) for key, label in BENCHMARK_REMAINING_TYPES
+            ]
+            bench_results = await asyncio.gather(*bench_tasks, return_exceptions=True)
+            for (key, _label), result in zip(BENCHMARK_REMAINING_TYPES, bench_results):
+                if isinstance(result, Exception):
+                    logger.warning(
+                        f"pipeline_runtime.benchmark_core_{key}_unexpected",
+                        error=str(result)[:200],
+                    )
+                elif isinstance(result, str) and result.strip():
+                    benchmark_documents[key] = result
+
+            ready_count = (
+                len(benchmark_documents)
+                + (1 if benchmark_cv_html else 0)
+                + (1 if benchmark_resume_html else 0)
+            )
+            logger.info(
+                "pipeline_runtime.benchmark_core_docs_done",
+                count=len(benchmark_documents),
+                cv=bool(benchmark_cv_html),
+                resume=bool(benchmark_resume_html),
+                ready=ready_count,
+            )
+
+            await self.sink.emit(PipelineEvent(
+                event_type="detail", phase="cipher",
+                message=f"Benchmark foundation: {ready_count}/6 core documents ready ✓",
+                status="completed",
+                data={"agent": "cipher", "source": "benchmark_core_docs", "ready": ready_count, "target": 6},
+            ))
+        except Exception as bench_core_err:
+            logger.warning("pipeline_runtime.benchmark_core_docs_failed", error=str(bench_core_err)[:200])
 
         n_docs = len(discovered_documents)
         await self.sink.emit(PipelineEvent(
@@ -1269,7 +1513,6 @@ class PipelineRuntime:
 
         ps_raw, pf_raw = await asyncio.gather(
             _run_ps(), _run_pf(),
-            pf_pipe.execute(doc_context),
             return_exceptions=True,
         )
 
@@ -1318,7 +1561,6 @@ class PipelineRuntime:
 
         # ── Phase 4b: Extra required docs via AdaptiveDocumentChain ───
         generated_docs: Dict[str, str] = {}
-        benchmark_documents: Dict[str, str] = {}
 
         if doc_pack_plan and doc_pack_plan.required:
             await self.sink.emit(PipelineEvent(
@@ -1480,69 +1722,110 @@ class PipelineRuntime:
 
         from app.core.sanitize import sanitize_html
 
-        response = self._format_response(
-            benchmark_data=benchmark_data,
-            gap_analysis=gap_analysis,
-            roadmap=roadmap if isinstance(roadmap, dict) else {},
-            cv_html=sanitize_html(cv_html) if cv_html else "",
-            cl_html=sanitize_html(cl_html) if cl_html else "",
-            ps_html=sanitize_html(ps_html) if ps_html else "",
-            portfolio_html=sanitize_html(portfolio_html) if portfolio_html else "",
-            validation=validation,
-            keywords=keywords,
-            job_title=job_title,
-            benchmark_cv_html=sanitize_html(benchmark_cv_html) if benchmark_cv_html else "",
-        )
+        # ── ISOLATED ASSEMBLY: failures from here on must NEVER discard
+        # successful Quill/Forge work. Each block has its own try/except so a
+        # bug in formatting does not nuke persistence and vice versa.
 
-        # ── Attach dynamic doc-pack fields ────────────────────────────
-        response["discoveredDocuments"] = discovered_documents
-        response["generatedDocuments"] = {
-            k: sanitize_html(v) for k, v in generated_docs.items() if v
-        }
-        response["benchmarkDocuments"] = {
-            k: (sanitize_html(v) if isinstance(v, str) else v)
-            for k, v in benchmark_documents.items()
-        }
-        # Also add core benchmark CV to benchmark docs
-        if benchmark_cv_html:
-            response["benchmarkDocuments"]["cv"] = sanitize_html(benchmark_cv_html)
+        # Resolve effective resume HTML once (tailored if available, else benchmark).
+        effective_resume_html = resume_html or benchmark_resume_html or ""
 
-        response["documentStrategy"] = (
-            doc_pack_plan.strategy if doc_pack_plan else ""
-        )
-        response["docPackPlan"] = (
-            doc_pack_plan.to_dict() if doc_pack_plan else None
-        )
-        if company_intel:
-            response["companyIntel"] = company_intel
+        response: Dict[str, Any] = {}
+        try:
+            response = self._format_response(
+                benchmark_data=benchmark_data,
+                gap_analysis=gap_analysis,
+                roadmap=roadmap if isinstance(roadmap, dict) else {},
+                cv_html=sanitize_html(cv_html) if cv_html else "",
+                cl_html=sanitize_html(cl_html) if cl_html else "",
+                ps_html=sanitize_html(ps_html) if ps_html else "",
+                portfolio_html=sanitize_html(portfolio_html) if portfolio_html else "",
+                validation=validation,
+                keywords=keywords,
+                job_title=job_title,
+                benchmark_cv_html=sanitize_html(benchmark_cv_html) if benchmark_cv_html else "",
+                resume_html=sanitize_html(effective_resume_html) if effective_resume_html else "",
+            )
+        except Exception as fmt_err:
+            logger.exception("pipeline_runtime.format_response_failed", error=str(fmt_err)[:300])
+            self._failed_modules.append({"module": "format_response", "error": str(fmt_err)[:200]})
+            # Build a minimal safe response so downstream callers still get the work that succeeded.
+            response = {
+                "benchmark": benchmark_data,
+                "gapAnalysis": gap_analysis,
+                "documents": {
+                    "cv": sanitize_html(cv_html) if cv_html else "",
+                    "coverLetter": sanitize_html(cl_html) if cl_html else "",
+                    "personalStatement": sanitize_html(ps_html) if ps_html else "",
+                    "portfolio": sanitize_html(portfolio_html) if portfolio_html else "",
+                    "resume": sanitize_html(effective_resume_html) if effective_resume_html else "",
+                },
+                "_recovered_from_format_error": True,
+            }
 
-        # Agent metadata
-        response["meta"] = {
-            "quality_scores": {"cv": cv_quality, "cover_letter": cl_quality},
-            "fact_check": cv_fact_check,
-            "agent_powered": True,
-            "final_analysis": cv_result.final_analysis_report if cv_result else None,
-            "validation_report": cv_result.validation_report if cv_result else None,
-            "citations": cv_result.citations if cv_result else None,
-            "evidence_summary": self._build_evidence_summary(cv_result),
-            "workflow_state": cv_result.workflow_state if cv_result else None,
-        }
-
-        # ── Persist to document_library table ─────────────────────────
-        self._begin_phase("persist")
-        await self._persist_to_document_library(
-            sb=sb, tables=tables, user_id=user_id,
-            cv_html=sanitize_html(cv_html) if cv_html else "",
-            cl_html=sanitize_html(cl_html) if cl_html else "",
-            ps_html=sanitize_html(ps_html) if ps_html else "",
-            portfolio_html=sanitize_html(portfolio_html) if portfolio_html else "",
-            benchmark_cv_html=sanitize_html(benchmark_cv_html) if benchmark_cv_html else "",
-            generated_docs={k: sanitize_html(v) for k, v in generated_docs.items() if v},
-            benchmark_docs={
+        # ── Attach dynamic doc-pack fields (each isolated) ────────────
+        try:
+            response["discoveredDocuments"] = discovered_documents
+            response["generatedDocuments"] = {
+                k: sanitize_html(v) for k, v in generated_docs.items() if v
+            }
+            bench_dict: Dict[str, Any] = {
                 k: (sanitize_html(v) if isinstance(v, str) else v)
                 for k, v in benchmark_documents.items()
-            },
-        )
+            }
+            if benchmark_cv_html:
+                bench_dict["cv"] = sanitize_html(benchmark_cv_html)
+            if benchmark_resume_html:
+                bench_dict["resume"] = sanitize_html(benchmark_resume_html)
+            response["benchmarkDocuments"] = bench_dict
+
+            response["documentStrategy"] = (
+                doc_pack_plan.strategy if doc_pack_plan else ""
+            )
+            response["docPackPlan"] = (
+                doc_pack_plan.to_dict() if doc_pack_plan else None
+            )
+            if company_intel:
+                response["companyIntel"] = company_intel
+        except Exception as augment_err:
+            logger.warning("pipeline_runtime.response_augment_failed", error=str(augment_err)[:200])
+            self._failed_modules.append({"module": "response_augment", "error": str(augment_err)[:200]})
+
+        # Agent metadata (isolated)
+        try:
+            response["meta"] = {
+                "quality_scores": {"cv": cv_quality, "cover_letter": cl_quality},
+                "fact_check": cv_fact_check,
+                "agent_powered": True,
+                "final_analysis": cv_result.final_analysis_report if cv_result else None,
+                "validation_report": cv_result.validation_report if cv_result else None,
+                "citations": cv_result.citations if cv_result else None,
+                "evidence_summary": self._build_evidence_summary(cv_result),
+                "workflow_state": cv_result.workflow_state if cv_result else None,
+            }
+        except Exception as meta_err:
+            logger.warning("pipeline_runtime.meta_augment_failed", error=str(meta_err)[:200])
+
+        # ── Persist to document_library table (isolated) ──────────────
+        self._begin_phase("persist")
+        try:
+            await self._persist_to_document_library(
+                sb=sb, tables=tables, user_id=user_id,
+                cv_html=sanitize_html(cv_html) if cv_html else "",
+                cl_html=sanitize_html(cl_html) if cl_html else "",
+                ps_html=sanitize_html(ps_html) if ps_html else "",
+                portfolio_html=sanitize_html(portfolio_html) if portfolio_html else "",
+                benchmark_cv_html=sanitize_html(benchmark_cv_html) if benchmark_cv_html else "",
+                resume_html=sanitize_html(effective_resume_html) if effective_resume_html else "",
+                benchmark_resume_html=sanitize_html(benchmark_resume_html) if benchmark_resume_html else "",
+                generated_docs={k: sanitize_html(v) for k, v in generated_docs.items() if v},
+                benchmark_docs={
+                    k: (sanitize_html(v) if isinstance(v, str) else v)
+                    for k, v in benchmark_documents.items()
+                },
+            )
+        except Exception as persist_err:
+            logger.exception("pipeline_runtime.persist_failed", error=str(persist_err)[:300])
+            self._failed_modules.append({"module": "persist_document_library", "error": str(persist_err)[:200]})
         self._finish_phase("persist")
 
         await self.sink.emit(PipelineEvent(
@@ -1609,8 +1892,17 @@ class PipelineRuntime:
             keywords = self._extract_keywords_from_jd(jd_text)
 
         benchmark_cv_html = ""
+        benchmark_resume_html = ""
+        resume_html = ""  # tailored resume — prevents late-stage NameError in _format_response
         try:
             benchmark_cv_html = await benchmark_chain.create_benchmark_cv_html(
+                user_profile=user_profile, benchmark_data=benchmark_data,
+                job_title=job_title, company=company, jd_text=jd_text,
+            )
+        except Exception:
+            pass
+        try:
+            benchmark_resume_html = await benchmark_chain.create_resume_html(
                 user_profile=user_profile, benchmark_data=benchmark_data,
                 job_title=job_title, company=company, jd_text=jd_text,
             )
@@ -1736,7 +2028,116 @@ class PipelineRuntime:
             keywords=keywords,
             job_title=job_title,
             benchmark_cv_html=sanitize_html(benchmark_cv_html) if benchmark_cv_html else "",
+            resume_html=sanitize_html(resume_html) if resume_html else (sanitize_html(benchmark_resume_html) if benchmark_resume_html else ""),
         )
+
+        # ── v4 critic gate (best-effort): build a typed TailoredDocumentBundle
+        # from what we just generated, run it through ValidationCritic, persist
+        # the ValidationReport artifact, and emit validation_passed/failed.
+        try:
+            from ai_engine.agents.artifact_contracts import (
+                DocumentRecord,
+                EvidenceTier,
+                TailoredDocumentBundle,
+            )
+            from ai_engine.agents.validation_critic import (
+                ValidationCritic,
+                report_passed,
+            )
+
+            doc_records: Dict[str, "DocumentRecord"] = {}
+            for key, html in (
+                ("cv", cv_html),
+                ("cover_letter", cl_html),
+                ("personal_statement", ps_html),
+                ("portfolio", portfolio_html),
+                ("resume", resume_html or benchmark_resume_html),
+            ):
+                html_clean = (html or "").strip()
+                if html_clean:
+                    doc_records[key] = DocumentRecord(
+                        doc_type=key, label=key.replace("_", " ").title(),
+                        html_content=html_clean,
+                        word_count=len(html_clean.split()),
+                    )
+
+            tailored_bundle = TailoredDocumentBundle(
+                application_id=self.config.application_id or None,
+                created_by_agent="quill",
+                confidence=0.7,
+                evidence_tier=EvidenceTier.DERIVED,
+                documents=doc_records,
+            )
+
+            critic = ValidationCritic()
+            report = critic.review_documents(
+                tailored_bundle,
+                required_modules=self.config.requested_modules or None,
+            )
+            passed = report_passed(report)
+
+            if getattr(self, "_artifact_store", None) is not None:
+                try:
+                    await self._artifact_store.put(
+                        report, user_id=user_id,
+                        agent_name="validation_critic",
+                        artifact_type="ValidationReport",
+                    )
+                except Exception:
+                    pass
+
+            await self.sink.emit(PipelineEvent(
+                event_type="validation_passed" if passed else "validation_failed",
+                phase="sentinel",
+                progress=95 if passed else 90,
+                message=(
+                    f"Validation {'passed' if passed else 'failed'} "
+                    f"(score {report.overall_score:.0f}/100, "
+                    f"{len(report.findings)} findings)"
+                ),
+                status="completed" if passed else "warning",
+                data={
+                    "overall_score": report.overall_score,
+                    "docs_passed": report.docs_passed,
+                    "docs_failed": report.docs_failed,
+                    "finding_count": len(report.findings),
+                },
+            ))
+            # Publish through the typed bus so the bridge round-trips this too.
+            try:
+                from ai_engine.agents.orchestration import (
+                    EventLevel as _EL,
+                    OrchestrationEvent as _OE,
+                )
+                bus = getattr(self, "_orchestration_bus", None)
+                if bus is not None:
+                    await bus.publish(_OE(
+                        event_name=(
+                            "orchestration.validation_passed"
+                            if passed else "orchestration.validation_failed"
+                        ),
+                        application_id=self.config.application_id or None,
+                        agent_name="validation_critic",
+                        level=_EL.INFO if passed else _EL.WARNING,
+                        message=(
+                            f"Validation {'passed' if passed else 'failed'} "
+                            f"(score {report.overall_score:.0f}/100)"
+                        ),
+                        data={
+                            "phase": "sentinel",
+                            "progress": 95 if passed else 90,
+                            "overall_score": report.overall_score,
+                            "docs_passed": report.docs_passed,
+                            "docs_failed": report.docs_failed,
+                            "finding_count": len(report.findings),
+                        },
+                    ))
+            except Exception:
+                pass
+        except Exception as critic_err:
+            logger.warning("pipeline_runtime.critic_skipped",
+                           error=str(critic_err)[:200])
+
         return response
 
     # ── Helpers ────────────────────────────────────────────────────────
@@ -1753,6 +2154,8 @@ class PipelineRuntime:
         benchmark_cv_html: str,
         generated_docs: Dict[str, str],
         benchmark_docs: Dict[str, str],
+        resume_html: str = "",
+        benchmark_resume_html: str = "",
     ) -> None:
         """Persist all generated documents to the document_library table."""
         if "document_library" not in tables:
@@ -1767,25 +2170,28 @@ class PipelineRuntime:
             from app.services.document_library import DocumentLibraryService
             service = DocumentLibraryService(sb, tables)
 
-            # Build all create_document coroutines for concurrent execution
+            # Build all upsert coroutines for concurrent execution.
+            # We use upsert_application_document so that any planned rows seeded
+            # at Atlas startup are UPDATED in-place rather than duplicated.
             coros = []
 
-            # Tailored core documents
+            # Tailored core documents (CV + Resume now both first-class)
             tailored_count = 0
             for doc_spec in [
                 {"doc_type": "cv",                 "label": "Tailored CV",                 "html": cv_html},
+                {"doc_type": "resume",              "label": "Tailored Résumé",              "html": resume_html},
                 {"doc_type": "cover_letter",        "label": "Tailored Cover Letter",        "html": cl_html},
                 {"doc_type": "personal_statement",  "label": "Tailored Personal Statement",  "html": ps_html},
                 {"doc_type": "portfolio",           "label": "Tailored Portfolio",           "html": portfolio_html},
             ]:
                 if doc_spec["html"]:
                     tailored_count += 1
-                    coros.append(service.create_document(
+                    coros.append(service.upsert_application_document(
                         user_id=user_id,
-                        doc_type=doc_spec["doc_type"],
-                        doc_category="tailored",
-                        label=doc_spec["label"],
                         application_id=application_id,
+                        doc_category="tailored",
+                        doc_type=doc_spec["doc_type"],
+                        label=doc_spec["label"],
                         html_content=doc_spec["html"],
                         status="ready",
                         source="planner",
@@ -1795,46 +2201,58 @@ class PipelineRuntime:
             for key, html in generated_docs.items():
                 if html:
                     tailored_count += 1
-                    coros.append(service.create_document(
+                    coros.append(service.upsert_application_document(
                         user_id=user_id,
-                        doc_type=key,
-                        doc_category="tailored",
-                        label=key.replace("_", " ").title(),
                         application_id=application_id,
+                        doc_category="tailored",
+                        doc_type=key,
+                        label=key.replace("_", " ").title(),
                         html_content=html,
                         status="ready",
                         source="planner",
                     ))
 
-            # Benchmark documents
+            # Benchmark documents (CV + Resume now both first-class)
             benchmark_count = 0
             if benchmark_cv_html:
                 benchmark_count += 1
-                coros.append(service.create_document(
+                coros.append(service.upsert_application_document(
                     user_id=user_id,
-                    doc_type="cv",
-                    doc_category="benchmark",
-                    label="Benchmark CV",
                     application_id=application_id,
+                    doc_category="benchmark",
+                    doc_type="cv",
+                    label="Benchmark CV",
                     html_content=benchmark_cv_html,
+                    status="ready",
+                    source="planner",
+                ))
+            if benchmark_resume_html:
+                benchmark_count += 1
+                coros.append(service.upsert_application_document(
+                    user_id=user_id,
+                    application_id=application_id,
+                    doc_category="benchmark",
+                    doc_type="resume",
+                    label="Benchmark Résumé",
+                    html_content=benchmark_resume_html,
                     status="ready",
                     source="planner",
                 ))
             for key, html in benchmark_docs.items():
                 if html and isinstance(html, str):
                     benchmark_count += 1
-                    coros.append(service.create_document(
+                    coros.append(service.upsert_application_document(
                         user_id=user_id,
-                        doc_type=key,
-                        doc_category="benchmark",
-                        label=f"Benchmark {key.replace('_', ' ').title()}",
                         application_id=application_id,
+                        doc_category="benchmark",
+                        doc_type=key,
+                        label=f"Benchmark {key.replace('_', ' ').title()}",
                         html_content=html,
                         status="ready",
                         source="planner",
                     ))
 
-            # Fan-out: all inserts run concurrently
+            # Fan-out: all upserts run concurrently
             results = await asyncio.gather(*coros, return_exceptions=True)
             failures = sum(1 for r in results if isinstance(r, Exception))
             if failures:
@@ -1843,6 +2261,82 @@ class PipelineRuntime:
                     total=len(coros),
                     failures=failures,
                 )
+
+            # ── Mark missing canonical docs as "error" so the UI can show
+            # a retry chip rather than a stale "planned" badge. We compare
+            # what was supposed to be in the canonical set vs. what we
+            # actually persisted as ready content.
+            try:
+                error_coros = []
+                # Tailored canonical
+                if not (cv_html or "").strip():
+                    error_coros.append(service.upsert_application_document(
+                        user_id=user_id, application_id=application_id,
+                        doc_category="tailored", doc_type="cv",
+                        label="Tailored CV", status="error",
+                        error_message="Generation failed — tap retry to try again.",
+                    ))
+                if not (resume_html or "").strip():
+                    error_coros.append(service.upsert_application_document(
+                        user_id=user_id, application_id=application_id,
+                        doc_category="tailored", doc_type="resume",
+                        label="Tailored Résumé", status="error",
+                        error_message="Generation failed — tap retry to try again.",
+                    ))
+                if not (cl_html or "").strip():
+                    error_coros.append(service.upsert_application_document(
+                        user_id=user_id, application_id=application_id,
+                        doc_category="tailored", doc_type="cover_letter",
+                        label="Tailored Cover Letter", status="error",
+                        error_message="Generation failed — tap retry to try again.",
+                    ))
+                if not (ps_html or "").strip():
+                    error_coros.append(service.upsert_application_document(
+                        user_id=user_id, application_id=application_id,
+                        doc_category="tailored", doc_type="personal_statement",
+                        label="Tailored Personal Statement", status="error",
+                        error_message="Generation failed — tap retry to try again.",
+                    ))
+                if not (portfolio_html or "").strip():
+                    error_coros.append(service.upsert_application_document(
+                        user_id=user_id, application_id=application_id,
+                        doc_category="tailored", doc_type="portfolio",
+                        label="Tailored Portfolio", status="error",
+                        error_message="Generation failed — tap retry to try again.",
+                    ))
+                # Benchmark canonical (6 docs)
+                if not (benchmark_cv_html or "").strip():
+                    error_coros.append(service.upsert_application_document(
+                        user_id=user_id, application_id=application_id,
+                        doc_category="benchmark", doc_type="cv",
+                        label="Benchmark CV", status="error",
+                        error_message="Generation failed — tap retry to try again.",
+                    ))
+                if not (benchmark_resume_html or "").strip():
+                    error_coros.append(service.upsert_application_document(
+                        user_id=user_id, application_id=application_id,
+                        doc_category="benchmark", doc_type="resume",
+                        label="Benchmark Résumé", status="error",
+                        error_message="Generation failed — tap retry to try again.",
+                    ))
+                _BENCH_REM = [
+                    ("cover_letter", "Benchmark Cover Letter"),
+                    ("personal_statement", "Benchmark Personal Statement"),
+                    ("portfolio", "Benchmark Portfolio"),
+                    ("learning_plan", "Benchmark Learning Plan"),
+                ]
+                for _key, _label in _BENCH_REM:
+                    if not (benchmark_docs.get(_key) or "").strip():
+                        error_coros.append(service.upsert_application_document(
+                            user_id=user_id, application_id=application_id,
+                            doc_category="benchmark", doc_type=_key,
+                            label=_label, status="error",
+                            error_message="Generation failed — tap retry to try again.",
+                        ))
+                if error_coros:
+                    await asyncio.gather(*error_coros, return_exceptions=True)
+            except Exception as err_mark_err:
+                logger.warning("pipeline_runtime.error_mark_failed", error=str(err_mark_err)[:200])
 
             logger.info("pipeline_runtime.document_library_persisted",
                         tailored=tailored_count,
@@ -2132,6 +2626,7 @@ class PipelineRuntime:
         keywords: List[str],
         job_title: str,
         benchmark_cv_html: str = "",
+        resume_html: str = "",
     ) -> Dict[str, Any]:
         """Transform pipeline outputs into the frontend response shape."""
         # Benchmark
@@ -2245,6 +2740,7 @@ class PipelineRuntime:
             "coverLetter": cl_html,
             "personalStatement": ps_html,
             "portfolio": portfolio_html,
+            "resume": resume_html,
         }
 
         return {
@@ -2258,6 +2754,7 @@ class PipelineRuntime:
             "coverLetterHtml": cl_html,
             "personalStatementHtml": ps_html,
             "portfolioHtml": portfolio_html,
+            "resumeHtml": resume_html,
             "validation": validation,
             "learningPlan": roadmap,
         }
