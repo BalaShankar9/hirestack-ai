@@ -649,6 +649,51 @@ async def prometheus_metrics():
     except Exception:
         pass
 
+    # ── W3 Observability: LLM call/token counters per model+task_type ──
+    try:
+        from app.core.metrics import MetricsCollector
+        llm_stats = MetricsCollector.get().get_llm_call_stats()
+        if llm_stats:
+            lines.append("# HELP hirestack_llm_calls_total LLM calls per model and task type")
+            lines.append("# TYPE hirestack_llm_calls_total counter")
+            lines.append("# HELP hirestack_llm_tokens_in_total LLM input tokens per model and task type")
+            lines.append("# TYPE hirestack_llm_tokens_in_total counter")
+            lines.append("# HELP hirestack_llm_tokens_out_total LLM output tokens per model and task type")
+            lines.append("# TYPE hirestack_llm_tokens_out_total counter")
+            for _key, ls in llm_stats.items():
+                m = (ls.get("model") or "unknown").replace("-", "_").replace(".", "_").replace("/", "_")
+                t = (ls.get("task_type") or "unknown").replace("-", "_").replace(" ", "_")
+                lines.append(
+                    f'hirestack_llm_calls_total{{model="{m}",task_type="{t}"}} {int(ls.get("calls", 0))}'
+                )
+                lines.append(
+                    f'hirestack_llm_tokens_in_total{{model="{m}",task_type="{t}"}} {int(ls.get("tokens_in", 0))}'
+                )
+                lines.append(
+                    f'hirestack_llm_tokens_out_total{{model="{m}",task_type="{t}"}} {int(ls.get("tokens_out", 0))}'
+                )
+    except Exception:
+        pass
+
+    # ── W3 Observability: daily cost (USD cents) from _DailyUsageTracker ──
+    try:
+        from ai_engine.client import _daily_tracker  # type: ignore
+        s = _daily_tracker.stats
+        lines.append("# HELP hirestack_ai_daily_cost_cents Estimated AI cost today (USD cents)")
+        lines.append("# TYPE hirestack_ai_daily_cost_cents gauge")
+        lines.append(f'hirestack_ai_daily_cost_cents {int(round(float(s.get("total_cost_usd", 0)) * 100))}')
+        lines.append("# HELP hirestack_ai_daily_calls_total Total AI calls today")
+        lines.append("# TYPE hirestack_ai_daily_calls_total gauge")
+        lines.append(f'hirestack_ai_daily_calls_total {int(s.get("total_calls", 0))}')
+        lines.append("# HELP hirestack_ai_daily_tokens_total Total AI tokens today")
+        lines.append("# TYPE hirestack_ai_daily_tokens_total gauge")
+        lines.append(f'hirestack_ai_daily_tokens_total {int(s.get("total_tokens", 0))}')
+        lines.append("# HELP hirestack_ai_daily_cache_hits_total Total cache hits today")
+        lines.append("# TYPE hirestack_ai_daily_cache_hits_total gauge")
+        lines.append(f'hirestack_ai_daily_cache_hits_total {int(s.get("cache_hits", 0))}')
+    except Exception:
+        pass
+
     from starlette.responses import Response
     return Response(
         content="\n".join(lines) + "\n",

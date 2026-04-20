@@ -516,6 +516,31 @@ class AIClient:
             task_type=task_type,
             chain=chain,
         )
+        # ── W3 observability: structured per-call audit log ───────────
+        # Hashes (not contents) so we can correlate identical prompts/
+        # responses across runs without leaking PII into the log stream.
+        try:
+            import hashlib
+            phash = hashlib.sha256((prompt or "").encode("utf-8", "replace")).hexdigest()[:12]
+            rhash = hashlib.sha256((response_text or "").encode("utf-8", "replace")).hexdigest()[:12]
+            try:
+                from app.core.metrics import MetricsCollector
+                MetricsCollector.get().record_llm_call(
+                    model=model or self.model,
+                    task_type=task_type or "unknown",
+                    input_tokens=in_tok,
+                    output_tokens=out_tok,
+                )
+            except Exception:
+                pass
+            logger.info(
+                "ai_call_audit: model=%s task=%s in_tok=%d out_tok=%d "
+                "prompt_hash=%s response_hash=%s",
+                model or self.model, task_type or "unknown",
+                in_tok, out_tok, phash, rhash,
+            )
+        except Exception:
+            pass
 
     @staticmethod
     def _truncate_input(text: str, max_tokens: Optional[int] = None) -> str:

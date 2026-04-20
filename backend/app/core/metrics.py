@@ -91,6 +91,15 @@ class MetricsCollector:
         self._model_failover_log: List[Dict[str, Any]] = []
         # Per-doc-type rolling quality scores (W2 Intelligence & quality)
         self._doc_quality_history: Dict[str, List[int]] = defaultdict(list)
+        # ── W3 Observability: per-LLM-call counters ───────────────
+        # Total calls + tokens per (model, task_type) since process start.
+        # Cost is estimated client-side in ai_engine.client._DailyUsageTracker;
+        # we only count calls and tokens here so /metrics can attribute per
+        # task_type. Keeping these as counters means they monotonically
+        # increase, which is what Prometheus expects.
+        self._llm_calls: Dict[str, int] = defaultdict(int)         # key = "model|task_type"
+        self._llm_tokens_in: Dict[str, int] = defaultdict(int)
+        self._llm_tokens_out: Dict[str, int] = defaultdict(int)
 
     @classmethod
     def get(cls) -> "MetricsCollector":
@@ -242,6 +251,35 @@ class MetricsCollector:
                 "p95": ordered[int(n * 0.95)] if n >= 20 else ordered[-1],
                 "min": ordered[0],
                 "last": scores[-1],
+            }
+        return out
+
+    def record_llm_call(
+        self, model: str, task_type: str,
+        input_tokens: int, output_tokens: int,
+    ) -> None:
+        """Increment per-(model, task_type) call + token counters (W3)."""
+        try:
+            in_t = max(0, int(input_tokens))
+            out_t = max(0, int(output_tokens))
+        except (TypeError, ValueError):
+            return
+        key = f"{model or 'unknown'}|{task_type or 'unknown'}"
+        self._llm_calls[key] += 1
+        self._llm_tokens_in[key] += in_t
+        self._llm_tokens_out[key] += out_t
+
+    def get_llm_call_stats(self) -> Dict[str, Dict[str, Any]]:
+        """Return per-(model, task_type) call/token counters for Prometheus."""
+        out: Dict[str, Dict[str, Any]] = {}
+        for key, calls in self._llm_calls.items():
+            model, _, task_type = key.partition("|")
+            out[key] = {
+                "model": model,
+                "task_type": task_type or "unknown",
+                "calls": calls,
+                "tokens_in": self._llm_tokens_in.get(key, 0),
+                "tokens_out": self._llm_tokens_out.get(key, 0),
             }
         return out
 
