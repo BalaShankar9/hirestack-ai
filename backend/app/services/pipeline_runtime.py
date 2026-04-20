@@ -446,6 +446,9 @@ class PipelineRuntime:
         self._intel_task: Optional[asyncio.Task] = None
         self._intel_started_at: Optional[float] = None
         self._intel_resolved: bool = False
+        # Per-doc deterministic quality breakdowns (W2). Populated by
+        # the Sentinel phase via app.services.quality_scorer.
+        self._per_doc_quality: Dict[str, Dict[str, Any]] = {}
 
     async def _await_company_intel(
         self,
@@ -1883,13 +1886,66 @@ class PipelineRuntime:
         cl_quality = cl_result.quality_scores if cl_result else {}
         cv_fact_check = cv_result.fact_check_report if cv_result else {}
 
-        validation = {
+        # ── Deterministic per-doc quality scoring (W2) ────────────────
+        # Cheap, offline floor that catches obvious failure modes (empty
+        # docs, ATS-hostile structure, missing JD keywords). Augments —
+        # never replaces — the LLM-driven critique scores above.
+        try:
+            from app.services.quality_scorer import score_bundle  # local import to avoid cold-start cost
+            from app.core.metrics import MetricsCollector
+
+            docs_to_score: Dict[str, str] = {}
+            if cv_html: docs_to_score["cv"] = cv_html
+            if cl_html: docs_to_score["cover_letter"] = cl_html
+            if ps_html: docs_to_score["personal_statement"] = ps_html
+            if portfolio_html: docs_to_score["portfolio"] = portfolio_html
+            effective_resume = resume_html or benchmark_resume_html
+            if effective_resume: docs_to_score["resume"] = effective_resume
+            for k, v in (generated_docs or {}).items():
+                if isinstance(v, str) and v.strip() and k not in docs_to_score:
+                    docs_to_score[k] = v
+
+            per_doc_quality = score_bundle(docs_to_score, jd_keywords=keywords)
+            self._per_doc_quality = per_doc_quality  # exposed for callers/tests
+
+            # Record into MetricsCollector so /metrics can surface it.
+            try:
+                mc = MetricsCollector.get()
+                for doc_type, breakdown in per_doc_quality.items():
+                    mc.record_doc_quality(doc_type, int(breakdown.get("score", 0)))
+            except Exception:
+                pass
+
+            # Surface low-quality docs to the user as warnings (non-fatal).
+            for doc_type, breakdown in per_doc_quality.items():
+                if breakdown.get("score", 0) < 60 and breakdown.get("issues"):
+                    await self.sink.emit(PipelineEvent(
+                        event_type="warning", phase="sentinel",
+                        message=f"{doc_type}: quality {breakdown['score']}/100 — {breakdown['issues'][0]}",
+                        data={"agent": "sentinel", "doc_type": doc_type,
+                              "score": breakdown["score"], "issues": breakdown["issues"][:5]},
+                    ))
+        except Exception as q_err:
+            logger.warning("pipeline_runtime.quality_scorer_failed", error=str(q_err)[:200])
+            per_doc_quality = {}
+
+        validation: Dict[str, Any] = {
             "cv": {
                 "valid": bool(cv_html),
                 "qualityScore": self._quality_score(cv_quality),
                 "agent_powered": True,
             }
         }
+        # Attach deterministic per-doc breakdowns under canonical keys so
+        # the frontend can show issue lists per document.
+        for _doc, _bd in per_doc_quality.items():
+            target_key = {
+                "cover_letter": "coverLetter",
+                "personal_statement": "personalStatement",
+            }.get(_doc, _doc)
+            validation.setdefault(target_key, {})
+            validation[target_key]["deterministicScore"] = int(_bd.get("score", 0))
+            validation[target_key]["issues"] = list(_bd.get("issues", []))[:5]
 
         quality_score = self._quality_score(cv_quality)
         await self.sink.emit(PipelineEvent(

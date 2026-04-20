@@ -89,6 +89,8 @@ class MetricsCollector:
         self._breaker_transitions: List[Dict[str, Any]] = []
         self._model_failovers: int = 0
         self._model_failover_log: List[Dict[str, Any]] = []
+        # Per-doc-type rolling quality scores (W2 Intelligence & quality)
+        self._doc_quality_history: Dict[str, List[int]] = defaultdict(list)
 
     @classmethod
     def get(cls) -> "MetricsCollector":
@@ -209,6 +211,39 @@ class MetricsCollector:
                 "last_ms": history[-1].duration_ms,
             }
         return result
+
+    def record_doc_quality(self, doc_type: str, score: int) -> None:
+        """Record a deterministic quality score (0-100) for a document type.
+
+        Maintains a rolling window of the last `window_size` scores per
+        doc type so /metrics can surface mean/p50/p95.
+        """
+        try:
+            s = max(0, min(100, int(score)))
+        except (TypeError, ValueError):
+            return
+        bucket = self._doc_quality_history[doc_type]
+        bucket.append(s)
+        if len(bucket) > self._window_size:
+            self._doc_quality_history[doc_type] = bucket[-self._window_size:]
+
+    def get_doc_quality_stats(self) -> Dict[str, Dict[str, Any]]:
+        """Return per-doc-type quality stats from the rolling window."""
+        out: Dict[str, Dict[str, Any]] = {}
+        for doc_type, scores in self._doc_quality_history.items():
+            if not scores:
+                continue
+            ordered = sorted(scores)
+            n = len(ordered)
+            out[doc_type] = {
+                "count": n,
+                "mean": round(sum(ordered) / n, 1),
+                "p50": ordered[n // 2],
+                "p95": ordered[int(n * 0.95)] if n >= 20 else ordered[-1],
+                "min": ordered[0],
+                "last": scores[-1],
+            }
+        return out
 
     def get_stats(self, pipeline_name: Optional[str] = None) -> Dict[str, Any]:
         """Get aggregated stats for a pipeline or all pipelines."""

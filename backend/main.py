@@ -615,6 +615,40 @@ async def prometheus_metrics():
     except Exception:
         pass
 
+    # Per-doc deterministic quality scores (W2 Intelligence & quality)
+    try:
+        from app.core.metrics import MetricsCollector
+        dq_stats = MetricsCollector.get().get_doc_quality_stats()
+        if dq_stats:
+            lines.append("# HELP hirestack_doc_quality_mean Mean doc quality (0-100)")
+            lines.append("# TYPE hirestack_doc_quality_mean gauge")
+            lines.append("# HELP hirestack_doc_quality_p50 Median doc quality (0-100)")
+            lines.append("# TYPE hirestack_doc_quality_p50 gauge")
+            lines.append("# HELP hirestack_doc_quality_p95 95th-pct doc quality (0-100)")
+            lines.append("# TYPE hirestack_doc_quality_p95 gauge")
+            lines.append("# HELP hirestack_doc_quality_min Min doc quality (0-100)")
+            lines.append("# TYPE hirestack_doc_quality_min gauge")
+            for doc_type, qs in dq_stats.items():
+                safe = doc_type.replace("-", "_").replace(" ", "_")
+                lines.append(
+                    f'hirestack_doc_quality_mean{{doc_type="{safe}"}} '
+                    f'{float(qs.get("mean", 0))}'
+                )
+                lines.append(
+                    f'hirestack_doc_quality_p50{{doc_type="{safe}"}} '
+                    f'{int(qs.get("p50", 0))}'
+                )
+                lines.append(
+                    f'hirestack_doc_quality_p95{{doc_type="{safe}"}} '
+                    f'{int(qs.get("p95", 0))}'
+                )
+                lines.append(
+                    f'hirestack_doc_quality_min{{doc_type="{safe}"}} '
+                    f'{int(qs.get("min", 0))}'
+                )
+    except Exception:
+        pass
+
     from starlette.responses import Response
     return Response(
         content="\n".join(lines) + "\n",
