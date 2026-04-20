@@ -36,7 +36,7 @@ class SalaryService:
             job_title=job_title,
             company=company,
             location=location,
-            experience_years=experience_years,
+            years_experience=int(experience_years or 0),
             current_salary=current_salary,
             skills_summary=skills_summary,
         )

@@ -4,7 +4,11 @@ Generates personalized learning challenges and skill-building exercises
 """
 from typing import Dict, Any
 
+import structlog
+
 from ai_engine.client import AIClient
+
+logger = structlog.get_logger(__name__)
 
 
 LEARNING_SYSTEM = """You are an expert learning designer and skill development coach.
@@ -130,3 +134,62 @@ class LearningChallengeChain:
             if key not in result:
                 result[key] = default
         return result
+
+    async def generate_daily_set(
+        self,
+        skills: list,
+        difficulty: str = "medium",
+        count: int = 3,
+        job_context: str = "",
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Generate a small batch of daily challenges, one per skill.
+
+        Wraps :meth:`generate_challenge` so callers (the LearningService
+        route) get a stable list-shaped response. Failures on individual
+        skills are isolated so one bad skill cannot poison the daily set.
+        """
+        skill_list = [s for s in (skills or []) if isinstance(s, str) and s.strip()]
+        if not skill_list:
+            skill_list = ["Problem Solving"]
+        skill_list = skill_list[: max(1, int(count or 1))]
+
+        challenges: list = []
+        for skill in skill_list:
+            try:
+                ch = await self.generate_challenge(
+                    skill_name=skill,
+                    difficulty=difficulty,
+                    context=job_context,
+                )
+                # Normalize for the LearningService consumer which expects a
+                # quiz-style record with question / options / correct_answer.
+                normalized = {
+                    "skill": skill,
+                    "difficulty": ch.get("difficulty", difficulty),
+                    "challenge_type": "quiz",
+                    "question": ch.get("title") or ch.get("description", ""),
+                    "options": [],
+                    "correct_answer": "",
+                    "explanation": ch.get("description", ""),
+                    "title": ch.get("title", ""),
+                    "steps": ch.get("steps", []),
+                    "resources": ch.get("resources", []),
+                    "success_criteria": ch.get("success_criteria", []),
+                }
+                challenges.append(normalized)
+            except Exception as exc:
+                logger.warning(
+                    "learning_challenge.skill_failed",
+                    skill=skill,
+                    error=str(exc)[:200],
+                )
+
+        return {
+            "challenges": challenges,
+            "theme": (
+                f"Daily {difficulty.title()} Challenges"
+                if challenges else "No challenges generated"
+            ),
+            "skills_covered": [c["skill"] for c in challenges],
+        }
