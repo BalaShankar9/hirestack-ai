@@ -24,7 +24,7 @@ logger = structlog.get_logger("hirestack.document_pack_planner")
 class DocumentPackPlan:
     """The output of the planner — a prioritized document selection for a specific JD."""
 
-    # Always generated (cv, cover_letter, personal_statement, portfolio)
+    # Always generated (cv, resume, cover_letter, personal_statement, portfolio)
     core: List[Dict[str, Any]] = field(default_factory=list)
 
     # JD-driven must-haves beyond core (auto-generated as benchmark + tailored)
@@ -83,7 +83,7 @@ PLANNER_SYSTEM = """You are a senior career strategist who has reviewed 50,000+ 
 Given a job description and a catalog of available document types, you select the OPTIMAL document pack.
 
 Rules:
-1. Core documents (cv, cover_letter, personal_statement, portfolio, elevator_pitch, linkedin_summary, follow_up_email, thank_you_note, references_list) are ALWAYS included — do not list them.
+1. Core documents (cv, resume, cover_letter, personal_statement, portfolio, elevator_pitch, linkedin_summary, follow_up_email, thank_you_note, references_list) are ALWAYS included — do not list them.
 2. From the catalog, pick documents that the JD explicitly or implicitly requires → "required" list.
 3. From the catalog, pick documents that would STRENGTHEN the application but aren't required → "optional" list.
 4. If the JD mentions documents not in the catalog, add them to "new_candidates".
@@ -133,7 +133,7 @@ Return JSON:
 }}
 
 IMPORTANT:
-- Do NOT include core docs (cv, cover_letter, personal_statement, portfolio) — they are always generated.
+- Do NOT include core docs (cv, resume, cover_letter, personal_statement, portfolio) — they are always generated.
 - Select ONLY from catalog keys listed above for required/optional.
 - Only use new_candidates for docs the JD explicitly requests that aren't in the catalog.
 - Be cost-conscious: each required doc uses AI credits."""
@@ -145,6 +145,7 @@ IMPORTANT:
 
 CORE_DOCS = [
     {"key": "cv", "label": "Tailored CV", "priority": "critical"},
+    {"key": "resume", "label": "Tailored Résumé", "priority": "critical"},
     {"key": "cover_letter", "label": "Cover Letter", "priority": "critical"},
     {"key": "personal_statement", "label": "Personal Statement", "priority": "high"},
     {"key": "portfolio", "label": "Portfolio & Evidence", "priority": "high"},
@@ -186,7 +187,7 @@ class DocumentPackPlanner:
     ) -> DocumentPackPlan:
         """Analyze a JD and produce the optimal document pack plan."""
         # Build catalog text for the prompt (skip core docs — they're always included)
-        core_keys = {"cv", "cover_letter", "personal_statement", "portfolio"}
+        core_keys = {"cv", "resume", "cover_letter", "personal_statement", "portfolio"}
         catalog_lines = []
         for row in self._catalog:
             if row.get("key") in core_keys:
@@ -283,7 +284,7 @@ class DocumentPackPlanner:
         )
 
         # Validate required docs — must be in catalog and not core
-        core_keys = {"cv", "cover_letter", "personal_statement", "portfolio"}
+        core_keys = {"cv", "resume", "cover_letter", "personal_statement", "portfolio"}
         for doc in raw.get("required", []):
             key = doc.get("key", "").strip()
             if not key or key in core_keys:

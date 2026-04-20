@@ -29,6 +29,7 @@ logger = structlog.get_logger("hirestack.document_catalog")
 SEED_CATALOG: Tuple[Dict[str, Any], ...] = (
     # Core (always generated)
     {"key": "cv", "label": "Tailored CV", "description": "Your resume tailored and optimized for the specific job description", "category": "core", "generatable": True},
+    {"key": "resume", "label": "Resume", "description": "Concise 1-2 page US-style resume focused on recent relevant experience with quantified achievements", "category": "core", "generatable": True},
     {"key": "cover_letter", "label": "Cover Letter", "description": "Compelling narrative connecting your experience to the role", "category": "core", "generatable": True},
     {"key": "personal_statement", "label": "Personal Statement", "description": "Authentic career narrative revealing the person behind the resume", "category": "core", "generatable": True},
     {"key": "portfolio", "label": "Portfolio & Evidence", "description": "Showcase of projects presented as mini case studies with impact", "category": "core", "generatable": True},

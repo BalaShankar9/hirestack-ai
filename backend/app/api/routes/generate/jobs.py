@@ -71,6 +71,7 @@ _DEFAULT_REQUESTED_MODULES = [
     "gaps",
     "learningPlan",
     "cv",
+    "resume",
     "coverLetter",
     "personalStatement",
     "portfolio",
@@ -86,7 +87,7 @@ _SNAKE_TO_CAMEL = {
 }
 _CAMEL_TO_SNAKE = {v: k for k, v in _SNAKE_TO_CAMEL.items()}
 # Keys that are identical in both formats
-_IDENTITY_KEYS = {"benchmark", "cv", "portfolio", "scorecard", "gaps"}
+_IDENTITY_KEYS = {"benchmark", "cv", "resume", "portfolio", "scorecard", "gaps"}
 
 
 def _now_ms() -> int:
@@ -99,6 +100,7 @@ def _default_module_states() -> Dict[str, Dict[str, Any]]:
         "gaps": {"state": "idle"},
         "learningPlan": {"state": "idle"},
         "cv": {"state": "idle"},
+        "resume": {"state": "idle"},
         "coverLetter": {"state": "idle"},
         "personalStatement": {"state": "idle"},
         "portfolio": {"state": "idle"},
@@ -144,6 +146,8 @@ def _module_has_content(application_row: Dict[str, Any], module_key: str) -> boo
         return bool(application_row.get("learning_plan"))
     if module_key == "cv":
         return bool(str(application_row.get("cv_html") or "").strip())
+    if module_key == "resume":
+        return bool(str(application_row.get("resume_html") or "").strip())
     if module_key == "coverLetter":
         return bool(str(application_row.get("cover_letter_html") or "").strip())
     if module_key == "personalStatement":
@@ -233,7 +237,7 @@ async def _mark_application_generation_finished(
         try:
             resp = await asyncio.to_thread(
                 lambda: sb.table(tables["applications"])
-                .select("id,modules,cv_html,cover_letter_html,personal_statement_html,portfolio_html,benchmark,gaps,learning_plan,scores,scorecard")
+                .select("id,modules,cv_html,resume_html,cover_letter_html,personal_statement_html,portfolio_html,benchmark,gaps,learning_plan,scores,scorecard")
                 .eq("id", application_id)
                 .maybe_single()
                 .execute()
@@ -429,6 +433,10 @@ async def _persist_generation_result_to_application(
     if "portfolio" in requested and result.get("portfolioHtml"):
         patch["portfolio_html"] = result["portfolioHtml"]
 
+    # Resume is generated alongside CV — persist if content exists
+    if result.get("resumeHtml"):
+        patch["resume_html"] = result["resumeHtml"]
+
     if "scorecard" in requested:
         if result.get("validation"):
             patch["validation"] = result["validation"]
@@ -466,6 +474,8 @@ async def _persist_generation_result_to_application(
             has_content = bool(lp.get("focus") or lp.get("plan") or lp.get("resources"))
         elif module_key == "cv":
             has_content = bool((patch.get("cv_html") or "").strip())
+        elif module_key == "resume":
+            has_content = bool((patch.get("resume_html") or "").strip())
         elif module_key == "coverLetter":
             has_content = bool((patch.get("cover_letter_html") or "").strip())
         elif module_key == "personalStatement":

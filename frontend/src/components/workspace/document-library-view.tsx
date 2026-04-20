@@ -32,11 +32,13 @@ import { DOCUMENT_UNIVERSE } from "@/lib/document-universe";
 /** Canonical display name for a doc type key */
 function docTypeLabel(docType: string): string {
   const labels: Record<string, string> = {
-    cv: "CV / Résumé",
+    cv: "CV",
+    resume: "Résumé",
     cover_letter: "Cover Letter",
     personal_statement: "Personal Statement",
     portfolio: "Portfolio",
     benchmark_cv: "Benchmark CV",
+    benchmark_resume: "Benchmark Résumé",
     benchmark_cover_letter: "Benchmark Cover Letter",
     benchmark_personal_statement: "Benchmark Statement",
     benchmark_portfolio: "Benchmark Portfolio",

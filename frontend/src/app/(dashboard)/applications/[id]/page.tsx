@@ -187,16 +187,19 @@ export default function ApplicationWorkspacePage() {
   const [clMode, setClMode] = useState<DocMode>("view");
   const [psMode, setPsMode] = useState<DocMode>("view");
   const [portfolioMode, setPortfolioMode] = useState<DocMode>("view");
+  const [resumeMode, setResumeMode] = useState<DocMode>("view");
 
   const cvEditorRef = useRef<any>(null);
   const clEditorRef = useRef<any>(null);
   const psEditorRef = useRef<any>(null);
   const portfolioEditorRef = useRef<any>(null);
+  const resumeEditorRef = useRef<any>(null);
   const replayRef = useRef<HTMLDivElement>(null);
   const [cvEditor, setCvEditor] = useState<any>(null);
   const [clEditor, setClEditor] = useState<any>(null);
   const [psEditor, setPsEditor] = useState<any>(null);
   const [portfolioEditor, setPortfolioEditor] = useState<any>(null);
+  const [resumeEditor, setResumeEditor] = useState<any>(null);
   const [autoInsertedEvidence, setAutoInsertedEvidence] = useState<string | null>(null);
 
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -209,6 +212,7 @@ export default function ApplicationWorkspacePage() {
   const [clLocal, setClLocal] = useState<string>("");
   const [psLocal, setPsLocal] = useState<string>("");
   const [portfolioLocal, setPortfolioLocal] = useState<string>("");
+  const [resumeLocal, setResumeLocal] = useState<string>("");
 
   const [exporting, setExporting] = useState(false);
   const [regeneratingModule, setRegeneratingModule] = useState<string | null>(null);
@@ -292,7 +296,8 @@ export default function ApplicationWorkspacePage() {
     setClLocal(app.coverLetterHtml || "");
     setPsLocal(app.personalStatementHtml || "");
     setPortfolioLocal(app.portfolioHtml || "");
-  }, [app, app?.cvHtml, app?.coverLetterHtml, app?.personalStatementHtml, app?.portfolioHtml]);
+    setResumeLocal(app.resumeHtml || "");
+  }, [app, app?.cvHtml, app?.coverLetterHtml, app?.personalStatementHtml, app?.portfolioHtml, app?.resumeHtml]);
 
   // Debounced persistence for editors — use refs to avoid effect re-runs on app changes
   const appRef = useRef(app);
@@ -346,6 +351,18 @@ export default function ApplicationWorkspacePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appId, portfolioLocal]);
 
+  useEffect(() => {
+    if (!appRef.current) return;
+    const t = setTimeout(() => {
+      if (resumeLocal !== (appRef.current?.resumeHtml || "")) {
+        setSaveStatus("saving");
+        patchApplication(appId, { resumeHtml: resumeLocal }).then(() => setSaveStatus("saved")).catch(() => setSaveStatus("error"));
+      }
+    }, 900);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appId, resumeLocal]);
+
   const keywords = useMemo(() => app?.benchmark?.keywords ?? [], [app?.benchmark?.keywords]);
   const missing = useMemo(() => app?.gaps?.missingKeywords ?? [], [app?.gaps?.missingKeywords]);
 
@@ -354,6 +371,7 @@ export default function ApplicationWorkspacePage() {
   const strippedCl = useMemo(() => stripHtml(clLocal).toLowerCase(), [clLocal]);
   const strippedPs = useMemo(() => stripHtml(psLocal).toLowerCase(), [psLocal]);
   const strippedPortfolio = useMemo(() => stripHtml(portfolioLocal).toLowerCase(), [portfolioLocal]);
+  const strippedResume = useMemo(() => stripHtml(resumeLocal).toLowerCase(), [resumeLocal]);
 
   const coachActions = useMemo(() => {
     if (!app || !user) return [];
@@ -767,8 +785,8 @@ export default function ApplicationWorkspacePage() {
           >
             {/* ── Flat Tab Navigation ── */}
             {(() => {
-              const tailoredTabs = ["cv", "cover", "statement", "portfolio"];
-              const benchmarkTabs = ["bench-cv", "bench-cl", "bench-ps", "bench-analysis", "bench-all"];
+              const tailoredTabs = ["cv", "resume", "cover", "statement", "portfolio"];
+              const benchmarkTabs = ["bench-cv", "bench-resume", "bench-cl", "bench-ps", "bench-portfolio", "bench-exec-summary", "bench-analysis", "bench-all"];
               const extraDocKeys = app.generatedDocuments ? Object.keys(app.generatedDocuments).filter(k => app.generatedDocuments![k]) : [];
               const generated = app.generatedDocuments || {};
               const coreKeys = new Set(["cv", "cover_letter", "personal_statement", "portfolio"]);
@@ -826,8 +844,11 @@ export default function ApplicationWorkspacePage() {
                   {isBenchmarkActive && (
                     <TabsList className="w-full justify-start overflow-x-auto h-auto gap-1 bg-muted/30 p-1 rounded-lg">
                       <TabsTrigger value="bench-cv" className={subTriggerCls}><FileText className="h-3 w-3" />Benchmark CV</TabsTrigger>
+                      <TabsTrigger value="bench-resume" className={subTriggerCls}><FileText className="h-3 w-3" />Resume</TabsTrigger>
                       <TabsTrigger value="bench-cl" className={subTriggerCls}><FileText className="h-3 w-3" />Cover Letter</TabsTrigger>
                       <TabsTrigger value="bench-ps" className={subTriggerCls}><PenTool className="h-3 w-3" />Personal Statement</TabsTrigger>
+                      <TabsTrigger value="bench-portfolio" className={subTriggerCls}><FolderOpen className="h-3 w-3" />Portfolio</TabsTrigger>
+                      <TabsTrigger value="bench-exec-summary" className={subTriggerCls}><FileText className="h-3 w-3" />Executive Summary</TabsTrigger>
                       <TabsTrigger value="bench-analysis" className={subTriggerCls}><BarChart3 className="h-3 w-3" />Analysis</TabsTrigger>
                       <TabsTrigger value="bench-all" className={subTriggerCls}><Layers className="h-3 w-3" />All Documents</TabsTrigger>
                     </TabsList>
@@ -837,6 +858,7 @@ export default function ApplicationWorkspacePage() {
                   {isTailoredActive && (
                     <TabsList className="w-full justify-start overflow-x-auto h-auto gap-1 bg-muted/30 p-1 rounded-lg">
                       <TabsTrigger value="cv" className={subTriggerCls}><FileText className="h-3 w-3" />CV</TabsTrigger>
+                      <TabsTrigger value="resume" className={subTriggerCls}><FileText className="h-3 w-3" />Resume</TabsTrigger>
                       <TabsTrigger value="cover" className={subTriggerCls}><FileText className="h-3 w-3" />Cover Letter</TabsTrigger>
                       <TabsTrigger value="statement" className={subTriggerCls}><PenTool className="h-3 w-3" />Statement</TabsTrigger>
                       <TabsTrigger value="portfolio" className={subTriggerCls}><FolderOpen className="h-3 w-3" />Portfolio</TabsTrigger>
@@ -1307,7 +1329,7 @@ export default function ApplicationWorkspacePage() {
             </TabsContent>
 
             {/* ── Benchmark Sub-Tabs ──────────────────────────── */}
-            {["bench-cv", "bench-cl", "bench-ps"].map((tabKey) => {
+            {["bench-cv", "bench-resume", "bench-cl", "bench-ps", "bench-portfolio", "bench-exec-summary"].map((tabKey) => {
               const docMap: Record<string, { title: string; subtitle: string; field: string; tailoredField: string; filename: string; docType: "cv" | "coverLetter" | "personalStatement" | "portfolio" }> = {
                 "bench-cv": {
                   title: "Benchmark CV",
@@ -1315,6 +1337,14 @@ export default function ApplicationWorkspacePage() {
                   field: "cv",
                   tailoredField: "cvHtml",
                   filename: "HireStack_Benchmark_CV",
+                  docType: "cv",
+                },
+                "bench-resume": {
+                  title: "Benchmark Resume",
+                  subtitle: "The ideal US-style resume for this role — concise, achievement-driven, ATS-optimized.",
+                  field: "resume",
+                  tailoredField: "",
+                  filename: "HireStack_Benchmark_Resume",
                   docType: "cv",
                 },
                 "bench-cl": {
@@ -1332,6 +1362,22 @@ export default function ApplicationWorkspacePage() {
                   tailoredField: "personalStatementHtml",
                   filename: "HireStack_Benchmark_Personal_Statement",
                   docType: "personalStatement",
+                },
+                "bench-portfolio": {
+                  title: "Benchmark Portfolio",
+                  subtitle: "The ideal portfolio showcase — benchmark-quality project case studies.",
+                  field: "portfolio",
+                  tailoredField: "portfolioHtml",
+                  filename: "HireStack_Benchmark_Portfolio",
+                  docType: "portfolio",
+                },
+                "bench-exec-summary": {
+                  title: "Benchmark Executive Summary",
+                  subtitle: "The ideal executive summary — concise leadership snapshot for senior roles.",
+                  field: "executive_summary",
+                  tailoredField: "",
+                  filename: "HireStack_Benchmark_Executive_Summary",
+                  docType: "cv",
                 },
               };
               const meta = docMap[tabKey]!;
@@ -1555,7 +1601,7 @@ export default function ApplicationWorkspacePage() {
                 {/* Legacy benchmarkDocuments not shown by sub-tabs (e.g. from on-demand gen) */}
                 {(() => {
                   const benchDocs = app.benchmarkDocuments || {};
-                  const shownKeys = new Set(["cv", "cover_letter", "personal_statement"]);
+                  const shownKeys = new Set(["cv", "resume", "cover_letter", "personal_statement", "portfolio", "executive_summary"]);
                   const extraBenchDocs = Object.entries(benchDocs).filter(([k, html]) => html && !shownKeys.has(k));
                   if (extraBenchDocs.length === 0) return null;
                   return (
@@ -1636,8 +1682,11 @@ export default function ApplicationWorkspacePage() {
                   onView={(key) => {
                     const benchDocs = app.benchmarkDocuments || {};
                     if (key === "cv") setTab("bench-cv");
+                    else if (key === "resume" && benchDocs["resume"]) setTab("bench-resume");
                     else if (key === "cover_letter" && benchDocs["cover_letter"]) setTab("bench-cl");
                     else if (key === "personal_statement" && benchDocs["personal_statement"]) setTab("bench-ps");
+                    else if (key === "portfolio" && benchDocs["portfolio"]) setTab("bench-portfolio");
+                    else if (key === "executive_summary" && benchDocs["executive_summary"]) setTab("bench-exec-summary");
                   }}
                   onDownload={async (key) => {
                     const benchDocs = app.benchmarkDocuments || {};

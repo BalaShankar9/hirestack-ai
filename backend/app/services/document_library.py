@@ -20,14 +20,17 @@ logger = structlog.get_logger("hirestack.document_library")
 # ═══════════════════════════════════════════════════════════════════════
 
 # Documents that every application should have in its benchmark library
+# Canonical 6-doc benchmark base set: CV (long-form), Resume (1–2 page),
+# Cover Letter, Personal Statement, Portfolio, Learning Plan.
+# Other doc types (executive_summary, skills_matrix, interview_prep, etc.)
+# are now planner-driven optional/required docs rather than always-on benchmark.
 BENCHMARK_DOCUMENT_TYPES = [
-    {"key": "cv", "label": "Benchmark CV"},
-    {"key": "cover_letter", "label": "Benchmark Cover Letter"},
-    {"key": "personal_statement", "label": "Benchmark Personal Statement"},
-    {"key": "executive_summary", "label": "Benchmark Executive Summary"},
-    {"key": "skills_matrix", "label": "Benchmark Skills Matrix"},
-    {"key": "interview_preparation", "label": "Benchmark Interview Guide"},
-    {"key": "competency_framework", "label": "Benchmark Competency Framework"},
+    {"key": "cv",                  "label": "Benchmark CV"},
+    {"key": "resume",              "label": "Benchmark Résumé"},
+    {"key": "cover_letter",        "label": "Benchmark Cover Letter"},
+    {"key": "personal_statement",  "label": "Benchmark Personal Statement"},
+    {"key": "portfolio",           "label": "Benchmark Portfolio"},
+    {"key": "learning_plan",       "label": "Benchmark Learning Plan"},
 ]
 
 # Documents that belong in every user's fixed library (cross-application)
@@ -334,6 +337,91 @@ class DocumentLibraryService:
             .eq("user_id", user_id)
             .execute()
         )
+
+    async def upsert_application_document(
+        self,
+        *,
+        user_id: str,
+        application_id: str,
+        doc_category: str,
+        doc_type: str,
+        label: str,
+        html_content: str = "",
+        status: str = "ready",
+        source: str = "planner",
+        metadata: Optional[Dict[str, Any]] = None,
+        error_message: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Find an existing planned/generating row for (user, app, category, type)
+        and update it; otherwise insert a new row.
+
+        This is the durable persistence primitive used by pipeline_runtime so that
+        pre-created "planned" placeholders evolve into "ready"/"error" rows rather
+        than being duplicated. Failures here MUST NOT raise — they degrade to a
+        warning and return an empty dict so the caller can keep moving.
+        """
+        try:
+            # Look for an existing row for this slot (most recent first).
+            existing_resp = await asyncio.to_thread(
+                lambda: self._db.table(self._tables["document_library"])
+                .select("id,status")
+                .eq("user_id", user_id)
+                .eq("application_id", application_id)
+                .eq("doc_category", doc_category)
+                .eq("doc_type", doc_type)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            existing = (existing_resp.data or [None])[0]
+
+            if existing and existing.get("id"):
+                patch: Dict[str, Any] = {
+                    "html_content": html_content,
+                    "status": status,
+                    "label": label,
+                }
+                if metadata is not None:
+                    patch["metadata"] = metadata
+                if error_message is not None:
+                    patch["error_message"] = error_message[:500]
+                resp = await asyncio.to_thread(
+                    lambda: self._db.table(self._tables["document_library"])
+                    .update(patch)
+                    .eq("id", existing["id"])
+                    .eq("user_id", user_id)
+                    .execute()
+                )
+                return (resp.data or [{}])[0]
+
+            # No existing row → insert fresh
+            row = {
+                "user_id": user_id,
+                "application_id": application_id,
+                "doc_type": doc_type,
+                "doc_category": doc_category,
+                "label": label,
+                "html_content": html_content,
+                "metadata": metadata or {},
+                "status": status,
+                "source": source,
+            }
+            if error_message is not None:
+                row["error_message"] = error_message[:500]
+            resp = await asyncio.to_thread(
+                lambda: self._db.table(self._tables["document_library"])
+                .insert(row)
+                .execute()
+            )
+            return (resp.data or [{}])[0]
+        except Exception as ex:
+            logger.warning(
+                "document_library.upsert_failed",
+                doc_type=doc_type,
+                doc_category=doc_category,
+                error=str(ex)[:200],
+            )
+            return {}
 
     # ── Initialization helpers ────────────────────────────────────
 

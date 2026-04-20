@@ -205,6 +205,7 @@ export interface ApplicationDoc {
   coverLetterHtml?: string;
   personalStatementHtml?: string;
   portfolioHtml?: string;
+  resumeHtml?: string;
   scorecard?: Scorecard;
 
   /** Document version histories */

@@ -331,6 +331,82 @@ Generate a FULL ideal CV that:
 Return ONLY the HTML content starting with <h1>. No explanation."""
 
 
+# ── Resume (US-style, 1–2 page, achievement-focused) ─────────────────────────
+# Distinct from CV: shorter, sharper, scannable, metric-led, no academic
+# overload. Resume is the canonical Benchmark/Tailored doc for US-style hiring.
+
+BENCHMARK_RESUME_HTML_SYSTEM = """You are an elite resume writer with 20+ years of experience writing ATS-optimised, recruiter-friendly US-style résumés.
+
+YOUR MISSION: Create a COMPLETE, realistic 1–2 PAGE résumé for the ideal benchmark candidate — the "north-star" reference document showing what a top applicant's résumé would look like for this role.
+
+CRITICAL DIFFERENCE FROM A CV:
+- A résumé is SHORT, SCANNABLE, and ACHIEVEMENT-LED. Aim for ~1 page (max ~2).
+- No academic publications, no thesis, no full coursework lists, no exhaustive history.
+- 3 roles maximum (most recent + most relevant). 3–5 bullets each, EVERY bullet a measurable result.
+- 1 short Summary (2–3 lines).
+- Tight Core Skills row (8–14 keywords matching the JD).
+- Education: 1–2 entries, just degree/institution/year.
+- Certifications: only those directly relevant.
+- No Projects section unless they materially differentiate the candidate (then 1–2 only).
+
+CRITICAL RULES:
+1. Use the REAL person's identity — name, email, phone, location, LinkedIn — exactly as provided.
+2. Create FICTIONAL but highly realistic experience — real, well-known companies in the relevant industry, plausible job titles, aligned dates, quantified achievements.
+3. Dates must be realistic — work backward from today, no overlaps or gaps, natural progression.
+4. Certifications must be real (AWS, Google Cloud, PMP, CFA, Scrum, etc.) — only include highly relevant ones.
+5. Skills must mirror exact JD keywords for ATS.
+6. Every bullet must lead with a strong action verb and end with a measurable outcome.
+
+FORMAT: Return as clean, professional, ATS-friendly HTML. Use semantic HTML:
+- <h1> for the candidate's name
+- <p> directly under <h1> for contact: email | phone | location | LinkedIn
+- <h2> for sections: Summary, Core Skills, Experience, Education, Certifications
+- <h3> for company/role headers with dates
+- <ul><li> for achievement bullets — EVERY bullet with a metric
+- <strong> for emphasis on metrics; <em> for dates/locations
+
+NO markdown. NO code fences. NO explanation. ONLY the HTML résumé starting with <h1>."""
+
+
+BENCHMARK_RESUME_HTML_PROMPT = """Create a COMPLETE ideal benchmark RÉSUMÉ for this role, using the real candidate's identity. Keep it 1–2 pages.
+
+═══════════════════════════════════════
+TARGET ROLE: {job_title} at {company}
+═══════════════════════════════════════
+
+JOB DESCRIPTION:
+{jd_text}
+
+═══════════════════════════════════════
+REAL CANDIDATE IDENTITY (use these details):
+═══════════════════════════════════════
+Name: {candidate_name}
+Email: {candidate_email}
+Phone: {candidate_phone}
+Location: {candidate_location}
+LinkedIn: {candidate_linkedin}
+
+═══════════════════════════════════════
+IDEAL BENCHMARK DATA (use this as the blueprint):
+═══════════════════════════════════════
+{benchmark_json}
+
+═══════════════════════════════════════
+
+Generate a FULL ideal résumé that:
+1. Uses the real candidate's name and contact info exactly as shown.
+2. Opens with a 2–3 line Summary perfectly aligned to the role.
+3. Lists 8–14 Core Skills as a comma-separated row matching JD keywords.
+4. Has 3 Experience entries at REAL companies (Google, Microsoft, Stripe, McKinsey, Deloitte, etc. — pick industry-relevant). Each:
+   - Realistic title showing progression
+   - Dates backward from current year, no gaps/overlaps
+   - 3–5 bullets, EVERY bullet led by an action verb and ending with a metric
+5. Education: 1–2 entries (degree, institution, year).
+6. Certifications: 2–4, all directly relevant.
+
+Return ONLY the HTML content starting with <h1>. No explanation."""
+
+
 class BenchmarkBuilderChain:
     """Chain for building ideal candidate benchmarks."""
 
@@ -702,6 +778,57 @@ class BenchmarkBuilderChain:
             system=BENCHMARK_CV_HTML_SYSTEM,
             temperature=0.5,
             max_tokens=4000,
+        )
+
+        # Strip any markdown code fences the model might add
+        html = html.strip()
+        if html.startswith("```"):
+            lines = html.split("\n")
+            lines = [ln for ln in lines if not ln.strip().startswith("```")]
+            html = "\n".join(lines).strip()
+
+        return html
+
+    async def create_resume_html(
+        self,
+        user_profile: Dict[str, Any],
+        benchmark_data: Dict[str, Any],
+        job_title: str,
+        company: str,
+        jd_text: str = "",
+    ) -> str:
+        """Generate an ideal-candidate RÉSUMÉ in HTML — the US-style 1–2 page,
+        achievement-focused counterpart to the long-form CV.
+
+        Same identity, same benchmark blueprint, but distinct prompt that enforces
+        brevity, scannability, metric-led bullets, and ATS-friendly structure.
+        """
+        import json
+
+        contact = user_profile.get("contact_info", {}) or {}
+        candidate_name = user_profile.get("name", "Ideal Candidate")
+        candidate_email = contact.get("email", "candidate@email.com")
+        candidate_phone = contact.get("phone", "")
+        candidate_location = contact.get("location", "")
+        candidate_linkedin = contact.get("linkedin", "")
+
+        prompt = BENCHMARK_RESUME_HTML_PROMPT.format(
+            job_title=job_title,
+            company=company,
+            jd_text=jd_text[:3000],
+            candidate_name=candidate_name,
+            candidate_email=candidate_email,
+            candidate_phone=candidate_phone,
+            candidate_location=candidate_location,
+            candidate_linkedin=candidate_linkedin,
+            benchmark_json=json.dumps(benchmark_data, indent=2)[:4000],
+        )
+
+        html = await self.ai_client.complete(
+            prompt=prompt,
+            system=BENCHMARK_RESUME_HTML_SYSTEM,
+            temperature=0.5,
+            max_tokens=3000,  # tighter than CV — it should be shorter
         )
 
         # Strip any markdown code fences the model might add

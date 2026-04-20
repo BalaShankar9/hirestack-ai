@@ -176,6 +176,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Start periodic stale job cleanup (every 10 minutes)
     _stale_cleanup_task = asyncio.create_task(_periodic_stale_job_cleanup())
 
+    # Start the v4 JobWatchdog — flips stalled `running` jobs to `failed`
+    # so the UI never spins forever after a worker crash.
+    _watchdog = None
+    try:
+        from app.services.job_watchdog import JobWatchdog
+        from app.core.database import TABLES
+        _watchdog = JobWatchdog(get_supabase(), TABLES)
+        _watchdog.start()
+        app.state._job_watchdog = _watchdog
+    except Exception as wd_err:
+        logger.warning("Failed to start JobWatchdog", error=str(wd_err)[:200])
+
     # Register SIGTERM handler for graceful shutdown (Railway sends SIGTERM)
     import signal
 
@@ -219,6 +231,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         await _stale_cleanup_task
     except asyncio.CancelledError:
         pass
+    # Stop the v4 JobWatchdog
+    if _watchdog is not None:
+        try:
+            await _watchdog.stop()
+        except Exception:
+            pass
     # Release database client
     from app.core.database import close_supabase
     close_supabase()

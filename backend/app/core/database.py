@@ -235,6 +235,8 @@ TABLES = {
     "user_skill_gaps": "user_skill_gaps",
     "user_learning_goals": "user_learning_goals",
     "resource_recommendations": "resource_recommendations",
+    # v4 orchestration foundation (agent_rebuild-tier1-tier2-2026-04-20)
+    "agent_artifacts": "agent_artifacts",
 }
 
 

@@ -30,6 +30,7 @@ export interface UniverseDocType {
 
 export const RECOMMENDED_KEYS = [
   "cv",
+  "resume",
   "cover_letter",
   "personal_statement",
   "portfolio",
@@ -46,6 +47,7 @@ export const RECOMMENDED_KEYS = [
 export const DOCUMENT_UNIVERSE: UniverseDocType[] = [
   // ── Recommended Set (10) ──
   { key: "cv",                    label: "CV / Résumé",                  description: "ATS-optimised CV tailored to the role's exact requirements",                recommended: true,  group: "recommended" },
+  { key: "resume",                label: "Resume",                       description: "Concise 1-2 page US-style resume with quantified achievements",             recommended: true,  group: "recommended" },
   { key: "cover_letter",          label: "Cover Letter",                 description: "Evidence-backed narrative connecting your experience to the role",          recommended: true,  group: "recommended" },
   { key: "personal_statement",    label: "Personal Statement",           description: "Compelling motivation narrative — authentic, specific, memorable",          recommended: true,  group: "recommended" },
   { key: "portfolio",             label: "Portfolio & Evidence",          description: "Curated project showcase proving real capability with outcomes",           recommended: true,  group: "recommended" },
