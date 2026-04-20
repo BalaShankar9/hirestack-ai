@@ -552,6 +552,69 @@ async def prometheus_metrics():
     except Exception:
         pass
 
+    # AI cache hit rates (response cache, JD analysis cache, pipeline cache)
+    try:
+        from ai_engine.cache import get_all_cache_stats
+        cache_stats = get_all_cache_stats()
+        lines.append("# HELP hirestack_ai_cache_hits_total Cumulative cache hits per layer")
+        lines.append("# TYPE hirestack_ai_cache_hits_total counter")
+        lines.append("# HELP hirestack_ai_cache_misses_total Cumulative cache misses per layer")
+        lines.append("# TYPE hirestack_ai_cache_misses_total counter")
+        lines.append("# HELP hirestack_ai_cache_hit_rate Hit rate percentage per cache layer")
+        lines.append("# TYPE hirestack_ai_cache_hit_rate gauge")
+        lines.append("# HELP hirestack_ai_cache_size Entries currently held per cache layer")
+        lines.append("# TYPE hirestack_ai_cache_size gauge")
+        for layer_name, layer_stats in (cache_stats or {}).items():
+            if not isinstance(layer_stats, dict):
+                continue
+            safe = layer_name.replace("-", "_")
+            lines.append(
+                f'hirestack_ai_cache_hits_total{{layer="{safe}"}} '
+                f'{int(layer_stats.get("hits", 0))}'
+            )
+            lines.append(
+                f'hirestack_ai_cache_misses_total{{layer="{safe}"}} '
+                f'{int(layer_stats.get("misses", 0))}'
+            )
+            lines.append(
+                f'hirestack_ai_cache_hit_rate{{layer="{safe}"}} '
+                f'{float(layer_stats.get("hit_rate_pct", 0))}'
+            )
+            lines.append(
+                f'hirestack_ai_cache_size{{layer="{safe}"}} '
+                f'{int(layer_stats.get("size", 0))}'
+            )
+    except Exception:
+        pass
+
+    # Per-phase latency percentiles from the in-process rolling window
+    try:
+        from app.core.metrics import MetricsCollector
+        stage_stats = MetricsCollector.get().get_stage_stats()
+        if stage_stats:
+            lines.append("# HELP hirestack_phase_duration_p50_ms Median phase duration (ms)")
+            lines.append("# TYPE hirestack_phase_duration_p50_ms gauge")
+            lines.append("# HELP hirestack_phase_duration_p95_ms 95th-pct phase duration (ms)")
+            lines.append("# TYPE hirestack_phase_duration_p95_ms gauge")
+            lines.append("# HELP hirestack_phase_success_rate Phase success rate (0-1)")
+            lines.append("# TYPE hirestack_phase_success_rate gauge")
+            for phase_name, ps in stage_stats.items():
+                safe = phase_name.replace("-", "_").replace(" ", "_")
+                lines.append(
+                    f'hirestack_phase_duration_p50_ms{{phase="{safe}"}} '
+                    f'{int(ps.get("p50_ms", 0))}'
+                )
+                lines.append(
+                    f'hirestack_phase_duration_p95_ms{{phase="{safe}"}} '
+                    f'{int(ps.get("p95_ms", 0))}'
+                )
+                lines.append(
+                    f'hirestack_phase_success_rate{{phase="{safe}"}} '
+                    f'{float(ps.get("success_rate", 0))}'
+                )
+    except Exception:
+        pass
+
     from starlette.responses import Response
     return Response(
         content="\n".join(lines) + "\n",

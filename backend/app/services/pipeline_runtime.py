@@ -442,6 +442,99 @@ class PipelineRuntime:
         self._failed_modules: List[Dict[str, str]] = []
         self._phase_started_at: Dict[str, float] = {}
         self._phase_latencies: Dict[str, int] = {}
+        # Recon overlap state — populated when intel kicks off.
+        self._intel_task: Optional[asyncio.Task] = None
+        self._intel_started_at: Optional[float] = None
+        self._intel_resolved: bool = False
+
+    async def _await_company_intel(
+        self,
+        timeout: float = 30.0,
+    ) -> Dict[str, Any]:
+        """Block until the recon intel task resolves (or times out).
+
+        Idempotent — once resolved, subsequent callers get the cached
+        result without re-awaiting. On timeout, emits a warning event,
+        cancels the underlying task cleanly, and returns an empty dict
+        so the pipeline can continue with JD-only context.
+        """
+        if self._intel_resolved:
+            return getattr(self, "_company_intel_cached", {}) or {}
+
+        task = self._intel_task
+        if task is None:
+            self._intel_resolved = True
+            self._company_intel_cached = {}
+            return {}
+
+        # Compute remaining budget: total intel budget is `timeout`
+        # measured from intel kickoff, not from this call site, so a
+        # later consumer cannot extend the deadline.
+        if self._intel_started_at is not None:
+            elapsed = time.perf_counter() - self._intel_started_at
+            remaining = max(0.5, timeout - elapsed)
+        else:
+            remaining = timeout
+
+        company_intel: Dict[str, Any] = {}
+        try:
+            company_intel = await asyncio.wait_for(
+                asyncio.shield(task), timeout=remaining,
+            )
+            logger.info(
+                "pipeline_runtime.intel_done",
+                confidence=(company_intel or {}).get("confidence", "unknown"),
+                overlap_savings_ms=(
+                    int((time.perf_counter() - self._intel_started_at) * 1000)
+                    if self._intel_started_at else 0
+                ),
+            )
+        except asyncio.TimeoutError:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+            logger.warning("pipeline_runtime.intel_timeout")
+            await self.sink.emit(PipelineEvent(
+                event_type="detail",
+                phase="recon",
+                message="Recon timed out; continuing with JD-based intel.",
+                status="warning",
+                data={"agent": "recon", "source": "analysis"},
+            ))
+            self._failed_modules.append(
+                {"module": "company_intel", "error": "intel_timeout"}
+            )
+        except Exception as intel_err:
+            logger.warning("pipeline_runtime.intel_skipped",
+                           error=str(intel_err)[:200])
+            await self.sink.emit(PipelineEvent(
+                event_type="detail",
+                phase="recon",
+                message="Recon failed; continuing with available inputs.",
+                status="warning",
+                data={
+                    "agent": "recon", "source": "analysis",
+                    "metadata": {"error": str(intel_err)[:200]},
+                },
+            ))
+            self._failed_modules.append(
+                {"module": "company_intel", "error": str(intel_err)[:200]}
+            )
+        finally:
+            self._intel_resolved = True
+            self._company_intel_cached = company_intel or {}
+            # Close out the recon phase here so its measured latency
+            # reflects intel-resolution time (matches what jobs.py + the
+            # progress UI display).
+            try:
+                self._finish_phase("recon")
+            except Exception:
+                pass
+
+        return company_intel or {}
 
     def _begin_phase(self, phase: str) -> None:
         self._phase_started_at[phase] = time.perf_counter()
@@ -817,51 +910,50 @@ class PipelineRuntime:
                         message=f"Recon: processed {len(recon_sources_completed)} source(s)…",
                     )
                 )
+        # ── Recon overlap optimization ────────────────────────────────
+        # Launch company intel as a background task and let Atlas (resume
+        # parse + benchmark) start immediately. company_intel is only
+        # consumed at the document-pack-plan step (~15-20s into Atlas),
+        # so this overlaps the entire Atlas duration with intel gathering.
+        # First-time consumers self.await_company_intel() with a strict
+        # timeout. Net p95 saving: ~15-25s on cold runs.
+        intel_task: Optional[asyncio.Task] = None
         try:
             from ai_engine.chains.company_intel import CompanyIntelChain
             intel_chain = CompanyIntelChain(ai)
-            intel_coro = intel_chain.gather_intel(
-                company=company,
-                job_title=job_title,
-                jd_text=jd_text,
-                on_event=_on_recon_event,
+            intel_task = asyncio.create_task(
+                intel_chain.gather_intel(
+                    company=company,
+                    job_title=job_title,
+                    jd_text=jd_text,
+                    on_event=_on_recon_event,
+                ),
+                name="recon.company_intel",
             )
-            intel_task = asyncio.create_task(intel_coro)
-            company_intel = await asyncio.wait_for(
-                asyncio.shield(intel_task),
-                timeout=30,
+            # Stash on self so any consumer in this run can await it.
+            self._intel_task = intel_task
+            self._intel_started_at = time.perf_counter()
+        except Exception as intel_setup_err:
+            logger.warning("pipeline_runtime.intel_setup_failed",
+                           error=str(intel_setup_err)[:200])
+            self._failed_modules.append(
+                {"module": "company_intel", "error": str(intel_setup_err)[:200]}
             )
-            logger.info("pipeline_runtime.intel_done",
-                        confidence=company_intel.get("confidence", "unknown"))
-        except asyncio.TimeoutError:
-            # Cancel cleanly to avoid leaked coroutines
-            if intel_task and not intel_task.done():
-                intel_task.cancel()
-                try:
-                    await intel_task
-                except (asyncio.CancelledError, Exception):
-                    pass
-            logger.warning("pipeline_runtime.intel_timeout")
+            self._finish_phase("recon")
+            self._intel_task = None
+            self._intel_started_at = None
+        else:
+            # Recon is now "in flight" — phase will be finalised when the
+            # first downstream consumer awaits company_intel. Keep the
+            # phase counter "open" by skipping _finish_phase here; it's
+            # called from _await_company_intel() instead.
             await self.sink.emit(PipelineEvent(
                 event_type="detail",
                 phase="recon",
-                message="Recon timed out after 30s; continuing with JD-based intel.",
-                status="warning",
+                message="Recon launched; running in parallel with Atlas…",
+                status="running",
                 data={"agent": "recon", "source": "analysis"},
             ))
-            self._failed_modules.append({"module": "company_intel", "error": "intel_timeout"})
-        except Exception as intel_err:
-            logger.warning("pipeline_runtime.intel_skipped", error=str(intel_err)[:200])
-            await self.sink.emit(PipelineEvent(
-                event_type="detail",
-                phase="recon",
-                message="Recon external intel failed; continuing with available inputs.",
-                status="warning",
-                data={"agent": "recon", "source": "analysis", "metadata": {"error": str(intel_err)[:200]}},
-            ))
-            self._failed_modules.append({"module": "company_intel", "error": str(intel_err)[:200]})
-        finally:
-            self._finish_phase("recon")
 
         # ── Phase 1: Resume parse ─────────────────────────────────────
         self._begin_phase("atlas")
@@ -1026,6 +1118,12 @@ class PipelineRuntime:
             )
         except Exception as bcv_err:
             logger.warning("pipeline_runtime.benchmark_cv_task_failed", error=str(bcv_err)[:200])
+
+        # First real consumer of company_intel — block here so that
+        # downstream document planning has the recon context. Atlas
+        # work above ran fully overlapped with intel. _await_company_intel
+        # never raises (timeout/errors return {} and emit warnings).
+        company_intel = await self._await_company_intel(timeout=30.0)
 
         try:
             from app.services.document_catalog import discover_and_observe
