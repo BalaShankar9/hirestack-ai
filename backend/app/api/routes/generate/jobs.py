@@ -1165,40 +1165,21 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             result.setdefault("meta", {})["output_scores"] = output_scores
 
         # ── Critic gate enforcement: pipeline_runtime stamps a `validation`
-        # block onto the result. If the v4 ValidationCritic flagged the run
-        # as failed (any error-severity finding), we keep the generated
-        # documents but downgrade the job status so the UI can show the
-        # validation banner. Default to "succeeded" when the validation
-        # block is absent (legacy paths that don't run the v4 critic).
-        validation_meta = (result or {}).get("validation") or {}
-        validation_passed = validation_meta.get("passed", True)
-        final_status = "succeeded" if validation_passed else "succeeded_with_warnings"
-        final_message = (
-            "Generation complete."
-            if validation_passed
-            else (
-                f"Generation complete with validation warnings "
-                f"({validation_meta.get('error_count', 0)} errors, "
-                f"{validation_meta.get('warning_count', 0)} warnings)."
-            )
-        )
+        # block onto the result. The shared finalisation helper translates
+        # that into the canonical job-update payload (status, message,
+        # finished_at) so this codepath cannot drift from the agent-pipeline
+        # codepath below — both go through the same single source of truth.
+        from .helpers import finalize_job_status_payload as _finalize_payload  # local import to avoid cycle
 
         await _persist_generation_job_update(
             sb,
             TABLES,
             job_id,
-            {
-                "status": final_status,
-                "progress": 100,
-                "phase": "complete",
-                "message": final_message,
-                "current_agent": "nova",
-                "completed_steps": _JOB_TOTAL_STEPS,
-                "total_steps": _JOB_TOTAL_STEPS,
-                "active_sources_count": 0,
-                "result": result,
-                "finished_at": datetime.now(timezone.utc).isoformat(),
-            },
+            _finalize_payload(
+                result,
+                total_steps=_JOB_TOTAL_STEPS,
+                extra_fields={"result": result},
+            ),
         )
         await emit("complete", {"progress": 100, "result": result})
 
@@ -1840,34 +1821,20 @@ async def _run_generation_job_inner_runtime(job_id: str, user_id: str) -> None:
             except Exception as dpp_err:
                 logger.warning("job_runtime.doc_pack_plan_persist_failed", error=str(dpp_err)[:200])
 
-        # Mark job complete with all fields. Honor the v4 critic gate: if
-        # the runtime stamped result.validation.passed = False, downgrade
-        # status to succeeded_with_warnings so the UI can react.
-        _validation_meta = (result or {}).get("validation") or {}
-        _validation_passed = _validation_meta.get("passed", True)
-        _final_status = "succeeded" if _validation_passed else "succeeded_with_warnings"
-        _final_message = (
-            "Generation complete."
-            if _validation_passed
-            else (
-                f"Generation complete with validation warnings "
-                f"({_validation_meta.get('error_count', 0)} errors, "
-                f"{_validation_meta.get('warning_count', 0)} warnings)."
-            )
-        )
-        _job_update: dict = {
-                "status": _final_status,
-                "progress": 100,
-                "phase": "complete",
-                "message": _final_message,
-                "current_agent": "nova",
-                "completed_steps": _JOB_TOTAL_STEPS,
-                "total_steps": _JOB_TOTAL_STEPS,
-                "active_sources_count": 0,
-                "finished_at": datetime.now(timezone.utc).isoformat(),
-        }
+        # Mark job complete via the shared finalisation helper so this path
+        # produces the same canonical payload as the orchestrator path
+        # above. Critic-flagged runs become "succeeded_with_warnings"
+        # automatically; ``doc_pack_plan`` is merged in as an extra field.
+        from .helpers import finalize_job_status_payload as _finalize_payload  # local import to avoid cycle
+
+        _extra_fields: dict = {}
         if doc_pack_plan:
-            _job_update["generation_plan"] = doc_pack_plan
+            _extra_fields["generation_plan"] = doc_pack_plan
+        _job_update = _finalize_payload(
+            result,
+            total_steps=_JOB_TOTAL_STEPS,
+            extra_fields=_extra_fields,
+        )
         await asyncio.to_thread(
             lambda: sb.table(TABLES["generation_jobs"])
             .update(_job_update)

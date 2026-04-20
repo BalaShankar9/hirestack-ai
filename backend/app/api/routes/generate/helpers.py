@@ -712,3 +712,74 @@ def _extract_keywords_from_jd(jd_text: str) -> List[str]:
             seen.add(clean)
             found.append(clean)
     return found[:25]
+
+
+# ── Critic-gate-aware job finalisation ──
+# Single source of truth for translating the v4 ValidationCritic output
+# into a persisted generation_jobs row update. All completion paths
+# (durable job runner, agent pipeline path, future shared finaliser)
+# MUST go through this helper. Hand-rolling the {status, message,
+# finished_at, validation block, etc.} dict in multiple places is the
+# drift-prone pattern this helper exists to retire.
+def finalize_job_status_payload(
+    result: Dict[str, Any] | None,
+    *,
+    total_steps: int,
+    extra_fields: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build the canonical generation_jobs UPDATE payload for a successful
+    pipeline run, honouring the critic gate stamped onto ``result``.
+
+    - When ``result["validation"]["passed"]`` is False the persisted
+      status is ``"succeeded_with_warnings"`` and the human-readable
+      message surfaces the error / warning counts.
+    - When validation is missing or passed the status is ``"succeeded"``.
+    - Caller may pass ``extra_fields`` to merge in path-specific keys
+      (e.g. ``generation_plan``); these never override the critical
+      status / message / finished_at fields produced by this helper.
+
+    The helper is pure: no I/O, no logging, no raising. It exists so
+    every finalisation site has the same lying-state-prevention logic.
+    """
+    validation_meta = (result or {}).get("validation") or {}
+    validation_passed = validation_meta.get("passed", True)
+    error_count = int(validation_meta.get("error_count", 0) or 0)
+    warning_count = int(validation_meta.get("warning_count", 0) or 0)
+
+    final_status = "succeeded" if validation_passed else "succeeded_with_warnings"
+    final_message = (
+        "Generation complete."
+        if validation_passed
+        else (
+            f"Generation complete with validation warnings "
+            f"({error_count} errors, {warning_count} warnings)."
+        )
+    )
+
+    payload: Dict[str, Any] = {
+        "status": final_status,
+        "progress": 100,
+        "phase": "complete",
+        "message": final_message,
+        "current_agent": "nova",
+        "completed_steps": total_steps,
+        "total_steps": total_steps,
+        "active_sources_count": 0,
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+    }
+    # Merge in caller-provided extras WITHOUT letting them override the
+    # critical status / message / finished_at semantics.
+    if extra_fields:
+        for key, value in extra_fields.items():
+            if key in {"status", "message", "finished_at", "progress"}:
+                continue
+            payload[key] = value
+    return payload
+
+
+# Set of statuses that mean "the job has reached a terminal state".
+# Used for guards that prevent late-arriving stage completions from
+# overwriting an already-finalised job (race protection).
+TERMINAL_JOB_STATUSES: frozenset[str] = frozenset(
+    {"succeeded", "succeeded_with_warnings", "failed", "cancelled"}
+)
