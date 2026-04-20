@@ -80,6 +80,19 @@ jobs:
           ENVIRONMENT: test
         run: python -m pytest tests/ -v --tb=short -q
 
+      - name: Agent eval gate (gold corpus)
+        # Deterministic eval — no API keys required. Fails the build if
+        # any gold case regresses, so prompt/tool/contract changes can't
+        # silently degrade pipeline quality.
+        env:
+          SUPABASE_URL: https://placeholder.supabase.co
+          SUPABASE_ANON_KEY: placeholder-key-for-ci
+          SUPABASE_SERVICE_ROLE_KEY: placeholder-key-for-ci
+          SUPABASE_JWT_SECRET: placeholder-secret-for-ci
+          DEBUG: "false"
+          ENVIRONMENT: test
+        run: PYTHONPATH="$PWD/backend:$PWD" python -m ai_engine.evals.runner
+
   # ── Security ──────────────────────────────────────────
   security:
     name: Security

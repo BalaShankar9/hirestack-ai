@@ -230,6 +230,23 @@ class PipelineResult:
     final_analysis_report: Optional[dict] = None # v7: optimizer final analysis
     escalation: Optional[dict] = None            # v8: human review escalation metadata
     iteration_deltas: Optional[list] = None      # v8: score deltas per revision iteration
+    citation_coverage: Optional[float] = None    # v9: fraction of claims linked to >=1 evidence id (0.0-1.0)
+
+
+def _compute_citation_coverage(citations: Optional[list[dict]]) -> Optional[float]:
+    """Return the fraction of claims that were linked to >= 1 evidence item.
+
+    1.0 = every claim is grounded.  0.0 = no claim could be linked.
+    None = no citations were produced at all (fact-check skipped or no claims).
+
+    This metric makes silent citation-link degradation observable: a drop
+    here means the orchestrator's _rebuild_citations_from_fact_check is
+    failing to match fact-checker source references against the ledger.
+    """
+    if not citations:
+        return None
+    grounded = sum(1 for c in citations if c.get("evidence_ids"))
+    return round(grounded / len(citations), 3)
 
 
 def _merge_optimizations(
@@ -1511,6 +1528,7 @@ class AgentPipeline:
             final_analysis_report=final_analysis_result.content if final_analysis_result else None,
             escalation=getattr(self, "_escalation", None),
             iteration_deltas=iteration_deltas if iteration_deltas else None,
+            citation_coverage=_compute_citation_coverage(citations),
         )
 
     async def _emit(
