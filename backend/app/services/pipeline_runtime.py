@@ -570,6 +570,18 @@ class PipelineRuntime:
             except Exception as tel_err:
                 logger.warning("pipeline_runtime.telemetry_failed", error=str(tel_err)[:200])
 
+            # ── Usage-guard counter: increment per-user + platform daily totals ─
+            try:
+                if user_id:
+                    from app.services.usage_guard import record_generation
+                    await record_generation(
+                        user_id,
+                        cost_cents=int(ai.token_usage.get("estimated_cost_usd_cents", 0) or 0),
+                        token_total=int(ai.token_usage.get("total_tokens", 0) or 0),
+                    )
+            except Exception as ug_err:
+                logger.warning("pipeline_runtime.usage_guard_record_failed", error=str(ug_err)[:200])
+
             if pipeline_metric is not None:
                 pipeline_metric.finished_at = time.time()
                 pipeline_metric.success = True

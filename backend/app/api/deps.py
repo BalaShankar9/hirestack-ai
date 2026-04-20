@@ -108,6 +108,39 @@ import structlog as _structlog  # noqa: E402
 _billing_logger = _structlog.get_logger()
 
 
+async def check_usage_guard(current_user: Dict[str, Any]) -> None:
+    """Backstop per-user/per-platform cap that runs BEFORE billing.
+
+    Always active (unless USAGE_GUARD_ENABLED=false). Protects against
+    unlimited free-tier usage when the user has no org or when the
+    billing flag is disabled.
+
+    Raises 429 with a structured payload on cap hit.
+    """
+    from app.services.usage_guard import UsageGuardExceeded, check_and_reserve
+
+    try:
+        await check_and_reserve(current_user["id"])
+    except UsageGuardExceeded as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "error": "usage_cap_reached",
+                "scope": exc.scope,
+                "limit": exc.limit,
+                "actual": exc.actual,
+                "retry_after_hours": exc.retry_after_hours,
+                "message": (
+                    "Daily generation limit reached. Try again tomorrow "
+                    "or upgrade to a paid plan."
+                    if exc.scope == "user_daily"
+                    else "The platform is temporarily paused due to high load. "
+                         "Please retry in a few hours."
+                ),
+            },
+        )
+
+
 async def check_billing_limit(feature: str, current_user: Dict[str, Any]) -> None:
     """Check billing limit for a feature. Raises 402 if over limit.
 

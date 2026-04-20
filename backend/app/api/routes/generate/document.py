@@ -22,6 +22,8 @@ async def generate_on_demand_document(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Generate a single optional document for an existing application."""
+    from app.api.deps import check_usage_guard
+    await check_usage_guard(current_user)
     await check_billing_limit("ai_calls", current_user)
     user_id = current_user.get("id") or current_user.get("uid") or current_user.get("sub")
     if not user_id:

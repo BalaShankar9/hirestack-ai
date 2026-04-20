@@ -28,6 +28,8 @@ async def generate_planned_pipeline(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Use the PlannerAgent to decide which pipeline(s) to run, then execute the plan."""
+    from app.api.deps import check_usage_guard
+    await check_usage_guard(current_user)
     await check_billing_limit("ai_calls", current_user)
 
     if not req.user_request.strip():

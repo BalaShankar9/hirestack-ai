@@ -35,6 +35,8 @@ router = APIRouter()
 @limiter.limit("3/minute")
 async def generate_pipeline(request: Request, req: PipelineRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Run the complete AI generation pipeline and return all modules."""
+    from app.api.deps import check_usage_guard
+    await check_usage_guard(current_user)
     await check_billing_limit("ai_calls", current_user)
     _validate_pipeline_input(req)
     user_id = current_user.get("id") or current_user.get("uid") or current_user.get("sub") or "anonymous"

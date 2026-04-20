@@ -32,6 +32,7 @@ from app.api.routes.documents import router as documents_router
 from app.api.routes.evidence_mapper import router as evidence_mapper_router
 from app.api.routes.knowledge import router as knowledge_router
 from app.api.routes.global_skills import router as global_skills_router
+from app.api.routes.me import router as me_router
 
 router = APIRouter()
 
@@ -66,3 +67,4 @@ router.include_router(documents_router, prefix="", tags=["Document Library"])
 router.include_router(evidence_mapper_router, prefix="/evidence-mapper", tags=["Evidence Mapper"])
 router.include_router(knowledge_router, prefix="/knowledge", tags=["Knowledge Library"])
 router.include_router(global_skills_router, prefix="/development", tags=["Global Skills & Development"])
+router.include_router(me_router, prefix="", tags=["Account"])
