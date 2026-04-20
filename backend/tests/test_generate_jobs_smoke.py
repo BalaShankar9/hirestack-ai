@@ -437,13 +437,15 @@ async def test_cancel_job_sets_flag(aclient):
 
 
 def test_normalize_requested_modules_defaults():
-    """Empty/None input returns all default modules."""
+    """Empty/None input returns the canonical default module set."""
     from app.api.routes.generate import _normalize_requested_modules
+    from app.api.routes.generate.jobs import _DEFAULT_REQUESTED_MODULES
     result = _normalize_requested_modules([])
     assert "cv" in result
     assert "coverLetter" in result
     assert "benchmark" in result
-    assert len(result) == 8
+    assert len(result) == len(_DEFAULT_REQUESTED_MODULES)
+    assert set(result) == set(_DEFAULT_REQUESTED_MODULES)
 
 
 def test_normalize_requested_modules_filters_invalid():
@@ -454,17 +456,21 @@ def test_normalize_requested_modules_filters_invalid():
 
 
 def test_normalize_requested_modules_all_invalid_returns_defaults():
-    """If all modules are invalid, returns defaults."""
+    """If all modules are invalid, returns the canonical default set."""
     from app.api.routes.generate import _normalize_requested_modules
+    from app.api.routes.generate.jobs import _DEFAULT_REQUESTED_MODULES
     result = _normalize_requested_modules(["fake1", "fake2"])
-    assert len(result) == 8
+    assert len(result) == len(_DEFAULT_REQUESTED_MODULES)
+    assert set(result) == set(_DEFAULT_REQUESTED_MODULES)
 
 
 def test_default_module_states():
-    """All 8 default modules start in idle state."""
+    """Every canonical module starts in idle state — single source of truth."""
     from app.api.routes.generate import _default_module_states
+    from app.api.routes.generate.jobs import _DEFAULT_REQUESTED_MODULES
     states = _default_module_states()
-    assert len(states) == 8
+    assert len(states) == len(_DEFAULT_REQUESTED_MODULES)
+    assert set(states.keys()) == set(_DEFAULT_REQUESTED_MODULES)
     for key, val in states.items():
         assert val["state"] == "idle", f"{key} should be idle"
 

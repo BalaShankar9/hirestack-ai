@@ -87,7 +87,16 @@ class TestSeedCatalog:
         assert SEED_BY_KEY["cover_letter"]["category"] == "core"
 
     def test_core_doc_keys(self):
-        assert CORE_DOC_KEYS == {"cv", "cover_letter", "personal_statement", "portfolio"}
+        # Core docs are derived from SEED_CATALOG entries with category=="core".
+        # This protects against silent drift: any change to SEED_CATALOG
+        # categories must be reflected here, and we re-derive from the
+        # catalog itself so the assertion is anchored to the source of truth.
+        expected_core = {e["key"] for e in SEED_CATALOG if e["category"] == "core"}
+        assert CORE_DOC_KEYS == expected_core
+        # And the canonical core set as of this revision must include the
+        # tailored four plus the resume variant. If a future change drops
+        # one of these, this assertion forces an explicit decision.
+        assert {"cv", "cover_letter", "personal_statement", "portfolio", "resume"} <= CORE_DOC_KEYS
 
     def test_no_duplicate_keys(self):
         keys = [e["key"] for e in SEED_CATALOG]

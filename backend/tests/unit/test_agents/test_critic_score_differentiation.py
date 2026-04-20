@@ -38,7 +38,15 @@ def _make_client(quality_scores: dict, issues: list | None = None) -> MagicMock:
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    # Py3.13+ removed implicit event-loop creation in the main thread, so we
+    # create a fresh loop per call. This keeps the helper synchronous (the
+    # test classes here aren't async-collected by pytest-asyncio) while
+    # being safe across 3.10 → 3.14.
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 # ---------------------------------------------------------------------------
