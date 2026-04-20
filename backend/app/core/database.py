@@ -237,6 +237,8 @@ TABLES = {
     "resource_recommendations": "resource_recommendations",
     # v4 orchestration foundation (agent_rebuild-tier1-tier2-2026-04-20)
     "agent_artifacts": "agent_artifacts",
+    # Stripe webhook idempotency ledger (prod-readiness 2026-04-20)
+    "processed_webhook_events": "processed_webhook_events",
 }
 
 

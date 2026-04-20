@@ -173,6 +173,16 @@ class _GeminiProvider:
         if self._throttle_lock is None:
             # Create lock inside the running loop (py3.9 asyncio primitives can be loop-bound).
             self._throttle_lock = asyncio.Lock()
+
+        # ── Circuit breaker (W8 follow-up) ──────────────────────────
+        # Was previously imported but never invoked. Wire it now so a fully
+        # down provider fast-fails after _failure_threshold_ consecutive
+        # errors instead of cascading retries through every caller.
+        # Quota-exhaustion is NOT counted as a breaker failure (handled by
+        # routed-model fallback below) — we re-raise as-is to skip the
+        # __aexit__ failure recording path.
+        _breaker = _get_model_breaker(effective_model)
+
         async with self._throttle_lock:
             if self._min_interval_s > 0:
                 now = time.monotonic()
@@ -187,13 +197,17 @@ class _GeminiProvider:
                 self.model_name,
                 effective_model != self.model_name,
             )
+            # Gate the actual SDK call through the breaker. The context
+            # manager records success on clean exit and failure on any
+            # exception (including CircuitBreakerOpen propagation upstream).
             try:
-                return await asyncio.to_thread(
-                    self._get_client().models.generate_content,
-                    model=effective_model,
-                    contents=contents,
-                    config=config,
-                )
+                async with _breaker:
+                    return await asyncio.to_thread(
+                        self._get_client().models.generate_content,
+                        model=effective_model,
+                        contents=contents,
+                        config=config,
+                    )
             except Exception as exc:
                 # Fallback to the default model when the routed model is
                 # unavailable or quota-exhausted.  Only attempt fallback

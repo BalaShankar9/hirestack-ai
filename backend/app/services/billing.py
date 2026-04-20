@@ -175,16 +175,59 @@ class BillingService:
             return None
 
     async def handle_webhook(self, event_type: str, data: Dict[str, Any]):
-        """Handle a Stripe webhook event with idempotency protection."""
-        # Idempotency: use the Stripe event ID to prevent duplicate processing
-        # TODO: persist event_id to a processed-events table to fully prevent replay attacks
+        """Handle a Stripe webhook event with idempotency protection.
+
+        Persists every event_id to ``processed_webhook_events`` BEFORE
+        running the side effect. The PRIMARY KEY on event_id makes the
+        insert atomic across instances and restarts — a duplicate insert
+        raises and we early-return without re-running side effects.
+
+        Falls back to in-memory subscription check if the ledger table
+        is unavailable (graceful degradation, not silent skip).
+        """
         _event_id = data.get("id") or data.get("object", {}).get("id", "")
+
+        if _event_id:
+            try:
+                # Atomic claim: if another worker already processed this
+                # event, the unique-PK insert raises and we bail.
+                already = await self.db.get(TABLES["processed_webhook_events"], _event_id)
+                if already:
+                    logger.info(
+                        "webhook_idempotent_skip",
+                        event_id=_event_id,
+                        event_type=event_type,
+                    )
+                    return
+                await self.db.create(TABLES["processed_webhook_events"], {
+                    "event_id": _event_id,
+                    "event_type": event_type,
+                    "org_id": data.get("metadata", {}).get("org_id") or "",
+                })
+            except Exception as e:
+                # Race: a parallel worker won the insert. Treat as already-processed.
+                _err = str(e).lower()
+                if "duplicate" in _err or "unique" in _err or "primary key" in _err:
+                    logger.info(
+                        "webhook_idempotent_race_skip",
+                        event_id=_event_id,
+                        event_type=event_type,
+                    )
+                    return
+                # Ledger table missing or DB hiccup — log and fall through
+                # to legacy in-memory check (better than dropping the event).
+                logger.warning(
+                    "webhook_idempotency_ledger_unavailable",
+                    event_id=_event_id,
+                    error=str(e)[:200],
+                )
 
         if event_type == "checkout.session.completed":
             org_id = data.get("metadata", {}).get("org_id")
             plan = data.get("metadata", {}).get("plan", "pro")
             if org_id:
-                # Check if this subscription was already activated (idempotency)
+                # Legacy in-memory guard (still useful for the no-event_id
+                # edge case and as a safety net).
                 existing_sub = await self.get_subscription(org_id)
                 stripe_sub_id = data.get("subscription", "")
                 if existing_sub and existing_sub.get("stripe_subscription_id") == stripe_sub_id:
