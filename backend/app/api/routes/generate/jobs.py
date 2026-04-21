@@ -1251,6 +1251,15 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         )
         await emit("complete", {"progress": 100, "result": result})
 
+    # Bind the emit() function to the agent_events ContextVar so that any
+    # downstream chain / tool / cache lookup / evidence ledger insertion
+    # in this job's task tree can publish enriched events
+    # (tool_call / tool_result / cache_hit / evidence_added /
+    # policy_decision) without taking a publisher param through the call
+    # stack.  Reset in `finally` to avoid leaking into subsequent tasks.
+    from ai_engine.agent_events import set_event_emitter, reset_event_emitter
+    _emitter_token = set_event_emitter(emit)
+
     try:
         await _persist_generation_job_update(
             sb,
@@ -1793,6 +1802,13 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         else:
             logger.error("job_runner.error", job_id=job_id, error=str(e), traceback=traceback.format_exc())
             await emit_error("AI generation failed due to an unexpected error. Please try again.", 500)
+    finally:
+        # Always release the agent-events emitter so downstream tasks
+        # don't accidentally publish into this job's stream.
+        try:
+            reset_event_emitter(_emitter_token)
+        except Exception:
+            pass
 
 
 async def _run_generation_job_via_runtime(job_id: str, user_id: str) -> None:

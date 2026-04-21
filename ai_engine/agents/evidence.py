@@ -175,6 +175,32 @@ class Citation:
         }
 
 
+def _emit_evidence_added_safe(
+    *,
+    tier: str,
+    source: str,
+    text: str,
+    confidence: float,
+    sub_agent: Optional[str],
+    cross_confirmed: bool,
+) -> None:
+    """Best-effort publish to the agent_events bus.  Never raises."""
+    try:
+        from ai_engine.agent_events import emit_evidence_added
+
+        emit_evidence_added(
+            tier=tier,
+            source=source,
+            text=text,
+            confidence=confidence,
+            sub_agent=sub_agent,
+            cross_confirmed=cross_confirmed,
+        )
+    except Exception:
+        # Telemetry must never break agent execution.
+        pass
+
+
 class EvidenceLedger:
     """Append-only collection of evidence items with lookup by ID, source, and tier."""
 
@@ -206,6 +232,14 @@ class EvidenceLedger:
             if sub_agent and sub_agent not in existing.confirmed_by:
                 existing.confirmed_by.append(sub_agent)
                 existing.confidence = min(1.0, existing.confidence + 0.10)
+                _emit_evidence_added_safe(
+                    tier=canonical_tier.value,
+                    source=canonical_source.value,
+                    text=text,
+                    confidence=existing.confidence,
+                    sub_agent=sub_agent,
+                    cross_confirmed=True,
+                )
             return existing
 
         default_conf = _DEFAULT_CONFIDENCE.get(canonical_tier, 0.7)
@@ -225,6 +259,14 @@ class EvidenceLedger:
             confirmed_by=confirmed,
         )
         self._items[eid] = item
+        _emit_evidence_added_safe(
+            tier=canonical_tier.value,
+            source=canonical_source.value,
+            text=text,
+            confidence=item.confidence,
+            sub_agent=sub_agent,
+            cross_confirmed=False,
+        )
         return item
 
     def get(self, evidence_id: str) -> Optional[EvidenceItem]:

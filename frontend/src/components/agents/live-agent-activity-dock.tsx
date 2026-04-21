@@ -31,6 +31,11 @@ import {
   Hammer,
   ShieldCheck,
   PackageCheck,
+  Wrench,
+  CheckCircle2,
+  Database,
+  FileCheck,
+  GitBranch,
   type LucideIcon,
 } from "lucide-react";
 
@@ -95,6 +100,69 @@ function deriveAgentSummaries(events: GenerationJobEventDoc[]) {
   return summary;
 }
 
+/** Map an enriched event_name to a small icon for in-feed glanceability. */
+function eventTypeIcon(name?: string | null): LucideIcon | null {
+  switch (name) {
+    case "tool_call":
+      return Wrench;
+    case "tool_result":
+      return CheckCircle2;
+    case "cache_hit":
+      return Database;
+    case "evidence_added":
+      return FileCheck;
+    case "policy_decision":
+      return GitBranch;
+    default:
+      return null;
+  }
+}
+
+function eventTypeTint(name?: string | null): string {
+  switch (name) {
+    case "tool_call":
+      return "text-amber-500";
+    case "tool_result":
+      return "text-emerald-500";
+    case "cache_hit":
+      return "text-cyan-500";
+    case "evidence_added":
+      return "text-violet-500";
+    case "policy_decision":
+      return "text-blue-500";
+    default:
+      return "";
+  }
+}
+
+/** Pull a short trailing detail from enriched event payloads. */
+function enrichedEventDetail(ev: GenerationJobEventDoc): string {
+  const p = (ev.payload ?? {}) as Record<string, unknown>;
+  switch (ev.eventName) {
+    case "tool_call":
+      return p.tool ? `· ${String(p.tool)}` : "";
+    case "tool_result": {
+      const parts: string[] = [];
+      if (p.tool) parts.push(String(p.tool));
+      if (typeof p.latency_ms === "number") parts.push(`${p.latency_ms}ms`);
+      if (p.cache_hit === true) parts.push("cached");
+      return parts.length ? `· ${parts.join(" · ")}` : "";
+    }
+    case "cache_hit":
+      return p.cache ? `· ${String(p.cache)}` : "";
+    case "evidence_added": {
+      const parts: string[] = [];
+      if (p.tier) parts.push(String(p.tier));
+      if (p.cross_confirmed === true) parts.push("cross-confirmed");
+      return parts.length ? `· ${parts.join(" · ")}` : "";
+    }
+    case "policy_decision":
+      return p.decision ? `· ${String(p.decision)}` : "";
+    default:
+      return "";
+  }
+}
+
 /** ── Single-job event feed (expanded drawer body) ───────────────── */
 function JobLiveFeed({ job }: { job: GenerationJobDoc }) {
   const { data: events } = useGenerationJobEvents(job.id, 200, { live: true });
@@ -156,24 +224,37 @@ function JobLiveFeed({ job }: { job: GenerationJobDoc }) {
             </div>
             <ScrollArea className="max-h-32">
               <div className="space-y-0.5 px-3 py-2 font-mono text-[11px] leading-snug">
-                {lines.slice(-12).map((ev) => (
-                  <div key={ev.id} className="text-muted-foreground">
-                    <span className="text-muted-foreground/60">
-                      {typeof ev.createdAt === "number"
-                        ? new Date(ev.createdAt).toLocaleTimeString()
-                        : ""}
-                    </span>{" "}
-                    <span
-                      className={cn(
-                        ev.status === "completed" && "text-emerald-500",
-                        ev.status === "failed" && "text-destructive",
-                        ev.status === "running" && "text-primary",
-                      )}
-                    >
-                      {ev.message || ev.eventName}
-                    </span>
-                  </div>
-                ))}
+                {lines.slice(-12).map((ev) => {
+                  const EventIcon = eventTypeIcon(ev.eventName);
+                  const eventTint = eventTypeTint(ev.eventName);
+                  const detail = enrichedEventDetail(ev);
+                  return (
+                    <div key={ev.id} className="flex items-start gap-1.5 text-muted-foreground">
+                      <span className="text-muted-foreground/60 shrink-0">
+                        {typeof ev.createdAt === "number"
+                          ? new Date(ev.createdAt).toLocaleTimeString()
+                          : ""}
+                      </span>
+                      {EventIcon ? (
+                        <EventIcon className={cn("h-3 w-3 mt-[2px] shrink-0", eventTint)} />
+                      ) : null}
+                      <span
+                        className={cn(
+                          "min-w-0 break-words",
+                          ev.status === "completed" && "text-emerald-500",
+                          ev.status === "failed" && "text-destructive",
+                          ev.status === "running" && "text-primary",
+                          eventTint && !ev.status && eventTint,
+                        )}
+                      >
+                        {ev.message || ev.eventName}
+                        {detail ? (
+                          <span className="ml-1 text-muted-foreground/70">{detail}</span>
+                        ) : null}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </ScrollArea>
           </div>

@@ -146,6 +146,11 @@ class AIResponseCache:
                     (self._hits / max(1, self._hits + self._misses)) * 100,
                     self._lru.size,
                 )
+            try:
+                from ai_engine.agent_events import emit_cache_hit
+                emit_cache_hit("ai_response", key_preview=key[:60])
+            except Exception:
+                pass
             return result
         self._misses += 1
         return None
