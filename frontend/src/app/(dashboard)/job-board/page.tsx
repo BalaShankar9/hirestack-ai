@@ -210,7 +210,7 @@ export default function JobBoardPage() {
       {loading ? (
         <div className="grid gap-3 md:grid-cols-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-2xl" />)}</div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border border-dashed bg-card/50 p-10 text-center">
+        <div className="rounded-2xl border border-dashed bg-card/50 p-6 sm:p-10 text-center">
           <Briefcase className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
           <h3 className="font-semibold text-sm">No job matches yet</h3>
           <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">Create a job alert and we&apos;ll find AI-scored matches based on your profile.</p>

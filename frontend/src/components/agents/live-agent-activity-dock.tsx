@@ -304,7 +304,8 @@ export function LiveAgentActivityDock() {
 
   return (
     <div
-      className="pointer-events-none fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2"
+      className="pointer-events-none fixed bottom-3 right-3 sm:bottom-4 sm:right-4 z-40 flex flex-col items-end gap-2"
+      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       aria-label="Live agent activity"
     >
       <AnimatePresence>

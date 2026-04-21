@@ -520,7 +520,7 @@ export default function InterviewSimulatorPage() {
             ]}
           />
           {/* Score summary */}
-          <motion.div className="rounded-2xl border bg-gradient-to-br from-primary/5 via-violet-500/5 to-transparent p-8 shadow-soft-sm" initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.5 }}>
+          <motion.div className="rounded-2xl border bg-gradient-to-br from-primary/5 via-violet-500/5 to-transparent p-6 sm:p-8 shadow-soft-sm" initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.5 }}>
             <div className="flex flex-col md:flex-row items-center gap-8">
               <ScoreRing value={session.overall_score ?? 0} size={130} label="Overall Score" />
               <div className="flex-1 text-center md:text-left">

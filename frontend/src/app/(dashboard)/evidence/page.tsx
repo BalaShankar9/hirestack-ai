@@ -509,7 +509,7 @@ export default function EvidenceVaultPage() {
           </div>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border border-dashed bg-card/50 p-8 text-center">
+        <div className="rounded-2xl border border-dashed bg-card/50 p-6 sm:p-8 text-center">
           <p className="text-sm text-muted-foreground">No evidence matches your search.</p>
         </div>
       ) : (

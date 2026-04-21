@@ -163,7 +163,7 @@ export default function CandidatesPage() {
       {loading ? (
         <div className="text-center py-12"><Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" /></div>
       ) : filtered.length === 0 && !search ? (
-        <div className="rounded-2xl border border-dashed bg-card/50 p-10 text-center">
+        <div className="rounded-2xl border border-dashed bg-card/50 p-6 sm:p-10 text-center">
           <Users className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
           <h3 className="font-semibold text-sm">No candidates yet</h3>
           <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">Add candidates to track them through your recruitment pipeline.</p>

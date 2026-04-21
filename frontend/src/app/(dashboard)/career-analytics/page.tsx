@@ -188,7 +188,7 @@ export default function CareerAnalyticsPage() {
 
           {/* Empty state */}
           {timeline.length === 0 && (
-            <div className="rounded-2xl border border-dashed bg-card/50 p-10 text-center">
+            <div className="rounded-2xl border border-dashed bg-card/50 p-6 sm:p-10 text-center">
               <Activity className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
               <h3 className="font-semibold text-sm">No snapshots yet</h3>
               <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">Capture your first snapshot to start tracking your career growth over time.</p>

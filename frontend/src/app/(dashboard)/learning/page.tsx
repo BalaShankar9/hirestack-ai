@@ -256,7 +256,7 @@ export default function LearningPage() {
 
       {/* Loading */}
       {loading && (
-        <div className="rounded-2xl border bg-card p-10 text-center">
+        <div className="rounded-2xl border bg-card p-6 sm:p-10 text-center">
           <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto" />
           <p className="text-sm text-muted-foreground mt-3">Loading your challenges...</p>
         </div>
@@ -264,7 +264,7 @@ export default function LearningPage() {
 
       {/* No challenges — generate */}
       {!loading && challenges.length === 0 && (
-        <div className="rounded-2xl border border-dashed bg-gradient-to-br from-violet-500/5 to-transparent p-10 text-center">
+        <div className="rounded-2xl border border-dashed bg-gradient-to-br from-violet-500/5 to-transparent p-6 sm:p-10 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/10 mx-auto mb-4">
             <Brain className="h-7 w-7 text-violet-500" />
           </div>
@@ -352,7 +352,7 @@ export default function LearningPage() {
 
       {/* All done */}
       {allDone && (
-        <div className="rounded-2xl border bg-gradient-to-br from-emerald-500/5 via-teal-500/5 to-transparent p-8 text-center shadow-soft-sm">
+        <div className="rounded-2xl border bg-gradient-to-br from-emerald-500/5 via-teal-500/5 to-transparent p-6 sm:p-8 text-center shadow-soft-sm">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10 mx-auto mb-4">
             <Trophy className="h-8 w-8 text-emerald-500" />
           </div>

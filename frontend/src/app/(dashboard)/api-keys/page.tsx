@@ -91,7 +91,7 @@ export default function APIKeysPage() {
         <div className="flex items-center gap-3">
           <Key className="h-8 w-8 text-primary" />
           <div>
-            <h1 className="text-3xl font-bold">API Keys</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold">API Keys</h1>
             <p className="text-muted-foreground">Manage developer access to HireStack AI</p>
           </div>
         </div>

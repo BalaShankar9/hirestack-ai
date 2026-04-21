@@ -29,7 +29,7 @@ export function CommandPalette() {
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Command palette" onClick={() => setOpen(false)}>
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" aria-hidden="true" />
-      <div className="fixed top-[20%] left-1/2 -translate-x-1/2 w-full max-w-lg animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-200" onClick={(e) => e.stopPropagation()}>
+      <div className="fixed top-[10%] sm:top-[20%] left-1/2 -translate-x-1/2 w-[calc(100%-1.5rem)] max-w-lg animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-200" onClick={(e) => e.stopPropagation()}>
         <Cmdk
           className="rounded-2xl border border-border/30 bg-card shadow-2xl overflow-hidden"
           label="Command palette"

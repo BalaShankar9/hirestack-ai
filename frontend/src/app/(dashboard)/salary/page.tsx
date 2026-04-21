@@ -303,7 +303,7 @@ export default function SalaryCoachPage() {
                   {co.justification && <p className="text-xs text-muted-foreground mt-3">{co.justification}</p>}
                 </div>
               )) : (
-                <div className="rounded-2xl border border-dashed p-8 text-center">
+                <div className="rounded-2xl border border-dashed p-6 sm:p-8 text-center">
                   <Shield className="h-8 w-8 text-muted-foreground/20 mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground">Counter-offer strategies will appear here</p>
                 </div>
@@ -335,7 +335,7 @@ export default function SalaryCoachPage() {
                   </div>
                 );
               }) : (
-                <div className="rounded-2xl border border-dashed p-8 text-center">
+                <div className="rounded-2xl border border-dashed p-6 sm:p-8 text-center">
                   <Zap className="h-8 w-8 text-muted-foreground/20 mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground">Talking points will be generated with your analysis</p>
                 </div>
@@ -362,7 +362,7 @@ export default function SalaryCoachPage() {
 
       {/* Empty state */}
       {!analysis && !loading && (
-        <div className="rounded-2xl border border-dashed bg-card/50 p-8">
+        <div className="rounded-2xl border border-dashed bg-card/50 p-6 sm:p-8">
           <div className="flex flex-col md:flex-row items-center gap-6 text-center md:text-left">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10 shrink-0">
               <DollarSign className="h-7 w-7 text-emerald-500" />

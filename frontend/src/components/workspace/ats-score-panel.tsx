@@ -98,7 +98,7 @@ export function ATSScorePanel({ cvHtml, jdText }: ATSScorePanelProps) {
 
   if (!cvHtml) {
     return (
-      <div className="rounded-2xl border border-dashed bg-card/50 p-10 text-center">
+      <div className="rounded-2xl border border-dashed bg-card/50 p-6 sm:p-10 text-center">
         <FileSearch className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
         <h3 className="font-semibold text-sm">Generate your CV first</h3>
         <p className="text-xs text-muted-foreground mt-1">
@@ -110,7 +110,7 @@ export function ATSScorePanel({ cvHtml, jdText }: ATSScorePanelProps) {
 
   if (!scan && !scanning) {
     return (
-      <div className="rounded-2xl border bg-card p-8 text-center space-y-4">
+      <div className="rounded-2xl border bg-card p-6 sm:p-8 text-center space-y-4">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500/10 to-blue-500/10 mx-auto">
           <FileSearch className="h-7 w-7 text-cyan-500" />
         </div>
@@ -135,7 +135,7 @@ export function ATSScorePanel({ cvHtml, jdText }: ATSScorePanelProps) {
 
   if (scanning) {
     return (
-      <div className="rounded-2xl border bg-card p-10 text-center">
+      <div className="rounded-2xl border bg-card p-6 sm:p-10 text-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-3" />
         <p className="text-sm font-medium">Analyzing your CV...</p>
         <p className="text-xs text-muted-foreground mt-1">Running keyword match, structure analysis, and strategic assessment</p>

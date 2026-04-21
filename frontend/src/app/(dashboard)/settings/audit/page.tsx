@@ -49,7 +49,7 @@ export default function AuditLogPage() {
       {loading ? (
         <div className="text-center py-12"><Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" /></div>
       ) : logs.length === 0 ? (
-        <div className="rounded-2xl border border-dashed bg-card/50 p-10 text-center">
+        <div className="rounded-2xl border border-dashed bg-card/50 p-6 sm:p-10 text-center">
           <Shield className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
           <h3 className="font-semibold text-sm">No audit events yet</h3>
           <p className="text-xs text-muted-foreground mt-1">Actions like member invitations, role changes, and settings updates will appear here.</p>

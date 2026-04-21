@@ -491,7 +491,7 @@ export default function ATSScannerPage() {
 
       {/* Pre-scan guidance */}
       {!scan && !loading && (
-        <motion.div className="rounded-2xl border border-dashed bg-card/50 p-8 space-y-6" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
+        <motion.div className="rounded-2xl border border-dashed bg-card/50 p-6 sm:p-8 space-y-6" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
           <div className="flex flex-col md:flex-row items-center gap-6 text-center md:text-left">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500/10 to-blue-500/10 shrink-0">
               <Brain className="h-7 w-7 text-cyan-500" />

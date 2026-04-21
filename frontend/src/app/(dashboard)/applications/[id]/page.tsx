@@ -671,7 +671,7 @@ export default function ApplicationWorkspacePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex-1 min-w-0">
           <CommandSummary
             title={title}
@@ -688,7 +688,7 @@ export default function ApplicationWorkspacePage() {
             updatedAt={app.updatedAt}
           />
         </div>
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 lg:gap-3 lg:shrink-0">
           {saveStatus === "saving" && <span className="text-xs text-muted-foreground animate-pulse">Saving…</span>}
           {saveStatus === "saved" && <span className="text-xs text-emerald-500">Saved</span>}
           {saveStatus === "error" && <span className="text-xs text-destructive">Save failed</span>}
@@ -766,9 +766,10 @@ export default function ApplicationWorkspacePage() {
             size="sm"
             className="gap-2 rounded-xl text-muted-foreground hover:text-destructive hover:border-destructive/30 hover:bg-destructive/5 transition-colors"
             onClick={() => setDeleteOpen(true)}
+            aria-label="Delete application"
           >
             <Trash2 className="h-4 w-4" />
-            Delete
+            <span className="hidden sm:inline">Delete</span>
           </Button>
         </div>
       </div>
@@ -1093,7 +1094,7 @@ export default function ApplicationWorkspacePage() {
                 const intel = app?.companyIntel;
                 if (!intel || Object.keys(intel).length === 0 || (intel.confidence === "low" && !intel.company_overview)) {
                   return (
-                    <div className="rounded-2xl border border-dashed bg-card/50 p-10 text-center">
+                    <div className="rounded-2xl border border-dashed bg-card/50 p-6 sm:p-10 text-center">
                       <Search className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
                       <h3 className="font-semibold text-sm">No company intelligence yet</h3>
                       <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">

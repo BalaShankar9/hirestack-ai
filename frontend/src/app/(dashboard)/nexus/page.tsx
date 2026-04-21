@@ -1612,7 +1612,7 @@ export default function CareerNexusPage() {
 
           {/* ── Empty state ─────────────────────────────────────────── */}
           {(!aggregateGaps || aggregateGaps.total_applications_analyzed === 0) && (
-            <div className="rounded-2xl border border-dashed border-teal-500/20 bg-gradient-to-br from-teal-500/5 to-transparent p-10 text-center">
+            <div className="rounded-2xl border border-dashed border-teal-500/20 bg-gradient-to-br from-teal-500/5 to-transparent p-6 sm:p-10 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-500/10 mx-auto mb-4">
                 <Brain className="h-7 w-7 text-teal-500" />
               </div>
@@ -1668,7 +1668,7 @@ export default function CareerNexusPage() {
           })}
 
           {Object.values(evidence).every((v) => !v || v.length === 0) && (
-            <div className="rounded-2xl border border-dashed p-8 text-center">
+            <div className="rounded-2xl border border-dashed p-6 sm:p-8 text-center">
               <ShieldCheck className="mx-auto h-10 w-10 text-muted-foreground/20 mb-3" />
               <p className="font-medium text-sm">No Evidence Items Synced</p>
               <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
