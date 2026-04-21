@@ -675,9 +675,34 @@ import urllib.parse as _urlparse
 _SEARCH_CACHE: dict[str, tuple[float, dict]] = {}
 _SEARCH_CACHE_TTL = 60 * 60 * 24  # 24 hours
 _SEARCH_CACHE_MAX = 512
+_SEARCH_CACHE_PREFIX = "aisearch:"
+
+
+def _redis_client_opt():
+    """Return the shared Redis client if available, else None. Never raises."""
+    try:
+        from backend.app.core.database import get_redis  # type: ignore
+        return get_redis()
+    except Exception:
+        try:
+            # Alternate import path when backend/ is added to sys.path
+            from app.core.database import get_redis  # type: ignore
+            return get_redis()
+        except Exception:
+            return None
 
 
 def _search_cache_get(key: str) -> Optional[dict]:
+    # Try Redis first (survives restart, shared across workers)
+    r = _redis_client_opt()
+    if r is not None:
+        try:
+            val = r.get(_SEARCH_CACHE_PREFIX + key)
+            if val is not None:
+                return json.loads(val)
+        except Exception:
+            pass
+    # In-process fallback
     hit = _SEARCH_CACHE.get(key)
     if not hit:
         return None
@@ -689,8 +714,16 @@ def _search_cache_get(key: str) -> Optional[dict]:
 
 
 def _search_cache_put(key: str, payload: dict) -> None:
+    # Redis write (best-effort)
+    r = _redis_client_opt()
+    if r is not None:
+        try:
+            r.setex(_SEARCH_CACHE_PREFIX + key, _SEARCH_CACHE_TTL, json.dumps(payload, default=str))
+        except Exception:
+            pass
+    # Always also write the in-process copy so a Redis outage mid-request
+    # doesn't cause a cache miss seconds later.
     if len(_SEARCH_CACHE) >= _SEARCH_CACHE_MAX:
-        # Evict oldest
         oldest_key = min(_SEARCH_CACHE, key=lambda k: _SEARCH_CACHE[k][0])
         _SEARCH_CACHE.pop(oldest_key, None)
     _SEARCH_CACHE[key] = (_time.time(), payload)

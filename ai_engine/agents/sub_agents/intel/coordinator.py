@@ -201,6 +201,47 @@ class IntelCoordinator:
         if strategy_result.ok:
             all_evidence.extend(strategy_result.evidence_items)
 
+        # ── PHASE 3: Recon Critic — gap detection + targeted re-fire ──
+        # After synthesis we know which dimensions the LLMs were able to fill
+        # from the evidence we gave them. If the profile has obvious holes
+        # (no funding_stage, no leadership, no recent news, no tech stack),
+        # we fire one more round of highly targeted queries aimed at those
+        # specific gaps and let the next Phase re-synthesis pick them up.
+        critic_enabled = __import__("os").getenv("RECON_CRITIC_ENABLED", "1").lower() not in ("0", "false", "no")
+        critic_budget_s = float(__import__("os").getenv("RECON_CRITIC_BUDGET_S", "8"))
+        if critic_enabled and profile_result.ok and critic_budget_s > 0:
+            profile_data = profile_result.data or {}
+            gaps = self._detect_gaps(profile_data, all_evidence)
+            if gaps:
+                if on_event:
+                    await self._emit(
+                        on_event,
+                        f"Recon critic found {len(gaps)} gap(s): {', '.join(gaps)}. Firing targeted queries.",
+                        "running", "analysis",
+                        metadata={"gaps": gaps},
+                    )
+                try:
+                    extra_evidence, extra_sources = await asyncio.wait_for(
+                        self._close_gaps(company, job_title, gaps, on_event),
+                        timeout=critic_budget_s,
+                    )
+                    all_evidence.extend(extra_evidence)
+                    for s in extra_sources:
+                        if s not in data_sources:
+                            data_sources.append(s)
+                    raw_intel["recon_critic"] = {
+                        "gaps_detected": gaps,
+                        "gap_evidence_count": len(extra_evidence),
+                        "gap_sources": extra_sources,
+                    }
+                except asyncio.TimeoutError:
+                    raw_intel["recon_critic"] = {"gaps_detected": gaps, "status": "timeout"}
+                except Exception as e:
+                    logger.warning("recon_critic_failed", error=str(e))
+                    raw_intel["recon_critic"] = {"gaps_detected": gaps, "error": str(e)[:200]}
+            else:
+                raw_intel["recon_critic"] = {"gaps_detected": [], "status": "clean"}
+
         total_time = time.monotonic() - start
 
         # ── MERGE into legacy-compatible format ───────────────────
@@ -302,6 +343,177 @@ class IntelCoordinator:
                     )
                 except Exception:
                     pass
+
+        return evidence, sources
+
+    # ── Recon Critic helpers ──────────────────────────────────────────
+
+    # Map of gap-name → (check_fn, list of query templates).
+    # check_fn receives (profile_dict, evidence_list) and returns True when
+    # that dimension is missing or very thin.
+    @staticmethod
+    def _detect_gaps(profile: dict, evidence: list[dict]) -> list[str]:
+        """
+        Deterministic gap analyser. Returns the list of dimension labels
+        that the synthesis output is missing, ordered by priority.
+
+        A gap is flagged when the relevant profile field is empty/short AND
+        no evidence item mentions the dimension keyword. Evidence matching
+        is intentionally generous — if we even have a breadcrumb we skip
+        the dimension to avoid duplicate traffic.
+        """
+        if not isinstance(profile, dict):
+            return []
+
+        def _profile_has(keys: tuple[str, ...]) -> bool:
+            for k in keys:
+                v = profile.get(k)
+                if isinstance(v, str) and v.strip():
+                    return True
+                if isinstance(v, (list, dict)) and len(v) > 0:
+                    return True
+                if v not in (None, "", 0, False):
+                    return True
+            return False
+
+        def _evidence_mentions(words: tuple[str, ...]) -> bool:
+            for item in evidence:
+                blob = (
+                    (item.get("fact") or "") + " "
+                    + (item.get("source") or "")
+                ).lower()
+                if any(w in blob for w in words):
+                    return True
+            return False
+
+        gaps: list[str] = []
+
+        # 1. Funding / financial stage
+        if not _profile_has(("funding_stage", "funding", "financials")) and \
+           not _evidence_mentions(("funding", "raised", "investor", "series ", "seed ", "valuation")):
+            gaps.append("funding")
+
+        # 2. Leadership
+        if not _profile_has(("leadership", "executives", "founders", "ceo")) and \
+           not _evidence_mentions(("ceo", "founder", "co-founder", "cto", "president", "leadership")):
+            gaps.append("leadership")
+
+        # 3. Recent news / momentum
+        if not _profile_has(("recent_news", "news", "momentum")) and \
+           not _evidence_mentions(("announced", "launched", "acquired", "partnership", "press release")):
+            gaps.append("recent_news")
+
+        # 4. Tech stack
+        if not _profile_has(("tech_stack", "technologies", "stack")) and \
+           not _evidence_mentions(("python", "java", "typescript", "react", "kubernetes", "aws", "postgres", "stack")):
+            gaps.append("tech_stack")
+
+        # 5. Culture / values
+        if not _profile_has(("culture", "values", "mission")) and \
+           not _evidence_mentions(("culture", "values", "mission", "remote", "benefits")):
+            gaps.append("culture")
+
+        # 6. Headcount / size
+        if not _profile_has(("headcount", "employees", "size")) and \
+           not _evidence_mentions(("employees", "headcount", "team size", "people work")):
+            gaps.append("headcount")
+
+        return gaps
+
+    async def _close_gaps(
+        self,
+        company: str,
+        job_title: str,
+        gaps: list[str],
+        on_event: Optional[IntelEventCallback],
+    ) -> tuple[list[dict], list[str]]:
+        """
+        Fire a small, highly targeted query set for each detected gap and
+        return new evidence items tagged with `sub_agent="recon_critic"`.
+
+        Each gap gets 1–2 queries (not 4+ like the generic topup) because
+        we already did the broad sweep in Phase 1.5. Runs the queries in
+        parallel across gaps.
+        """
+        try:
+            from ai_engine.agents.tools import _web_search
+        except Exception:
+            return [], []
+
+        GAP_QUERIES: dict[str, list[str]] = {
+            "funding": [
+                f"{company} funding round series valuation site:techcrunch.com OR site:bloomberg.com",
+                f"{company} investors total funding raised crunchbase",
+            ],
+            "leadership": [
+                f"{company} CEO founder leadership team",
+                f'"{company}" executive team linkedin',
+            ],
+            "recent_news": [
+                f"{company} news 2026",
+                f"{company} announcement press release 2025",
+            ],
+            "tech_stack": [
+                f"{company} engineering blog tech stack",
+                f"{company} {job_title} technologies used" if job_title else f"{company} technologies stack",
+            ],
+            "culture": [
+                f"{company} company culture values mission",
+                f"{company} employee reviews benefits remote",
+            ],
+            "headcount": [
+                f"{company} number of employees headcount company size",
+            ],
+        }
+
+        tasks: list[tuple[str, str, Any]] = []
+        for gap in gaps:
+            for q in GAP_QUERIES.get(gap, []):
+                tasks.append((gap, q, _web_search(q, max_results=3)))
+
+        if not tasks:
+            return [], []
+
+        coros = [t[2] for t in tasks]
+        raw_results = await asyncio.gather(*coros, return_exceptions=True)
+
+        evidence: list[dict] = []
+        sources: list[str] = []
+        per_gap_counts: dict[str, int] = {}
+
+        for (gap, query, _), res in zip(tasks, raw_results):
+            if isinstance(res, Exception):
+                continue
+            hits = res.get("results") or []
+            if not hits:
+                continue
+            provider = res.get("provider") or "unknown"
+            sources.append(f"critic:{gap}")
+            per_gap_counts[gap] = per_gap_counts.get(gap, 0) + len(hits)
+            for item in hits[:3]:
+                snippet = item.get("snippet") or item.get("title") or ""
+                link = item.get("link") or ""
+                if not snippet:
+                    continue
+                evidence.append({
+                    "fact": f"[gap:{gap}] {snippet[:350]}",
+                    "source": link or f"critic:{provider}:{gap}",
+                    "tier": "DERIVED",
+                    "sub_agent": "recon_critic",
+                    "gap": gap,
+                    "provider": provider,
+                })
+
+        if on_event and per_gap_counts:
+            try:
+                await self._emit(
+                    on_event,
+                    "Critic closed gaps: " + ", ".join(f"{g}={c}" for g, c in per_gap_counts.items()),
+                    "running", "analysis",
+                    metadata={"gap_counts": per_gap_counts},
+                )
+            except Exception:
+                pass
 
         return evidence, sources
 
