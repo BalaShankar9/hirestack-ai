@@ -12,11 +12,11 @@ from ai_engine.agents.style_outcome_scorer import (
 )
 
 
-def _make_app_resp(cv_versions=None, ps_versions=None):
+def _make_app_resp(cv_variants=None, ps_variants=None):
     class _Resp:
         data = {
-            "cv_versions": cv_versions,
-            "ps_versions": ps_versions,
+            "cv_variants": cv_variants,
+            "ps_variants": ps_variants,
         }
     return _Resp()
 
@@ -47,7 +47,7 @@ def _make_memory(existing_value=None):
 @pytest.mark.asyncio
 async def test_callback_increments_locked_cv_style() -> None:
     sb = _make_sb(_make_app_resp(
-        cv_versions=[
+        cv_variants=[
             {"variant": "concise", "locked": False},
             {"variant": "narrative", "locked": True, "content": "..."},
         ],
@@ -64,15 +64,15 @@ async def test_callback_increments_locked_cv_style() -> None:
     assert out is not None
     assert out["cv"]["narrative"] == 1.0
     assert out["cv"]["_runs"] == 1
-    assert out["ps"] == {}  # no ps_versions
+    assert out["ps"] == {}  # no ps_variants
     mem.astore.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_offer_increments_both_cv_and_ps() -> None:
     sb = _make_sb(_make_app_resp(
-        cv_versions=[{"variant": "concise", "locked": True}],
-        ps_versions=[{"variant": "narrative", "locked": True}],
+        cv_variants=[{"variant": "concise", "locked": True}],
+        ps_variants=[{"variant": "narrative", "locked": True}],
     ))
     mem = _make_memory()
     out = await apply_outcome_to_style_scores(
@@ -90,7 +90,7 @@ async def test_offer_increments_both_cv_and_ps() -> None:
 @pytest.mark.asyncio
 async def test_existing_scores_accumulate() -> None:
     sb = _make_sb(_make_app_resp(
-        cv_versions=[{"variant": "concise", "locked": True}],
+        cv_variants=[{"variant": "concise", "locked": True}],
     ))
     mem = _make_memory(existing_value={
         "cv": {"concise": 2.0, "_runs": 2},
@@ -111,7 +111,7 @@ async def test_existing_scores_accumulate() -> None:
 @pytest.mark.asyncio
 async def test_rejected_decrements() -> None:
     sb = _make_sb(_make_app_resp(
-        cv_versions=[{"variant": "concise", "locked": True}],
+        cv_variants=[{"variant": "concise", "locked": True}],
     ))
     mem = _make_memory(existing_value={"cv": {"concise": 2.0}})
     out = await apply_outcome_to_style_scores(
@@ -144,7 +144,7 @@ async def test_ghosted_is_noop() -> None:
 @pytest.mark.asyncio
 async def test_no_locked_variants_is_noop() -> None:
     sb = _make_sb(_make_app_resp(
-        cv_versions=[{"variant": "concise", "locked": False}],
+        cv_variants=[{"variant": "concise", "locked": False}],
     ))
     mem = _make_memory()
     out = await apply_outcome_to_style_scores(
@@ -162,7 +162,7 @@ async def test_no_locked_variants_is_noop() -> None:
 @pytest.mark.asyncio
 async def test_unknown_outcome_is_noop() -> None:
     sb = _make_sb(_make_app_resp(
-        cv_versions=[{"variant": "concise", "locked": True}],
+        cv_variants=[{"variant": "concise", "locked": True}],
     ))
     mem = _make_memory()
     out = await apply_outcome_to_style_scores(

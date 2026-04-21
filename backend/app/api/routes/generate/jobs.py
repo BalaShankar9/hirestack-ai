@@ -539,13 +539,15 @@ async def _persist_generation_result_to_application(
     if "cv" in requested and result.get("cvHtml"):
         patch["cv_html"] = result["cvHtml"]
 
-    # Phase D.2: persist multi-variant CV bundle into cv_versions JSONB
-    # column.  Variants share the same generated_at; one is `locked: True`
-    # by convention (the canonical CV that's also in cv_html).  The lock
+    # Phase D.2: persist multi-variant CV bundle into the dedicated
+    # cv_variants JSONB column.  (Originally wrote to cv_versions but
+    # that collided with the frontend's snapshot-history payload —
+    # see migration 20260421120000.)  One variant is `locked: True` by
+    # convention (the canonical CV that's also in cv_html).  The lock
     # endpoint can flip locks and update cv_html accordingly.
     _cv_variants_out = result.get("cvVariants")
     if isinstance(_cv_variants_out, list) and _cv_variants_out:
-        patch["cv_versions"] = _cv_variants_out
+        patch["cv_variants"] = _cv_variants_out
 
     if "coverLetter" in requested and result.get("coverLetterHtml"):
         patch["cover_letter_html"] = result["coverLetterHtml"]
@@ -553,10 +555,12 @@ async def _persist_generation_result_to_application(
     if "personalStatement" in requested and result.get("personalStatementHtml"):
         patch["personal_statement_html"] = result["personalStatementHtml"]
 
-    # Phase D.3: persist multi-variant personal statement bundle.
+    # Phase D.3: persist multi-variant personal statement bundle into
+    # the dedicated ps_variants column (parallels D.2 split, see migration
+    # 20260421120000).
     _ps_variants_out = result.get("personalStatementVariants")
     if isinstance(_ps_variants_out, list) and _ps_variants_out:
-        patch["ps_versions"] = _ps_variants_out
+        patch["ps_variants"] = _ps_variants_out
 
     if "portfolio" in requested and result.get("portfolioHtml"):
         patch["portfolio_html"] = result["portfolioHtml"]
@@ -2042,7 +2046,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             atlas_diagnostics=_build_atlas_diagnostics(user_profile, benchmark_data),
             company_intel=company_intel if isinstance(company_intel, dict) else None,
             company_name=company_name or "",
-            jd_text=jd_text or "",
+            jd_text=jd_text_val or "",
             cv_variants=cv_variants,
             ps_variants=ps_variants,
         )

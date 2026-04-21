@@ -1,13 +1,16 @@
 """Phase D.2 / D.3 — variant lock endpoints (CV + personal statement).
 
 After a generation run completes, the application row contains
-``cv_versions`` and/or ``ps_versions`` JSONB arrays of variants
+``cv_variants`` and/or ``ps_variants`` JSONB arrays of variants
 (concise, narrative).  Within each list, one is marked ``locked: True``
 by convention and its content lives in the canonical column
 (``cv_html`` / ``personal_statement_html``).  These endpoints flip
 the lock to a different variant and atomically swap the canonical
 column so the rest of the app keeps reading from a single source of
 truth.
+
+Note: cv_versions / ps_versions columns continue to hold the
+frontend's user-curated history snapshots; they are NOT used here.
 """
 from __future__ import annotations
 
@@ -128,7 +131,7 @@ async def lock_cv_variant(
         application_id=application_id,
         variant_key=variant_key,
         user_id=user_id,
-        versions_column="cv_versions",
+        versions_column="cv_variants",
         canonical_column="cv_html",
         log_label="cv",
     )
@@ -158,7 +161,7 @@ async def lock_ps_variant(
         application_id=application_id,
         variant_key=variant_key,
         user_id=user_id,
-        versions_column="ps_versions",
+        versions_column="ps_variants",
         canonical_column="personal_statement_html",
         log_label="ps",
     )

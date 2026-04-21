@@ -87,7 +87,7 @@ async def apply_outcome_to_style_scores(
     try:
         app_resp = await asyncio.to_thread(
             lambda: sb.table(tables["applications"])
-            .select("cv_versions,ps_versions")
+            .select("cv_variants,ps_variants")
             .eq("id", application_id)
             .eq("user_id", user_id)
             .maybe_single()
@@ -99,8 +99,8 @@ async def apply_outcome_to_style_scores(
     if not app_resp or not app_resp.data:
         return None
 
-    cv_locked = _find_locked_variant(app_resp.data.get("cv_versions"))
-    ps_locked = _find_locked_variant(app_resp.data.get("ps_versions"))
+    cv_locked = _find_locked_variant(app_resp.data.get("cv_variants"))
+    ps_locked = _find_locked_variant(app_resp.data.get("ps_variants"))
     if not cv_locked and not ps_locked:
         return None
 

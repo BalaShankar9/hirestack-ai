@@ -120,7 +120,7 @@ async def test_lock_endpoint_swaps_locked_flags_and_cv_html(
             "id": "app-1",
             "user_id": "user-1",
             "cv_html": "<h1>C</h1>",
-            "cv_versions": initial_variants,
+            "cv_variants": initial_variants,
         },
         "patches": [],
     }
@@ -194,7 +194,7 @@ async def test_lock_endpoint_404_for_unknown_variant(
                 "id": "app-1",
                 "user_id": "user-1",
                 "cv_html": "x",
-                "cv_versions": [{"variant": "concise", "content": "x", "locked": True}],
+                "cv_variants": [{"variant": "concise", "content": "x", "locked": True}],
             })
 
     class _SB:
@@ -229,7 +229,7 @@ async def test_lock_endpoint_409_when_no_variants(
         def eq(self, *a, **k): return self
         def maybe_single(self): return self
         def execute(self):
-            return _Resp({"id": "app-1", "user_id": "user-1", "cv_versions": []})
+            return _Resp({"id": "app-1", "user_id": "user-1", "cv_variants": []})
 
     class _SB:
         def table(self, _name): return _Q()

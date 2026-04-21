@@ -114,7 +114,7 @@ async def test_lock_ps_endpoint_swaps_locked_flags(
             "id": "app-1",
             "user_id": "user-1",
             "personal_statement_html": "<p>C</p>",
-            "ps_versions": initial,
+            "ps_variants": initial,
         },
         "patches": [],
     }
@@ -172,7 +172,7 @@ async def test_lock_ps_endpoint_409_when_no_variants(
         def eq(self, *a, **k): return self
         def maybe_single(self): return self
         def execute(self):
-            return _Resp({"id": "app-1", "user_id": "user-1", "ps_versions": []})
+            return _Resp({"id": "app-1", "user_id": "user-1", "ps_variants": []})
 
     class _SB:
         def table(self, _name): return _Q()
