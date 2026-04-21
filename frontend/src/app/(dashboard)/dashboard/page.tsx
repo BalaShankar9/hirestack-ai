@@ -292,7 +292,7 @@ export default function DashboardPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="rounded-3xl border bg-gradient-to-br from-primary via-violet-600 to-indigo-700 p-8 text-white shadow-glow-md overflow-hidden relative"
+          className="rounded-3xl border bg-gradient-to-br from-primary via-violet-600 to-indigo-700 p-5 sm:p-6 text-white shadow-glow-md overflow-hidden relative"
         >
           <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
           <div className="relative max-w-2xl">
@@ -428,7 +428,7 @@ export default function DashboardPage() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="rounded-3xl border bg-gradient-to-br from-primary via-violet-600 to-indigo-700 p-6 text-white shadow-glow-md overflow-hidden relative"
+          className="rounded-3xl border bg-gradient-to-br from-primary via-violet-600 to-indigo-700 p-5 sm:p-8 text-white shadow-glow-md overflow-hidden relative"
       >
         {/* Decorative grid */}
         <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
@@ -492,7 +492,7 @@ export default function DashboardPage() {
       </motion.div>
 
       {/* ── Quick Actions ─────────────────────────────────────── */}
-      <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
+      <div className="grid grid-cols-4 xs:grid-cols-5 md:grid-cols-10 gap-2">
         {QUICK_ACTIONS.map((a, i) => (
           <motion.div
             key={a.href}
@@ -590,15 +590,15 @@ export default function DashboardPage() {
                       <div className="mt-2.5 h-1 rounded-full bg-muted overflow-hidden">
                         <div className={cn("h-full rounded-full transition-all", scoreBg(match))} style={{ width: `${match}%` }} />
                       </div>
-                      <div className="mt-2 grid grid-cols-4 gap-1.5">
+                      <div className="mt-2 grid grid-cols-2 xs:grid-cols-4 gap-1.5">
                         {[
                           { icon: Target, label: "Match", val: match },
                           { icon: ShieldCheck, label: "ATS", val: a.scores?.atsReadiness ?? 0 },
                           { icon: ScanEye, label: "Scan", val: a.scores?.recruiterScan ?? 0 },
                           { icon: Award, label: "Proof", val: proof },
                         ].map((m) => (
-                          <div key={m.label} className="rounded-lg bg-muted/30 p-1.5 text-center">
-                            <div className="flex items-center justify-center gap-0.5 text-muted-foreground"><m.icon className="h-2.5 w-2.5" /><span className="text-[9px]">{m.label}</span></div>
+                          <div key={m.label} className="rounded-lg bg-muted/30 p-1.5 text-center min-w-0">
+                            <div className="flex items-center justify-center gap-0.5 text-muted-foreground"><m.icon className="h-2.5 w-2.5 shrink-0" /><span className="text-[9px] truncate">{m.label}</span></div>
                             <div className={cn("text-[11px] font-semibold tabular-nums", scoreColor(m.val))}>{m.val}%</div>
                           </div>
                         ))}

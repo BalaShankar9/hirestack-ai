@@ -40,19 +40,19 @@ export function TaskQueue({
   };
 
   return (
-    <div className={cn("surface-premium rounded-2xl", compact ? "p-4" : "p-5")}>
-      <div className="flex items-start justify-between gap-2">
-        <div>
+    <div className={cn("surface-premium rounded-2xl min-w-0", compact ? "p-4" : "p-5")}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <div className="text-sm font-semibold">Action queue</div>
           <div className="mt-1 text-xs text-muted-foreground">
             Coach-grade tasks generated from gaps + learning plan. Ship one, snapshot, repeat.
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="tabular-nums rounded-lg border border-border/70 bg-background/70">
+        <div className="flex items-center gap-2 shrink-0">
+          <Badge variant="secondary" className="tabular-nums rounded-lg border border-border/70 bg-background/70 whitespace-nowrap">
             {remaining} open
           </Badge>
-          <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => {
+          <Button variant="outline" size="sm" className="gap-2 rounded-xl whitespace-nowrap shrink-0" onClick={() => {
             setFilter((f) => (f === "todo" ? "all" : "todo"));
           }}>
             <Filter className="h-4 w-4" />

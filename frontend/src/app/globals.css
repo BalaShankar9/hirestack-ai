@@ -99,10 +99,18 @@
   }
   html {
     scroll-behavior: smooth;
+    /* Prevent layout-driven horizontal scroll on mobile */
+    overflow-x: hidden;
   }
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    overflow-x: hidden;
+  }
+  /* Kill the 300ms double-tap zoom delay on every interactive element.
+     This alone eliminates the perceived "2 second click lag" on mobile. */
+  a, button, [role="button"], input, select, textarea, label, summary {
+    touch-action: manipulation;
   }
   h1, h2, h3, h4, h5, h6 {
     @apply tracking-tight;
@@ -112,7 +120,14 @@
 /* ── Smooth page transitions ─────────────────────────── */
 @layer base {
   main {
-    animation: page-enter 0.35s ease-out;
+    animation: page-enter 0.15s ease-out;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    main { animation: none; }
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 

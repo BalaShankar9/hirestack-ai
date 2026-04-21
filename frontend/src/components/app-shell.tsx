@@ -460,7 +460,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* ── Main Content ──────────────────────────── */}
       <div className="relative z-10 flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <header className="surface-premium sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border/70 px-4 lg:px-6">
+        <header className="surface-premium sticky top-0 z-30 flex h-16 items-center gap-2 sm:gap-4 border-b border-border/70 px-3 sm:px-4 lg:px-6">
           <Button
             variant="ghost"
             size="icon"
@@ -512,12 +512,15 @@ export function AppShell({ children }: { children: ReactNode }) {
           {/* Spacer for mobile (brand logo doesn't use flex-1) */}
           <div className="flex-1 lg:hidden" />
 
-          <ThemeToggle />
+          {/* Theme toggle — hide on very narrow mobile to save space */}
+          <div className="hidden sm:flex">
+            <ThemeToggle />
+          </div>
 
           {/* Quick action */}
           <Button
             size="sm"
-            className="flex gap-2 rounded-xl bg-primary btn-glow hover:shadow-glow-md transition-shadow"
+            className="flex gap-2 rounded-xl bg-primary btn-glow hover:shadow-glow-md transition-shadow shrink-0 px-2.5 sm:px-3"
             onClick={() => router.push("/new")}
             aria-label="New Application"
           >
