@@ -20,8 +20,8 @@ export default function AboutPage() {
         <h2>The problem we kept seeing</h2>
         <p>
           ATS software rejects 75% of résumés before a human ever reads them. Generic templates,
-          missing keywords, and unverified claims are the top three reasons. The fix isn't more
-          AI fluff — it's <strong>real intelligence</strong>: research the company, parse the job,
+          missing keywords, and unverified claims are the top three reasons. The fix isn&apos;t more
+          AI fluff — it&apos;s <strong>real intelligence</strong>: research the company, parse the job,
           map your evidence, optimise for the systems doing the screening.
         </p>
 
@@ -29,22 +29,22 @@ export default function AboutPage() {
         <p>
           Six specialised AI agents that work together — not one chatbot pretending to do
           everything. Each agent is tuned for a single job, runs in parallel, and shows its work
-          in real time so you can see exactly what's happening to your application.
+          in real time so you can see exactly what&apos;s happening to your application.
         </p>
 
         <h2>What we believe</h2>
         <ul>
           <li><strong>Proof beats claims.</strong> We push you to attach real evidence.</li>
           <li><strong>Your data is yours.</strong> We never train models on your résumé.</li>
-          <li><strong>Speed matters.</strong> Three minutes per application or it's not useful.</li>
+          <li><strong>Speed matters.</strong> Three minutes per application or it&apos;s not useful.</li>
           <li><strong>No magic.</strong> Every agent shows its reasoning. You stay in control.</li>
         </ul>
 
-        <h2>Who's behind it</h2>
+        <h2>Who&apos;s behind it</h2>
         <p>
           A small team of ex-FAANG engineers, designers, and a former technical recruiter — the
           people who saw the broken pipeline from every angle and decided to build the tool we
-          wished we'd had.
+          wished we&apos;d had.
         </p>
       </div>
 

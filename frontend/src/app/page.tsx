@@ -473,7 +473,7 @@ export default function HomePage() {
             ))}
           </div>
           <p className="mt-4 text-center text-[11px] text-muted-foreground/60">
-            Self-reported by users in 2025–2026. We don't claim sponsorship — we celebrate where our community lands.
+            Self-reported by users in 2025–2026. We don&apos;t claim sponsorship — we celebrate where our community lands.
           </p>
         </div>
       </section>
