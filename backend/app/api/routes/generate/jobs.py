@@ -1467,14 +1467,49 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         set_chain_agent("atlas", stage="profiling")
         await emit_detail("atlas", "Parsing resume text and role requirements.", "running", "resume")
 
+        # Phase B.2: prefer benchmark_pipeline over the raw chain.
+        # Falls back to direct chain on import / runtime failure so this
+        # branch is safe even when AGENT_PIPELINES is disabled.
+        async def _build_benchmark(profile_for_pipeline: Dict[str, Any]) -> Dict[str, Any]:
+            if _AGENT_PIPELINES_AVAILABLE:
+                try:
+                    from ai_engine.agents.pipelines import benchmark_pipeline
+                    pipe = benchmark_pipeline(
+                        ai_client=ai,
+                        on_stage_update=lambda ev: emit("agent_status", ev),
+                        db=sb,
+                        tables=TABLES,
+                        user_id=user_id,
+                    )
+                    bench_result = await pipe.execute({
+                        "user_id": user_id,
+                        "job_title": job_title,
+                        "company": company_str,
+                        "jd_text": jd_text_val,
+                        "user_profile": profile_for_pipeline,
+                    })
+                    if bench_result and isinstance(bench_result.content, dict):
+                        return bench_result.content
+                except Exception as _bench_err:
+                    logger.warning(
+                        "benchmark.pipeline_failed_fallback",
+                        error=str(_bench_err)[:200],
+                    )
+            return await benchmark_chain.create_ideal_profile(
+                job_title, company_str, jd_text_val
+            )
+
         if resume_text_val.strip():
+            # Parse resume + build benchmark in parallel.  The benchmark
+            # pipeline doesn't depend on the parsed profile (it scores
+            # the JD), so passing an empty profile is intentional.
             user_profile, benchmark_data = await asyncio.gather(
                 profiler.parse_resume(resume_text_val),
-                benchmark_chain.create_ideal_profile(job_title, company_str, jd_text_val),
+                _build_benchmark({}),
             )
         else:
             user_profile = {}
-            benchmark_data = await benchmark_chain.create_ideal_profile(job_title, company_str, jd_text_val)
+            benchmark_data = await _build_benchmark(user_profile)
 
         # Phase C.1: Recall learned user-style preferences from agent_memory
         # and inject them into user_profile.  Every chain that takes
