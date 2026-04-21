@@ -75,8 +75,8 @@ export default function ABLabPage() {
       </div>
 
       {/* Input */}
-      <div className="rounded-2xl border p-6 space-y-4 shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
-        <div className="flex items-center justify-between">
+      <div className="rounded-2xl border p-4 sm:p-6 space-y-4 shadow-soft-sm hover:shadow-soft-md transition-all duration-300">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
           <h2 className="text-lg font-semibold">Source Document</h2>
           <p className="text-xs text-muted-foreground">You&apos;ll get 3 versions: conservative, balanced, and creative</p>
         </div>

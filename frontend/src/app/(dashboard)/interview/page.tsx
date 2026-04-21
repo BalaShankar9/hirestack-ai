@@ -351,14 +351,14 @@ export default function InterviewSimulatorPage() {
 
               <div className="space-y-1.5">
                 <label className="text-xs font-medium">Interview Type</label>
-                <div className="grid grid-cols-5 gap-1">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 sm:gap-1">
                   {INTERVIEW_TYPES.map((t) => (
                     <button key={t.value} onClick={() => setInterviewType(t.value)}
                       className={cn("rounded-lg border p-2 text-center text-2xs transition-all",
                         interviewType === t.value ? "border-primary bg-primary/5 font-medium" : "border-border hover:border-primary/30"
                       )}>
                       <t.icon className="h-3.5 w-3.5 mx-auto mb-0.5" />
-                      {t.label}
+                      <span className="block leading-tight">{t.label}</span>
                     </button>
                   ))}
                 </div>

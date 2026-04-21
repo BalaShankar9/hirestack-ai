@@ -76,12 +76,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Detect dev audit bypass (must be checked synchronously so loadSession doesn't run)
+  const isAuditMock =
+    process.env.NODE_ENV !== "production" &&
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("audit_mock_auth") === "1";
+
   useEffect(() => {
     installGlobalErrorHandler();
     checkEnvOnce();
-  }, []);
+
+    if (isAuditMock) {
+      const mockUser: AuthUser = {
+        uid: "audit-mock",
+        id: "audit-mock",
+        email: "audit@local",
+        displayName: "Audit User",
+        full_name: "Audit User",
+        photoURL: null,
+        user_metadata: { full_name: "Audit User" },
+      };
+      setUser(mockUser);
+      setSession({ access_token: "mock", refresh_token: "mock", expires_in: 3600, token_type: "bearer", user: { id: "audit-mock" } } as unknown as Session);
+      setLoading(false);
+    }
+  }, [isAuditMock]);
 
   useEffect(() => {
+    if (isAuditMock) return; // skip real auth wiring during dev visual audit
+
     // Get initial session with timeout + retry
     let cancelled = false;
 
@@ -149,7 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [isAuditMock]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await Promise.race([

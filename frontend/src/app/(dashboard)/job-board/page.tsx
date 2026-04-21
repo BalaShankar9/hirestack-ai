@@ -126,17 +126,17 @@ export default function JobBoardPage() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-glow-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex items-center gap-4 min-w-0">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-glow-sm shrink-0">
             <Briefcase className="h-6 w-6 text-white" />
           </div>
-          <div>
-            <h1 className="text-xl font-bold">Job Intelligence</h1>
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold truncate">Job Intelligence</h1>
             <p className="text-sm text-muted-foreground">AI-matched opportunities with smart scoring</p>
           </div>
         </div>
-        <Button onClick={() => setShowForm(!showForm)} className="rounded-xl gap-2">
+        <Button onClick={() => setShowForm(!showForm)} className="rounded-xl gap-2 shrink-0 self-start sm:self-auto">
           <Plus className="h-4 w-4" /> New Alert
         </Button>
       </div>
@@ -194,13 +194,13 @@ export default function JobBoardPage() {
       )}
 
       {/* Filter + Search */}
-      <div className="flex items-center gap-3">
-        <div className="flex gap-1 rounded-lg bg-muted/50 p-0.5">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex gap-1 rounded-lg bg-muted/50 p-0.5 overflow-x-auto -mx-1 px-1 sm:mx-0 sm:px-0.5">
           {["all", "new", "interested", "applied", "saved"].map((f) => (
-            <button key={f} onClick={() => setFilter(f)} className={cn("rounded-lg px-3 py-1.5 text-xs font-medium transition-colors capitalize", filter === f ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>{f}</button>
+            <button key={f} onClick={() => setFilter(f)} className={cn("rounded-lg px-3 py-1.5 text-xs font-medium transition-colors capitalize whitespace-nowrap shrink-0", filter === f ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>{f}</button>
           ))}
         </div>
-        <div className="relative flex-1 max-w-xs">
+        <div className="relative flex-1 sm:max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input placeholder="Search jobs..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 rounded-xl h-8 text-sm" />
         </div>

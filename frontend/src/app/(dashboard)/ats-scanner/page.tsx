@@ -247,13 +247,13 @@ export default function ATSScannerPage() {
         </div>
 
         {/* Scan button */}
-        <div className="border-t bg-muted/20 px-5 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4 text-2xs text-muted-foreground">
+        <div className="border-t bg-muted/20 px-4 sm:px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-2xs text-muted-foreground">
             <span className="flex items-center gap-1"><Target className="h-3 w-3" /> Keywords</span>
             <span className="flex items-center gap-1"><Code className="h-3 w-3" /> Structure</span>
             <span className="flex items-center gap-1"><Brain className="h-3 w-3" /> Strategy</span>
           </div>
-          <Button onClick={runScan} disabled={loading || !documentContent.trim()} className="gap-2 rounded-xl px-6">
+          <Button onClick={runScan} disabled={loading || !documentContent.trim()} className="gap-2 rounded-xl px-4 sm:px-6 w-full sm:w-auto">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanSearch className="h-4 w-4" />}
             {loading ? "Analyzing (3 passes)..." : "Run ATS Scan"}
           </Button>
