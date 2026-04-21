@@ -19,7 +19,7 @@ and Supabase auth (`https://dkfmcnfhvbqwsgpkgoag.supabase.co`).
 | 3 | Resume profiles + ATS Scanner + Document Library | ✅ shipped |
 | 4 | Pipeline + Candidates + Interview Coach | ✅ shipped |
 | 5 | Career analytics + Learning + Salary | ✅ shipped |
-| 6 | Nexus + Variants + Evidence Mapper + Knowledge | not started |
+| 6 | Doc Variants + Knowledge Library | ✅ shipped |
 | 7 | Polish + signed APK | not started |
 
 ## Build (after toolchain installed)

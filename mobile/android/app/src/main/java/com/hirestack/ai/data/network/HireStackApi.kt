@@ -4,6 +4,7 @@ import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -107,4 +108,31 @@ interface HireStackApi {
 
     @GET("salary/{id}")
     suspend fun getSalaryAnalysis(@Path("id") id: String): SalaryAnalysis
+
+    // Variants (A/B Doc Lab)
+    @GET("variants/")
+    suspend fun listVariants(
+        @Query("application_id") applicationId: String? = null,
+        @Query("document_type") documentType: String? = null,
+    ): List<DocVariant>
+
+    @PUT("variants/{id}/select")
+    suspend fun selectVariant(@Path("id") id: String): SelectVariantResponse
+
+    // Knowledge library
+    @GET("knowledge/resources")
+    suspend fun listKnowledgeResources(
+        @Query("category") category: String? = null,
+        @Query("type") type: String? = null,
+        @Query("difficulty") difficulty: String? = null,
+        @Query("search") search: String? = null,
+        @Query("featured") featured: Boolean = false,
+        @Query("limit") limit: Int = 50,
+    ): List<KnowledgeResource>
+
+    @GET("knowledge/progress")
+    suspend fun knowledgeProgress(): List<KnowledgeProgress>
+
+    @GET("knowledge/recommendations")
+    suspend fun knowledgeRecommendations(): List<KnowledgeRecommendation>
 }

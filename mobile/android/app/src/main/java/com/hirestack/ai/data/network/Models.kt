@@ -330,3 +330,67 @@ data class SalaryAnalysis(
     val negotiation_script: String? = null,
     val created_at: String? = null,
 )
+
+// ---- Tier 6: Variants + Knowledge ----
+
+@JsonClass(generateAdapter = true)
+data class DocVariant(
+    val id: String,
+    val application_id: String? = null,
+    val document_type: String? = null,
+    val variant_name: String? = null,
+    val tone: String? = null,
+    val content: String? = null,
+    val word_count: Int? = null,
+    val ats_score: Double? = null,
+    val readability_score: Double? = null,
+    val is_selected: Boolean? = null,
+    val created_at: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class SelectVariantResponse(
+    val status: String? = null,
+    val variant_id: String? = null,
+)
+@JsonClass(generateAdapter = true)
+data class KnowledgeResource(
+    val id: String,
+    val title: String? = null,
+    val description: String? = null,
+    val category: String? = null,
+    val resource_type: String? = null,
+    val difficulty: String? = null,
+    val skills: List<String>? = null,
+    val url: String? = null,
+    val author: String? = null,
+    val duration_minutes: Int? = null,
+    val is_featured: Boolean? = null,
+)
+
+/**
+ * `/api/knowledge/progress` — user progress row with embedded resource.
+ */
+@JsonClass(generateAdapter = true)
+data class KnowledgeProgress(
+    val id: String? = null,
+    val resource_id: String? = null,
+    val status: String? = null,
+    val progress_pct: Int? = null,
+    val rating: Int? = null,
+    val updated_at: String? = null,
+    val knowledge_resources: KnowledgeResource? = null,
+)
+
+/**
+ * `/api/knowledge/recommendations` — embedded resource via Supabase join.
+ */
+@JsonClass(generateAdapter = true)
+data class KnowledgeRecommendation(
+    val id: String,
+    val resource_id: String? = null,
+    val reason: String? = null,
+    val relevance_score: Double? = null,
+    val is_dismissed: Boolean? = null,
+    val knowledge_resources: KnowledgeResource? = null,
+)

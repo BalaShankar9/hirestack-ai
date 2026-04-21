@@ -34,10 +34,12 @@ import com.hirestack.ai.ui.interview.InterviewListScreen
 import com.hirestack.ai.ui.jobs.AddJobScreen
 import com.hirestack.ai.ui.jobs.JobBoardScreen
 import com.hirestack.ai.ui.jobs.JobDetailScreen
+import com.hirestack.ai.ui.knowledge.KnowledgeScreen
 import com.hirestack.ai.ui.learning.LearningScreen
 import com.hirestack.ai.ui.profile.ProfileScreen
 import com.hirestack.ai.ui.profiles.ProfilesScreen
 import com.hirestack.ai.ui.salary.SalaryScreen
+import com.hirestack.ai.ui.variants.VariantsScreen
 
 object MainRoutes {
     const val DASHBOARD = "main/dashboard"
@@ -54,6 +56,8 @@ object MainRoutes {
     const val CAREER = "main/more/career"
     const val LEARNING = "main/more/learning"
     const val SALARY = "main/more/salary"
+    const val VARIANTS = "main/more/variants"
+    const val KNOWLEDGE = "main/more/knowledge"
 
     fun jobDetail(id: String) = "main/jobs/$id"
     fun interviewDetail(id: String) = "main/more/interviews/$id"
@@ -133,6 +137,8 @@ fun MainShell(
                     onOpenCareer = { nav.navigate(MainRoutes.CAREER) },
                     onOpenLearning = { nav.navigate(MainRoutes.LEARNING) },
                     onOpenSalary = { nav.navigate(MainRoutes.SALARY) },
+                    onOpenVariants = { nav.navigate(MainRoutes.VARIANTS) },
+                    onOpenKnowledge = { nav.navigate(MainRoutes.KNOWLEDGE) },
                 )
             }
             composable(
@@ -187,6 +193,12 @@ fun MainShell(
             }
             composable(MainRoutes.SALARY) {
                 SalaryScreen(onBack = { nav.popBackStack() })
+            }
+            composable(MainRoutes.VARIANTS) {
+                VariantsScreen(onBack = { nav.popBackStack() })
+            }
+            composable(MainRoutes.KNOWLEDGE) {
+                KnowledgeScreen(onBack = { nav.popBackStack() })
             }
         }
     }

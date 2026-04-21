@@ -26,6 +26,8 @@ fun ProfileScreen(
     onOpenCareer: () -> Unit,
     onOpenLearning: () -> Unit,
     onOpenSalary: () -> Unit,
+    onOpenVariants: () -> Unit,
+    onOpenKnowledge: () -> Unit,
 ) {
     val state by vm.state.collectAsState()
 
@@ -83,6 +85,10 @@ fun ProfileScreen(
         NavRow("Learning", "Streak, daily challenges and history", onOpenLearning)
         Spacer(Modifier.height(8.dp))
         NavRow("Salary Coach", "Market & negotiation analyses", onOpenSalary)
+        Spacer(Modifier.height(8.dp))
+        NavRow("Doc Variants", "A/B tone variants and selection", onOpenVariants)
+        Spacer(Modifier.height(8.dp))
+        NavRow("Knowledge library", "Resources and recommendations", onOpenKnowledge)
 
         Spacer(Modifier.height(28.dp))
         OutlinedButton(
