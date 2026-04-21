@@ -48,3 +48,4 @@ aiofiles>=23.2,<24.2
 markdown>=3.5,<3.8
 slowapi>=0.1.9,<0.2
 nh3>=0.2,<0.3
+selectolax>=0.3,<0.4

@@ -255,10 +255,14 @@ class IntelCoordinator:
             ("funding", f"{company} funding investors headcount employees"),
             ("culture", f"{company} culture values employees reviews"),
             ("recent", f"{company} news 2025 2026"),
+            ("glassdoor", f"site:glassdoor.com {company} reviews"),
+            ("indeed", f"site:indeed.com {company} reviews"),
+            ("trustpilot", f"site:trustpilot.com {company}"),
         ]
         if job_title:
             queries.append(("hiring", f"{company} {job_title} hiring team"))
             queries.append(("interview", f"{company} {job_title} interview process"))
+            queries.append(("levels", f"site:levels.fyi {company} {job_title}"))
 
         async def _one(label: str, q: str) -> tuple[str, dict]:
             try:

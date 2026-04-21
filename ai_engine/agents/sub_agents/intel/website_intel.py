@@ -130,9 +130,216 @@ async def _discover_url_via_search(company: str) -> list[str]:
     return ranked[:4]
 
 
+# Priority keywords in URL paths — if a sitemap lists these, they're worth
+# crawling. Ordered by information density for career intel.
+_SITEMAP_PRIORITY_KEYWORDS = [
+    "about", "company", "team", "leadership", "people", "careers",
+    "mission", "values", "culture", "engineering", "blog", "news",
+    "press", "investors", "products", "solutions", "customers",
+    "case-studies", "pricing", "security", "contact",
+]
+# Path fragments we never want to crawl even if they appear in a sitemap.
+_SITEMAP_PATH_BLOCK = (
+    "/legal", "/privacy", "/terms", "/cookie", "/policy",
+    "/gdpr", "/ccpa", "/login", "/signin", "/signup", "/register",
+    "/cart", "/checkout", "/account", "/404", "/500",
+    ".pdf", ".zip", ".xml", ".json", ".rss",
+)
+
+
+async def _fetch_sitemap_urls(base_url: str, max_urls: int = 20) -> list[str]:
+    """
+    Discover crawl targets by asking the site itself.
+
+    Tries robots.txt first (authoritative pointer to sitemap), then
+    falls back to /sitemap.xml and /sitemap_index.xml. Handles sitemap
+    index files (one level of nesting) and filters out noise paths.
+    Returns up to max_urls same-origin URLs ranked by priority keywords.
+    """
+    base = base_url.rstrip("/")
+    base_domain = _domain_of(base)
+    if not base_domain:
+        return []
+
+    sitemap_urls: list[str] = []
+
+    # 1. robots.txt → Sitemap: <url>
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
+            resp = await client.get(
+                f"{base}/robots.txt",
+                headers={"User-Agent": _USER_AGENT, "Accept": "text/plain"},
+            )
+            if resp.status_code == 200:
+                for line in resp.text.splitlines():
+                    line = line.strip()
+                    if line.lower().startswith("sitemap:"):
+                        sitemap_urls.append(line.split(":", 1)[1].strip())
+    except Exception:
+        pass
+
+    # 2. Conventional locations
+    for path in ("/sitemap.xml", "/sitemap_index.xml", "/sitemap-index.xml"):
+        candidate = f"{base}{path}"
+        if candidate not in sitemap_urls:
+            sitemap_urls.append(candidate)
+
+    # 3. Fetch each sitemap (one level of index expansion allowed)
+    collected: list[str] = []
+    seen_sitemaps: set[str] = set()
+
+    async def _read_sitemap(sm_url: str, depth: int = 0) -> None:
+        if sm_url in seen_sitemaps or depth > 1:
+            return
+        seen_sitemaps.add(sm_url)
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
+                resp = await client.get(
+                    sm_url,
+                    headers={"User-Agent": _USER_AGENT, "Accept": "application/xml, text/xml"},
+                )
+                if resp.status_code != 200 or not resp.text:
+                    return
+                xml = resp.text
+        except Exception:
+            return
+
+        # <sitemap><loc>…</loc></sitemap> → index; recurse once
+        nested = re.findall(r"<sitemap>\s*<loc>\s*([^<\s]+)\s*</loc>", xml, re.IGNORECASE)
+        if nested and depth == 0:
+            for n in nested[:3]:
+                await _read_sitemap(n.strip(), depth=1)
+            return
+
+        # <url><loc>…</loc></url> → leaf URLs
+        locs = re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", xml, re.IGNORECASE)
+        for loc in locs:
+            loc = loc.strip()
+            if not loc.startswith("http"):
+                continue
+            if _domain_of(loc) != base_domain:
+                continue
+            low = loc.lower()
+            if any(b in low for b in _SITEMAP_PATH_BLOCK):
+                continue
+            collected.append(loc)
+
+    for sm in sitemap_urls[:4]:
+        await _read_sitemap(sm)
+        if len(collected) >= 200:
+            break
+
+    if not collected:
+        return []
+
+    def _rank(url: str) -> tuple[int, int]:
+        low = url.lower()
+        for idx, kw in enumerate(_SITEMAP_PRIORITY_KEYWORDS):
+            if kw in low:
+                return (idx, len(url))
+        return (len(_SITEMAP_PRIORITY_KEYWORDS), len(url))
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for u in collected:
+        if u in seen:
+            continue
+        seen.add(u)
+        unique.append(u)
+
+    unique.sort(key=_rank)
+    return unique[:max_urls]
+
+
 def _extract_text(html: str) -> dict[str, str]:
-    """Extract title, description, headings, and body text from HTML."""
-    # Strip scripts and styles
+    """
+    Extract title, description, headings, body text, and social links from HTML.
+
+    Prefers selectolax (fast C parser, proper DOM) when available. Falls back
+    to the legacy regex-based extractor if selectolax is unavailable or the
+    document parse fails for any reason.
+    """
+    # --- Try selectolax first ---
+    try:
+        from selectolax.parser import HTMLParser  # type: ignore
+        tree = HTMLParser(html)
+
+        # Remove noise nodes
+        for selector in ("script", "style", "noscript", "template", "svg"):
+            for node in tree.css(selector):
+                node.decompose()
+
+        # Title
+        title_node = tree.css_first("title")
+        title = (title_node.text() if title_node else "").strip()
+
+        # Meta description (description or og:description, in either attr order)
+        description = ""
+        for sel in (
+            'meta[name="description"]',
+            'meta[property="og:description"]',
+            'meta[name="twitter:description"]',
+        ):
+            node = tree.css_first(sel)
+            if node:
+                val = (node.attributes.get("content") or "").strip()
+                if val:
+                    description = val
+                    break
+
+        # Headings (H1/H2/H3), capped
+        headings: list[str] = []
+        for h in tree.css("h1, h2, h3"):
+            txt = h.text(strip=True) if hasattr(h, "text") else ""
+            if txt and len(txt) < 200:
+                headings.append(txt)
+            if len(headings) >= 20:
+                break
+
+        # Links + social categorisation
+        social: dict[str, str] = {}
+        for a in tree.css("a[href]"):
+            href = (a.attributes.get("href") or "").strip()
+            if not href or href.startswith(("#", "javascript:", "mailto:")):
+                continue
+            low = href.lower()
+            if "linkedin.com" in low and "linkedin" not in social:
+                social["linkedin"] = href
+            elif ("twitter.com" in low or "x.com" in low) and "twitter" not in social:
+                social["twitter"] = href
+            elif "github.com" in low and "github" not in social:
+                social["github"] = href
+            elif "glassdoor.com" in low and "glassdoor" not in social:
+                social["glassdoor"] = href
+            elif "youtube.com" in low and "youtube" not in social:
+                social["youtube"] = href
+            elif "instagram.com" in low and "instagram" not in social:
+                social["instagram"] = href
+
+        # Main body text — prefer <main> / <article> / role=main, else <body>
+        main_node = (
+            tree.css_first("main")
+            or tree.css_first("article")
+            or tree.css_first('[role="main"]')
+            or tree.css_first("body")
+            or tree.root
+        )
+        body = main_node.text(separator=" ", strip=True) if main_node else ""
+        # Collapse whitespace
+        body = re.sub(r"\s+", " ", body).strip()
+
+        return {
+            "title": title,
+            "description": description,
+            "headings": "; ".join(headings[:15]),
+            "body": body[:8000],
+            "social_links": str(social) if social else "",
+        }
+    except Exception:
+        pass
+
+    # --- Regex fallback (kept intentionally; handles broken HTML selectolax
+    #     sometimes refuses to parse) ---
     cleaned = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
     cleaned = re.sub(r"<style[^>]*>.*?</style>", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
     cleaned = re.sub(r"<!--.*?-->", "", cleaned, flags=re.DOTALL)
@@ -151,29 +358,24 @@ def _extract_text(html: str) -> dict[str, str]:
         )
     description = desc_m.group(1).strip() if desc_m else ""
 
-    # Extract headings for structure
     headings = re.findall(r"<h[1-3][^>]*>(.*?)</h[1-3]>", cleaned, re.IGNORECASE | re.DOTALL)
     headings = [re.sub(r"<[^>]+>", "", h).strip() for h in headings[:20]]
 
-    # Extract links for navigation intel
     links = re.findall(r'href=["\']([^"\']*)["\']', cleaned, re.IGNORECASE)
-
-    # Body text
     body = re.sub(r"<[^>]+>", " ", cleaned)
     body = re.sub(r"\s+", " ", body).strip()
 
-    # Extract social links
-    social = {}
+    social: dict[str, str] = {}
     for link in links:
         link_lower = link.lower()
         if "linkedin.com" in link_lower:
-            social["linkedin"] = link
+            social.setdefault("linkedin", link)
         elif "twitter.com" in link_lower or "x.com" in link_lower:
-            social["twitter"] = link
+            social.setdefault("twitter", link)
         elif "github.com" in link_lower:
-            social["github"] = link
+            social.setdefault("github", link)
         elif "glassdoor.com" in link_lower:
-            social["glassdoor"] = link
+            social.setdefault("glassdoor", link)
 
     return {
         "title": title,
@@ -247,8 +449,51 @@ class WebsiteIntelAgent(SubAgent):
         if on_event:
             await _emit(on_event, f"Website found at {working_base}. Crawling pages…", "running", "website", url=working_base)
 
-        # Crawl all pages in parallel
-        pages_to_fetch = {name: f"{working_base}{path}" for name, path in _PAGE_PATHS}
+        # Sitemap-first crawl: ask the site what its pages are. If a sitemap
+        # exists, those URLs beat the hardcoded guess list for both coverage
+        # (finds /handbook, /engineering-blog, /customers/xyz, etc.) and
+        # efficiency (no wasted requests on nonexistent paths).
+        pages_to_fetch: dict[str, str] = {}
+        sitemap_urls = await _fetch_sitemap_urls(working_base, max_urls=20)
+        if sitemap_urls:
+            if on_event:
+                await _emit(
+                    on_event,
+                    f"Sitemap found: {len(sitemap_urls)} ranked URL(s). Crawling.",
+                    "running", "website",
+                    url=working_base,
+                    metadata={"sitemap_count": len(sitemap_urls)},
+                )
+            # Always keep the homepage
+            pages_to_fetch["homepage"] = working_base
+            # Name each sitemap URL by its last meaningful path segment
+            for url in sitemap_urls:
+                try:
+                    import urllib.parse as up
+                    path = up.urlparse(url).path.rstrip("/")
+                    segments = [s for s in path.split("/") if s]
+                    name = segments[-1] if segments else "page"
+                    # Limit to alphanumeric/underscore for cleanliness
+                    name = re.sub(r"[^a-z0-9_-]", "_", name.lower())[:40] or "page"
+                except Exception:
+                    name = "page"
+                # De-dupe names
+                key = name
+                counter = 2
+                while key in pages_to_fetch:
+                    key = f"{name}_{counter}"
+                    counter += 1
+                pages_to_fetch[key] = url
+        else:
+            if on_event:
+                await _emit(
+                    on_event,
+                    "No sitemap — crawling common paths.",
+                    "running", "website",
+                    url=working_base,
+                )
+            pages_to_fetch = {name: f"{working_base}{path}" for name, path in _PAGE_PATHS}
+
         fetch_tasks = {name: _fetch(url) for name, url in pages_to_fetch.items()}
         results = await asyncio.gather(*fetch_tasks.values(), return_exceptions=True)
 
