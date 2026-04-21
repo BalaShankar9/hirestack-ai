@@ -27,6 +27,17 @@ from ai_engine.agents.sub_agents.intel.jd_intel import JDIntelAgent
 from ai_engine.agents.sub_agents.intel.market_position import MarketPositionAgent
 from ai_engine.agents.sub_agents.intel.company_profile import CompanyProfileAgent
 from ai_engine.agents.sub_agents.intel.application_strategy import ApplicationStrategyAgent
+from ai_engine.agents.sub_agents.intel.evidence_utils import (
+    process_evidence,
+    summarise_evidence,
+)
+from ai_engine.agents.tools import (
+    trace_start,
+    trace_record,
+    trace_snapshot,
+    get_provider_health_snapshot,
+    otel_span,
+)
 from ai_engine.client import AIClient
 
 logger = structlog.get_logger("hirestack.intel.coordinator")
@@ -58,6 +69,35 @@ class IntelCoordinator:
             ai_client = get_ai_client()
         self.ai_client = ai_client
 
+    # Fields we expect a well-formed CompanyProfileAgent output to carry.
+    # Missing / empty ones are surfaced in the profile_schema_audit so the
+    # frontend can show a "partial intel" badge rather than a confident-looking
+    # but hollow profile.
+    _EXPECTED_PROFILE_FIELDS: tuple[str, ...] = (
+        "industry",
+        "stage",          # early / growth / public / …
+        "headcount",
+        "tech_stack",
+        "leadership",
+        "mission",
+        "culture_values",
+        "recent_news",
+        "funding",
+    )
+
+    @staticmethod
+    def _audit_profile_schema(profile: dict) -> list[str]:
+        """
+        Return the list of expected fields that are empty in the final profile.
+        'Empty' means None, '', [], {}, 0, or False.
+        """
+        missing: list[str] = []
+        for field in IntelCoordinator._EXPECTED_PROFILE_FIELDS:
+            v = profile.get(field)
+            if v in (None, "", [], {}, 0, False):
+                missing.append(field)
+        return missing
+
     async def gather_intel(
         self,
         company: str,
@@ -68,6 +108,12 @@ class IntelCoordinator:
     ) -> dict[str, Any]:
         """Full multi-agent intel gathering with two-phase execution."""
         start = time.monotonic()
+        trace_start()
+        trace_record({
+            "kind": "pipeline_start",
+            "company": company[:80],
+            "job_title": job_title[:80],
+        })
 
         if on_event:
             await self._emit(on_event, f"Intel swarm deploying 5 sub-agents for {company}…", "running", "recon")
@@ -93,10 +139,11 @@ class IntelCoordinator:
 
         coordinator = SubAgentCoordinator(phase1_agents)
         try:
-            phase1_results = await asyncio.wait_for(
-                coordinator.gather(base_context),
-                timeout=20,
-            )
+            with otel_span("intel.phase1", agents=",".join(a.name for a in phase1_agents)):
+                phase1_results = await asyncio.wait_for(
+                    coordinator.gather(base_context),
+                    timeout=20,
+                )
         except asyncio.TimeoutError:
             logger.warning("intel_phase1_timeout", agents=[a.name for a in phase1_agents])
             # Return empty results for timed-out agents
@@ -113,6 +160,16 @@ class IntelCoordinator:
 
         for result in phase1_results:
             agent_latencies[result.agent_name] = result.latency_ms
+            trace_record({
+                "kind": "sub_agent",
+                "phase": "phase1",
+                "agent": result.agent_name,
+                "ok": bool(result.ok),
+                "latency_ms": result.latency_ms,
+                "confidence": round(float(result.confidence or 0), 2),
+                "evidence_items": len(result.evidence_items or []),
+                "error": (result.error or "")[:160] if not result.ok else None,
+            })
             if result.ok:
                 raw_intel[result.agent_name] = result.data
                 all_evidence.extend(result.evidence_items)
@@ -172,6 +229,35 @@ class IntelCoordinator:
                 },
             )
 
+        # ── Evidence post-processing before synthesis ─────────────
+        # Dedup near-duplicates, cap per-source, rank by tier/recency/credibility.
+        # Keeps the LLM prompt tight and prevents one noisy source from
+        # dominating. Summary logged for observability; raw evidence kept
+        # (synthesis uses processed, downstream recon_refine uses processed).
+        evidence_before = len(all_evidence)
+        processed_evidence = process_evidence(
+            all_evidence,
+            max_total=int(__import__("os").getenv("RECON_MAX_EVIDENCE", "60")),
+            max_per_source=int(__import__("os").getenv("RECON_MAX_PER_SOURCE", "8")),
+        )
+        evidence_summary = summarise_evidence(processed_evidence)
+        trace_record({
+            "kind": "evidence_processed",
+            "before": evidence_before,
+            "after": len(processed_evidence),
+            "summary": evidence_summary,
+        })
+        if on_event and evidence_before != len(processed_evidence):
+            await self._emit(
+                on_event,
+                f"Evidence curated: {evidence_before} → {len(processed_evidence)} items "
+                f"({evidence_summary.get('total_duplicates_folded', 0)} duplicates folded).",
+                "running", "analysis",
+                metadata={"evidence_summary": evidence_summary},
+            )
+        # Swap curated evidence into the pool the synthesis agents see.
+        all_evidence = processed_evidence
+
         # ── PHASE 2a: Company Profile synthesis ────────────────────
         synthesis_context = {
             **base_context,
@@ -179,7 +265,15 @@ class IntelCoordinator:
         }
 
         profile_agent = CompanyProfileAgent(ai_client=self.ai_client)
-        profile_result = await profile_agent.safe_run(synthesis_context)
+        with otel_span("intel.phase2.company_profile"):
+            profile_result = await profile_agent.safe_run(synthesis_context)
+        trace_record({
+            "kind": "sub_agent",
+            "phase": "phase2a",
+            "agent": profile_result.agent_name,
+            "ok": bool(profile_result.ok),
+            "latency_ms": profile_result.latency_ms,
+        })
 
         # ── PHASE 2b: Application Strategy (needs profile output) ─────
         # Strategy agent reads the company profile, so it must run AFTER
@@ -191,7 +285,15 @@ class IntelCoordinator:
             "raw_intel": raw_intel,
         }
         strategy_agent = ApplicationStrategyAgent(ai_client=self.ai_client)
-        strategy_result = await strategy_agent.safe_run(strategy_context)
+        with otel_span("intel.phase2.application_strategy"):
+            strategy_result = await strategy_agent.safe_run(strategy_context)
+        trace_record({
+            "kind": "sub_agent",
+            "phase": "phase2b",
+            "agent": strategy_result.agent_name,
+            "ok": bool(strategy_result.ok),
+            "latency_ms": strategy_result.latency_ms,
+        })
 
         agent_latencies[profile_result.agent_name] = profile_result.latency_ms
         agent_latencies[strategy_result.agent_name] = strategy_result.latency_ms
@@ -335,7 +437,44 @@ class IntelCoordinator:
                 logger.warning("recon_refine_failed", error=str(e))
                 raw_intel["recon_refine"] = {"status": "error", "error": str(e)[:200]}
 
+        # ── Profile schema sanity check ───────────────────────────
+        # Lightweight post-synthesis audit: which expected fields did the
+        # profile end up with? If any critical ones are empty, surface it
+        # in raw_intel so downstream UI / eval can flag it. No blocking.
+        profile_data_final = profile_result.data or {} if profile_result.ok else {}
+        missing_fields = self._audit_profile_schema(profile_data_final)
+        raw_intel["profile_schema_audit"] = {
+            "total_expected": len(self._EXPECTED_PROFILE_FIELDS),
+            "missing": missing_fields,
+            "complete_pct": round(
+                100.0 * (len(self._EXPECTED_PROFILE_FIELDS) - len(missing_fields))
+                / max(1, len(self._EXPECTED_PROFILE_FIELDS)),
+                1,
+            ),
+        }
+        if missing_fields and on_event:
+            await self._emit(
+                on_event,
+                f"Profile audit: {len(missing_fields)} field(s) still empty ({', '.join(missing_fields[:4])}"
+                + ("…" if len(missing_fields) > 4 else "") + ").",
+                "running", "analysis",
+                metadata={"missing_fields": missing_fields},
+            )
+
+        # Provider health snapshot (useful for cost / reliability dashboards)
+        raw_intel["provider_health"] = get_provider_health_snapshot()
+
         total_time = time.monotonic() - start
+        trace_record({
+            "kind": "pipeline_end",
+            "total_seconds": round(total_time, 2),
+            "evidence_count": len(all_evidence),
+            "data_sources": list(data_sources),
+            "profile_ok": bool(profile_result.ok),
+            "strategy_ok": bool(strategy_result.ok),
+            "missing_profile_fields": missing_fields,
+        })
+        raw_intel["trace"] = trace_snapshot()
 
         # ── MERGE into legacy-compatible format ───────────────────
         merged = self._merge_results(
@@ -779,6 +918,19 @@ class IntelCoordinator:
             "phase2_agents": ["company_profile", "application_strategy"],
             "version": "2.0",
         }
+
+        # Tier 5 observability passthrough — the coordinator already populated
+        # these into raw_intel; we surface them at top level so downstream
+        # telemetry / UI doesn't need to dig. All are safe/empty when absent.
+        if raw_intel.get("trace") is not None:
+            result["trace"] = raw_intel["trace"]
+        if raw_intel.get("provider_health") is not None:
+            result["provider_health"] = raw_intel["provider_health"]
+        if raw_intel.get("profile_schema_audit") is not None:
+            result["profile_schema_audit"] = raw_intel["profile_schema_audit"]
+        # Always surface the curated evidence list and raw_intel for debugging.
+        result["evidence_items"] = all_evidence
+        result["raw_intel"] = raw_intel
 
         return result
 

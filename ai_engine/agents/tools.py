@@ -729,6 +729,182 @@ def _search_cache_put(key: str, payload: dict) -> None:
     _SEARCH_CACHE[key] = (_time.time(), payload)
 
 
+# ── Provider health + circuit breaker ─────────────────────────────────
+# Each provider tracks (consecutive_failures, opened_until_ts, total_calls,
+# total_failures, last_latency_ms). When consecutive_failures ≥ threshold,
+# the breaker opens for a cooldown window; during that window the provider
+# is skipped entirely. On any success, the counters reset.
+_PROVIDER_BREAKER_THRESHOLD = 3          # consecutive fails to trip
+_PROVIDER_BREAKER_COOLDOWN_S = 60.0      # seconds to stay open
+_provider_health: dict[str, dict[str, float]] = {}
+
+
+def _provider_is_open(name: str) -> bool:
+    """Return True iff the breaker for this provider is currently open."""
+    h = _provider_health.get(name)
+    if not h:
+        return False
+    import time as _t
+    return bool(h.get("opened_until", 0) > _t.time())
+
+
+def _provider_record_success(name: str, latency_ms: float) -> None:
+    h = _provider_health.setdefault(name, {})
+    h["consecutive_failures"] = 0
+    h["opened_until"] = 0
+    h["total_calls"] = h.get("total_calls", 0) + 1
+    h["last_latency_ms"] = latency_ms
+    h["last_result"] = 1  # 1=success, 0=fail
+
+
+def _provider_record_failure(name: str, latency_ms: float) -> None:
+    h = _provider_health.setdefault(name, {})
+    h["consecutive_failures"] = h.get("consecutive_failures", 0) + 1
+    h["total_calls"] = h.get("total_calls", 0) + 1
+    h["total_failures"] = h.get("total_failures", 0) + 1
+    h["last_latency_ms"] = latency_ms
+    h["last_result"] = 0
+    if h["consecutive_failures"] >= _PROVIDER_BREAKER_THRESHOLD:
+        import time as _t
+        h["opened_until"] = _t.time() + _PROVIDER_BREAKER_COOLDOWN_S
+
+
+def get_provider_health_snapshot() -> dict[str, dict[str, Any]]:
+    """Serialisable snapshot of provider health for observability."""
+    import time as _t
+    now = _t.time()
+    out: dict[str, dict[str, Any]] = {}
+    for name, h in _provider_health.items():
+        opened_until = h.get("opened_until", 0) or 0
+        out[name] = {
+            "consecutive_failures": int(h.get("consecutive_failures", 0)),
+            "total_calls": int(h.get("total_calls", 0)),
+            "total_failures": int(h.get("total_failures", 0)),
+            "last_latency_ms": round(float(h.get("last_latency_ms", 0)), 1),
+            "breaker_open": bool(opened_until > now),
+            "breaker_remaining_s": max(0, round(opened_until - now, 1)) if opened_until > now else 0,
+        }
+    return out
+
+
+# ── Lightweight trace recorder ─────────────────────────────────────────
+# Thread-local list of events during a pipeline run. The coordinator
+# snapshots it at the end and surfaces it in raw_intel["trace"]. This is
+# NOT OTEL — it's a zero-dep structured log that works everywhere. OTEL
+# integration (when the SDK is installed and OTEL_EXPORTER_OTLP_ENDPOINT
+# is set) layers on top via _maybe_otel_span.
+import contextvars as _ctx
+_trace_events: _ctx.ContextVar[Optional[list[dict]]] = _ctx.ContextVar(
+    "hirestack_trace_events", default=None
+)
+
+
+def trace_start() -> None:
+    """Reset trace buffer for the current async context."""
+    _trace_events.set([])
+
+
+def trace_record(event: dict) -> None:
+    """Append an event (with an auto timestamp) to the current trace buffer."""
+    buf = _trace_events.get()
+    if buf is None:
+        return
+    import time as _t
+    event = {"ts": round(_t.time(), 3), **event}
+    buf.append(event)
+
+
+def trace_snapshot() -> list[dict]:
+    """Return a shallow copy of the current trace buffer."""
+    buf = _trace_events.get()
+    return list(buf) if buf else []
+
+
+# ── Optional OpenTelemetry span wrapper ────────────────────────────────
+# Works as a no-op when opentelemetry is not installed or the endpoint
+# env is not set. Never raises. Uses lazy import so the dep is optional.
+_otel_tracer: Any = None
+_otel_tried: bool = False
+
+
+def _maybe_otel_init() -> None:
+    """Initialise the OTEL tracer once, lazily, if the SDK + endpoint exist."""
+    global _otel_tracer, _otel_tried
+    if _otel_tried:
+        return
+    _otel_tried = True
+    import os as _os
+    endpoint = _os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if not endpoint:
+        return
+    try:  # pragma: no cover — exercised only when SDK is present
+        from opentelemetry import trace as _otel_trace
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+            OTLPSpanExporter,
+        )
+        resource = Resource.create({"service.name": _os.getenv("OTEL_SERVICE_NAME", "hirestack-ai")})
+        provider = TracerProvider(resource=resource)
+        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))
+        _otel_trace.set_tracer_provider(provider)
+        _otel_tracer = _otel_trace.get_tracer("hirestack.ai")
+    except Exception as e:
+        _ext_logger.debug("otel_init_skipped: %s", str(e))
+        _otel_tracer = None
+
+
+class _OtelSpan:
+    """Context manager that emits an OTEL span when available, else no-op."""
+
+    def __init__(self, name: str, attributes: Optional[dict] = None):
+        self.name = name
+        self.attributes = attributes or {}
+        self._span: Any = None
+
+    def __enter__(self):
+        _maybe_otel_init()
+        if _otel_tracer is None:
+            return self
+        try:
+            self._span = _otel_tracer.start_span(self.name)
+            for k, v in self.attributes.items():
+                try:
+                    self._span.set_attribute(k, v)
+                except Exception:
+                    pass
+        except Exception:
+            self._span = None
+        return self
+
+    def set(self, **attrs: Any) -> None:
+        if self._span is None:
+            return
+        for k, v in attrs.items():
+            try:
+                self._span.set_attribute(k, v)
+            except Exception:
+                pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._span is None:
+            return False
+        try:
+            if exc_type is not None:
+                self._span.record_exception(exc_val)
+            self._span.end()
+        except Exception:
+            pass
+        return False
+
+
+def otel_span(name: str, **attrs: Any) -> _OtelSpan:
+    """Public helper — returns a context manager, safe when OTEL not configured."""
+    return _OtelSpan(name, attrs)
+
+
+
 async def _provider_tavily(query: str, max_results: int) -> list[dict]:
     api_key = os.getenv("TAVILY_API_KEY")
     if not api_key:
@@ -929,6 +1105,11 @@ async def _web_search(query: str, max_results: int = 5, **_: Any) -> dict:
 
     Tries paid providers first (if keys present), then free DDG/Wikipedia.
     Returns {"results": [...], "query": query, "provider": "...", "count": n}.
+
+    Features:
+    - Per-provider circuit breaker (skips providers in cooldown).
+    - Structured trace recording for observability.
+    - Optional OTEL span when OTEL_EXPORTER_OTLP_ENDPOINT is set.
     """
     if not query or not query.strip():
         return {"results": [], "query": query, "error": "empty query"}
@@ -936,6 +1117,13 @@ async def _web_search(query: str, max_results: int = 5, **_: Any) -> dict:
     cache_key = f"{query}|{max_results}"
     cached = _search_cache_get(cache_key)
     if cached is not None:
+        trace_record({
+            "kind": "web_search",
+            "query": query[:120],
+            "provider": cached.get("provider"),
+            "cache": True,
+            "count": cached.get("count", 0),
+        })
         return {**cached, "cache": True}
 
     providers = [
@@ -947,27 +1135,65 @@ async def _web_search(query: str, max_results: int = 5, **_: Any) -> dict:
         ("wikipedia", _provider_wikipedia),
     ]
 
-    for name, fn in providers:
-        try:
-            results = await fn(query, max_results)
-        except Exception as e:
-            _ext_logger.warning("provider_%s_unhandled: %s", name, str(e))
-            results = []
-        if results:
-            payload = {
-                "results": results,
-                "query": query,
-                "provider": name,
-                "count": len(results),
-            }
-            _search_cache_put(cache_key, payload)
-            return payload
+    import time as _t
+    providers_skipped: list[str] = []
+    providers_tried: list[str] = []
 
-    # No provider returned anything
-    empty = {"results": [], "query": query, "provider": "none", "count": 0,
-             "error": "all search providers returned 0 results"}
-    _search_cache_put(cache_key, empty)
-    return empty
+    with otel_span("web_search", query=query[:200], max_results=max_results) as span:
+        for name, fn in providers:
+            if _provider_is_open(name):
+                providers_skipped.append(name)
+                continue
+            providers_tried.append(name)
+            t0 = _t.monotonic()
+            try:
+                results = await fn(query, max_results)
+            except Exception as e:
+                _ext_logger.warning("provider_%s_unhandled: %s", name, str(e))
+                results = []
+            latency_ms = (_t.monotonic() - t0) * 1000.0
+            if results:
+                _provider_record_success(name, latency_ms)
+                payload = {
+                    "results": results,
+                    "query": query,
+                    "provider": name,
+                    "count": len(results),
+                    "latency_ms": round(latency_ms, 1),
+                    "providers_tried": providers_tried,
+                    "providers_skipped": providers_skipped,
+                }
+                _search_cache_put(cache_key, payload)
+                trace_record({
+                    "kind": "web_search",
+                    "query": query[:120],
+                    "provider": name,
+                    "cache": False,
+                    "count": len(results),
+                    "latency_ms": round(latency_ms, 1),
+                    "providers_skipped": providers_skipped,
+                })
+                span.set(provider=name, count=len(results), cache=False)
+                return payload
+            _provider_record_failure(name, latency_ms)
+
+        # No provider returned anything
+        empty = {
+            "results": [], "query": query, "provider": "none", "count": 0,
+            "error": "all search providers returned 0 results",
+            "providers_tried": providers_tried,
+            "providers_skipped": providers_skipped,
+        }
+        _search_cache_put(cache_key, empty)
+        trace_record({
+            "kind": "web_search",
+            "query": query[:120],
+            "provider": "none",
+            "count": 0,
+            "providers_skipped": providers_skipped,
+        })
+        span.set(provider="none", count=0)
+        return empty
 
 
 async def _search_company_info(company_name: str, **_: Any) -> dict:
