@@ -506,6 +506,11 @@ async def _persist_generation_result_to_application(
     if "personalStatement" in requested and result.get("personalStatementHtml"):
         patch["personal_statement_html"] = result["personalStatementHtml"]
 
+    # Phase D.3: persist multi-variant personal statement bundle.
+    _ps_variants_out = result.get("personalStatementVariants")
+    if isinstance(_ps_variants_out, list) and _ps_variants_out:
+        patch["ps_versions"] = _ps_variants_out
+
     if "portfolio" in requested and result.get("portfolioHtml"):
         patch["portfolio_html"] = result["portfolioHtml"]
 
@@ -1813,6 +1818,53 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             except Exception as phase4_err:
                 logger.error("job_stream.phase4_error", error=str(phase4_err))
 
+        # ── Phase D.3: produce an alternate Personal Statement variant ──
+        # Same pattern as Phase D.2 (CV variants).  Treats the canonical
+        # ps_html as the "concise" default and spins one extra LLM call
+        # to produce a narrative alternate.  Skipped on primary failure.
+        ps_variants: List[Dict[str, Any]] = []
+        if isinstance(ps_html, str) and ps_html.strip():
+            from datetime import datetime as _dt_d3
+            _ps_generated_at = _dt_d3.utcnow().isoformat() + "Z"
+            ps_variants.append({
+                "variant": "concise",
+                "label": "Concise",
+                "content": ps_html,
+                "locked": True,
+                "generated_at": _ps_generated_at,
+            })
+            try:
+                _alt_ps_chain = DocumentGeneratorChain(ai)
+                _alt_ps_results = await _alt_ps_chain.generate_tailored_personal_statement_variants(
+                    user_profile=user_profile,
+                    job_title=job_title,
+                    company=company_str,
+                    jd_text=jd_text_val,
+                    gap_analysis=gap_analysis,
+                    resume_text=resume_text_val,
+                    variants=["narrative"],
+                )
+                for _v in _alt_ps_results:
+                    if not isinstance(_v, dict):
+                        continue
+                    if not (_v.get("content") or "").strip():
+                        continue
+                    ps_variants.append({
+                        **_v,
+                        "locked": False,
+                        "generated_at": _ps_generated_at,
+                    })
+                if len(ps_variants) > 1:
+                    await emit_detail(
+                        "forge",
+                        f"Generated {len(ps_variants)} personal-statement variants for you to choose from.",
+                        "completed",
+                        "ps_variants",
+                        metadata={"variants": [v["variant"] for v in ps_variants]},
+                    )
+            except Exception as _alt_ps_err:
+                logger.warning("ps_variant_alt.failed", error=str(_alt_ps_err)[:200])
+
         await emit_detail("forge", "Portfolio-related artifacts are ready.", "completed", "portfolio")
         await emit_progress("portfolio_done", 5, 86, "Forge finished the portfolio artifacts ✓")
         if await check_cancel():
@@ -1862,6 +1914,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             company_name=company_name or "",
             jd_text=jd_text or "",
             cv_variants=cv_variants,
+            ps_variants=ps_variants,
         )
 
         # ── Attach benchmark document set (CV + Cover Letter + Personal Statement) ──

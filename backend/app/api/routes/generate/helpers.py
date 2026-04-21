@@ -748,6 +748,7 @@ def _format_response(
     company_name: str = "",
     jd_text: str = "",
     cv_variants: Optional[List[Dict[str, Any]]] = None,
+    ps_variants: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Transform chain outputs into the frontend's expected data shapes."""
 
@@ -954,6 +955,11 @@ def _format_response(
         ],
         "coverLetterHtml": _sanitize_output_html(cl_html),
         "personalStatementHtml": _sanitize_output_html(ps_html),
+        "personalStatementVariants": [
+            {**v, "content": _sanitize_output_html(v.get("content", ""))}
+            for v in (ps_variants or [])
+            if isinstance(v, dict)
+        ],
         "portfolioHtml": _sanitize_output_html(portfolio_html),
         "validation": validation,
         "scorecard": scorecard,

@@ -741,6 +741,97 @@ class DocumentGeneratorChain:
             logger.warning("generate_tailored_personal_statement.failed", error=str(exc)[:200])
             return ""
 
+    # Phase D.3 — variant style nudges for personal statement.
+    PS_VARIANT_STYLES: Dict[str, Dict[str, str]] = {
+        "concise": {
+            "label": "Concise",
+            "nudge": (
+                "VARIANT STYLE: CONCISE — keep paragraphs tight, lead "
+                "with the strongest 2 hooks, avoid hedging language, aim "
+                "for ≤350 words. Punchy sentences win."
+            ),
+        },
+        "narrative": {
+            "label": "Narrative",
+            "nudge": (
+                "VARIANT STYLE: NARRATIVE — open with a personal story "
+                "or pivotal moment, weave evidence into a flowing arc, "
+                "let the why-this-company come through emotionally as "
+                "well as logically. 450–600 words is fine."
+            ),
+        },
+    }
+
+    async def generate_tailored_personal_statement_variants(
+        self,
+        user_profile: Dict[str, Any],
+        job_title: str,
+        company: str,
+        jd_text: str,
+        gap_analysis: Dict[str, Any],
+        resume_text: str = "",
+        variants: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Phase D.3 — generate multiple personal-statement variants in parallel.
+
+        Returns ``[{variant, label, content}, ...]``.  Per-variant
+        try/except so one failure doesn't kill the others.
+        """
+        import asyncio
+        import json
+
+        variant_keys = variants or list(self.PS_VARIANT_STYLES.keys())
+        variant_keys = [v for v in variant_keys if v in self.PS_VARIANT_STYLES]
+        if not variant_keys:
+            return []
+
+        compatibility = gap_analysis.get("compatibility_score", 50)
+        skill_gaps = gap_analysis.get("skill_gaps", [])
+        strengths = gap_analysis.get("strengths", [])
+        key_gaps_str = ", ".join(
+            g.get("skill", "") for g in skill_gaps[:8] if isinstance(g, dict)
+        ) or "None identified"
+        strengths_str = ", ".join(
+            s.get("area", "") for s in strengths[:8] if isinstance(s, dict)
+        ) or "Strong overall profile"
+
+        base_prompt = TAILORED_PS_PROMPT.format(
+            job_title=job_title,
+            company=company,
+            jd_text=(jd_text or "")[:3000],
+            user_profile=json.dumps(user_profile, indent=2)[:3000],
+            resume_text=(resume_text or "No resume text provided")[:2000],
+            compatibility=compatibility,
+            key_gaps=key_gaps_str,
+            strengths=strengths_str,
+        )
+
+        async def _run_variant(key: str) -> Dict[str, Any]:
+            style = self.PS_VARIANT_STYLES[key]
+            try:
+                content = await self.ai_client.complete(
+                    prompt=base_prompt + "\n\n" + style["nudge"],
+                    system=TAILORED_PS_SYSTEM,
+                    temperature=0.55 if key == "concise" else 0.75,
+                    max_tokens=4000,
+                    task_type="drafting",
+                )
+            except Exception as exc:
+                logger.warning(
+                    "generate_tailored_personal_statement_variant.failed",
+                    variant=key,
+                    error=str(exc)[:200],
+                )
+                content = ""
+            return {
+                "variant": key,
+                "label": style["label"],
+                "content": content or "",
+            }
+
+        results = await asyncio.gather(*[_run_variant(k) for k in variant_keys])
+        return list(results)
+
     async def generate_tailored_portfolio(
         self,
         user_profile: Dict[str, Any],
