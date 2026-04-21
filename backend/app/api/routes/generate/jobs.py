@@ -1752,6 +1752,9 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             job_title=job_title,
             benchmark_cv_html=benchmark_cv_html,
             atlas_diagnostics=_build_atlas_diagnostics(user_profile, benchmark_data),
+            company_intel=company_intel if isinstance(company_intel, dict) else None,
+            company_name=company_name or "",
+            jd_text=jd_text or "",
         )
 
         # ── Attach benchmark document set (CV + Cover Letter + Personal Statement) ──

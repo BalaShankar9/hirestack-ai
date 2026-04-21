@@ -422,6 +422,9 @@ async def _run_sync_pipeline(req: PipelineRequest, current_user: Dict[str, Any])
         job_title=req.job_title,
         benchmark_cv_html=benchmark_cv_html,
         atlas_diagnostics=_build_atlas_diagnostics(user_profile, benchmark_data),
+        company_intel=company_intel if isinstance(company_intel, dict) else None,
+        company_name=getattr(req, "company_name", "") or "",
+        jd_text=getattr(req, "jd_text", "") or "",
     )
 
     # Add new fields: discovered documents, all generated docs, benchmark docs
@@ -436,8 +439,7 @@ async def _run_sync_pipeline(req: PipelineRequest, current_user: Dict[str, Any])
     response["documentStrategy"] = discovery.get("document_strategy", "")
     if doc_pack_plan:
         response["docPackPlan"] = doc_pack_plan.to_dict()
-    if company_intel:
-        response["companyIntel"] = company_intel
+    # companyIntel is already attached by _format_response (with JD-derived fallback)
 
     # P1-06: Include partial failure metadata so frontend knows what failed
     if failed_modules:

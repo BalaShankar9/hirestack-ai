@@ -1128,6 +1128,18 @@ export default function ApplicationWorkspacePage() {
 
                 return (
                   <div className="space-y-4">
+                    {/* Synthesized notice — intel was derived from JD because external research failed/was skipped */}
+                    {intel._synthesized_from_jd && (
+                      <div className="rounded-xl border border-amber-200/40 bg-amber-50/50 dark:bg-amber-950/20 p-3 text-[11px] text-amber-800 dark:text-amber-200 flex items-start gap-2">
+                        <Search className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                        <div>
+                          <span className="font-semibold">Limited intel.</span>{" "}
+                          This profile was derived from the job description because external research couldn&apos;t be completed.
+                          Add a company name or website and regenerate for a richer profile.
+                        </div>
+                      </div>
+                    )}
+
                     {/* Confidence badge */}
                     <div className="flex items-center gap-2">
                       <div className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-wider ${
@@ -1825,6 +1837,16 @@ export default function ApplicationWorkspacePage() {
 
                 {app.learningPlan && (app.learningPlan.focus?.length || app.learningPlan.plan?.length || app.learningPlan.resources?.length) ? (
                   <div className="space-y-4">
+                    {(app.learningPlan as any)._synthesized && (
+                      <div className="rounded-xl border border-amber-200/40 bg-amber-50/50 dark:bg-amber-950/20 p-3 text-[11px] text-amber-800 dark:text-amber-200 flex items-start gap-2">
+                        <BookOpen className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                        <div>
+                          <span className="font-semibold">Quick-start plan.</span>{" "}
+                          This plan was synthesized from your skill gaps because the AI consultant didn&apos;t complete in time.
+                          Regenerate for a richer, week-by-week roadmap.
+                        </div>
+                      </div>
+                    )}
                     <div>
                       <div className="text-xs font-semibold">Focus</div>
                       <div className="mt-2 flex flex-wrap gap-1.5">

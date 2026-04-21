@@ -612,6 +612,9 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             job_title=req.job_title,
             benchmark_cv_html=benchmark_cv_html,
             atlas_diagnostics=_build_atlas_diagnostics(user_profile, benchmark_data),
+            company_intel=company_intel_stream if isinstance(company_intel_stream, dict) else None,
+            company_name=getattr(req, "company_name", "") or "",
+            jd_text=getattr(req, "jd_text", "") or "",
         )
 
         response["meta"] = {
@@ -984,10 +987,12 @@ async def generate_pipeline_stream(request: Request, req: PipelineRequest, curre
                 job_title=req.job_title,
                 benchmark_cv_html=benchmark_cv_html,
                 atlas_diagnostics=_build_atlas_diagnostics(user_profile, benchmark_data),
+                company_intel=company_intel if isinstance(company_intel, dict) else None,
+                company_name=getattr(req, "company_name", "") or "",
+                jd_text=getattr(req, "jd_text", "") or "",
             )
 
-            if company_intel:
-                response["companyIntel"] = company_intel
+            # companyIntel is already attached by _format_response (with JD-derived fallback)
 
             logger.info("pipeline_stream.complete", overall_score=response["scores"]["overall"])
 

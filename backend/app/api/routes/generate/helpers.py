@@ -325,6 +325,266 @@ def _build_company_intel_summary(company_intel: Dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+# ── Resilience: fallback builders ─────────────────────────────────────
+#
+# When external chains (Recon, Career Consultant) timeout, error out, or
+# return empty payloads, we still have to give the user *something*
+# meaningful in the workspace.  A blank "Intel" tab and a blank
+# "Learning" tab are the second most demoralizing thing after a hard
+# error — the user spent 90 seconds waiting for a generation that
+# delivered nothing they can act on.  These builders synthesize a
+# minimum-viable, JD-and-gap-derived payload so the workspace always
+# renders structured content.  The `confidence` field stays "low" so
+# the user can clearly see the difference vs a fully-researched run.
+
+
+def _ensure_company_intel(
+    company_intel: Optional[Dict[str, Any]],
+    *,
+    company_name: str,
+    job_title: str,
+    jd_text: str,
+    keywords: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Guarantee a renderable companyIntel object.
+
+    If recon already produced a `company_overview`, return as-is. Otherwise
+    derive a low-confidence intel summary from the JD + keywords so the
+    Intel tab on the workspace renders something useful instead of an
+    empty state.
+    """
+    intel = dict(company_intel) if isinstance(company_intel, dict) else {}
+
+    has_overview = isinstance(intel.get("company_overview"), dict) and bool(intel["company_overview"])
+    has_strategy = isinstance(intel.get("application_strategy"), dict) and bool(intel["application_strategy"])
+    has_tech = (
+        isinstance(intel.get("tech_and_engineering"), dict)
+        and bool(intel["tech_and_engineering"])
+    ) or (
+        isinstance(intel.get("tech_and_tools"), dict)
+        and bool(intel["tech_and_tools"])
+    )
+
+    if has_overview and has_strategy and has_tech:
+        return intel
+
+    jd_text = jd_text or ""
+    keywords = list(keywords or [])
+
+    # ── Derive overview from JD keywords + heuristics ──
+    jd_lower = jd_text.lower()
+    industry_hints = {
+        "fintech": ["bank", "financ", "payment", "fintech", "trading", "lending"],
+        "healthtech": ["health", "medical", "patient", "clinic", "pharma"],
+        "edtech": ["learn", "student", "education", "course", "tutor"],
+        "saas": ["saas", "subscription", "platform", "b2b"],
+        "e-commerce": ["e-commerce", "ecommerce", "retail", "shopping", "marketplace"],
+        "media": ["media", "content", "video", "stream", "publishing"],
+        "developer tools": ["developer", "api", "sdk", "devtools", "infrastructure"],
+    }
+    industry = None
+    for label, needles in industry_hints.items():
+        if any(n in jd_lower for n in needles):
+            industry = label
+            break
+
+    size_hints = {
+        "Enterprise (1000+)": ["enterprise", "global team", "thousand", "fortune"],
+        "Mid-market (200-1000)": ["scale-up", "scaling", "series c", "series d"],
+        "Startup (10-200)": ["startup", "early-stage", "series a", "series b", "founding"],
+    }
+    size = None
+    for label, needles in size_hints.items():
+        if any(n in jd_lower for n in needles):
+            size = label
+            break
+
+    # ── Tech stack derived from JD keywords ──
+    tech_keywords = {kw for kw in keywords[:25] if kw and len(kw) <= 32}
+    # heuristic: also extract obvious tech words from JD
+    common_tech = [
+        "python", "typescript", "javascript", "react", "node", "go", "rust",
+        "kubernetes", "docker", "aws", "gcp", "azure", "postgres", "mongo",
+        "kafka", "airflow", "spark", "tensorflow", "pytorch", "graphql",
+    ]
+    for tech in common_tech:
+        if tech in jd_lower:
+            tech_keywords.add(tech)
+
+    # ── Application strategy derived from keywords ──
+    strategy_keywords = list(tech_keywords)[:12] or keywords[:12]
+
+    fallback: Dict[str, Any] = {
+        "company_overview": intel.get("company_overview") or {
+            "name": company_name or "Company",
+            "industry": industry or "Not yet researched",
+            "size": size or "Unknown",
+            "description": (
+                f"Intel was derived from the job description for the {job_title} role. "
+                "Connect a company name and re-run for a richer profile."
+            ),
+        },
+        "application_strategy": intel.get("application_strategy") or {
+            "keywords_to_use": strategy_keywords,
+            "things_to_mention": [
+                f"Specific experience with {kw}" for kw in strategy_keywords[:4]
+            ],
+            "tone": "Professional, technically credible, outcomes-led",
+            "interview_prep_topics": [
+                f"Walk through a project where you used {kw}" for kw in strategy_keywords[:4]
+            ],
+        },
+        "tech_and_engineering": intel.get("tech_and_engineering") or intel.get("tech_and_tools") or {
+            "tech_stack": sorted(tech_keywords)[:18],
+            "products": [],
+        },
+        "culture_and_values": intel.get("culture_and_values") or {},
+        "recent_developments": intel.get("recent_developments") or intel.get("recent_news") or {},
+        "market_position": intel.get("market_position") or intel.get("competitive_position") or {},
+        "data_sources": intel.get("data_sources") or ["Job description analysis"],
+        "confidence": intel.get("confidence") or "low",
+        "data_completeness": intel.get("data_completeness") or {
+            "website_data": False,
+            "jd_analysis": True,
+            "github_data": False,
+            "careers_page": False,
+        },
+        "_synthesized_from_jd": not has_overview,
+    }
+    # Preserve any other top-level keys recon already produced
+    for key, value in intel.items():
+        fallback.setdefault(key, value)
+    return fallback
+
+
+def _ensure_learning_plan(
+    learning_plan: Optional[Dict[str, Any]],
+    *,
+    gap_analysis: Optional[Dict[str, Any]],
+    job_title: str,
+    company: str,
+) -> Dict[str, Any]:
+    """Guarantee a renderable learningPlan object.
+
+    If the consultant chain produced weekly milestones, return as-is.
+    Otherwise synthesize a 4-week sprint plan from the user's skill gaps
+    so the Learning tab on the workspace always has actionable content.
+    """
+    lp = dict(learning_plan) if isinstance(learning_plan, dict) else {}
+
+    has_plan_items = isinstance(lp.get("plan"), list) and len(lp["plan"]) > 0
+    has_focus = isinstance(lp.get("focus"), list) and len(lp["focus"]) > 0
+    has_resources = isinstance(lp.get("resources"), list) and len(lp["resources"]) > 0
+
+    if has_plan_items and has_focus and has_resources:
+        return lp
+
+    gap_analysis = gap_analysis or {}
+    skill_gaps = gap_analysis.get("skill_gaps") or gap_analysis.get("gaps") or []
+    quick_wins = gap_analysis.get("quick_wins") or []
+    recommendations = gap_analysis.get("recommendations") or []
+
+    # Extract gap skill names
+    gap_skills: List[str] = []
+    for g in skill_gaps:
+        if isinstance(g, dict):
+            name = g.get("skill") or g.get("dimension") or g.get("name")
+            if name and name not in gap_skills:
+                gap_skills.append(str(name))
+        elif isinstance(g, str) and g not in gap_skills:
+            gap_skills.append(g)
+
+    if not gap_skills:
+        # Last-resort generic plan keyed off the role
+        gap_skills = [
+            f"{job_title} fundamentals",
+            f"{company} domain knowledge",
+            "Interview storytelling",
+            "Portfolio polish",
+        ]
+
+    focus = lp.get("focus") if has_focus else gap_skills[:6]
+
+    plan_items: List[Dict[str, Any]] = []
+    if has_plan_items:
+        plan_items = lp["plan"]
+    else:
+        # Build a 4-week sprint, one focus area per week.
+        for i, skill in enumerate(gap_skills[:4]):
+            week_quick_wins = []
+            if i == 0:
+                # Pull quick_wins into week 1
+                for qw in quick_wins[:3]:
+                    if isinstance(qw, dict):
+                        title = qw.get("title") or qw.get("description") or ""
+                        if title:
+                            week_quick_wins.append(str(title))
+                    elif isinstance(qw, str):
+                        week_quick_wins.append(qw)
+
+            tasks = week_quick_wins or [
+                f"Read 2-3 in-depth articles on {skill}",
+                f"Build a small proof-of-concept that demonstrates {skill}",
+                f"Document what you learned about {skill} in a public note or repo",
+            ]
+            outcomes = [
+                f"Confident articulating {skill} in interviews",
+                f"At least one shippable artefact that uses {skill}",
+            ]
+            plan_items.append({
+                "week": i + 1,
+                "theme": f"Week {i + 1}: {skill}",
+                "outcomes": outcomes,
+                "tasks": tasks,
+                "goals": [f"Close the {skill} gap to interview-ready level"],
+            })
+
+    resources: List[Dict[str, Any]] = []
+    if has_resources:
+        resources = lp["resources"]
+    else:
+        # Synthesize generic but accurate resource pointers per gap.
+        for skill in gap_skills[:6]:
+            resources.append({
+                "skill": skill,
+                "title": f"Self-study path: {skill}",
+                "provider": "Curated search",
+                "timebox": "3-5 hours",
+                "url": None,
+            })
+
+    project_recs = lp.get("projectRecommendations") or []
+    if not project_recs and gap_skills:
+        for skill in gap_skills[:3]:
+            project_recs.append({
+                "title": f"Mini-project: applied {skill}",
+                "description": (
+                    f"Build something small but real that exercises {skill} "
+                    f"end-to-end. Aim for something you can demo in 2 minutes."
+                ),
+                "skills": [skill],
+                "timeline": "1 week",
+            })
+
+    fallback_quick_wins = lp.get("quickWins") or []
+    if not fallback_quick_wins and recommendations:
+        fallback_quick_wins = [
+            r.get("title") or r.get("description") or ""
+            for r in recommendations[:5]
+            if isinstance(r, dict)
+        ]
+        fallback_quick_wins = [t for t in fallback_quick_wins if t]
+
+    return {
+        "focus": focus,
+        "plan": plan_items,
+        "resources": resources,
+        "projectRecommendations": project_recs,
+        "quickWins": fallback_quick_wins,
+        "_synthesized": not (has_plan_items and has_focus and has_resources),
+    }
+
+
 def _build_atlas_diagnostics(user_profile: Dict[str, Any], benchmark_data: Dict[str, Any]) -> Dict[str, Any]:
     """Build normalized Atlas diagnostics for cross-route parity."""
     parse_confidence = 0.0
@@ -484,6 +744,9 @@ def _format_response(
     job_title: str,
     benchmark_cv_html: str = "",
     atlas_diagnostics: Optional[Dict[str, Any]] = None,
+    company_intel: Optional[Dict[str, Any]] = None,
+    company_name: str = "",
+    jd_text: str = "",
 ) -> Dict[str, Any]:
     """Transform chain outputs into the frontend's expected data shapes."""
 
@@ -661,10 +924,26 @@ def _format_response(
         "updatedAt": None,
     }
 
+    # ── Resilience: never let Learning or Intel render as empty ──
+    learning_plan = _ensure_learning_plan(
+        learning_plan,
+        gap_analysis=gap_analysis,
+        job_title=job_title,
+        company=company_name,
+    )
+    company_intel_out = _ensure_company_intel(
+        company_intel,
+        company_name=company_name,
+        job_title=job_title,
+        jd_text=jd_text,
+        keywords=keywords,
+    )
+
     return {
         "benchmark": benchmark,
         "gaps": gaps,
         "learningPlan": learning_plan,
+        "companyIntel": company_intel_out,
         "atlas": atlas_diagnostics or {},
         "cvHtml": _sanitize_output_html(cv_html),
         "coverLetterHtml": _sanitize_output_html(cl_html),
