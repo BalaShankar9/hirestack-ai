@@ -30,8 +30,6 @@ so intel and JD-analysis entries don't collide:
 Rate limit: 30/hour per IP — matches the realistic cadence of a user
 browsing job postings.
 """
-from __future__ import annotations
-
 import asyncio
 from typing import Any, Dict, Optional
 
@@ -46,7 +44,7 @@ logger = structlog.get_logger("hirestack.intel_prefetch")
 router = APIRouter()
 
 
-class _PrefetchRequest(BaseModel):
+class PrefetchRequest(BaseModel):
     jd_text: str = Field(..., min_length=50, max_length=40_000)
     job_title: str = Field(..., min_length=1, max_length=300)
     company: str = Field(..., min_length=1, max_length=200)
@@ -92,7 +90,7 @@ async def _run_and_cache(
 @limiter.limit("30/hour")
 async def prefetch_company_intel(
     request: Request,
-    body: _PrefetchRequest,
+    body: PrefetchRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Queue a speculative company-intel run; return quickly.

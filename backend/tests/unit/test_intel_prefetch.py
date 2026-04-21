@@ -41,10 +41,10 @@ def test_pipeline_checks_prefetch_cache_before_launch() -> None:
 
 
 def test_prefetch_request_validates_jd_length() -> None:
-    from app.api.routes.intel import _PrefetchRequest
+    from app.api.routes.intel import PrefetchRequest
     from pydantic import ValidationError
     try:
-        _PrefetchRequest(
+        PrefetchRequest(
             jd_text="too short",
             job_title="X",
             company="Y",
@@ -56,8 +56,8 @@ def test_prefetch_request_validates_jd_length() -> None:
 
 
 def test_prefetch_request_accepts_optional_company_url() -> None:
-    from app.api.routes.intel import _PrefetchRequest
-    ok = _PrefetchRequest(
+    from app.api.routes.intel import PrefetchRequest
+    ok = PrefetchRequest(
         jd_text="x" * 100,
         job_title="Senior Engineer",
         company="Acme",
