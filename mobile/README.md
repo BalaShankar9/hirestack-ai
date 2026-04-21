@@ -13,9 +13,9 @@ and Supabase auth (`https://dkfmcnfhvbqwsgpkgoag.supabase.co`).
 
 | Tier | Scope | Status |
 |------|-------|--------|
-| 0 | Skeleton + theme + nav + networking + Supabase auth client | in progress |
-| 1 | Login + signup + session restore + logout | not started |
-| 2 | Dashboard + Job Board + Application detail | not started |
+| 0 | Skeleton + theme + nav + networking + Supabase auth client | ✅ shipped |
+| 1 | Login + signup + session restore + logout | ✅ shipped |
+| 2 | Dashboard + Job Board + Application detail | ✅ shipped |
 | 3 | Resume profiles + ATS Scanner + Document Library | not started |
 | 4 | Pipeline + Candidates + Interview | not started |
 | 5 | Career Analytics + Learning + Salary Coach | not started |

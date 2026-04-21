@@ -4,14 +4,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.hirestack.ai.ui.auth.AuthViewModel
 import com.hirestack.ai.ui.auth.LoginScreen
 import com.hirestack.ai.ui.auth.SignUpScreen
-import com.hirestack.ai.ui.home.HomeScreen
 
 object Routes {
     const val LOGIN = "login"
@@ -51,8 +49,8 @@ fun HireStackApp() {
             )
         }
         composable(Routes.HOME) {
-            HomeScreen(
-                vm = authVm,
+            MainShell(
+                authVm = authVm,
                 onLoggedOut = {
                     nav.navigate(Routes.LOGIN) {
                         popUpTo(Routes.HOME) { inclusive = true }
