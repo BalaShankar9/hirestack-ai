@@ -60,11 +60,13 @@ async def test_bridge_translates_tool_call_and_result_to_store_emit() -> None:
     call = next(c for c in captured if c["event_name"] == "tool_call")
     assert call["stage"] == "research"
     assert call["payload"]["agent"] == "recon"
+    assert call["agent_name"] == "recon"  # canonical agent label, not stage
     assert "Calling github.fetch" in call["message"]
 
     res = next(c for c in captured if c["event_name"] == "tool_result")
     assert res["latency_ms"] == 420
     assert res["status"] == "completed"
+    assert res["agent_name"] == "recon"
 
 
 @pytest.mark.asyncio

@@ -121,6 +121,7 @@ class WorkflowEventStore:
         message: str = "",
         payload: Optional[dict] = None,
         latency_ms: int = 0,
+        agent_name: Optional[str] = None,
     ) -> None:
         """Persist a single event row."""
         seq = state.next_sequence()
@@ -130,7 +131,11 @@ class WorkflowEventStore:
             "application_id": state.application_id,
             "sequence_no": seq,
             "event_name": event_name,
-            "agent_name": stage,
+            # Agent attribution: explicit override > payload.agent > stage.
+            # The override path lets the Phase B.1 bridge surface the
+            # canonical chain_agent_scope label (recon / quill / ...) even
+            # when the WorkflowState's stage is something coarser.
+            "agent_name": agent_name or (payload or {}).get("agent") or stage,
             "stage": stage,
             "status": status,
             "message": message,
@@ -379,6 +384,7 @@ def make_workflow_event_emitter(
             message=message,
             payload=merged,
             latency_ms=int(payload.get("latency_ms") or 0),
+            agent_name=agent,
         )
 
     return _emit

@@ -63,6 +63,14 @@ const AGENT_REGISTRY: Record<string, { icon: LucideIcon; label: string; accent: 
 
 /** Map an event's stage / pipeline / agent_name field to an agent key. */
 function eventToAgent(ev: GenerationJobEventDoc): keyof typeof AGENT_REGISTRY {
+  // payload.agent is the most authoritative — set explicitly by the
+  // Phase A.3 chain_agent_scope and the Phase B.1 bridge.  Fall back to
+  // legacy heuristics for the older progress / detail / agent_status events.
+  const payloadAgent = (ev.payload as Record<string, unknown> | undefined)?.agent;
+  if (typeof payloadAgent === "string") {
+    const direct = payloadAgent.toLowerCase();
+    if (direct in AGENT_REGISTRY) return direct as keyof typeof AGENT_REGISTRY;
+  }
   const raw = `${ev.agentName ?? ""} ${ev.stage ?? ""} ${ev.payload?.pipeline_name ?? ""}`.toLowerCase();
   if (raw.includes("recon") || raw.includes("intel") || raw.includes("research")) return "recon";
   if (raw.includes("atlas") || raw.includes("resume") || raw.includes("benchmark")) return "atlas";
