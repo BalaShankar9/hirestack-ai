@@ -176,6 +176,15 @@ export interface DocVersion {
   createdAt: number;
 }
 
+export interface DocVariant {
+  variant: string;        // e.g. "concise" | "narrative"
+  label?: string;
+  content: string;
+  locked: boolean;
+  generated_at?: string;
+  locked_at?: string;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Application document                                               */
 /* ------------------------------------------------------------------ */
@@ -213,6 +222,13 @@ export interface ApplicationDoc {
   clVersions?: DocVersion[];
   psVersions?: DocVersion[];
   portfolioVersions?: DocVersion[];
+
+  /** Phase D.2/D.3 multi-style variant bundles. Distinct from version
+   * history above — these hold concise/narrative alternates the user
+   * picks between via the variant picker. One is `locked: true` and
+   * its `content` mirrors the canonical *Html field. */
+  cvVariants?: DocVariant[];
+  psVariants?: DocVariant[];
 
   /** AI validation results */
   validation?: Record<string, any>;

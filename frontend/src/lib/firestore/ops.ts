@@ -89,6 +89,8 @@ export function mapApplicationRow(row: any): ApplicationDoc {
     clVersions: Array.isArray(row.cl_versions) ? row.cl_versions : [],
     psVersions: Array.isArray(row.ps_versions) ? row.ps_versions : [],
     portfolioVersions: Array.isArray(row.portfolio_versions) ? row.portfolio_versions : [],
+    cvVariants: Array.isArray(row.cv_variants) ? row.cv_variants : [],
+    psVariants: Array.isArray(row.ps_variants) ? row.ps_variants : [],
     discoveredDocuments: row.discovered_documents ?? undefined,
     generatedDocuments: row.generated_documents ?? undefined,
     benchmarkDocuments: row.benchmark_documents ?? undefined,
@@ -400,6 +402,48 @@ export async function cancelGenerationJob(jobId: string): Promise<void> {
     const errBody = await response.text().catch(() => "");
     throw new Error(errBody || `Failed to cancel generation job (${response.status})`);
   }
+}
+
+export interface LockVariantResult {
+  applicationId: string;
+  lockedVariant: string;
+  cvHtml?: string;
+  cvVariants?: any[];
+  personalStatementHtml?: string;
+  personalStatementVariants?: any[];
+}
+
+async function _postLockVariant(
+  kind: "cv" | "ps",
+  applicationId: string,
+  variantKey: string,
+): Promise<LockVariantResult> {
+  await supabase.auth.getUser();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token ?? null;
+  if (!accessToken) throw new Error("Authentication required");
+
+  const segment = kind === "cv" ? "cv-variants" : "ps-variants";
+  const res = await fetch(
+    `${AI_API_URL}/api/generate/applications/${applicationId}/${segment}/${encodeURIComponent(variantKey)}/lock`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(body || `Failed to lock ${kind} variant (${res.status})`);
+  }
+  return (await res.json()) as LockVariantResult;
+}
+
+export function lockCvVariant(applicationId: string, variantKey: string) {
+  return _postLockVariant("cv", applicationId, variantKey);
+}
+
+export function lockPsVariant(applicationId: string, variantKey: string) {
+  return _postLockVariant("ps", applicationId, variantKey);
 }
 
 function uuidv4(): string {

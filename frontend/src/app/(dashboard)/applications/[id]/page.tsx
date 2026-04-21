@@ -59,6 +59,8 @@ import {
 import { useApplication, useEvidence, useTasks } from "@/lib/firestore";
 import type { ModuleKey } from "@/lib/firestore";
 import type { PipelineProgress } from "@/lib/firestore/ops";
+import { lockCvVariant, lockPsVariant } from "@/lib/firestore/ops";
+import { VariantPicker } from "@/components/editor/variant-picker";
 import type { DocumentLibraryItem } from "@/lib/firestore/models";
 import { toast } from "@/hooks";
 import {
@@ -1917,6 +1919,16 @@ export default function ApplicationWorkspacePage() {
             </TabsContent>
 
             <TabsContent value="cv" className="mt-4">
+              {Array.isArray(app.cvVariants) && app.cvVariants.length >= 2 && (
+                <VariantPicker
+                  title="CV style"
+                  variants={app.cvVariants}
+                  onLock={async (key) => {
+                    const res = await lockCvVariant(appId, key);
+                    if (res.cvHtml) setCvLocal(res.cvHtml);
+                  }}
+                />
+              )}
               <DocEditorModule
                 title="Tailored CV"
                 subtitle="Two-pane editing: write + validate against keywords."
@@ -1965,6 +1977,16 @@ export default function ApplicationWorkspacePage() {
             </TabsContent>
 
             <TabsContent value="statement" className="mt-4">
+              {Array.isArray(app.psVariants) && app.psVariants.length >= 2 && (
+                <VariantPicker
+                  title="Personal statement style"
+                  variants={app.psVariants}
+                  onLock={async (key) => {
+                    const res = await lockPsVariant(appId, key);
+                    if (res.personalStatementHtml) setPsLocal(res.personalStatementHtml);
+                  }}
+                />
+              )}
               <DocEditorModule
                 title="Personal statement"
                 subtitle="Your compelling motivation narrative — authentic, specific, memorable."
