@@ -242,6 +242,99 @@ class IntelCoordinator:
             else:
                 raw_intel["recon_critic"] = {"gaps_detected": [], "status": "clean"}
 
+        # ── PHASE 3.5: Refine profile with gap-closing evidence ───────
+        # When the critic successfully closed ≥3 new evidence items, re-run
+        # the CompanyProfileAgent ONCE with the enriched evidence pool.
+        # Strategy is NOT re-run — it's the expensive agent and profile is
+        # what the user sees first. Gated by RECON_REFINE_ENABLED (default on)
+        # and RECON_REFINE_BUDGET_S (default 10s).
+        refine_enabled = __import__("os").getenv("RECON_REFINE_ENABLED", "1").lower() not in ("0", "false", "no")
+        refine_budget_s = float(__import__("os").getenv("RECON_REFINE_BUDGET_S", "10"))
+        critic_meta = raw_intel.get("recon_critic") or {}
+        extra_count = int(critic_meta.get("gap_evidence_count") or 0)
+        if (
+            refine_enabled
+            and profile_result.ok
+            and extra_count >= 3
+            and refine_budget_s > 0
+        ):
+            if on_event:
+                await self._emit(
+                    on_event,
+                    f"Refining profile with {extra_count} gap-closing evidence items…",
+                    "running", "analysis",
+                    metadata={"extra_evidence": extra_count},
+                )
+            try:
+                refine_context = {
+                    **base_context,
+                    "raw_intel": raw_intel,  # includes recon_critic + critic evidence sources
+                    "prior_profile": profile_result.data,
+                    "gap_evidence": [
+                        e for e in all_evidence
+                        if (e.get("sub_agent") == "recon_critic")
+                    ][:20],
+                }
+                refined_agent = CompanyProfileAgent(ai_client=self.ai_client)
+                refined_result = await asyncio.wait_for(
+                    refined_agent.safe_run(refine_context),
+                    timeout=refine_budget_s,
+                )
+                if refined_result.ok and refined_result.data:
+                    # Merge only NEW / non-empty fields from the refined profile
+                    # into the original — don't overwrite fields the first pass
+                    # already filled with equivalent content.
+                    original = profile_result.data or {}
+                    refined = refined_result.data or {}
+                    merged_profile = dict(original)
+                    fields_updated: list[str] = []
+                    for k, v in refined.items():
+                        if v in (None, "", [], {}, 0, False):
+                            continue
+                        existing = original.get(k)
+                        # Replace empty/missing values; for lists prefer the
+                        # longer one (more evidence consumed).
+                        if existing in (None, "", [], {}, 0, False):
+                            merged_profile[k] = v
+                            fields_updated.append(k)
+                        elif isinstance(existing, list) and isinstance(v, list) and len(v) > len(existing):
+                            merged_profile[k] = v
+                            fields_updated.append(k)
+                        elif isinstance(existing, str) and isinstance(v, str) and len(v) > len(existing) * 1.3:
+                            merged_profile[k] = v
+                            fields_updated.append(k)
+                    if fields_updated:
+                        profile_result.data = merged_profile
+                        raw_intel["company_profile"] = merged_profile
+                        # Carry refined evidence through so it shows up downstream
+                        if refined_result.evidence_items:
+                            all_evidence.extend(refined_result.evidence_items)
+                        raw_intel["recon_refine"] = {
+                            "status": "applied",
+                            "fields_updated": fields_updated,
+                            "latency_ms": refined_result.latency_ms,
+                        }
+                        agent_latencies[f"{refined_result.agent_name}_refine"] = refined_result.latency_ms
+                        if on_event:
+                            await self._emit(
+                                on_event,
+                                f"Profile refined: updated {', '.join(fields_updated[:6])}.",
+                                "completed", "analysis",
+                                metadata={"fields_updated": fields_updated},
+                            )
+                    else:
+                        raw_intel["recon_refine"] = {"status": "no_improvement"}
+                else:
+                    raw_intel["recon_refine"] = {
+                        "status": "failed",
+                        "error": (refined_result.error or "")[:200],
+                    }
+            except asyncio.TimeoutError:
+                raw_intel["recon_refine"] = {"status": "timeout"}
+            except Exception as e:
+                logger.warning("recon_refine_failed", error=str(e))
+                raw_intel["recon_refine"] = {"status": "error", "error": str(e)[:200]}
+
         total_time = time.monotonic() - start
 
         # ── MERGE into legacy-compatible format ───────────────────
