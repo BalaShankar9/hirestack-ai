@@ -1397,6 +1397,31 @@ class AgentPipeline:
                     if summary.get("fabricated", 0) > 0:
                         learning["fabrication_flags"] = summary
 
+                # Phase C.2: derive structured style signals from a known-
+                # good run.  These keys (tone, length, preferred_keywords)
+                # are exactly what user_style_hints.synthesize_user_style_hints
+                # vote-aggregates across runs.  Quality-gated inside the
+                # deriver so a poor run contributes nothing.
+                try:
+                    from ai_engine.agents.style_signal_deriver import (
+                        derive_style_signals as _derive_signals,
+                    )
+                    _signals = _derive_signals(
+                        draft_content=draft.content if draft else None,
+                        critic_quality_scores=(
+                            critic_result.quality_scores if critic_result else None
+                        ),
+                        fact_check_summary=(
+                            fact_check_result.content.get("summary")
+                            if fact_check_result else None
+                        ),
+                        enriched_context=enriched_context,
+                    )
+                    if _signals:
+                        learning.update(_signals)
+                except Exception as _sig_err:
+                    logger.debug("style_signal_derive_failed", error=str(_sig_err)[:200])
+
                 await self.memory.astore(
                     user_id, self.name,
                     f"run_{pipeline_id[:8]}",
