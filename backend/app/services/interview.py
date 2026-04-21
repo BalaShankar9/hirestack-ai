@@ -29,16 +29,30 @@ class InterviewService:
         company: str = "",
         jd_text: str = "",
         profile_summary: str = "",
+        skills_summary: str = "",
+        difficulty: str = "intermediate",
         interview_type: str = "mixed",
         question_count: int = 10,
     ) -> Dict[str, Any]:
         """Create a new interview session with generated questions."""
         chain = InterviewSimulatorChain(self.ai_client)
+
+        # Build a richer profile string for the LLM by weaving in skills and
+        # the requested difficulty.  The chain doesn't accept difficulty as
+        # a first-class arg, so surfacing it through the prompt is the
+        # cleanest way to honour the user's choice.
+        merged_profile_parts = [profile_summary.strip()] if profile_summary else []
+        if skills_summary:
+            merged_profile_parts.append(f"Key skills: {skills_summary.strip()}")
+        if difficulty:
+            merged_profile_parts.append(f"Target difficulty: {difficulty}")
+        merged_profile = ". ".join([p for p in merged_profile_parts if p])
+
         questions_data = await chain.generate_questions(
             job_title=job_title,
             company=company,
             jd_summary=jd_text[:3000],
-            profile_summary=profile_summary,
+            profile_summary=merged_profile,
             interview_type=interview_type,
             question_count=question_count,
         )
@@ -49,6 +63,7 @@ class InterviewService:
             "job_title": job_title,
             "company": company,
             "interview_type": interview_type,
+            "difficulty": difficulty,
             "questions": questions_data.get("questions", []),
             "interview_focus": questions_data.get("interview_focus", ""),
             "preparation_tips": questions_data.get("preparation_tips", []),
@@ -60,7 +75,7 @@ class InterviewService:
         }
 
         doc_id = await self.db.create(COLLECTIONS.get("interview_sessions", "interview_sessions"), record)
-        logger.info("interview_session_created", session_id=doc_id)
+        logger.info("interview_session_created", session_id=doc_id, fallback=questions_data.get("_fallback", False))
         return await self.db.get(COLLECTIONS.get("interview_sessions", "interview_sessions"), doc_id)
 
     async def submit_answer(
@@ -83,9 +98,10 @@ class InterviewService:
 
         chain = InterviewSimulatorChain(self.ai_client)
         evaluation = await chain.evaluate_answer(
-            question=question_obj.get("question", ""),
+            question=question_obj.get("question") or question_obj.get("text", ""),
             answer=answer,
             role_context=f"{session.get('job_title', '')} at {session.get('company', '')}",
+            category=question_obj.get("category") or session.get("interview_type", ""),
         )
 
         # Append to session answers

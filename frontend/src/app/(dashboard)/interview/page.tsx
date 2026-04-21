@@ -47,6 +47,69 @@ const cardHover: any = {
 type Phase = "setup" | "active" | "review";
 type InterviewMode = "practice" | "timed" | "mock";
 
+/* ── Backend response normalisers ─────────────────────────────── *
+ * Every interview endpoint is wrapped with success_response on the
+ * backend, i.e. the real payload lives on `result.data`.  Unwrap so
+ * the rest of the component can treat values uniformly.            */
+function unwrap<T = any>(result: any): T {
+  if (result && typeof result === "object" && "data" in result && result.data !== undefined) {
+    return result.data as T;
+  }
+  return result as T;
+}
+
+/** Map a raw question (backend uses `question` / `category` /
+ *  `ideal_answer_hints`) onto the shape the UI expects. */
+function normalizeQuestion(raw: any, idx: number, fallbackType: string): InterviewQuestion {
+  const text = (raw?.text || raw?.question || "").toString();
+  const tipsSource =
+    raw?.tips ??
+    (Array.isArray(raw?.ideal_answer_hints) ? raw.ideal_answer_hints.join(" · ") : undefined) ??
+    raw?.what_we_assess;
+  const tipsString =
+    Array.isArray(tipsSource) ? tipsSource.join(" · ") : (tipsSource ? String(tipsSource) : undefined);
+  return {
+    id: raw?.id ? String(raw.id) : `q-${idx + 1}`,
+    text,
+    question: text,
+    type: (raw?.type || raw?.category || fallbackType || "general").toString(),
+    category: raw?.category,
+    difficulty: (raw?.difficulty || "intermediate").toString(),
+    // The shared type allows string[]; we store a pre-joined string so the
+    // template can render `{questions[i].tips}` without a TypeScript fight.
+    tips: tipsString as any,
+  };
+}
+
+/** Map a raw evaluation onto the InterviewAnswer shape. */
+function normalizeAnswer(raw: any, questionId: string, answerText: string): InterviewAnswer {
+  const r = raw || {};
+  const score = typeof r.score === "number" ? Math.max(0, Math.min(100, Math.round(r.score))) : 0;
+  const feedback = (r.feedback || r.overall_feedback || "").toString();
+  const starRaw = r.star_scores;
+  let starScores: Record<string, number> | undefined;
+  if (starRaw && typeof starRaw === "object") {
+    const cleaned: Record<string, number> = {};
+    for (const k of ["situation", "task", "action", "result"]) {
+      const v = (starRaw as any)[k];
+      if (typeof v === "number") cleaned[k] = Math.max(0, Math.min(25, Math.round(v)));
+    }
+    if (Object.keys(cleaned).length === 4) starScores = cleaned;
+  }
+  return {
+    question_id: r.question_id || questionId,
+    answer: r.answer_text || answerText,
+    answer_text: r.answer_text || answerText,
+    score,
+    feedback,
+    star_scores: starScores,
+    model_answer: r.model_answer,
+    strengths: Array.isArray(r.strengths) ? r.strengths : undefined,
+    improvements: Array.isArray(r.improvements) ? r.improvements : undefined,
+    follow_up_suggestion: r.follow_up_suggestion,
+  };
+}
+
 const INTERVIEW_TYPES = [
   { value: "behavioral", label: "Behavioral", icon: Users, desc: "STAR method, leadership, teamwork" },
   { value: "technical", label: "Technical", icon: Code, desc: "System design, coding, architecture" },
@@ -235,7 +298,7 @@ export default function InterviewSimulatorPage() {
     setLoading(true);
     setError("");
     try {
-      const result = await api.interview.start({
+      const raw = await api.interview.start({
         job_title: jobTitle,
         interview_type: interviewType,
         difficulty,
@@ -243,14 +306,24 @@ export default function InterviewSimulatorPage() {
         profile_summary: profileSummary || undefined,
         skills_summary: profileSkills || undefined,
       });
-      setSession(result.session);
-      setQuestions(result.questions);
+      const data = unwrap<any>(raw);
+      const rawQuestions: any[] = Array.isArray(data?.questions) ? data.questions : [];
+      if (rawQuestions.length === 0) {
+        throw new Error(
+          "The interview engine returned no questions. Please try again or pick a different interview type."
+        );
+      }
+      const normalised = rawQuestions.map((q, i) => normalizeQuestion(q, i, interviewType));
+      setSession(data as InterviewSession);
+      setQuestions(normalised);
       setCurrentIdx(0);
       setAnswers([]);
       setPhase("active");
-      toast({ title: "Interview started", description: `${result.questions.length} questions ready` });
+      toast({ title: "Interview started", description: `${normalised.length} questions ready` });
     } catch (e: any) {
-      setError(e.message || "Failed to start");
+      const msg = (e && (e.message || String(e))) || "Failed to start interview";
+      setError(msg);
+      toast({ title: "Could not start interview", description: msg, variant: "error" });
     } finally {
       setLoading(false);
     }
@@ -258,23 +331,37 @@ export default function InterviewSimulatorPage() {
 
   const submitAnswer = async () => {
     if (!session) return;
-    const answerText = answer.trim() || "(No answer provided — time ran out)";
-    setSubmitting(true);    submittingRef.current = true;    try {
-      const result = await api.interview.submitAnswer(session.id, {
-        question_id: questions[currentIdx]?.id ?? String(currentIdx),
+    const answerText = answer.trim() || "(No answer provided \u2014 time ran out)";
+    const questionId = questions[currentIdx]?.id ?? String(currentIdx);
+    setSubmitting(true);
+    submittingRef.current = true;
+    try {
+      const raw = await api.interview.submitAnswer(session.id, {
+        question_id: questionId,
         answer: answerText,
       });
-      setAnswers((prev) => [...prev, result]);
+      const data = unwrap<any>(raw);
+      const evaluated = normalizeAnswer(data, questionId, answerText);
+      setAnswers((prev) => [...prev, evaluated]);
       setAnswer("");
       if (currentIdx < questions.length - 1) {
         setCurrentIdx((prev) => prev + 1);
       } else {
-        const completed = await api.interview.complete(session.id);
-        setSession(completed);
+        const completedRaw = await api.interview.complete(session.id);
+        const completedData = unwrap<any>(completedRaw);
+        const overall =
+          typeof completedData?.overall_score === "number"
+            ? completedData.overall_score
+            : typeof completedData?.average_score === "number"
+            ? completedData.average_score
+            : 0;
+        setSession({ ...(completedData as InterviewSession), overall_score: overall });
         setPhase("review");
       }
     } catch (e: any) {
-      setError(e.message || "Submit failed");
+      const msg = (e && (e.message || String(e))) || "Submit failed";
+      setError(msg);
+      toast({ title: "Could not submit answer", description: msg, variant: "error" });
     } finally {
       setSubmitting(false);
       submittingRef.current = false;

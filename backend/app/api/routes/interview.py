@@ -22,6 +22,8 @@ class CreateSessionRequest(BaseModel):
     company: str = ""
     jd_text: str = ""
     profile_summary: str = ""
+    skills_summary: str = ""
+    difficulty: str = "intermediate"
     interview_type: str = "mixed"
     question_count: int = Field(default=10, ge=1, le=20)
 
@@ -54,6 +56,8 @@ async def create_session(
             company=req.company,
             jd_text=req.jd_text,
             profile_summary=req.profile_summary,
+            skills_summary=req.skills_summary,
+            difficulty=req.difficulty,
             interview_type=req.interview_type,
             question_count=req.question_count,
         )
@@ -91,7 +95,13 @@ async def submit_answer(
             question_id=req.question_id,
             answer=req.answer,
         )
-        return success_response(evaluation)
+        # Merge question_id and the candidate's own text into the response
+        # so the frontend has everything it needs to render the review card
+        # without a second round-trip.
+        payload = dict(evaluation) if isinstance(evaluation, dict) else {"raw": evaluation}
+        payload.setdefault("question_id", req.question_id)
+        payload.setdefault("answer_text", req.answer)
+        return success_response(payload)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     except Exception as e:
@@ -113,6 +123,10 @@ async def complete_session(
     service = InterviewService()
     try:
         session = await service.complete_session(session_id, current_user["id"])
+        # Expose the canonical overall_score field so the frontend doesn't
+        # have to know about the legacy average_score column name.
+        if isinstance(session, dict) and "overall_score" not in session:
+            session = {**session, "overall_score": session.get("average_score", 0)}
         return success_response(session)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
