@@ -1,0 +1,14 @@
+# Build / IDE
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+captures/
+.cxx/
+
+# Apple
+.DS_Store
+
+# Logs
+*.log
