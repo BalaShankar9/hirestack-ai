@@ -90,7 +90,7 @@ async def export_my_data(
     }
 
 
-@router.delete("/me", tags=["Account"], status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/me", tags=["Account"], status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 @limiter.limit("3/hour")
 async def delete_my_account(
     request: Request,

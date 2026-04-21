@@ -760,7 +760,7 @@ class _FEErrorBatch(BaseModel):
     errors: List[_FEError] = Field(..., max_length=20)
 
 
-@app.post("/api/frontend-errors", status_code=204, tags=["Observability"])
+@app.post("/api/frontend-errors", status_code=204, tags=["Observability"], response_model=None)
 @limiter.limit("30/minute")
 async def collect_frontend_errors(request: Request, batch: _FEErrorBatch) -> None:
     """Receive client-side error reports and log them server-side.
