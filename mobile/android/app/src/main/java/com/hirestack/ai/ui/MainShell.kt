@@ -26,6 +26,7 @@ import androidx.navigation.navArgument
 import com.hirestack.ai.ui.ats.AtsScreen
 import com.hirestack.ai.ui.auth.AuthViewModel
 import com.hirestack.ai.ui.candidates.CandidatesScreen
+import com.hirestack.ai.ui.career.CareerScreen
 import com.hirestack.ai.ui.dashboard.DashboardScreen
 import com.hirestack.ai.ui.docs.DocsScreen
 import com.hirestack.ai.ui.interview.InterviewDetailScreen
@@ -33,8 +34,10 @@ import com.hirestack.ai.ui.interview.InterviewListScreen
 import com.hirestack.ai.ui.jobs.AddJobScreen
 import com.hirestack.ai.ui.jobs.JobBoardScreen
 import com.hirestack.ai.ui.jobs.JobDetailScreen
+import com.hirestack.ai.ui.learning.LearningScreen
 import com.hirestack.ai.ui.profile.ProfileScreen
 import com.hirestack.ai.ui.profiles.ProfilesScreen
+import com.hirestack.ai.ui.salary.SalaryScreen
 
 object MainRoutes {
     const val DASHBOARD = "main/dashboard"
@@ -48,6 +51,9 @@ object MainRoutes {
     const val CANDIDATES = "main/more/candidates"
     const val INTERVIEWS = "main/more/interviews"
     const val INTERVIEW_DETAIL = "main/more/interviews/{sessionId}"
+    const val CAREER = "main/more/career"
+    const val LEARNING = "main/more/learning"
+    const val SALARY = "main/more/salary"
 
     fun jobDetail(id: String) = "main/jobs/$id"
     fun interviewDetail(id: String) = "main/more/interviews/$id"
@@ -124,6 +130,9 @@ fun MainShell(
                     onOpenDocs = { nav.navigate(MainRoutes.DOCS) },
                     onOpenCandidates = { nav.navigate(MainRoutes.CANDIDATES) },
                     onOpenInterviews = { nav.navigate(MainRoutes.INTERVIEWS) },
+                    onOpenCareer = { nav.navigate(MainRoutes.CAREER) },
+                    onOpenLearning = { nav.navigate(MainRoutes.LEARNING) },
+                    onOpenSalary = { nav.navigate(MainRoutes.SALARY) },
                 )
             }
             composable(
@@ -169,6 +178,15 @@ fun MainShell(
                 arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
             ) {
                 InterviewDetailScreen(onBack = { nav.popBackStack() })
+            }
+            composable(MainRoutes.CAREER) {
+                CareerScreen(onBack = { nav.popBackStack() })
+            }
+            composable(MainRoutes.LEARNING) {
+                LearningScreen(onBack = { nav.popBackStack() })
+            }
+            composable(MainRoutes.SALARY) {
+                SalaryScreen(onBack = { nav.popBackStack() })
             }
         }
     }

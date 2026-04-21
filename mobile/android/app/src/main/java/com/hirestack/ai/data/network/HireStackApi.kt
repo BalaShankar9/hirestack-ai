@@ -80,4 +80,31 @@ interface HireStackApi {
 
     @GET("interview/sessions/{id}")
     suspend fun getInterviewSession(@Path("id") id: String): InterviewSession
+
+    // Career analytics
+    @GET("career/portfolio")
+    suspend fun careerPortfolio(): CareerPortfolio
+
+    @GET("career/timeline")
+    suspend fun careerTimeline(@Query("days") days: Int = 90): List<CareerSnapshot>
+
+    @GET("career/outcomes/funnel")
+    suspend fun careerFunnel(): ConversionFunnel
+
+    // Learning
+    @GET("learning/streak")
+    suspend fun learningStreak(): LearningStreak
+
+    @GET("learning/today")
+    suspend fun learningToday(): List<LearningChallenge>
+
+    @GET("learning/history")
+    suspend fun learningHistory(@Query("limit") limit: Int = 50): List<LearningChallenge>
+
+    // Salary
+    @GET("salary/")
+    suspend fun listSalaryAnalyses(): List<SalaryAnalysis>
+
+    @GET("salary/{id}")
+    suspend fun getSalaryAnalysis(@Path("id") id: String): SalaryAnalysis
 }

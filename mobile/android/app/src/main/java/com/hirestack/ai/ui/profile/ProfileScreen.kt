@@ -23,6 +23,9 @@ fun ProfileScreen(
     onOpenDocs: () -> Unit,
     onOpenCandidates: () -> Unit,
     onOpenInterviews: () -> Unit,
+    onOpenCareer: () -> Unit,
+    onOpenLearning: () -> Unit,
+    onOpenSalary: () -> Unit,
 ) {
     val state by vm.state.collectAsState()
 
@@ -74,6 +77,12 @@ fun ProfileScreen(
         NavRow("Candidates", "Recruiter pipeline (requires org)", onOpenCandidates)
         Spacer(Modifier.height(8.dp))
         NavRow("Interview Coach", "Practice sessions with feedback", onOpenInterviews)
+        Spacer(Modifier.height(8.dp))
+        NavRow("Career analytics", "Portfolio, funnel and 90-day timeline", onOpenCareer)
+        Spacer(Modifier.height(8.dp))
+        NavRow("Learning", "Streak, daily challenges and history", onOpenLearning)
+        Spacer(Modifier.height(8.dp))
+        NavRow("Salary Coach", "Market & negotiation analyses", onOpenSalary)
 
         Spacer(Modifier.height(28.dp))
         OutlinedButton(

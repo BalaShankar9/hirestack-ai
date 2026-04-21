@@ -236,3 +236,97 @@ data class InterviewAnswer(
     val score: Double? = null,
     val feedback: String? = null,
 )
+
+// ---- Tier 5: Career analytics + Learning + Salary ----
+
+/**
+ * `/api/career/portfolio` — backend returns a free-form dict. We pull the most
+ * useful summary fields out, keeping unknown ones as a raw map elsewhere.
+ */
+@JsonClass(generateAdapter = true)
+data class CareerPortfolio(
+    val total_applications: Int? = null,
+    val active_applications: Int? = null,
+    val total_evidence: Int? = null,
+    val skills_count: Int? = null,
+    val current_score: Double? = null,
+    val streak_days: Int? = null,
+    val last_activity: String? = null,
+)
+
+/**
+ * `/api/career/timeline` — list of dated snapshots.
+ */
+@JsonClass(generateAdapter = true)
+data class CareerSnapshot(
+    val date: String? = null,
+    val captured_at: String? = null,
+    val applications: Int? = null,
+    val active_applications: Int? = null,
+    val score: Double? = null,
+    val evidence: Int? = null,
+)
+
+/**
+ * `/api/career/outcomes/funnel` — counts by stage.
+ */
+@JsonClass(generateAdapter = true)
+data class ConversionFunnel(
+    val exported: Int = 0,
+    val applied: Int = 0,
+    val screened: Int = 0,
+    val interview: Int = 0,
+    val interview_done: Int = 0,
+    val offer: Int = 0,
+    val accepted: Int = 0,
+    val rejected: Int = 0,
+)
+
+/**
+ * `/api/learning/streak` — streak summary.
+ */
+@JsonClass(generateAdapter = true)
+data class LearningStreak(
+    val user_id: String? = null,
+    val current_streak: Int = 0,
+    val longest_streak: Int = 0,
+    val last_active_date: String? = null,
+    val total_challenges: Int = 0,
+    val total_correct: Int = 0,
+)
+
+/**
+ * Items returned from `/api/learning/today` and `/api/learning/history`.
+ */
+@JsonClass(generateAdapter = true)
+data class LearningChallenge(
+    val id: String,
+    val skill: String? = null,
+    val difficulty: String? = null,
+    val question: String? = null,
+    val answer: String? = null,
+    val user_answer: String? = null,
+    val score: Double? = null,
+    val is_correct: Boolean? = null,
+    val completed: Boolean? = null,
+    val created_at: String? = null,
+)
+
+/**
+ * `/api/salary/` — a row from the user's salary analyses list.
+ */
+@JsonClass(generateAdapter = true)
+data class SalaryAnalysis(
+    val id: String,
+    val job_title: String? = null,
+    val company: String? = null,
+    val location: String? = null,
+    val experience_years: Double? = null,
+    val current_salary: Double? = null,
+    val market_low: Double? = null,
+    val market_median: Double? = null,
+    val market_high: Double? = null,
+    val recommended_target: Double? = null,
+    val negotiation_script: String? = null,
+    val created_at: String? = null,
+)
