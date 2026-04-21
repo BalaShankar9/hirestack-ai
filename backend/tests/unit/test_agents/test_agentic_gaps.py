@@ -117,11 +117,17 @@ class TestExternalTools:
 
     @pytest.mark.asyncio
     async def test_web_search_no_api_key(self):
-        """Without API key, returns graceful error, not crash."""
+        """Without API keys, the multi-provider fallback (DuckDuckGo HTML /
+        Wikipedia) still returns a well-formed response. Older behaviour
+        (returning an 'error' + empty results) only applied when no
+        providers existed at all. We now guarantee the envelope shape
+        and that the call does not raise — that's the real contract."""
         with patch.dict("os.environ", {}, clear=True):
             result = await _web_search("test query")
-            assert result["results"] == []
-            assert "error" in result
+            assert isinstance(result, dict)
+            assert isinstance(result.get("results"), list)
+            # provider field always set (one of: duckduckgo, wikipedia, none, or api name)
+            assert "provider" in result
 
     @pytest.mark.asyncio
     async def test_search_company_info_short_name(self):
