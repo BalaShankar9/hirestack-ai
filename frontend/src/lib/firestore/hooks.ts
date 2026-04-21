@@ -925,3 +925,119 @@ export function useGenerationJobEvents(
 
   return { data, loading, error };
 }
+
+/**
+ * Subscribe to ALL active (queued/running) generation jobs for a user.
+ *
+ * Powers the global LiveAgentActivityDock — surfaces any in-flight agent
+ * work no matter which page the user is on. Returns the most recently
+ * updated active job first; consumers typically only render the head.
+ *
+ * Realtime subscription filters on user_id and re-checks the status set
+ * client-side so terminal jobs disappear without a page reload.
+ */
+export function useActiveGenerationJobsForUser(
+  userId: string | null
+): { data: GenerationJobDoc[]; loading: boolean; error: Error | null } {
+  const [data, setData] = useState<GenerationJobDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    if (!userId) {
+      setData([]);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    let poll: ReturnType<typeof setInterval> | null = null;
+
+    function startPolling() {
+      if (poll) return;
+      poll = setInterval(() => {
+        if (isDocumentHidden()) return;
+        void fetchActive();
+      }, 4_000);
+    }
+
+    function stopPolling() {
+      if (!poll) return;
+      clearInterval(poll);
+      poll = null;
+    }
+
+    async function fetchActive() {
+      try {
+        const { data: rows, error: err } = await supabase
+          .from(TABLES.generationJobs)
+          .select("*")
+          .eq("user_id", userId)
+          .in("status", ["queued", "running"])
+          .order("updated_at", { ascending: false })
+          .limit(5);
+
+        if (err) throw err;
+        if (!cancelled) {
+          setData((rows ?? []).map(mapGenerationJobRow));
+          setLoading(false);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(e);
+          setLoading(false);
+        }
+      }
+    }
+
+    fetchActive();
+
+    if (!shouldUseRealtime()) {
+      startPolling();
+      return () => {
+        cancelled = true;
+        stopPolling();
+      };
+    }
+
+    const channel = supabase
+      .channel(`generation-jobs-active:${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: TABLES.generationJobs,
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          // Any change to this user's jobs → re-query. Cheap, accurate.
+          void fetchActive();
+        }
+      )
+      .subscribe((status, err) => {
+        if (cancelled) return;
+        if (status === "SUBSCRIBED") {
+          stopPolling();
+          return;
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setError(err ?? new Error(`Realtime subscription error: ${status}`));
+          startPolling();
+          disableRealtimeOnce(status, err);
+          supabase.removeChannel(channel);
+          realtimeWarn("[HireStack][realtime][activeJobs]", status, err);
+        } else if (status === "CLOSED") {
+          startPolling();
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      stopPolling();
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
+
+  return { data, loading, error };
+}

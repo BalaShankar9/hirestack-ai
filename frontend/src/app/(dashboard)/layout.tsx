@@ -6,6 +6,7 @@ import { useAuth } from "@/components/providers";
 import { AppShell } from "@/components/app-shell";
 import { PageTransition } from "@/components/page-transition";
 import { OnboardingProvider } from "@/contexts/onboarding-context";
+import { LiveAgentActivityDock } from "@/components/agents/live-agent-activity-dock";
 import api from "@/lib/api";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
@@ -72,6 +73,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       <AppShell>
         <PageTransition>{children}</PageTransition>
       </AppShell>
+      <LiveAgentActivityDock />
     </OnboardingProvider>
   );
 }
