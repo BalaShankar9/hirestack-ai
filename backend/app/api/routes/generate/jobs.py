@@ -1416,6 +1416,34 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             user_profile = {}
             benchmark_data = await benchmark_chain.create_ideal_profile(job_title, company_str, jd_text_val)
 
+        # Phase C.1: Recall learned user-style preferences from agent_memory
+        # and inject them into user_profile.  Every chain that takes
+        # user_profile (CV, cover letter, motivation, portfolio, …) JSON-
+        # serialises it into its prompt, so a single key here propagates
+        # to every downstream chain without touching any chain signatures.
+        # Cold-start safe — synthesize_user_style_hints returns None when
+        # there isn't enough memory signal to confidently personalize.
+        try:
+            from ai_engine.agents.memory import AgentMemory as _AgentMemory
+            from ai_engine.agents.user_style_hints import (
+                synthesize_user_style_hints as _synth_hints,
+            )
+            _style_hints = await _synth_hints(_AgentMemory(sb), user_id)
+            if _style_hints and isinstance(user_profile, dict):
+                user_profile["style_preferences"] = {
+                    k: v for k, v in _style_hints.items() if not k.startswith("_")
+                }
+                await emit_detail(
+                    "atlas",
+                    f"Recalled {_style_hints['_source']['memory_rows_considered']} prior runs "
+                    f"to personalize style.",
+                    "completed",
+                    "style_memory",
+                    metadata={"hint_keys": list(user_profile["style_preferences"].keys())},
+                )
+        except Exception as _hint_err:
+            logger.debug("user_style_hints.inject_failed", error=str(_hint_err)[:200])
+
         ideal_skills = benchmark_data.get("ideal_skills", [])
         keywords = [s.get("name", "") for s in ideal_skills if isinstance(s, dict) and s.get("name")]
         if not keywords:
