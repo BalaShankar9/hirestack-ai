@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Sparkles, ArrowRight } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export function MarketingShell({
   title,
@@ -35,6 +36,7 @@ export function MarketingShell({
             <Link href="/#pricing" className="text-muted-foreground hover:text-foreground transition-colors">
               Pricing
             </Link>
+            <ThemeToggle />
             <Link
               href="/login?mode=register&redirect=/new"
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground btn-glow hover:shadow-glow-md transition-all hover:brightness-110"
@@ -42,12 +44,15 @@ export function MarketingShell({
               Start free <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </nav>
-          <Link
-            href="/login?mode=register&redirect=/new"
-            className="md:hidden inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
-          >
-            Start free
-          </Link>
+          <div className="md:hidden flex items-center gap-2">
+            <ThemeToggle />
+            <Link
+              href="/login?mode=register&redirect=/new"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+            >
+              Start free
+            </Link>
+          </div>
         </div>
       </header>
 

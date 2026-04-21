@@ -28,8 +28,12 @@ import {
   Zap,
   Library,
   GraduationCap,
+  Moon,
+  Sun,
+  Monitor,
 } from "lucide-react";
 import React, { type ReactNode, useState, useEffect, useMemo } from "react";
+import { useTheme } from "next-themes";
 import { useAuth } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -157,6 +161,35 @@ export function AppShell({ children }: { children: ReactNode }) {
       setSigningOut(false);
     }
   };
+
+  const { theme, setTheme } = useTheme();
+  const ThemeMenuItems = () => (
+    <>
+      <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Appearance
+      </div>
+      {[
+        { key: "light", label: "Light", icon: Sun },
+        { key: "dark", label: "Dark", icon: Moon },
+        { key: "system", label: "System", icon: Monitor },
+      ].map((opt) => {
+        const active = theme === opt.key;
+        const Icon = opt.icon;
+        return (
+          <DropdownMenuItem
+            key={opt.key}
+            onClick={() => setTheme(opt.key)}
+            className={cn("gap-2", active && "bg-primary/10 text-primary focus:bg-primary/10 focus:text-primary")}
+          >
+            <Icon className="h-4 w-4" />
+            <span className="flex-1">{opt.label}</span>
+            {active && <span className="text-[10px] font-semibold uppercase">Active</span>}
+          </DropdownMenuItem>
+        );
+      })}
+      <DropdownMenuSeparator />
+    </>
+  );
 
   const initials = user?.displayName
     ? user.displayName
@@ -329,6 +362,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <p className="text-xs text-muted-foreground">{user?.email}</p>
                 </div>
                 <DropdownMenuSeparator />
+                <ThemeMenuItems />
                 <DropdownMenuItem onClick={handleSignOut} disabled={signingOut} className="text-destructive focus:text-destructive">
                   {signingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
                   {signingOut ? "Signing out…" : "Sign Out"}
@@ -512,8 +546,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           {/* Spacer for mobile (brand logo doesn't use flex-1) */}
           <div className="flex-1 lg:hidden" />
 
-          {/* Theme toggle — hide on very narrow mobile to save space */}
-          <div className="hidden sm:flex">
+          {/* Theme toggle — always visible so signed-in users can switch modes */}
+          <div className="flex">
             <ThemeToggle />
           </div>
 
@@ -545,6 +579,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <p className="text-xs text-muted-foreground">{user?.email}</p>
                 </div>
                 <DropdownMenuSeparator />
+                <ThemeMenuItems />
                 <DropdownMenuItem onClick={handleSignOut} disabled={signingOut} className="text-destructive focus:text-destructive">
                   {signingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
                   {signingOut ? "Signing out…" : "Sign Out"}
