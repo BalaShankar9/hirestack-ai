@@ -1,6 +1,7 @@
 # HireStack AI — Service Level Objectives (SLOs)
 
 ## Document Purpose
+
 Defines measurable reliability and performance targets for the HireStack AI platform.
 These SLOs inform alerting thresholds, architecture decisions, and incident severity.
 
@@ -86,11 +87,13 @@ These SLOs inform alerting thresholds, architecture decisions, and incident seve
 ## 7. Measurement Implementation
 
 SLO metrics are collected via:
+
 - `backend/app/core/metrics.py` — `MetricsCollector` records stage timings, pipeline completion, token usage.
 - `/health` endpoint — exposes circuit breaker state and aggregate metrics.
 - Database logging — `generation_job_events` table for async job tracking.
 
 ### Percentile Calculation
+
 ```python
 # MetricsCollector.get_stats() provides p50, p95, p99
 stats = MetricsCollector.get().get_stats()

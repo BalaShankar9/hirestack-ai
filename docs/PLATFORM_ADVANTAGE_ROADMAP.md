@@ -241,12 +241,14 @@ Everything else is packaging.
 **Status:** Implemented  
 **Context:** The platform relied on a single model (gemini-2.5-pro) for all AI tasks. Any quota exhaustion, rate limit, or service degradation caused total generation failure.  
 **Decision:** Implement a cascade failover router in `ai_engine/model_router.py` with:
+
 - Cost-optimized routing: validation/critique → flash, reasoning/research → pro
 - Ordered fallback lists per task type (`MODEL_CASCADE` env var override)
 - Per-model health tracking with auto-recovery (3 failures → unhealthy, 120s recovery)
 - `AIClient.complete/complete_json/chat` now loop through cascade, catching failures and falling back
 
 **Consequences:**
+
 - Generation survives quota exhaustion on primary model
 - Cost reduction on lightweight tasks routed to flash
 - Health status visible in `/health` endpoint
@@ -260,6 +262,7 @@ Everything else is packaging.
 **Decision:** Enable PgBouncer transaction-mode pooling in `supabase/config.toml` with pool_size=20 and max_client_conn=100.
 
 **Consequences:**
+
 - Connection reuse reduces PostgreSQL load under concurrency
 - Transaction-mode compatible with all existing queries (no prepared statements across transactions)
 - 100 concurrent client connections safely served by 20 actual DB connections
@@ -270,12 +273,14 @@ Everything else is packaging.
 **Status:** Implemented  
 **Context:** Read-heavy endpoints (profile, applications list, evidence) hit PostgreSQL on every request. No caching layer existed.  
 **Decision:** Add Redis-backed caching utilities to `backend/app/core/database.py`:
+
 - `get_redis()`: lazy connection with timeout-bounded initialization
 - `cache_get/cache_set/cache_invalidate/cache_invalidate_prefix`: async helpers
 - In-memory LRU fallback (512 entries) when Redis is unavailable
 - Configurable via `CACHE_TTL_SECONDS` and `CACHE_ENABLED` env vars
 
 **Consequences:**
+
 - Route handlers can opt-in to caching with simple `cache_get`/`cache_set` calls
 - Graceful degradation: falls back to in-memory when Redis is down
 - Cache invalidation primitives ready for write-through patterns
@@ -286,11 +291,13 @@ Everything else is packaging.
 **Status:** Implemented  
 **Context:** The `/health` endpoint reported Supabase and circuit breaker status but not Redis or model health.  
 **Decision:** Extend the health endpoint with:
+
 - Redis connectivity check
 - Model cascade health status from `model_router.get_model_health()`
 - Active generation task count visibility
 
 **Consequences:**
+
 - Railway health checks and monitoring dashboards get full system observability
 - Degraded model or Redis state is immediately visible
 
@@ -302,6 +309,7 @@ Everything else is packaging.
 **Decision:** During shutdown, cancel all active generation tasks and await their completion before releasing resources.
 
 **Consequences:**
+
 - Generation tasks receive `CancelledError` and finalize their job status in DB
 - Fewer orphaned jobs after deployments
 - Cleaner process shutdown sequence

@@ -68,7 +68,7 @@ function CareerPulse({ value }: { value: number }) {
   const r = 52, circ = 2 * Math.PI * r, offset = circ - (value / 100) * circ;
   const color = value >= 75 ? "stroke-emerald-500" : value >= 50 ? "stroke-teal-500" : value >= 25 ? "stroke-amber-500" : "stroke-rose-500";
   return (
-    <div className="relative" style={{ width: 120, height: 120 }}>
+    <div className="relative h-[120px] w-[120px]">
       <svg width={120} height={120} className="-rotate-90">
         <circle cx={60} cy={60} r={r} strokeWidth={8} fill="none" className="stroke-white/10" />
         <circle cx={60} cy={60} r={r} strokeWidth={8} fill="none" strokeLinecap="round"
@@ -294,7 +294,7 @@ export default function DashboardPage() {
           transition={{ duration: 0.5 }}
           className="rounded-3xl border bg-gradient-to-br from-primary via-violet-600 to-indigo-700 p-5 sm:p-6 text-white shadow-glow-md overflow-hidden relative"
         >
-          <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
+          <div className="absolute inset-0 opacity-[0.03] bg-dot-grid" />
           <div className="relative max-w-2xl">
             <h1 className="text-2xl font-bold sm:text-3xl">
               Welcome{userName ? `, ${userName}` : ""}
@@ -431,7 +431,7 @@ export default function DashboardPage() {
           className="rounded-3xl border bg-gradient-to-br from-primary via-violet-600 to-indigo-700 p-5 sm:p-8 text-white shadow-glow-md overflow-hidden relative"
       >
         {/* Decorative grid */}
-        <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
+        <div className="absolute inset-0 opacity-[0.03] bg-dot-grid" />
 
         <div className="relative flex flex-col lg:flex-row lg:items-center gap-6">
           {/* Career Pulse */}

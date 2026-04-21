@@ -333,8 +333,8 @@
     @apply absolute inset-0 rounded-2xl p-[1px];
     background: linear-gradient(135deg, hsl(var(--primary) / 0.4), hsl(250 80% 60% / 0.2), hsl(var(--primary) / 0.1));
     mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    mask-composite: exclude;
     -webkit-mask-composite: xor;
+    mask-composite: exclude;
     pointer-events: none;
   }
   .animate-stagger > * {
@@ -556,8 +556,8 @@ details:focus, details > summary:focus { outline: none; }
     hsl(var(--primary) / 0.1)
   );
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
   -webkit-mask-composite: xor;
+  mask-composite: exclude;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.3s ease;
@@ -685,4 +685,15 @@ details:focus, details > summary:focus { outline: none; }
 }
 .shimmer-text {
   color: hsl(var(--primary));
+}
+
+/* ── Dot grid decorative pattern ─────────────────── */
+.bg-dot-grid {
+  background-image: radial-gradient(circle, white 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* ── Dynamic width progress bars use --pct custom property ─ */
+.w-pct {
+  width: var(--pct, 0%);
 }

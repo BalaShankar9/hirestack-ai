@@ -80,7 +80,7 @@ export function TaskQueue({
               key={t.id}
               role="button"
               tabIndex={0}
-              aria-disabled={togglingId !== null}
+              aria-disabled={togglingId !== null ? "true" : "false"}
               className={cn(
                 "w-full cursor-pointer rounded-xl border border-border/70 bg-background/55 p-3 text-left transition-all duration-200 hover:bg-muted/45 hover:shadow-soft-sm active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 t.status === "done" && "opacity-70",

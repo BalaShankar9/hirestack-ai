@@ -9,6 +9,7 @@ This document describes the implemented IA, page layouts, component APIs, and Fi
 ## 1) Information Architecture + Navigation
 
 ### Global shell (AppShell)
+
 - **Sidebar (primary nav)**
   - `/dashboard` — Workspaces + action queue
   - `/new` — New Application Wizard
@@ -23,6 +24,7 @@ This document describes the implemented IA, page layouts, component APIs, and Fi
   - Jump to recent workspaces
 
 ### Primary UX objects (consistent patterns)
+
 - **Application Workspace** (per application)
 - **Sticky Scoreboard Header** (per workspace)
 - **Sticky Coach Panel** (right rail)
@@ -39,18 +41,23 @@ This document describes the implemented IA, page layouts, component APIs, and Fi
 ## 2) Pages (layouts + states)
 
 ### `/dashboard` — Workspaces + queue
+
 **Layout**
+
 - Hero: “Diagnose → plan → build proof → ship → track”
 - Stats: active workspaces, open tasks, evidence count, avg match
 - Workspace list: cards with match + micro-metrics + “Top fix”
 - Right rail: compact TaskQueue + Evidence pulse
 
 **States**
+
 - Skeleton loaders for app/task/evidence queries
 - Empty: CTA to `/new` wizard
 
 ### `/new` — New Application Wizard
+
 **Core workflow**
+
 1) **Upload + parse + preview**  
    - In-browser parsing (PDF/DOCX/TXT)
    - Preview panel
@@ -66,17 +73,21 @@ This document describes the implemented IA, page layouts, component APIs, and Fi
    - “Open workspace” CTA when ready
 
 **States**
+
 - Wizard step chips (active/done)
 - Per-step validation gates (facts locked, JD present)
 - Generation shows stepper + module states
 
 ### `/applications/[id]` — Application Workspace (the product)
+
 **Layout**
+
 - Sticky **ScoreboardHeader**: match, ATS, 6‑second scan, evidence strength, top fix
 - Main area: Tabs + module content
 - Right sticky **CoachPanel**: next-best actions + “why it matters”
 
 **Tabs**
+
 - **Overview**: ModuleCard grid + TaskQueue
 - **Benchmark**: benchmark summary + rubric (regenerate)
 - **Gap analysis**: missing keywords + recommendations (regenerate)
@@ -86,27 +97,34 @@ This document describes the implemented IA, page layouts, component APIs, and Fi
 - **Export**: Download HTML + copy text (tracks export_clicked)
 
 **States**
+
 - Workspace skeleton (scoreboard + main + coach)
 - Empty states per module when not generated
 - Error states per module (ModuleStatus.error)
 
 ### `/evidence` — Evidence Vault
+
 **Layout**
+
 - Header: explanation + search + “Add evidence”
 - Tabs: All / Links / Files / Suggested evidence to collect
 - Grid of EvidenceCard with “Use in CV”
 
 **Insert flow**
+
 - “Use in CV” opens a workspace picker dialog
 - Navigates to `/applications/[id]?tab=cv&insertEvidence={evidenceId}`
 - Workspace auto-inserts a proof bullet at cursor when editor is ready
 
 **States**
+
 - Skeleton grid while loading
 - Empty: coach guidance + CTA to add evidence
 
 ### `/career` — Career Lab
+
 **Layout**
+
 - Learning tasks derived from tasks collection (learningPlan source)
 - Lightweight resource panel from the most recent active application
 
@@ -115,12 +133,14 @@ This document describes the implemented IA, page layouts, component APIs, and Fi
 ## 3) Firestore contract (typed)
 
 Implementation lives in:
+
 - `frontend/src/lib/firestore/models.ts`
 - `frontend/src/lib/firestore/paths.ts`
 - `frontend/src/lib/firestore/ops.ts`
 - `frontend/src/lib/firestore/hooks.ts`
 
 ### Collections
+
 - `applications/{appId}`
   - `status`, `scores`, `modules`
   - `benchmark`, `gaps`, `learningPlan`
@@ -137,10 +157,12 @@ Implementation lives in:
 ## 4) Component system (props/interfaces)
 
 ### Shell
+
 - `frontend/src/components/app-shell.tsx`
   - `AppShell({ children, pageTitle?, pageHint?, actions? })`
 
 ### Workspace core
+
 - `frontend/src/components/workspace/scoreboard-header.tsx`
   - `ScoreboardHeader({ title, subtitle?, scorecard })`
 - `frontend/src/components/workspace/coach-panel.tsx`
@@ -154,12 +176,14 @@ Implementation lives in:
   - `TaskQueue({ tasks, onToggle, onOpenWorkspace?, compact? })`
 
 ### Evidence
+
 - `frontend/src/components/workspace/evidence-card.tsx`
   - `EvidenceCard({ evidence, onUse?, onOpen? })`
 - `frontend/src/components/workspace/evidence-picker.tsx`
   - `EvidencePicker({ open, onOpenChange, evidence, onPick })`
 
 ### Editor helpers
+
 - `frontend/src/components/editor/tiptap-editor.tsx`
   - `TipTapEditor({ content?, onChange?, placeholder?, editable?, className?, editorRef?, onReady? })`
 - `frontend/src/components/workspace/keyword-chips.tsx`
@@ -174,6 +198,7 @@ Implementation lives in:
 ## 5) Analytics (minimal)
 
 Events are recorded via `trackEvent()` to `users/{uid}/events/*`.
+
 - `generate_clicked` — when user clicks “Generate” in `/new`
 - `view_workspace` — when `/applications/[id]` loads
 - `export_clicked` — when a user exports CV/cover in Export tab
@@ -184,6 +209,7 @@ Events are recorded via `trackEvent()` to `users/{uid}/events/*`.
 ## 6) File tree (frontend, key paths)
 
 Key pages:
+
 - `frontend/src/app/(dashboard)/dashboard/page.tsx`
 - `frontend/src/app/(dashboard)/new/page.tsx`
 - `frontend/src/app/(dashboard)/applications/[id]/page.tsx`
@@ -191,8 +217,8 @@ Key pages:
 - `frontend/src/app/(dashboard)/career/page.tsx`
 
 Core system:
+
 - `frontend/src/components/app-shell.tsx`
 - `frontend/src/components/workspace/*`
 - `frontend/src/components/editor/tiptap-editor.tsx`
 - `frontend/src/lib/firestore/*`
-

@@ -78,7 +78,7 @@ function ResumeWorthGauge({ data }: { data: ResumeWorthScore | null }) {
 
   return (
     <div className="flex flex-col items-center gap-4">
-      <div className="relative" style={{ width: 128, height: 128 }}>
+      <div className="relative h-32 w-32">
         <svg width={128} height={128} className="-rotate-90">
           <circle cx={64} cy={64} r={r} fill="none" stroke="currentColor" strokeWidth={6} className="text-muted/15" />
           <circle cx={64} cy={64} r={r} fill="none" stroke="currentColor" strokeWidth={6} strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" className={cn("transition-all duration-1000", color)} />
@@ -402,7 +402,7 @@ export default function CareerNexusPage() {
   };
 
   // Hidden file input (shared across all upload triggers)
-  const fileInput = <input ref={fileInputRef} type="file" accept=".pdf,.docx,.doc,.txt" onChange={handleUpload} className="hidden" />;
+  const fileInput = <input ref={fileInputRef} type="file" accept=".pdf,.docx,.doc,.txt" onChange={handleUpload} className="hidden" aria-label="Upload resume file" />;
 
   if (loading) {
     return (
@@ -427,7 +427,7 @@ export default function CareerNexusPage() {
               <p className="text-sm font-medium text-rose-600 dark:text-rose-400">{errorMessage}</p>
               <p className="text-xs text-muted-foreground mt-1">Try a different file format (PDF, DOCX, TXT) or check that your file isn&apos;t image-based.</p>
             </div>
-            <button onClick={() => setErrorMessage(null)} className="text-muted-foreground hover:text-foreground">
+            <button aria-label="Dismiss error" onClick={() => setErrorMessage(null)} className="text-muted-foreground hover:text-foreground">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -584,7 +584,7 @@ export default function CareerNexusPage() {
         <label className="text-xs text-muted-foreground">{label}</label>
         <div className="flex items-start gap-2">
           <p className={cn("text-sm", !value && "text-muted-foreground italic")}>{value || "Not set"}</p>
-          <button onClick={() => { setEditingField(field); setEditValue(value || ""); }} className="opacity-0 group-hover:opacity-100 transition-opacity">
+          <button aria-label={`Edit ${label}`} onClick={() => { setEditingField(field); setEditValue(value || ""); }} className="opacity-0 group-hover:opacity-100 transition-opacity">
             <Pencil className="h-3 w-3 text-muted-foreground hover:text-foreground" />
           </button>
         </div>
@@ -605,7 +605,7 @@ export default function CareerNexusPage() {
           <div className="flex-1">
             <p className="text-sm font-medium text-rose-600 dark:text-rose-400">{errorMessage}</p>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-muted-foreground hover:text-foreground">
+          <button aria-label="Dismiss error" onClick={() => setErrorMessage(null)} className="text-muted-foreground hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -643,6 +643,7 @@ export default function CareerNexusPage() {
             <div className="flex items-center gap-2">
               {connectedPlatforms.map((platform) => (
                 <a key={platform.key} href={getSocialUrl(platform.key)} target="_blank" rel="noopener noreferrer"
+                  aria-label={`Open ${platform.key} profile`}
                   className={cn("flex h-9 w-9 items-center justify-center rounded-lg border transition-colors", platform.color)}>
                   <platform.icon className="h-4 w-4" />
                 </a>
@@ -1093,7 +1094,7 @@ export default function CareerNexusPage() {
                     <p className="font-semibold text-sm">{c.name}</p>
                     <p className="text-xs text-muted-foreground">{c.issuer}{c.date ? ` - ${c.date}` : ""}</p>
                   </div>
-                  {c.url && <a href={c.url} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5 text-muted-foreground hover:text-teal-500" /></a>}
+                  {c.url && <a aria-label={`Open ${c.name} certificate`} href={c.url} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5 text-muted-foreground hover:text-teal-500" /></a>}
                 </div>
               ))}
               {certs.length === 0 && (
@@ -1111,7 +1112,7 @@ export default function CareerNexusPage() {
                 <div key={i} className="rounded-xl border p-3">
                   <div className="flex items-start justify-between">
                     <p className="font-semibold text-sm">{p.name}</p>
-                    {p.url && <a href={p.url} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5 text-muted-foreground hover:text-teal-500" /></a>}
+                    {p.url && <a aria-label={`Open ${p.name} project`} href={p.url} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5 text-muted-foreground hover:text-teal-500" /></a>}
                   </div>
                   {p.description && <p className="text-xs text-muted-foreground mt-1">{p.description}</p>}
                   {p.technologies && p.technologies.length > 0 && (

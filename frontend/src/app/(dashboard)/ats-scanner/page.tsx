@@ -221,7 +221,7 @@ export default function ATSScannerPage() {
                 className={cn("flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 cursor-pointer transition-colors", uploadedFile ? "border-primary/30 bg-primary/5" : "border-border hover:border-primary/30")}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.txt" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }} />
+                <input ref={fileInputRef} type="file" aria-label="Upload resume for ATS scan" className="hidden" accept=".pdf,.doc,.docx,.txt" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }} />
                 {parsing ? <Loader2 className="h-6 w-6 text-primary animate-spin" /> : uploadedFile ? (
                   <div className="flex items-center gap-3">
                     <FileText className="h-5 w-5 text-primary" />

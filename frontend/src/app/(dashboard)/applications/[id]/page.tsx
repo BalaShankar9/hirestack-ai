@@ -810,7 +810,8 @@ export default function ApplicationWorkspacePage() {
                     {/* Benchmark group — custom button since it maps to multiple sub-tab values */}
                     <button
                       type="button"
-                      role="tab"
+                      aria-label="Benchmark"
+                      aria-pressed={isBenchmarkActive ? "true" : "false"}
                       className={cn(
                         "inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1.5 text-sm font-medium rounded-lg transition-all",
                         isBenchmarkActive
@@ -826,7 +827,8 @@ export default function ApplicationWorkspacePage() {
                     {/* Tailored group — custom button since it maps to multiple sub-tab values */}
                     <button
                       type="button"
-                      role="tab"
+                      aria-label="Tailored Docs"
+                      aria-pressed={isTailoredActive ? "true" : "false"}
                       className={cn(
                         "inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1.5 text-sm font-medium rounded-lg transition-all",
                         isTailoredActive

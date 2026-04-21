@@ -3,6 +3,7 @@
 ## Project Overview
 
 **HireStack AI** is an AI-powered career intelligence platform that helps job seekers optimize their applications by:
+
 1. Generating benchmark "ideal candidate" profiles for target roles
 2. Analyzing user profiles against benchmarks
 3. Identifying skill gaps and creating personalized improvement roadmaps
@@ -14,6 +15,7 @@
 ## Technology Stack
 
 ### Frontend
+
 - **Framework**: Next.js 14 (App Router)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
@@ -22,6 +24,7 @@
 - **Authentication**: Supabase Auth (client-side)
 
 ### Backend
+
 - **Framework**: FastAPI (Python)
 - **Language**: Python 3.11+
 - **Database**: Supabase (PostgreSQL + PostgREST)
@@ -29,6 +32,7 @@
 - **AI**: Google Gemini (primary), OpenAI (fallback), Ollama (local dev)
 
 ### Infrastructure
+
 - **Auth & Database**: Supabase (Authentication + PostgreSQL + Realtime + Storage)
 - **File Storage**: Supabase Storage
 - **Background Tasks**: Celery + Redis
@@ -46,6 +50,7 @@
 **Date**: January 2025
 
 #### What Was Built
+
 1. **Project Scaffold**
    - Created monorepo structure with `frontend/` and `backend/` directories
    - Set up Next.js 14 with TypeScript and Tailwind CSS
@@ -76,6 +81,7 @@
      - Document generation
 
 #### Issues Encountered & Fixed
+
 1. **httpx version conflict**: supabase required httpx<0.26
    - Fix: Changed to `httpx>=0.24,<0.26`
 
@@ -109,6 +115,7 @@
 1. **Frontend Firebase Setup**
    - Created `/frontend/src/lib/firebase.ts` - Firebase client configuration
    - Updated `/frontend/.env.local` with Firebase web config:
+
      ```
      NEXT_PUBLIC_FIREBASE_API_KEY=<redacted>
      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=hirestack-ai.firebaseapp.com
@@ -118,6 +125,7 @@
      NEXT_PUBLIC_FIREBASE_APP_ID=<redacted>
      NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=<redacted>
      ```
+
    - Updated `/frontend/src/components/providers.tsx` - Firebase Auth context
    - Updated `/frontend/src/hooks/use-auth.ts` - Firebase auth methods
    - Updated `/frontend/src/app/login/page.tsx` - Firebase login UI
@@ -125,10 +133,12 @@
 2. **Backend Firebase Setup**
    - Saved Firebase Admin SDK credentials to `/backend/firebase-admin-sdk.json`
    - Updated `/backend/.env`:
+
      ```
      FIREBASE_PROJECT_ID=hirestack-ai
      FIREBASE_CREDENTIALS_PATH=./firebase-admin-sdk.json
      ```
+
    - Updated `/backend/requirements.txt`:
      - Removed: sqlalchemy, asyncpg, alembic, pgvector, supabase, gotrue
      - Added: firebase-admin, google-cloud-firestore
@@ -137,6 +147,7 @@
    - Rewrote `/backend/app/core/database.py` for Firestore
    - Created `FirestoreDB` class with CRUD operations
    - Defined Firestore collections:
+
      ```python
      COLLECTIONS = {
          'users': 'users',
@@ -329,6 +340,7 @@ service cloud.firestore {
 ## Environment Variables Reference
 
 ### Frontend (.env.local)
+
 ```env
 NEXT_PUBLIC_FIREBASE_API_KEY=your-api-key
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
@@ -341,6 +353,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 ### Backend (.env)
+
 ```env
 # Supabase
 SUPABASE_URL=https://your-project.supabase.co
@@ -362,12 +375,14 @@ ALLOWED_ORIGINS=http://localhost:3000
 ## Running the Application
 
 ### Prerequisites
+
 - Node.js 20+
 - Python 3.11+
 - Supabase project with Authentication, Database, and Storage enabled
 - Redis (for Celery background tasks)
 
 ### Frontend
+
 ```bash
 cd frontend
 npm install
@@ -377,6 +392,7 @@ npm run dev -- -p 3002
 ```
 
 ### Backend
+
 ```bash
 cd backend
 python -m venv venv
@@ -393,40 +409,48 @@ python main.py
 Note: As of **January 25, 2026**, only the **Authentication** routes are enabled in the backend router. The remaining feature routes are being migrated to Firestore and are temporarily disabled in `backend/app/api/routes/__init__.py`.
 
 ### Authentication
+
 - `GET /api/auth/verify` - Verify Firebase token
 - `GET /api/auth/me` - Get current user
 - `PUT /api/auth/me` - Update user profile
 - `POST /api/auth/sync` - Sync Firebase user to Firestore
 
 ### Profile (planned / currently disabled)
+
 - `POST /api/profile/upload` - Upload resume
 - `GET /api/profile` - List profiles
 - `GET /api/profile/primary` - Get primary profile
 
 ### Jobs (planned / currently disabled)
+
 - `POST /api/jobs` - Create job description
 - `GET /api/jobs` - List jobs
 - `GET /api/jobs/{id}` - Get job details
 
 ### Benchmark (planned / currently disabled)
+
 - `POST /api/benchmark/generate` - Generate benchmark
 - `GET /api/benchmark/{id}` - Get benchmark
 
 ### Gap Analysis (planned / currently disabled)
+
 - `POST /api/gaps/analyze` - Analyze gaps
 - `GET /api/gaps` - List gap reports
 - `GET /api/gaps/{id}` - Get gap report
 
 ### Consultant (planned / currently disabled)
+
 - `POST /api/consultant/roadmap` - Generate roadmap
 - `GET /api/consultant/roadmaps` - List roadmaps
 
 ### Document Builder (planned / currently disabled)
+
 - `POST /api/builder/generate` - Generate document
 - `GET /api/builder/documents` - List documents
 - `PUT /api/builder/documents/{id}` - Update document
 
 ### Export (planned / currently disabled)
+
 - `POST /api/export` - Create export
 - `GET /api/export/{id}/download` - Download export
 
@@ -510,7 +534,7 @@ Note: As of **January 25, 2026**, only the **Authentication** routes are enabled
 
 ---
 
-7. **Sign-in completes but you get bounced back to `/login`**
+1. **Sign-in completes but you get bounced back to `/login`**
    - Symptom: clicking **Sign in** looks like it “does nothing”, or you briefly hit `/dashboard` and get redirected back.
    - Cause: a short client-side timing window where Firebase has a user, but the React auth context hasn’t re-rendered yet.
    - Fix: the dashboard auth gate now listens to `onIdTokenChanged` to avoid redirect races (`frontend/src/app/(dashboard)/layout.tsx`).
@@ -540,6 +564,7 @@ To avoid `.next` corruption (e.g., runtime errors after running multiple dev ser
 ### Wizard resume upload resilience
 
 The New Application Wizard is designed to be unblockable:
+
 - Parsed resume text + initial facts are saved to Firestore immediately.
 - Firebase Storage upload is **optional** and runs in the background (progress + stall detection + cancel).
 - If Storage is disabled or misconfigured, the user can still continue the workflow using the parsed/pasted resume text.

@@ -99,7 +99,7 @@ and **must not be used in production**:
 
 | Key | Action Required |
 |-----|----------------|
-| `GEMINI_API_KEY` shared in chat session 2026-04-16 | Revoke at https://aistudio.google.com/apikey — generate new key |
+| `GEMINI_API_KEY` shared in chat session 2026-04-16 | Revoke at <https://aistudio.google.com/apikey> — generate new key |
 | Any `SUPABASE_SERVICE_ROLE_KEY` previously in `.env` | Regenerate in Supabase Dashboard → Project Settings → API |
 
 ### 3.4 Database Migration
@@ -114,6 +114,7 @@ supabase db push --project-ref <your-project-ref>
 ```
 
 Verify RLS policies are enabled after migration:
+
 ```sql
 SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public';
 -- Every table should show rowsecurity = true
@@ -165,6 +166,7 @@ so the pipeline uses only the 2 mocked fixed-key docs and never reaches `Adaptiv
 **Authoritative liveness signal:** Supabase connectivity. If Supabase is unreachable, `/health` returns 503 and the deploy workflow fails.
 
 **Blind spots:**
+
 - AI key validity is not verified (no live API call — by design, to avoid costs and rate limits)
 - Supabase RLS policy correctness is not checked
 - Redis absence does not degrade status (Redis is optional)
@@ -175,6 +177,7 @@ RLS policies are a one-time database setup concern, not a runtime health signal.
 ### 5.2 Deploy-Time Health Check
 
 The deploy workflow:
+
 1. Waits for Railway to finish starting the service (retry loop — 10s interval, up to 18 retries = 3 min max)
 2. Calls `curl -f` on `https://api.hirestack.tech/health`
 3. Falls back to `https://hirestack-production.up.railway.app/health`
@@ -252,6 +255,7 @@ git push origin main  # triggers new deployment
 **⚠️ CONDITIONALLY READY FOR PRODUCTION**
 
 Upgrade to READY when:
+
 1. All 7 GitHub Actions secrets provisioned (see §3.1)
 2. Deploy workflow triggers and completes successfully (green in GitHub Actions)
 3. Health check returns 200 in deploy logs after at least one successful production deployment

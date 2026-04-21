@@ -1,0 +1,20 @@
+global-options:
+  check-on-save: false
+rules-config:
+  aria-valid-attr-value: {enabled: false}
+  aria-required-parent: {enabled: false}
+  button-name: {enabled: false}
+  link-name: {enabled: false}
+  label: {enabled: false}
+  color-contrast: {enabled: false}
+files:
+  - include:
+      - '**/*.tsx'
+      - '**/*.jsx'
+      - '**/*.html'
+    exclude:
+      - '**/.next/**'
+      - '**/.next-dev-*/**'
+      - '**/.worktrees/**'
+      - '**/node_modules/**'
+      - '**/dist/**'

@@ -49,6 +49,7 @@ Stage 5:                Validator
 **Why Stage 1→2 is sequential, not parallel:** The Researcher's output (industry signals, resume format, keyword emphasis) directly shapes the Drafter's prompt context. Running them in parallel would mean the Drafter generates without research context, defeating the purpose. The Researcher is lightweight (context analysis, not generation), typically completing in 3–5s.
 
 **Timing estimates** depend on model and hardware. With a local 120B model on high-end GPU (e.g., 80GB+ VRAM):
+
 - Stage 1 (Researcher): ~5–10s
 - Stage 2 (Drafter): ~15–40s (longest stage, generating full document)
 - Stage 3 (parallel): ~10–20s (three agents share GPU, longest wins)
@@ -217,6 +218,7 @@ class DrafterAgent(BaseAgent):
 ```
 
 **Key design decision:** Existing chains are NOT modified at all. The `revise()` method is a separate code path that takes the original draft + feedback and asks the AI to produce an improved version. This means:
+
 - Zero breaking changes to existing chain code
 - Revision prompts are purpose-built for incorporating multi-agent feedback
 - The revision prompt template lives in `agents/prompts/drafter_revision.md`
@@ -234,6 +236,7 @@ The Fact-Checker operates with a **two-tier classification:**
 | **Fabricated** | Claim has NO basis in any profile data (invented company, fake certification, non-existent technology) | Flagged for removal |
 
 The Fact-Checker's system prompt explicitly defines these boundaries:
+
 - **Enhancement is allowed** — reframing, quantifying, and elevating real experience
 - **Fabrication is not allowed** — inventing experience, skills, or credentials that have zero basis in the profile
 - The quality report shows: "14 claims verified, 8 claims enhanced, 0 fabrications"
@@ -289,6 +292,7 @@ class AgentMemory:
 **Ranking formula:** `rank = relevance_score * 0.7 + (1.0 / (1 + days_since_last_used)) * 0.3`
 
 This ensures:
+
 - Highly relevant recent memories rank highest
 - Old but highly relevant memories still surface
 - Frequently used but mediocre memories decay over time
@@ -304,6 +308,7 @@ This ensures:
 **When memories are written:** After each pipeline completes successfully, the Orchestrator calls a lightweight `learn()` pass that compares the pipeline's output against any user edits from the previous session. If patterns are detected (e.g., user consistently edits tone), a memory is stored.
 
 **Measurement methodology for success criterion:** Compare Critic quality scores between:
+
 - User's 1st–3rd pipeline runs (no memory) vs 6th–10th runs (with memory)
 - Track "user edit distance" (how much users change generated output) — should decrease over time
 - Both metrics stored in `agent_traces` for querying
@@ -366,6 +371,7 @@ Every pipeline execution is fully logged: each agent's input summary, output sum
 **Agents use the existing `AIClient` facade** — not direct HTTP calls. This is critical for reliability.
 
 **Configuration:**
+
 - Primary provider: Ollama (local, model name configurable via `settings.ollama_model`)
 - Fallback chain: Ollama → Gemini → OpenAI (existing AIClient behavior)
 - The actual model name (e.g., `llama3:70b`, `qwen2:72b`, or whatever is pulled in Ollama) is read from `settings.ollama_model`, NOT hardcoded
@@ -374,6 +380,7 @@ Every pipeline execution is fully logged: each agent's input summary, output sum
 - Retry: 2 attempts with 5s backoff on transient failures (existing AIClient retry logic)
 
 **Concurrency constraints for large models:**
+
 - Stage 3 runs Critic + Optimizer + Fact-Checker in parallel via `asyncio.gather`
 - On consumer hardware with a single GPU, Ollama serializes concurrent requests internally (queues them)
 - This means Stage 3's wall-clock time = longest single agent, NOT sum of all three
@@ -381,6 +388,7 @@ Every pipeline execution is fully logged: each agent's input summary, output sum
 - The pipeline design is correct regardless — `asyncio.gather` handles both cases transparently
 
 **Hardware baseline for reference:**
+
 - 120B model: requires ~80GB VRAM (A100 80GB, or 2x RTX 4090 with model parallelism)
 - 70B quantized (Q4): requires ~40GB VRAM (single RTX 4090 or A6000)
 - Cloud-hosted API: no local hardware requirements, fastest option
@@ -445,12 +453,14 @@ Each feature is a vertical slice: backend fix + agent swarm + frontend fix, vali
 **Agent pipeline:** Researcher → Drafter(RoleProfilerChain) | sequential, then Critic + FactChecker | sequential, then Validator. Max 1 iteration.
 
 **What the swarm adds:**
+
 - Researcher pre-identifies resume format (chronological/functional/hybrid) for targeted extraction
 - Critic catches missed skills by cross-referencing section headers against extracted data
 - Fact-Checker eliminates hallucinated skills/titles not present in source text
 - Validator enforces ProfileSchema with strict typing on all fields
 
 **Backend fixes:**
+
 - Add input size validation (reject > 50KB text)
 - Return structured errors with specific failure reasons (not generic 500)
 - Return extraction confidence scores per section
@@ -458,6 +468,7 @@ Each feature is a vertical slice: backend fix + agent swarm + frontend fix, vali
 - Log parsing metrics (skills found, sections detected)
 
 **Frontend fixes:**
+
 - Show extraction confidence per section (e.g., "Skills: 95%, Experience: 78%")
 - Allow user to correct/confirm extracted data inline before proceeding
 - Add error state when parsing fails (currently only loading skeleton)
@@ -468,18 +479,21 @@ Each feature is a vertical slice: backend fix + agent swarm + frontend fix, vali
 **Agent pipeline:** Researcher + Drafter(BenchmarkBuilderChain) | sequential, then Critic + Optimizer + FactChecker | sequential, then Validator. Max 1 iteration.
 
 **What the swarm adds:**
+
 - Researcher extracts hidden JD signals (startup vs enterprise culture, growth vs maintenance role)
 - Critic calibrates whether benchmark is achievable or unrealistic
 - Optimizer tunes scoring weights to match JD emphasis
 - Fact-Checker ensures every benchmark keyword traces to the actual JD text
 
 **Backend fixes:**
+
 - Add `UNIQUE(job_description_id)` constraint on benchmarks table (fixes race condition)
 - Validate JD text is non-empty before generation
 - Return benchmark confidence score
 - Standardize response to `{success, data, meta}` format
 
 **Frontend fixes:**
+
 - Show which JD sections drove which benchmark requirements
 - Add "Benchmark too aggressive?" feedback that triggers Critic re-evaluation
 - Add error state for failed generation
@@ -489,18 +503,21 @@ Each feature is a vertical slice: backend fix + agent swarm + frontend fix, vali
 **Agent pipeline:** Drafter(GapAnalyzerChain), then Critic + Optimizer + FactChecker | sequential, then Validator. Max 1 iteration.
 
 **What the swarm adds:**
+
 - Critic verifies score-to-gap consistency (85% score shouldn't have 10 critical gaps)
 - Optimizer reorders recommendations by impact-to-effort ratio, surfaces quick wins first
 - Fact-Checker cross-references every "gap" against actual profile (prevents false negatives)
 - Validator enforces score ranges 0–100 and all required fields
 
 **Backend fixes:**
+
 - Fix N+1 query: use Supabase `.select("*, job_descriptions(*)")` for single-query fetch
 - Add schema validation on GapAnalyzerChain JSON output
 - Standardize response format with pagination
 - Replace silent placeholder fallbacks with explicit validation errors
 
 **Frontend fixes:**
+
 - Show gap confidence levels
 - Color-code recommendations by effort level (quick-win/medium/long-term)
 - Add error state when analysis fails
@@ -514,6 +531,7 @@ Each feature is a vertical slice: backend fix + agent swarm + frontend fix, vali
 **Agent pipeline (Portfolio):** Drafter, Optimizer, Validator. Max 1 iteration.
 
 **What the swarm adds:**
+
 - Researcher pre-identifies exact keywords, company tone, and emphasis before drafting
 - Critic scores on 4 dimensions (impact, clarity, tone match, completeness) and triggers revision
 - Optimizer does a dedicated ATS pass — injects keywords naturally, improves readability, ensures quantified achievements
@@ -521,12 +539,14 @@ Each feature is a vertical slice: backend fix + agent swarm + frontend fix, vali
 - Validator checks HTML validity, document length appropriateness, all sections present
 
 **Backend fixes:**
+
 - Fix silent failure in `generate_all_documents()` — return which documents failed and why
 - Add content length validation before storage
 - Return quality scores (impact, ATS readiness, readability, fact accuracy) with response
 - Fix `str(result)` casting in motivation generation — validate type before storage
 
 **Frontend fixes:**
+
 - Show quality report card: impact score, ATS readiness, readability, fact accuracy
 - Show fact-check summary: "14 claims verified, 0 fabrications"
 - Split 64KB `applications/[id]/page.tsx` into extracted components (see Section 5)
@@ -538,6 +558,7 @@ Each feature is a vertical slice: backend fix + agent swarm + frontend fix, vali
 **No agent swarm** — export is formatting, not AI. Significant quality fixes:
 
 **Backend fixes:**
+
 - Move DOCX generation entirely to backend using `python-docx` (proper .docx, not MHTML hack)
 - Add export progress tracking for ZIP bundles
 - Add retry logic for PDF generation failures
@@ -545,6 +566,7 @@ Each feature is a vertical slice: backend fix + agent swarm + frontend fix, vali
 - Include quality_report.pdf in ZIP bundles (agent scores for the exported documents)
 
 **Frontend fixes:**
+
 - Replace 100ms `setTimeout` with `document.fonts.ready` + `requestAnimationFrame` for reliable PDF rendering
 - Add progress indicator for multi-document ZIP bundles
 - Error recovery: if PDF fails, offer HTML download fallback
@@ -552,6 +574,7 @@ Each feature is a vertical slice: backend fix + agent swarm + frontend fix, vali
 - Remove MHTML-based DOCX; frontend calls backend DOCX endpoint and downloads result
 
 **ZIP bundle manifest:**
+
 ```
 application_package/
 ├── CV.pdf
@@ -565,6 +588,7 @@ application_package/
 ```
 
 **manifest.json schema:**
+
 ```json
 {
   "version": "1.0",
@@ -604,16 +628,19 @@ application_package/
 **Agent pipeline:** Researcher + Drafter(ATSScannerChain) | sequential, then Optimizer, then Validator. Max 1 iteration.
 
 **What the swarm adds:**
+
 - Researcher analyzes the JD for industry-specific ATS patterns
 - Optimizer cross-references scan results against the benchmark to suggest concrete fixes
 - Validator ensures all score fields present and in valid ranges
 
 **Backend fixes:**
+
 - Add input size validation (document_content + jd_text combined token limit check)
 - Add structured error for oversized inputs
 - Log scan metrics
 
 **Frontend fixes:**
+
 - Show scan progress with agent steps
 - Add error state for failed scans
 - Add inline "fix this" actions next to each formatting issue
@@ -623,16 +650,19 @@ application_package/
 **Agent pipeline:** Researcher + Drafter(InterviewSimulatorChain) | sequential, then Critic, then Validator. Max 1 iteration.
 
 **What the swarm adds:**
+
 - Researcher uses gap report to target questions at weak areas (not random topics)
 - Critic evaluates answer scoring for fairness and consistency
 - Validator ensures STAR scores are in valid ranges
 
 **Backend fixes:**
+
 - Fix bare exception handler — log errors before raising
 - Add session timeout handling (abandon sessions after 2 hours)
 - Validate answer text is non-empty
 
 **Frontend fixes:**
+
 - Text-only interface (no audio/video)
 - Show which gap each question targets
 - Add error states for failed question generation and answer evaluation
@@ -643,15 +673,18 @@ application_package/
 **Agent pipeline:** Researcher + Drafter(CareerConsultantChain) | sequential, then Critic + Optimizer | sequential, then Validator. Max 1 iteration.
 
 **What the swarm adds:**
+
 - Researcher uses gap report + benchmark to prioritize roadmap milestones
 - Critic verifies milestones are achievable and properly sequenced
 - Optimizer orders learning resources by effectiveness and accessibility
 
 **Backend fixes:**
+
 - Add milestone dependency validation
 - Standardize response format
 
 **Frontend fixes:**
+
 - Show milestone timeline with progress tracking
 - Add error states
 
@@ -674,6 +707,7 @@ variants = await asyncio.gather(
 ```
 
 Where tone instructions are defined constants:
+
 - `CONSERVATIVE_TONE`: "Use formal language, traditional structure, quantified achievements, no personality flair"
 - `BALANCED_TONE`: "Professional but approachable, mix of quantified and narrative, moderate personality"
 - `CREATIVE_TONE`: "Bold opening, storytelling elements, unique framing, personality-forward"
@@ -689,6 +723,7 @@ critic_result = await critic.run({
 ```
 
 **What the swarm adds:**
+
 - Three Drafter instances generate variants in parallel (3x speed improvement over sequential)
 - Critic scores all three comparatively in a single call, providing ranking and recommendation
 - Optimizer provides ATS scores and readability for side-by-side comparison
@@ -698,6 +733,7 @@ critic_result = await critic.run({
 **Agent pipeline:** Researcher + Drafter(SalaryCoachChain) | sequential, then FactChecker, then Validator. Max 1 iteration.
 
 **What the swarm adds:**
+
 - Researcher contextualizes with benchmark seniority and gap scores
 - Fact-Checker validates that salary ranges are plausible for the role/location
 
@@ -710,6 +746,7 @@ critic_result = await critic.run({
 **Agent pipeline:** Drafter(LearningChallengeChain), then Validator. Max 0 iterations. (Fast path — learning challenges need speed over polish.)
 
 **What the swarm adds:**
+
 - Validator ensures question format is correct and all options are distinct
 - Drafter uses gap report to generate challenges targeting actual weak areas
 
@@ -756,6 +793,7 @@ The application detail view (`/applications/[id]`) transforms from a scrolling p
 **Implementation:** `react-resizable-panels` library for draggable dividers.
 
 **Behaviors:**
+
 - Panels resize by dragging dividers
 - Bottom panel collapses to a single-line status bar
 - Context panel switches between quality/coach/history/traces tabs
@@ -767,6 +805,7 @@ The application detail view (`/applications/[id]`) transforms from a scrolling p
 Global command palette for navigation and actions:
 
 **Categories:**
+
 - **Recent** — last 5 applications accessed
 - **Actions** — New Application (Cmd+N), Generate CV (Cmd+G), Run ATS Scan (Cmd+S), Start Interview (Cmd+I), Export All (Cmd+E)
 - **Navigate** — Dashboard (Cmd+1), Evidence Vault (Cmd+2), Career Analytics (Cmd+3), etc.
@@ -795,6 +834,7 @@ Global command palette for navigation and actions:
 ```
 
 **Status colors** (existing palette):
+
 - `✓` completed = `text-emerald-600` (score-excellent)
 - `●` active = `text-primary` (indigo-violet)
 - `○` waiting = `text-muted-foreground`
@@ -904,6 +944,7 @@ Impact  87%  █████████░░        │  Readability  76%  █
 ```
 
 All numbers in IBM Plex Mono. Progress bar colors:
+
 - 90–100: `bg-emerald-500`
 - 70–89: `bg-primary` (indigo-violet)
 - 50–69: `bg-amber-500`
@@ -1197,6 +1238,7 @@ backend/tests/
 ### 10.2 CI/CD
 
 GitHub Actions workflow:
+
 - Lint (ruff + eslint)
 - Type check (mypy + tsc)
 - Unit tests (pytest + vitest)

@@ -214,7 +214,7 @@ function FAQAccordion() {
           <button
             onClick={() => setOpen(open === i ? null : i)}
             className="flex w-full items-center justify-between px-5 py-4 text-left text-sm font-medium hover:bg-muted/30 transition-colors"
-            aria-expanded={open === i}
+            aria-expanded={open === i ? "true" : "false"}
           >
             <span>{item.question}</span>
             <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 shrink-0 ml-3 ${open === i ? "rotate-180" : ""}`} />
@@ -341,7 +341,7 @@ export default function HomePage() {
               type="button"
               onClick={() => setMobileMenuOpen((v) => !v)}
               aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
-              aria-expanded={mobileMenuOpen}
+              aria-expanded={mobileMenuOpen ? "true" : "false"}
               className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-foreground hover:bg-muted/60 transition-colors"
             >
               {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}

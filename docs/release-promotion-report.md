@@ -15,6 +15,7 @@
 **Actual state:** ❌ **NOT FIXED.** All 24 route files + `main.py` still had `@limiter.limit` as the outer (top) decorator above `@router.XXX`. In slowapi + FastAPI the **inner** decorator applies first. With the wrong order, FastAPI registers the original (un-rate-limited) function — the limiter is never invoked on any request.
 
 **Fix applied in Batch 1 of this pass:**
+
 - 172 decorator pairs swapped across 32 files  
 - Python syntax verified on all modified files  
 - Ruff lint: 0 errors  
@@ -157,9 +158,11 @@ The deploy pipeline is disabled (renamed `.disabled`). There is no automated dep
 #### P1-B: Backend mypy Gate is a No-Op
 
 **File:** `.github/workflows/ci.yml` line 90:
+
 ```yaml
 run: mypy app/ --ignore-missing-imports --no-strict-optional --check-untyped-defs --no-error-summary 2>/dev/null || true
 ```
+
 The `|| true` means mypy errors never fail CI. This is a P1 weakness — silent type regressions can ship.  
 **Fix:** Remove `|| true` and capture actual mypy output. If there are too many pre-existing errors, use `--baseline` or `--error-summary` with a counter to at least track the trend.
 
@@ -171,11 +174,13 @@ The `|| true` means mypy errors never fail CI. This is a P1 weakness — silent 
 #### P1-D: Deploy Health Check Swallows Failure
 
 **File:** `deploy.yml.disabled` — health check step:
+
 ```yaml
 curl -f https://api.hirestack.tech/health || \
 curl -f https://hirestack-production.up.railway.app/health || \
 echo "Health check skipped - verify manually"
 ```
+
 The `echo "..."` fallback silently succeeds even if both health checks fail.  
 **Fix:** Remove the `echo` fallback so deploy fails if the service is not healthy.
 
@@ -186,9 +191,11 @@ The `echo "..."` fallback silently succeeds even if both health checks fail.
 #### P2-A: CSP `script-src 'unsafe-inline'` in Production
 
 **File:** `frontend/next.config.ts`  
+
 ```javascript
 `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
 ```
+
 `'unsafe-inline'` allows inline scripts in production, which weakens XSS protection. Ideal fix is nonce-based CSP, but requires Next.js 14 middleware changes.  
 **Current risk:** Medium — mitigated by React's built-in XSS protections. Track as future improvement.
 
@@ -303,7 +310,8 @@ Auth enforcement happens client-side only (Supabase stores sessions in `localSto
 | Deploy workflow re-enabled with real secrets | DevOps | First production release |
 | Confirm health check passes post-deploy | DevOps | Every release |
 
-### Upgrade to READY FOR PRODUCTION when:
+### Upgrade to READY FOR PRODUCTION when
+
 - [ ] `deploy.yml.disabled` → `deploy.yml` with all secrets confirmed
 - [ ] Post-deploy health check confirmed passing in at least one staging/production deployment
 

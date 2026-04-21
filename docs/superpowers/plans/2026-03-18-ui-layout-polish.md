@@ -13,20 +13,25 @@
 ## Tasks
 
 ### Task 1: Update mode toggle to support view/edit/diff
+
 - Modify `frontend/src/components/workspace/diff-toggle.tsx`
 
 ### Task 2: Add document preview view to DocEditorModule
+
 - Modify `frontend/src/components/workspace/doc-editor-module.tsx`
 
 ### Task 3: Default documents to view mode
+
 - Modify `frontend/src/app/(dashboard)/applications/[id]/page.tsx`
 
 ### Task 4: Add feature pages to sidebar navigation
+
 - Modify `frontend/src/components/app-shell.tsx`
 
 ### Task 5: Copy missing feature pages from main repo
 
 ### Task 6: Add doc-preview CSS class
+
 - Modify `frontend/src/app/globals.css`
 
 ### Task 7: Fix benchmark CV to use consistent styling

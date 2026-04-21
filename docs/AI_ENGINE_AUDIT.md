@@ -98,6 +98,7 @@ Research → Draft → [Critic ∥ Optimizer ∥ FactChecker] → Revision Loop 
 ### Orchestrator (`orchestrator.py`)
 
 `AgentPipeline` class:
+
 - **Policy-driven:** `PipelinePolicy` controls which stages to skip, confidence thresholds, cost budgets, iteration limits, human-in-the-loop gates.
 - **Pre-built policies:** `POLICY_FULL`, `POLICY_LIGHT`, `POLICY_STRICT` + 14 per-pipeline-name policies.
 - **AdaptivePolicyTracker:** Rolling quality window — adjusts confidence_threshold ±0.03–0.05 automatically.
@@ -125,6 +126,7 @@ Research → Draft → [Critic ∥ Optimizer ∥ FactChecker] → Revision Loop 
 ### Tool System (`tools.py`)
 
 `ToolRegistry` with `AgentTool` dataclass. Agents call deterministic tools in a loop before LLM synthesis. Tools include:
+
 - `parse_jd`, `extract_profile_evidence`, `compute_keyword_overlap`, `compute_readability`
 - `extract_claims`, `match_claims_to_evidence`
 - Web search tools (for THOROUGH/EXHAUSTIVE research depth)
@@ -162,6 +164,7 @@ Research → Draft → [Critic ∥ Optimizer ∥ FactChecker] → Revision Loop 
 ### v2 Pattern
 
 All v2 chains follow the same pattern:
+
 1. Import sub-agent coordinator
 2. Try coordinator swarm
 3. On failure, fallback to `_legacy_*()` single-LLM method
@@ -182,6 +185,7 @@ All v2 chains follow the same pattern:
 ### PipelineRuntime — Canonical Execution Engine
 
 All 3 modes (sync/stream/job) use `PipelineRuntime` with pluggable `EventSink`:
+
 - `NullSink` — sync mode
 - `SSESink` — streaming mode
 - `DatabaseSink` — job mode (persists events + updates `generation_jobs` row)

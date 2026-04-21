@@ -115,10 +115,10 @@ export default function CandidatesPage() {
             <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 rounded-xl h-9 w-48 text-sm" />
           </div>
           <div className="flex rounded-xl border overflow-hidden">
-            <button onClick={() => setView("kanban")} className={cn("px-2.5 h-9 flex items-center transition-colors", view === "kanban" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground")}>
+            <button aria-label="Kanban view" onClick={() => setView("kanban")} className={cn("px-2.5 h-9 flex items-center transition-colors", view === "kanban" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground")}>
               <LayoutGrid className="h-3.5 w-3.5" />
             </button>
-            <button onClick={() => setView("list")} className={cn("px-2.5 h-9 flex items-center border-l transition-colors", view === "list" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground")}>
+            <button aria-label="List view" onClick={() => setView("list")} className={cn("px-2.5 h-9 flex items-center border-l transition-colors", view === "list" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground")}>
               <List className="h-3.5 w-3.5" />
             </button>
           </div>

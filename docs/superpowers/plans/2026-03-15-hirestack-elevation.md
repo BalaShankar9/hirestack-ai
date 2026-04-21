@@ -84,6 +84,7 @@ frontend/src/
 ### Task 1: Database Migration — Agent Tables
 
 **Files:**
+
 - Create: `supabase/migrations/20260315000000_agent_tables.sql`
 
 - [ ] **Step 1: Write the migration SQL**
@@ -164,6 +165,7 @@ git commit -m "feat: add agent_memory and agent_traces tables with RLS"
 ### Task 2: Agent Base Classes
 
 **Files:**
+
 - Create: `ai_engine/agents/__init__.py`
 - Create: `ai_engine/agents/base.py`
 
@@ -373,6 +375,7 @@ git commit -m "feat: add BaseAgent and AgentResult base classes with tests"
 ### Task 3: PipelineLockManager
 
 **Files:**
+
 - Create: `ai_engine/agents/lock.py`
 - Create: `backend/tests/unit/test_agents/test_lock.py`
 
@@ -505,6 +508,7 @@ git commit -m "feat: add PipelineLockManager for per-user pipeline concurrency c
 ### Task 4: AgentTrace Logging Service
 
 **Files:**
+
 - Create: `ai_engine/agents/trace.py`
 - Create: `backend/tests/unit/test_agents/test_trace.py`
 
@@ -653,6 +657,7 @@ git commit -m "feat: add AgentTracer for pipeline observability"
 ### Task 5: AgentMemory Service
 
 **Files:**
+
 - Create: `ai_engine/agents/memory.py`
 - Create: `backend/tests/unit/test_agents/test_memory.py`
 
@@ -878,6 +883,7 @@ git commit -m "feat: add AgentMemory service with ranking and eviction"
 ### Task 6: Agent System Prompts
 
 **Files:**
+
 - Create: `ai_engine/agents/prompts/critic_system.md`
 - Create: `ai_engine/agents/prompts/optimizer_system.md`
 - Create: `ai_engine/agents/prompts/fact_checker_system.md`
@@ -929,12 +935,14 @@ You are a quality review specialist for career documents. You evaluate content a
 ## Context Available
 
 You will receive:
+
 - The draft document content
 - The target job title and company
 - The user's profile data
 - Any agent memories about this user's preferences
 
 Consider agent memories when evaluating tone — if the user has a documented preference for formal/casual tone, weight that in your tone_match scoring.
+
 ```
 
 - [ ] **Step 2: Write Optimizer system prompt**
@@ -977,6 +985,7 @@ You are an ATS (Applicant Tracking System) and readability optimization speciali
   ]
 }
 ```
+
 ```
 
 - [ ] **Step 3: Write Fact-Checker system prompt**
@@ -1027,6 +1036,7 @@ You receive:
   "overall_accuracy": 1.0
 }
 ```
+
 ```
 
 - [ ] **Step 4: Write Researcher system prompt**
@@ -1064,6 +1074,7 @@ You analyze job descriptions, company context, and user profiles to extract sign
   ]
 }
 ```
+
 ```
 
 - [ ] **Step 5: Write Schema Validator system prompt**
@@ -1096,6 +1107,7 @@ You perform the final validation pass on pipeline output before delivery.
   "content": { "...passed through from input if valid..." }
 }
 ```
+
 ```
 
 - [ ] **Step 6: Write Drafter revision prompt**
@@ -1138,6 +1150,7 @@ git commit -m "feat: add agent system prompts for all 6 agent roles"
 ### Task 7: ResearcherAgent Implementation
 
 **Files:**
+
 - Create: `ai_engine/agents/researcher.py`
 
 - [ ] **Step 1: Implement ResearcherAgent**
@@ -1221,6 +1234,7 @@ git commit -m "feat: add ResearcherAgent for pre-draft context gathering"
 ### Task 8: CriticAgent Implementation
 
 **Files:**
+
 - Create: `ai_engine/agents/critic.py`
 
 - [ ] **Step 1: Implement CriticAgent**
@@ -1335,6 +1349,7 @@ git commit -m "feat: add CriticAgent with quality scoring and comparative mode"
 ### Task 9: OptimizerAgent Implementation
 
 **Files:**
+
 - Create: `ai_engine/agents/optimizer.py`
 
 - [ ] **Step 1: Implement OptimizerAgent**
@@ -1414,6 +1429,7 @@ git commit -m "feat: add OptimizerAgent for ATS and readability optimization"
 ### Task 10: FactCheckerAgent Implementation
 
 **Files:**
+
 - Create: `ai_engine/agents/fact_checker.py`
 
 - [ ] **Step 1: Implement FactCheckerAgent**
@@ -1512,6 +1528,7 @@ git commit -m "feat: add FactCheckerAgent with verified/enhanced/fabricated clas
 ### Task 11: ValidatorAgent (SchemaValidator) Implementation
 
 **Files:**
+
 - Create: `ai_engine/agents/schema_validator.py`
 
 - [ ] **Step 1: Implement ValidatorAgent**
@@ -1596,6 +1613,7 @@ git commit -m "feat: add ValidatorAgent for final schema validation"
 ### Task 12: DrafterAgent Implementation
 
 **Files:**
+
 - Create: `ai_engine/agents/drafter.py`
 
 - [ ] **Step 1: Implement DrafterAgent**
@@ -1741,6 +1759,7 @@ git commit -m "feat: add DrafterAgent wrapping existing chains with revision sup
 ### Task 13: AgentPipeline Orchestrator
 
 **Files:**
+
 - Create: `ai_engine/agents/orchestrator.py`
 - Create: `backend/tests/unit/test_agents/test_orchestrator.py`
 
@@ -2090,9 +2109,10 @@ git commit -m "feat: add AgentPipeline orchestrator with parallel stages and SSE
 
 ---
 
-### Task 14: Update agents/__init__.py — Export All
+### Task 14: Update agents/**init**.py — Export All
 
 **Files:**
+
 - Modify: `ai_engine/agents/__init__.py`
 
 - [ ] **Step 1: Update exports**
@@ -2141,6 +2161,7 @@ git commit -m "feat: export all agent classes from agents package"
 ### Task 15: IBM Plex Mono Font Integration
 
 **Files:**
+
 - Create: `frontend/src/fonts/ibm-plex-mono.ts`
 - Modify: `frontend/src/app/layout.tsx`
 
@@ -2191,6 +2212,7 @@ git commit -m "feat: add IBM Plex Mono dual-font system"
 ### Task 16: Shared Feedback Components
 
 **Files:**
+
 - Create: `frontend/src/components/feedback/error-card.tsx`
 - Create: `frontend/src/components/feedback/loading-skeleton.tsx`
 - Create: `frontend/src/components/feedback/retry-button.tsx`
@@ -2320,6 +2342,7 @@ git commit -m "feat: add shared ErrorCard, LoadingSkeleton, and RetryButton comp
 ### Task 17: Command Palette Skeleton
 
 **Files:**
+
 - Create: `frontend/src/components/command-palette/use-commands.ts`
 - Create: `frontend/src/components/command-palette/command-palette.tsx`
 
@@ -2476,6 +2499,7 @@ git commit -m "feat: add Cmd+K command palette with cmdk"
 ### Task 18: Add Micro-Animation Keyframes
 
 **Files:**
+
 - Modify: `frontend/src/app/globals.css`
 
 - [ ] **Step 1: Add new keyframes to globals.css**
@@ -2530,6 +2554,7 @@ git commit -m "feat: add micro-animation keyframes (shake, digit-flip, check-pop
 ### Task 19: Install pytest-asyncio Dependency
 
 **Files:**
+
 - Modify: backend dependencies
 
 - [ ] **Step 1: Install pytest-asyncio**
@@ -2564,6 +2589,7 @@ git commit -m "chore: add pytest config with asyncio auto mode"
 ### Task 20: JSON Schemas for AI Output Validation (Phase 1 — per spec)
 
 **Files:**
+
 - Create: `ai_engine/schemas/profile_schema.json`
 - Create: `ai_engine/schemas/benchmark_schema.json`
 - Create: `ai_engine/schemas/gap_analysis_schema.json`
@@ -2691,6 +2717,7 @@ git commit -m "feat: add JSON schemas for AI output validation"
 ### Task 21: Pipeline Factory — Create Pipelines for Each Feature
 
 **Files:**
+
 - Create: `ai_engine/agents/pipelines.py`
 
 - [ ] **Step 1: Implement pipeline factory**
@@ -2852,7 +2879,7 @@ def portfolio_pipeline(
     )
 ```
 
-- [ ] **Step 2: Update agents __init__.py**
+- [ ] **Step 2: Update agents **init**.py**
 
 Add to `ai_engine/agents/__init__.py`:
 
@@ -2908,6 +2935,7 @@ backend/app/api/routes/
 ### Task 22: Enhanced SSE Generate Endpoint with Agent Pipeline
 
 **Files:**
+
 - Modify: `backend/app/api/routes/generate.py`
 
 This is the most critical integration point. The existing `/api/generate/pipeline/stream` endpoint runs chains directly. We replace the chain calls with agent pipeline calls while keeping the SSE event format compatible (adding new `agent_status` events alongside existing `progress` events).
@@ -2951,6 +2979,7 @@ def _agent_sse(pipeline_name: str, stage: str, status: str, latency_ms: int = 0,
 ```
 
 Also add import at top:
+
 ```python
 from datetime import datetime, timezone
 ```
@@ -3193,6 +3222,7 @@ git commit -m "feat: wire agent pipelines into SSE streaming endpoint with agent
 ### Task 23: Standardized Response Format Helper
 
 **Files:**
+
 - Create: `backend/app/api/response.py`
 
 - [ ] **Step 1: Create standardized response helper**
@@ -3247,6 +3277,7 @@ git commit -m "feat: add standardized success_response/error_response helpers"
 ### Task 24: Backend Input Validation and Response Format Fixes
 
 **Files:**
+
 - Modify: `backend/app/services/profile.py` (add input size validation)
 - Modify: `backend/app/services/benchmark.py` (validate JD non-empty)
 - Modify: `backend/app/services/gap.py` (fix N+1 query)
@@ -3330,6 +3361,7 @@ git commit -m "fix: add input validation, fix N+1 query, standardize response fo
 ### Task 25: Backend Error Handling Standardization
 
 **Files:**
+
 - Modify: `backend/app/api/routes/` (multiple route files)
 
 - [ ] **Step 1: Replace bare except blocks across all route files**
@@ -3346,6 +3378,7 @@ except Exception as e:
 ```
 
 Apply this pattern in these files (find the bare except blocks):
+
 - `backend/app/api/routes/profile.py`
 - `backend/app/api/routes/benchmark.py`
 - `backend/app/api/routes/gaps.py`
@@ -3365,6 +3398,7 @@ git commit -m "fix: replace bare except blocks with typed error handlers across 
 ### Task 26: Backend DOCX Generation via python-docx
 
 **Files:**
+
 - Modify: `backend/app/services/export.py`
 
 - [ ] **Step 1: Install python-docx**
@@ -3511,6 +3545,7 @@ git commit -m "chore: add react-resizable-panels dependency"
 ### Task 28: useAgentStatus SSE Hook
 
 **Files:**
+
 - Create: `frontend/src/hooks/use-agent-status.ts`
 
 - [ ] **Step 1: Create the SSE hook**
@@ -3629,6 +3664,7 @@ git commit -m "feat: add useAgentStatus SSE hook for real-time pipeline progress
 ### Task 29: Agent Progress Component
 
 **Files:**
+
 - Create: `frontend/src/components/workspace/agent-progress.tsx`
 
 - [ ] **Step 1: Create AgentProgress component**
@@ -3728,6 +3764,7 @@ git commit -m "feat: add AgentProgress component with stage visualization"
 ### Task 30: Quality Report Component
 
 **Files:**
+
 - Create: `frontend/src/components/workspace/quality-report.tsx`
 
 - [ ] **Step 1: Create QualityReport component**
@@ -3821,6 +3858,7 @@ git commit -m "feat: add QualityReport component with score bars and fact-check 
 ### Task 31: Score Components (ScoreBar, ScoreGrid, DigitCounter)
 
 **Files:**
+
 - Create: `frontend/src/components/scores/score-bar.tsx`
 - Create: `frontend/src/components/scores/score-grid.tsx`
 - Create: `frontend/src/components/scores/digit-counter.tsx`
@@ -3937,6 +3975,7 @@ git commit -m "feat: add score components (DigitCounter, ScoreGrid) with animati
 ### Task 32: Panel-Based Workspace Layout
 
 **Files:**
+
 - Create: `frontend/src/components/workspace/panel-layout.tsx`
 
 - [ ] **Step 1: Create PanelLayout component**
@@ -4022,6 +4061,7 @@ git commit -m "feat: add PanelLayout with resizable panels for workspace"
 ### Task 33: Inline Editing Components
 
 **Files:**
+
 - Create: `frontend/src/components/inline-edit/inline-editable.tsx`
 - Create: `frontend/src/components/inline-edit/inline-tag-editor.tsx`
 
@@ -4203,6 +4243,7 @@ git commit -m "feat: add InlineEditable and InlineTagEditor components"
 ### Task 34: Fact-Check Badge Component
 
 **Files:**
+
 - Create: `frontend/src/components/workspace/fact-check-badge.tsx`
 
 - [ ] **Step 1: Create FactCheckBadge**
@@ -4272,6 +4313,7 @@ Tier 2 adds agent pipelines to ATS Scanner, Interview Simulator (text only), and
 ### Task 35: ATS Scanner Agent Pipeline
 
 **Files:**
+
 - Create: `ai_engine/agents/pipelines.py` (add `ats_scanner_pipeline`)
 - Modify: `backend/app/services/ats.py` (wire pipeline)
 - Modify: `backend/app/api/routes/ats.py` (standardized response + input validation)
@@ -4319,6 +4361,7 @@ git commit -m "feat: add ATS Scanner agent pipeline with input validation"
 ### Task 36: Interview Simulator Agent Pipeline (Text Only)
 
 **Files:**
+
 - Add to `ai_engine/agents/pipelines.py`
 - Modify: `backend/app/services/interview.py`
 - Modify: `backend/app/api/routes/interview.py`
@@ -4385,6 +4428,7 @@ git commit -m "feat: add Interview Simulator agent pipeline (text only) with ses
 ### Task 37: Career Consultant Agent Pipeline
 
 **Files:**
+
 - Add to `ai_engine/agents/pipelines.py`
 - Modify: `backend/app/services/roadmap.py`
 
@@ -4433,6 +4477,7 @@ git commit -m "feat: add Career Consultant agent pipeline with milestone validat
 ### Task 38: Database — Tier 2 CHECK Constraints
 
 **Files:**
+
 - Create: `supabase/migrations/20260316000000_tier2_constraints.sql`
 
 - [ ] **Step 1: Write migration**
@@ -4466,6 +4511,7 @@ git commit -m "feat: add CHECK constraints for ATS and interview enums"
 ### Task 39: A/B Doc Lab — Three-Drafter Variant Pipeline
 
 **Files:**
+
 - Add to `ai_engine/agents/pipelines.py`
 
 - [ ] **Step 1: Add ab_lab_pipeline**
@@ -4510,6 +4556,7 @@ git commit -m "feat: add A/B Doc Lab pipeline with tone constants"
 ### Task 40: Salary Coach + Learning Pipelines
 
 **Files:**
+
 - Add to `ai_engine/agents/pipelines.py`
 
 - [ ] **Step 1: Add salary and learning pipelines**
@@ -4544,7 +4591,7 @@ def learning_pipeline(
     )
 ```
 
-- [ ] **Step 2: Update agents __init__.py with all new pipelines**
+- [ ] **Step 2: Update agents **init**.py with all new pipelines**
 
 Add the new pipeline exports to `ai_engine/agents/__init__.py`.
 
@@ -4560,6 +4607,7 @@ git commit -m "feat: add Salary Coach and Learning pipelines"
 ### Task 41: Database — Tier 3 Constraints + Indexes
 
 **Files:**
+
 - Create: `supabase/migrations/20260316100000_tier3_and_indexes.sql`
 
 - [ ] **Step 1: Write migration**
@@ -4601,6 +4649,7 @@ git commit -m "feat: add Tier 3 constraints, performance indexes, and realtime p
 ### Task 42: Frontend Type Safety — Replace Record<string, any>
 
 **Files:**
+
 - Modify: `frontend/src/types/index.ts`
 
 - [ ] **Step 1: Replace Record<string, any> types with strict interfaces**
@@ -4679,6 +4728,7 @@ git commit -m "fix: replace Record<string, any> with strict interfaces, add agen
 ### Task 43: Integration Test Suite
 
 **Files:**
+
 - Create: `backend/tests/integration/test_agent_pipelines.py`
 
 - [ ] **Step 1: Create integration test with mock AIClient**
@@ -4779,6 +4829,7 @@ git commit -m "test: add integration test for CV generation agent pipeline"
 ### Task 44: CI/CD GitHub Actions Workflow
 
 **Files:**
+
 - Create: `.github/workflows/ci.yml`
 
 - [ ] **Step 1: Create CI workflow**

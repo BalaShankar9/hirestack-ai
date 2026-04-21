@@ -69,7 +69,7 @@ export function VariantPicker({ title, variants, onLock, disabled = false }: Var
                   : "border-border/60 hover:border-primary/60 hover:bg-accent/30",
                 busyKey && !isBusy ? "opacity-60" : "",
               ].join(" ")}
-              aria-pressed={isLocked}
+              aria-pressed={isLocked ? "true" : "false"}
             >
               <div className="mb-1 flex w-full items-center justify-between gap-2">
                 <span className="font-semibold capitalize">{label}</span>
