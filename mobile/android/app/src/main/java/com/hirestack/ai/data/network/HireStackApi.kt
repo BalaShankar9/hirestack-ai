@@ -64,4 +64,20 @@ interface HireStackApi {
 
     @GET("documents/library/{id}")
     suspend fun getDocument(@Path("id") id: String): DocumentLibraryItemResponse
+
+    // Candidates (recruiter pipeline)
+    @GET("candidates")
+    suspend fun listCandidates(
+        @Query("stage") stage: String? = null,
+    ): List<Candidate>
+
+    @GET("candidates/{id}")
+    suspend fun getCandidate(@Path("id") id: String): Candidate
+
+    // Interview Coach
+    @GET("interview/sessions")
+    suspend fun listInterviewSessions(): List<InterviewSession>
+
+    @GET("interview/sessions/{id}")
+    suspend fun getInterviewSession(@Path("id") id: String): InterviewSession
 }

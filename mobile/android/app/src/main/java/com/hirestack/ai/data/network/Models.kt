@@ -176,3 +176,63 @@ data class DocumentLibraryItem(
 data class DocumentLibraryItemResponse(
     val document: DocumentLibraryItem? = null,
 )
+
+// ---- Tier 4: Candidates (pipeline) + Interview Coach ----
+
+/**
+ * Mirrors a row from `/api/candidates` (recruiter / org-scoped).
+ */
+@JsonClass(generateAdapter = true)
+data class Candidate(
+    val id: String,
+    val org_id: String? = null,
+    val name: String,
+    val email: String? = null,
+    val phone: String? = null,
+    val location: String? = null,
+    val client_company: String? = null,
+    val pipeline_stage: String? = null,
+    val tags: List<String> = emptyList(),
+    val notes: String? = null,
+    val assigned_recruiter: String? = null,
+    val status: String? = null,
+    val created_at: String? = null,
+    val updated_at: String? = null,
+)
+
+/**
+ * Mirrors a row from `/api/interview/sessions`.
+ */
+@JsonClass(generateAdapter = true)
+data class InterviewSession(
+    val id: String,
+    val user_id: String? = null,
+    val job_title: String? = null,
+    val company: String? = null,
+    val difficulty: String? = null,
+    val interview_type: String? = null,
+    val status: String? = null,
+    val question_count: Int? = null,
+    val average_score: Double? = null,
+    val overall_score: Double? = null,
+    val questions: List<InterviewQuestion> = emptyList(),
+    val answers: List<InterviewAnswer> = emptyList(),
+    val created_at: String? = null,
+    val expires_at: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class InterviewQuestion(
+    val id: String? = null,
+    val question: String? = null,
+    val category: String? = null,
+    val difficulty: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class InterviewAnswer(
+    val question_id: String? = null,
+    val answer_text: String? = null,
+    val score: Double? = null,
+    val feedback: String? = null,
+)

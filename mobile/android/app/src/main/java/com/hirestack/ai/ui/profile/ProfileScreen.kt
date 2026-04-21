@@ -21,6 +21,8 @@ fun ProfileScreen(
     onOpenProfiles: () -> Unit,
     onOpenAts: () -> Unit,
     onOpenDocs: () -> Unit,
+    onOpenCandidates: () -> Unit,
+    onOpenInterviews: () -> Unit,
 ) {
     val state by vm.state.collectAsState()
 
@@ -68,6 +70,10 @@ fun ProfileScreen(
         NavRow("ATS Scanner", "Score documents against any JD", onOpenAts)
         Spacer(Modifier.height(8.dp))
         NavRow("Document library", "Benchmark, fixed and tailored docs", onOpenDocs)
+        Spacer(Modifier.height(8.dp))
+        NavRow("Candidates", "Recruiter pipeline (requires org)", onOpenCandidates)
+        Spacer(Modifier.height(8.dp))
+        NavRow("Interview Coach", "Practice sessions with feedback", onOpenInterviews)
 
         Spacer(Modifier.height(28.dp))
         OutlinedButton(

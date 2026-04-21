@@ -25,8 +25,11 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.hirestack.ai.ui.ats.AtsScreen
 import com.hirestack.ai.ui.auth.AuthViewModel
+import com.hirestack.ai.ui.candidates.CandidatesScreen
 import com.hirestack.ai.ui.dashboard.DashboardScreen
 import com.hirestack.ai.ui.docs.DocsScreen
+import com.hirestack.ai.ui.interview.InterviewDetailScreen
+import com.hirestack.ai.ui.interview.InterviewListScreen
 import com.hirestack.ai.ui.jobs.AddJobScreen
 import com.hirestack.ai.ui.jobs.JobBoardScreen
 import com.hirestack.ai.ui.jobs.JobDetailScreen
@@ -42,8 +45,12 @@ object MainRoutes {
     const val PROFILES = "main/more/profiles"
     const val ATS = "main/more/ats"
     const val DOCS = "main/more/docs"
+    const val CANDIDATES = "main/more/candidates"
+    const val INTERVIEWS = "main/more/interviews"
+    const val INTERVIEW_DETAIL = "main/more/interviews/{sessionId}"
 
     fun jobDetail(id: String) = "main/jobs/$id"
+    fun interviewDetail(id: String) = "main/more/interviews/$id"
 }
 
 private data class TabSpec(val route: String, val label: String, val icon: ImageVector)
@@ -115,6 +122,8 @@ fun MainShell(
                     onOpenProfiles = { nav.navigate(MainRoutes.PROFILES) },
                     onOpenAts = { nav.navigate(MainRoutes.ATS) },
                     onOpenDocs = { nav.navigate(MainRoutes.DOCS) },
+                    onOpenCandidates = { nav.navigate(MainRoutes.CANDIDATES) },
+                    onOpenInterviews = { nav.navigate(MainRoutes.INTERVIEWS) },
                 )
             }
             composable(
@@ -145,6 +154,21 @@ fun MainShell(
             }
             composable(MainRoutes.DOCS) {
                 DocsScreen(onBack = { nav.popBackStack() })
+            }
+            composable(MainRoutes.CANDIDATES) {
+                CandidatesScreen(onBack = { nav.popBackStack() })
+            }
+            composable(MainRoutes.INTERVIEWS) {
+                InterviewListScreen(
+                    onBack = { nav.popBackStack() },
+                    onSessionClick = { id -> nav.navigate(MainRoutes.interviewDetail(id)) },
+                )
+            }
+            composable(
+                route = MainRoutes.INTERVIEW_DETAIL,
+                arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
+            ) {
+                InterviewDetailScreen(onBack = { nav.popBackStack() })
             }
         }
     }
