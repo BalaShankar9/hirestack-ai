@@ -839,6 +839,87 @@ class DocumentGeneratorChain:
             logger.warning("generate_tailored_cv.failed", error=str(exc)[:200])
             return ""
 
+    async def generate_tailored_cv_variants(
+        self,
+        user_profile: Dict[str, Any],
+        job_title: str,
+        company: str,
+        jd_text: str,
+        gap_analysis: Dict[str, Any],
+        resume_text: str = "",
+        company_intel: str = "",
+        variants: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Phase D.2 — generate multiple tailored-CV variants in parallel.
+
+        Mirrors generate_tailored_cv but produces N stylistic variants
+        from the same TAILORED_CV_PROMPT base + a short style nudge.
+        Returns ``[{variant, label, content}, ...]``.  Per-variant
+        try/except so one bad variant doesn't kill the others.
+        """
+        import asyncio
+        import json
+
+        variant_keys = variants or list(self.CV_VARIANT_STYLES.keys())
+        variant_keys = [v for v in variant_keys if v in self.CV_VARIANT_STYLES]
+        if not variant_keys:
+            return []
+
+        compatibility = gap_analysis.get("compatibility_score", 50)
+        skill_gaps = gap_analysis.get("skill_gaps", [])
+        strengths = gap_analysis.get("strengths", [])
+        key_gaps_str = ", ".join(
+            g.get("skill", "") for g in skill_gaps[:10] if isinstance(g, dict)
+        ) or "None identified"
+        strengths_str = ", ".join(
+            s.get("area", "") for s in strengths[:10] if isinstance(s, dict)
+        ) or "Strong overall profile"
+        company_intel_section = (
+            f"\n═══════════════════════════════════════\n"
+            f"COMPANY INTELLIGENCE:\n"
+            f"═══════════════════════════════════════\n"
+            f"{company_intel}\n"
+            if company_intel else ""
+        )
+
+        base_prompt = TAILORED_CV_PROMPT.format(
+            job_title=job_title,
+            company=company,
+            jd_text=(jd_text or "")[:4000],
+            user_profile=json.dumps(user_profile, indent=2)[:4000],
+            resume_text=(resume_text or "No resume text provided")[:3000],
+            compatibility=compatibility,
+            key_gaps=key_gaps_str,
+            strengths=strengths_str,
+            company_intel_section=company_intel_section,
+        )
+
+        async def _run_variant(key: str) -> Dict[str, Any]:
+            style = self.CV_VARIANT_STYLES[key]
+            try:
+                content = await self.ai_client.complete(
+                    prompt=base_prompt + "\n\n" + style["nudge"],
+                    system=TAILORED_CV_SYSTEM,
+                    temperature=0.55 if key == "concise" else 0.7,
+                    max_tokens=6000,
+                    task_type="drafting",
+                )
+            except Exception as exc:
+                logger.warning(
+                    "generate_tailored_cv_variant.failed",
+                    variant=key,
+                    error=str(exc)[:200],
+                )
+                content = ""
+            return {
+                "variant": key,
+                "label": style["label"],
+                "content": content or "",
+            }
+
+        results = await asyncio.gather(*[_run_variant(k) for k in variant_keys])
+        return list(results)
+
     async def generate_tailored_cover_letter(
         self,
         user_profile: Dict[str, Any],

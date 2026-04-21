@@ -492,6 +492,14 @@ async def _persist_generation_result_to_application(
     if "cv" in requested and result.get("cvHtml"):
         patch["cv_html"] = result["cvHtml"]
 
+    # Phase D.2: persist multi-variant CV bundle into cv_versions JSONB
+    # column.  Variants share the same generated_at; one is `locked: True`
+    # by convention (the canonical CV that's also in cv_html).  The lock
+    # endpoint can flip locks and update cv_html accordingly.
+    _cv_variants_out = result.get("cvVariants")
+    if isinstance(_cv_variants_out, list) and _cv_variants_out:
+        patch["cv_versions"] = _cv_variants_out
+
     if "coverLetter" in requested and result.get("coverLetterHtml"):
         patch["cover_letter_html"] = result["coverLetterHtml"]
 
@@ -1695,6 +1703,56 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             logger.error("job_stream.roadmap_failed", error=str(roadmap))
             roadmap = {}
 
+        # ── Phase D.2: produce an alternate CV variant ──────────────────
+        # The Atlas pipeline above produced the canonical CV (treated as
+        # the "concise" default).  Spin one extra LLM call to produce a
+        # narrative alternate so the user has a real choice.  Skipped on
+        # primary failure — no point alternating empty content.
+        cv_variants: List[Dict[str, Any]] = []
+        if isinstance(cv_html, str) and cv_html.strip():
+            from datetime import datetime as _dt_d2
+            _generated_at = _dt_d2.utcnow().isoformat() + "Z"
+            cv_variants.append({
+                "variant": "concise",
+                "label": "Concise",
+                "content": cv_html,
+                "locked": True,
+                "generated_at": _generated_at,
+            })
+            try:
+                _alt_doc_chain = DocumentGeneratorChain(ai)
+                _alt_intel = _build_company_intel_summary(company_intel) if company_intel else ""
+                _alt_results = await _alt_doc_chain.generate_tailored_cv_variants(
+                    user_profile=user_profile,
+                    job_title=job_title,
+                    company=company_str,
+                    jd_text=jd_text_val,
+                    gap_analysis=gap_analysis,
+                    resume_text=resume_text_val,
+                    company_intel=_alt_intel,
+                    variants=["narrative"],
+                )
+                for _v in _alt_results:
+                    if not isinstance(_v, dict):
+                        continue
+                    if not (_v.get("content") or "").strip():
+                        continue
+                    cv_variants.append({
+                        **_v,
+                        "locked": False,
+                        "generated_at": _generated_at,
+                    })
+                if len(cv_variants) > 1:
+                    await emit_detail(
+                        "quill",
+                        f"Generated {len(cv_variants)} CV variants for you to choose from.",
+                        "completed",
+                        "cv_variants",
+                        metadata={"variants": [v["variant"] for v in cv_variants]},
+                    )
+            except Exception as _alt_err:
+                logger.warning("cv_variant_alt.failed", error=str(_alt_err)[:200])
+
         await emit_detail("quill", "Document architecture complete for the CV, cover letter, and learning plan.", "completed", "documents")
         await emit_progress("documents_done", 4, 72, "Quill finished the core application documents ✓")
         if await check_cancel():
@@ -1803,6 +1861,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             company_intel=company_intel if isinstance(company_intel, dict) else None,
             company_name=company_name or "",
             jd_text=jd_text or "",
+            cv_variants=cv_variants,
         )
 
         # ── Attach benchmark document set (CV + Cover Letter + Personal Statement) ──

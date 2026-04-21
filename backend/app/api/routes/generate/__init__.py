@@ -10,6 +10,7 @@ from .planned import router as planned_router
 from .stream import router as stream_router
 from .jobs import router as jobs_router
 from .document import router as document_router
+from .cv_variants import router as cv_variants_router
 
 router = APIRouter()
 router.include_router(sync_router)
@@ -17,6 +18,7 @@ router.include_router(planned_router)
 router.include_router(stream_router)
 router.include_router(jobs_router)
 router.include_router(document_router)
+router.include_router(cv_variants_router)
 
 # ── Re-exports for backward compatibility ──
 # main.py imports these

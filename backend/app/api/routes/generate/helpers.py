@@ -747,6 +747,7 @@ def _format_response(
     company_intel: Optional[Dict[str, Any]] = None,
     company_name: str = "",
     jd_text: str = "",
+    cv_variants: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Transform chain outputs into the frontend's expected data shapes."""
 
@@ -946,6 +947,11 @@ def _format_response(
         "companyIntel": company_intel_out,
         "atlas": atlas_diagnostics or {},
         "cvHtml": _sanitize_output_html(cv_html),
+        "cvVariants": [
+            {**v, "content": _sanitize_output_html(v.get("content", ""))}
+            for v in (cv_variants or [])
+            if isinstance(v, dict)
+        ],
         "coverLetterHtml": _sanitize_output_html(cl_html),
         "personalStatementHtml": _sanitize_output_html(ps_html),
         "portfolioHtml": _sanitize_output_html(portfolio_html),
