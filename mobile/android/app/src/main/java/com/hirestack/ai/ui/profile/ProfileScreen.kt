@@ -1,10 +1,14 @@
 package com.hirestack.ai.ui.profile
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -14,6 +18,9 @@ import com.hirestack.ai.ui.auth.AuthViewModel
 fun ProfileScreen(
     vm: AuthViewModel,
     onLoggedOut: () -> Unit,
+    onOpenProfiles: () -> Unit,
+    onOpenAts: () -> Unit,
+    onOpenDocs: () -> Unit,
 ) {
     val state by vm.state.collectAsState()
 
@@ -24,7 +31,7 @@ fun ProfileScreen(
             .padding(20.dp),
     ) {
         Text(
-            "Profile",
+            "More",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
         )
@@ -50,25 +57,17 @@ fun ProfileScreen(
 
         Spacer(Modifier.height(20.dp))
         Text(
-            "Coming next",
+            "Workspace",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.height(8.dp))
-        listOf(
-            "Tier 3 — Resume profiles, ATS scanner, document library",
-            "Tier 4 — Pipeline, candidates, interview coach",
-            "Tier 5 — Career analytics, learning, salary",
-            "Tier 6 — Nexus, variants, knowledge",
-            "Tier 7 — Polish + signed APK",
-        ).forEach {
-            Text(
-                "• $it",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 2.dp),
-            )
-        }
+
+        NavRow("Resume profiles", "Manage parsed resumes & primary profile", onOpenProfiles)
+        Spacer(Modifier.height(8.dp))
+        NavRow("ATS Scanner", "Score documents against any JD", onOpenAts)
+        Spacer(Modifier.height(8.dp))
+        NavRow("Document library", "Benchmark, fixed and tailored docs", onOpenDocs)
 
         Spacer(Modifier.height(28.dp))
         OutlinedButton(
@@ -76,6 +75,33 @@ fun ProfileScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text("Sign out")
+        }
+    }
+}
+
+@Composable
+private fun NavRow(title: String, subtitle: String, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

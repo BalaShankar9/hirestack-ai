@@ -3,7 +3,7 @@ package com.hirestack.ai.ui
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -23,19 +23,25 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.hirestack.ai.ui.ats.AtsScreen
 import com.hirestack.ai.ui.auth.AuthViewModel
 import com.hirestack.ai.ui.dashboard.DashboardScreen
+import com.hirestack.ai.ui.docs.DocsScreen
 import com.hirestack.ai.ui.jobs.AddJobScreen
 import com.hirestack.ai.ui.jobs.JobBoardScreen
 import com.hirestack.ai.ui.jobs.JobDetailScreen
 import com.hirestack.ai.ui.profile.ProfileScreen
+import com.hirestack.ai.ui.profiles.ProfilesScreen
 
 object MainRoutes {
     const val DASHBOARD = "main/dashboard"
     const val JOBS = "main/jobs"
-    const val PROFILE = "main/profile"
+    const val MORE = "main/more"
     const val JOB_DETAIL = "main/jobs/{jobId}"
     const val ADD_JOB = "main/jobs/new"
+    const val PROFILES = "main/more/profiles"
+    const val ATS = "main/more/ats"
+    const val DOCS = "main/more/docs"
 
     fun jobDetail(id: String) = "main/jobs/$id"
 }
@@ -45,7 +51,7 @@ private data class TabSpec(val route: String, val label: String, val icon: Image
 private val tabs = listOf(
     TabSpec(MainRoutes.DASHBOARD, "Dashboard", Icons.Default.Dashboard),
     TabSpec(MainRoutes.JOBS, "Jobs", Icons.Default.Work),
-    TabSpec(MainRoutes.PROFILE, "Profile", Icons.Default.Person),
+    TabSpec(MainRoutes.MORE, "More", Icons.Default.MoreHoriz),
 )
 
 @Composable
@@ -102,8 +108,14 @@ fun MainShell(
                     vm = vm,
                 )
             }
-            composable(MainRoutes.PROFILE) {
-                ProfileScreen(vm = authVm, onLoggedOut = onLoggedOut)
+            composable(MainRoutes.MORE) {
+                ProfileScreen(
+                    vm = authVm,
+                    onLoggedOut = onLoggedOut,
+                    onOpenProfiles = { nav.navigate(MainRoutes.PROFILES) },
+                    onOpenAts = { nav.navigate(MainRoutes.ATS) },
+                    onOpenDocs = { nav.navigate(MainRoutes.DOCS) },
+                )
             }
             composable(
                 route = MainRoutes.JOB_DETAIL,
@@ -124,6 +136,15 @@ fun MainShell(
                     },
                     vm = vm,
                 )
+            }
+            composable(MainRoutes.PROFILES) {
+                ProfilesScreen(onBack = { nav.popBackStack() })
+            }
+            composable(MainRoutes.ATS) {
+                AtsScreen(onBack = { nav.popBackStack() })
+            }
+            composable(MainRoutes.DOCS) {
+                DocsScreen(onBack = { nav.popBackStack() })
             }
         }
     }

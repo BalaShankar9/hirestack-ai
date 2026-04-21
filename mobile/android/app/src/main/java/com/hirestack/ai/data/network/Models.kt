@@ -88,3 +88,91 @@ data class CreateJobRequest(
     val description: String? = null,
     val source_url: String? = null,
 )
+
+// ---- Tier 3: Profiles + ATS + Document Library ----
+
+/**
+ * Mirrors a row from `/api/profile` (list) — backend returns the raw resume_profiles
+ * row which has many optional columns. We surface the most useful summary fields.
+ */
+@JsonClass(generateAdapter = true)
+data class Profile(
+    val id: String,
+    val user_id: String? = null,
+    val full_name: String? = null,
+    val email: String? = null,
+    val phone: String? = null,
+    val location: String? = null,
+    val headline: String? = null,
+    val summary: String? = null,
+    val is_primary: Boolean? = null,
+    val source_filename: String? = null,
+    val created_at: String? = null,
+    val updated_at: String? = null,
+)
+
+/**
+ * Body for `POST /api/ats/scan`.
+ */
+@JsonClass(generateAdapter = true)
+data class AtsScanRequest(
+    val document_content: String,
+    val jd_text: String,
+    val document_id: String? = null,
+    val job_id: String? = null,
+)
+
+/**
+ * Mirrors success_response wrapper used by `/api/ats/scan`.
+ */
+@JsonClass(generateAdapter = true)
+data class AtsScanResponse(
+    val success: Boolean = true,
+    val data: AtsScan? = null,
+)
+
+/**
+ * One ATS scan row — both `POST /scan` (inside `data`) and `GET /ats` items
+ * use this shape. All numeric fields are optional because some backends return
+ * them as ints, others as floats.
+ */
+@JsonClass(generateAdapter = true)
+data class AtsScan(
+    val id: String? = null,
+    val ats_score: Int = 0,
+    val keyword_match_rate: Double? = null,
+    val readability_score: Double? = null,
+    val format_score: Double? = null,
+    val matched_keywords: List<String> = emptyList(),
+    val missing_keywords: List<String> = emptyList(),
+    val document_id: String? = null,
+    val job_id: String? = null,
+    val created_at: String? = null,
+)
+
+/**
+ * Mirrors `GET /api/documents/library/all` response.
+ */
+@JsonClass(generateAdapter = true)
+data class DocumentLibraryListResponse(
+    val documents: List<DocumentLibraryItem> = emptyList(),
+)
+
+@JsonClass(generateAdapter = true)
+data class DocumentLibraryItem(
+    val id: String,
+    val doc_type: String? = null,
+    val doc_category: String? = null,
+    val label: String? = null,
+    val status: String? = null,
+    val version: Int? = null,
+    val source: String? = null,
+    val application_id: String? = null,
+    val created_at: String? = null,
+    val updated_at: String? = null,
+)
+
+@JsonClass(generateAdapter = true)
+data class DocumentLibraryItemResponse(
+    val document: DocumentLibraryItem? = null,
+)

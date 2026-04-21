@@ -16,7 +16,8 @@ and Supabase auth (`https://dkfmcnfhvbqwsgpkgoag.supabase.co`).
 | 0 | Skeleton + theme + nav + networking + Supabase auth client | ✅ shipped |
 | 1 | Login + signup + session restore + logout | ✅ shipped |
 | 2 | Dashboard + Job Board + Application detail | ✅ shipped |
-| 3 | Resume profiles + ATS Scanner + Document Library | not started |
+| 3 | Resume profiles + ATS Scanner + Document Library | ✅ shipped |
+| 4 | Pipeline + Candidates + Interview Coach | not started |
 | 4 | Pipeline + Candidates + Interview | not started |
 | 5 | Career Analytics + Learning + Salary Coach | not started |
 | 6 | Nexus + Variants + Evidence Mapper + Knowledge | not started |

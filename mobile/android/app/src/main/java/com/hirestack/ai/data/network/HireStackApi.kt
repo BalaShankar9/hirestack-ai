@@ -34,4 +34,34 @@ interface HireStackApi {
 
     @DELETE("jobs/{id}")
     suspend fun deleteJob(@Path("id") id: String)
+
+    // Profiles
+    @GET("profile")
+    suspend fun listProfiles(): List<Profile>
+
+    @GET("profile/{id}")
+    suspend fun getProfile(@Path("id") id: String): Profile
+
+    @DELETE("profile/{id}")
+    suspend fun deleteProfile(@Path("id") id: String)
+
+    @POST("profile/{id}/set-primary")
+    suspend fun setPrimaryProfile(@Path("id") id: String)
+
+    // ATS Scanner
+    @GET("ats")
+    suspend fun listAtsScans(): List<AtsScan>
+
+    @POST("ats/scan")
+    suspend fun runAtsScan(@Body body: AtsScanRequest): AtsScanResponse
+
+    // Document Library
+    @GET("documents/library/all")
+    suspend fun listDocuments(
+        @Query("limit") limit: Int = 100,
+        @Query("category") category: String? = null,
+    ): DocumentLibraryListResponse
+
+    @GET("documents/library/{id}")
+    suspend fun getDocument(@Path("id") id: String): DocumentLibraryItemResponse
 }
