@@ -314,6 +314,76 @@ class WorkflowEventStore:
         return result
 
 
+def make_workflow_event_emitter(
+    store: "WorkflowEventStore", state: WorkflowState
+) -> Callable[..., Any]:
+    """Bridge Phase A.2 ContextVar emitter events into ``WorkflowEventStore``.
+
+    Returns an ``async (event_name, payload) -> None`` callable suitable for
+    :func:`ai_engine.agent_events.event_emitter_scope`.  Every ``tool_call``,
+    ``tool_result``, ``cache_hit``, ``evidence_added`` and ``policy_decision``
+    fired anywhere inside the scope flows into ``generation_job_events`` with
+    the right ``stage`` / ``agent`` / ``latency_ms`` columns populated, so the
+    Live Agent Activity Dock surfaces them with no UI changes.
+
+    The bridge is best-effort: any persistence failure is swallowed by the
+    underlying store so a misbehaving event never breaks pipeline execution.
+    """
+
+    async def _emit(event_name: str, payload: dict[str, Any]) -> None:
+        payload = payload or {}
+        # Map enriched event payloads onto the persistence schema.
+        stage = (
+            payload.get("stage")
+            or payload.get("phase")
+            or state.current_stage
+        )
+        # Prefer agent label from the payload; fall back to the pipeline.
+        agent = payload.get("agent") or payload.get("sub_agent") or state.pipeline_name
+        # Compose a human-readable message for the dock when one isn't supplied.
+        if event_name == "tool_call":
+            tool = payload.get("tool", "")
+            message = f"Calling {tool}" if tool else "Calling tool"
+            status = "running"
+        elif event_name == "tool_result":
+            tool = payload.get("tool", "")
+            status = payload.get("status") or "completed"
+            cache_marker = " · cached" if payload.get("cache_hit") else ""
+            message = f"{tool}{cache_marker}" if tool else "Tool finished"
+        elif event_name == "cache_hit":
+            message = f"Cache hit on {payload.get('tool', '')}".rstrip()
+            status = "completed"
+        elif event_name == "evidence_added":
+            tier = payload.get("tier", "")
+            message = f"Evidence added ({tier})" if tier else "Evidence added"
+            status = "info"
+        elif event_name == "policy_decision":
+            message = payload.get("reason", payload.get("decision", "Policy decision"))
+            status = "info"
+        else:
+            message = payload.get("message", event_name)
+            status = payload.get("status")
+
+        # Inject agent + stage into the persisted payload so downstream
+        # readers (dock, replay) see consistent attribution.
+        merged = {**payload}
+        merged.setdefault("agent", agent)
+        if stage:
+            merged.setdefault("stage", stage)
+
+        await store.emit(
+            state,
+            event_name=event_name,
+            stage=stage,
+            status=status,
+            message=message,
+            payload=merged,
+            latency_ms=int(payload.get("latency_ms") or 0),
+        )
+
+    return _emit
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Stage executor — runs a single stage with timeout, retry, heartbeat
 # ═══════════════════════════════════════════════════════════════════════

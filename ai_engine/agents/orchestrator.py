@@ -49,6 +49,7 @@ from ai_engine.agents.workflow_runtime import (
     skip_stage,
     reconstruct_state,
     get_stage_artifacts,
+    make_workflow_event_emitter,
 )
 
 logger = structlog.get_logger("hirestack.agents.orchestrator")
@@ -389,6 +390,19 @@ class AgentPipeline:
                 },
             )
 
+        # Phase B.1: bridge enriched ContextVar events (tool_call,
+        # tool_result, cache_hit, evidence_added, policy_decision) into the
+        # generation_job_events table so the Live Agent Activity Dock surfaces
+        # them with no UI changes when an AgentPipeline is the runner.
+        _emitter_token = None
+        if store and wf_state:
+            try:
+                bridge = make_workflow_event_emitter(store, wf_state)
+                from ai_engine.agent_events import set_event_emitter
+                _emitter_token = set_event_emitter(bridge)
+            except Exception as exc:  # pragma: no cover
+                logger.debug("event_emitter_bind_failed", error=str(exc))
+
         async with self.lock_manager.acquire(user_id, self.name, pipeline_id):
             # Initialize variables used in finally for partial persistence
             critic_result = optimizer_result = fact_check_result = None
@@ -437,6 +451,15 @@ class AgentPipeline:
                             error=str(persist_err),
                         )
                 raise
+            finally:
+                # Phase B.1: tear down the bridged emitter so unrelated
+                # background work doesn't keep writing to this job's row.
+                if _emitter_token is not None:
+                    try:
+                        from ai_engine.agent_events import reset_event_emitter
+                        reset_event_emitter(_emitter_token)
+                    except Exception:  # pragma: no cover
+                        pass
 
     async def _execute_pipeline_stages(
         self,
