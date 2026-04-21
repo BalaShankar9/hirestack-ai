@@ -94,6 +94,53 @@ def _now_ms() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
+def _apply_preferred_lock(
+    variants: List[Dict[str, Any]],
+    scores: Optional[Dict[str, Any]],
+    document: str,
+) -> str:
+    """Phase D.5: re-lock the variant whose style has the highest
+    learned outcome score, then return its content for canonical use.
+
+    Returns the (possibly unchanged) canonical content.  No-op when
+    scores are missing, when the preferred variant is already locked,
+    or when the preferred variant isn't present in the list.
+    """
+    if not variants:
+        return ""
+    try:
+        from ai_engine.agents.style_outcome_scorer import preferred_style
+    except Exception:
+        return next(
+            (v.get("content", "") for v in variants if v.get("locked")),
+            variants[0].get("content", ""),
+        )
+    target = preferred_style(scores, document, fallback="")
+    if not target:
+        return next(
+            (v.get("content", "") for v in variants if v.get("locked")),
+            variants[0].get("content", ""),
+        )
+    has_target = any(
+        isinstance(v, dict) and v.get("variant") == target and (v.get("content") or "").strip()
+        for v in variants
+    )
+    if not has_target:
+        return next(
+            (v.get("content", "") for v in variants if v.get("locked")),
+            variants[0].get("content", ""),
+        )
+    new_canonical = ""
+    for v in variants:
+        if not isinstance(v, dict):
+            continue
+        is_target = v.get("variant") == target
+        v["locked"] = bool(is_target)
+        if is_target:
+            new_canonical = v.get("content", "") or ""
+    return new_canonical
+
+
 def _default_module_states() -> Dict[str, Dict[str, Any]]:
     return {
         "benchmark": {"state": "idle"},
@@ -1436,12 +1483,14 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         # to every downstream chain without touching any chain signatures.
         # Cold-start safe — synthesize_user_style_hints returns None when
         # there isn't enough memory signal to confidently personalize.
+        _style_scores: Optional[Dict[str, Any]] = None
         try:
             from ai_engine.agents.memory import AgentMemory as _AgentMemory
             from ai_engine.agents.user_style_hints import (
                 synthesize_user_style_hints as _synth_hints,
             )
-            _style_hints = await _synth_hints(_AgentMemory(sb), user_id)
+            _mem = _AgentMemory(sb)
+            _style_hints = await _synth_hints(_mem, user_id)
             if _style_hints and isinstance(user_profile, dict):
                 user_profile["style_preferences"] = {
                     k: v for k, v in _style_hints.items() if not k.startswith("_")
@@ -1454,6 +1503,18 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
                     "style_memory",
                     metadata={"hint_keys": list(user_profile["style_preferences"].keys())},
                 )
+            # Phase D.5: Recall outcome-driven style scores so we can
+            # bias which generated variant becomes the locked default.
+            try:
+                _score_rows = await _mem.arecall(user_id, "style_outcomes", limit=5)
+                for _r in _score_rows or []:
+                    if _r.get("memory_key") == "style_outcome_scores":
+                        _val = _r.get("memory_value")
+                        if isinstance(_val, dict):
+                            _style_scores = _val
+                            break
+            except Exception as _score_err:
+                logger.debug("style_outcome.recall_failed", error=str(_score_err)[:160])
         except Exception as _hint_err:
             logger.debug("user_style_hints.inject_failed", error=str(_hint_err)[:200])
 
@@ -1758,6 +1819,23 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             except Exception as _alt_err:
                 logger.warning("cv_variant_alt.failed", error=str(_alt_err)[:200])
 
+            # Phase D.5: bias canonical CV toward learned best style.
+            if len(cv_variants) > 1 and _style_scores:
+                _new_cv = _apply_preferred_lock(cv_variants, _style_scores, "cv")
+                _new_locked = next(
+                    (v.get("variant") for v in cv_variants if v.get("locked")),
+                    None,
+                )
+                if _new_cv and _new_cv != cv_html and _new_locked:
+                    cv_html = _new_cv
+                    await emit_detail(
+                        "quill",
+                        f"Locked the '{_new_locked}' CV variant — your highest-converting style.",
+                        "completed",
+                        "cv_preferred_lock",
+                        metadata={"locked": _new_locked, "source": "style_outcome_scores"},
+                    )
+
         await emit_detail("quill", "Document architecture complete for the CV, cover letter, and learning plan.", "completed", "documents")
         await emit_progress("documents_done", 4, 72, "Quill finished the core application documents ✓")
         if await check_cancel():
@@ -1864,6 +1942,23 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
                     )
             except Exception as _alt_ps_err:
                 logger.warning("ps_variant_alt.failed", error=str(_alt_ps_err)[:200])
+
+            # Phase D.5: bias canonical PS toward learned best style.
+            if len(ps_variants) > 1 and _style_scores:
+                _new_ps = _apply_preferred_lock(ps_variants, _style_scores, "ps")
+                _new_ps_locked = next(
+                    (v.get("variant") for v in ps_variants if v.get("locked")),
+                    None,
+                )
+                if _new_ps and _new_ps != ps_html and _new_ps_locked:
+                    ps_html = _new_ps
+                    await emit_detail(
+                        "forge",
+                        f"Locked the '{_new_ps_locked}' personal-statement variant — your highest-converting style.",
+                        "completed",
+                        "ps_preferred_lock",
+                        metadata={"locked": _new_ps_locked, "source": "style_outcome_scores"},
+                    )
 
         await emit_detail("forge", "Portfolio-related artifacts are ready.", "completed", "portfolio")
         await emit_progress("portfolio_done", 5, 86, "Forge finished the portfolio artifacts ✓")
