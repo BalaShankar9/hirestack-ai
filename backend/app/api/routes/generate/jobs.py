@@ -1739,6 +1739,39 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
 
         consultant = CareerConsultantChain(ai)
 
+        # Phase B.2: prefer career_roadmap_pipeline over the raw chain so
+        # the roadmap module also runs through the durable AgentPipeline.
+        # Falls back to consultant.generate_roadmap on import / runtime
+        # failure.  Both asyncio.gather call sites below use this helper.
+        async def _run_roadmap() -> Dict[str, Any]:
+            if _AGENT_PIPELINES_AVAILABLE:
+                try:
+                    from ai_engine.agents.pipelines import career_roadmap_pipeline
+                    pipe = career_roadmap_pipeline(
+                        ai_client=ai,
+                        on_stage_update=lambda ev: emit("agent_status", ev),
+                        db=sb,
+                        tables=TABLES,
+                        user_id=user_id,
+                    )
+                    rm_result = await pipe.execute({
+                        "user_id": user_id,
+                        "gap_analysis": gap_analysis,
+                        "user_profile": user_profile,
+                        "job_title": job_title,
+                        "company": company_str,
+                    })
+                    if rm_result and isinstance(rm_result.content, dict):
+                        return rm_result.content
+                except Exception as _rm_err:
+                    logger.warning(
+                        "career_roadmap.pipeline_failed_fallback",
+                        error=str(_rm_err)[:200],
+                    )
+            return await consultant.generate_roadmap(
+                gap_analysis, user_profile, job_title, company_str
+            )
+
         # ── v3: Use AgentPipeline with durable execution for documents ──
         _resume_stages = job.get("resume_from_stages") or {}
         _resume_from_legacy = job.get("resume_from_stage") or None
@@ -1785,7 +1818,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             cv_result_raw, cl_result_raw, roadmap = await asyncio.gather(
                 cv_pipe.execute(_ctx_for_pipeline("cv_generation")),
                 cl_pipe.execute(_ctx_for_pipeline("cover_letter")),
-                consultant.generate_roadmap(gap_analysis, user_profile, job_title, company_str),
+                _run_roadmap(),
                 return_exceptions=True,
             )
 
@@ -1827,7 +1860,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
                     gap_analysis=gap_analysis,
                     company_intel=company_intel_summary,
                 ),
-                consultant.generate_roadmap(gap_analysis, user_profile, job_title, company_str),
+                _run_roadmap(),
                 return_exceptions=True,
             )
 
