@@ -513,14 +513,14 @@ export default function DashboardPage() {
       {/* ── Main Grid ─────────────────────────────────────────── */}
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         {/* Left: Workspaces */}
-        <div className="space-y-4">
-          <div className="flex items-end justify-between">
-            <div>
-              <h2 className="text-lg font-semibold">Applications</h2>
+        <div className="space-y-4 min-w-0">
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold truncate">Applications</h2>
               <p className="text-xs text-muted-foreground">Your active application workspaces</p>
             </div>
             {topApps.length > 0 && (
-              <Button variant="outline" size="sm" className="gap-1.5 rounded-xl text-xs" onClick={() => router.push("/new")}>
+              <Button variant="outline" size="sm" className="gap-1.5 rounded-xl text-xs shrink-0" onClick={() => router.push("/new")}>
                 <Plus className="h-3 w-3" /> New
               </Button>
             )}
@@ -639,7 +639,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Right sidebar */}
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <TaskQueue tasks={openTasks.slice(0, 12)} onOpenWorkspace={(id) => router.push(`/applications/${id}`)}
             onToggle={async (t) => { try { await setTaskStatus(userId!, t.id, t.status === "done" ? "todo" : "done"); } catch {} }} compact />
 

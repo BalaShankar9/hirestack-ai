@@ -56,30 +56,32 @@ async function audit(page, route) {
       const s = window.getComputedStyle(el);
       if (s.position === "fixed" || s.position === "absolute") return;
       if (el.tagName === "HTML" || el.tagName === "BODY") return;
-      if (r.width > vw + 1 && r.right > vw + 1) {
+      if (r.width === 0 || r.height === 0) return;
+      // Flag any element whose right edge spills past the viewport.
+      // body{overflow-x:hidden} hides the scroll but does NOT prevent
+      // child elements from being clipped on real devices.
+      if (r.right > vw + 2) {
         out.push({
           tag: el.tagName.toLowerCase(),
           cls: (el.className || "").toString().slice(0, 100),
           w: Math.round(r.width),
           right: Math.round(r.right),
-          text: (el.textContent || "").trim().slice(0, 50),
+          text: (el.textContent || "").trim().slice(0, 60),
         });
       }
     });
-    return { scrollW: document.documentElement.scrollWidth, items: out.slice(0, 12) };
+    return { scrollW: document.documentElement.scrollWidth, items: out.slice(0, 15) };
   }, VW);
 
   const overflowed = overflow.scrollW > VW;
+  const clipped = overflow.items.length > 0;
   if (overflowed) console.log(`  ⚠ HORIZONTAL OVERFLOW: scrollW=${overflow.scrollW} (vw=${VW}, +${overflow.scrollW - VW}px)`);
-  else console.log(`  ✓ no horizontal overflow`);
+  if (clipped) console.log(`  ⚠ ${overflow.items.length} CLIPPED ELEMENT(S) past viewport edge`);
+  if (!overflowed && !clipped) console.log(`  ✓ clean`);
 
-  if (overflow.items.length === 0 && !overflowed) {
-    // skip detail
-  } else {
-    overflow.items.forEach((it) => {
-      console.log(`    <${it.tag}> w=${it.w} right=${it.right} :: ${it.cls.slice(0, 80)} :: "${it.text.slice(0, 40)}"`);
-    });
-  }
+  overflow.items.forEach((it) => {
+    console.log(`    <${it.tag}> right=${it.right} w=${it.w} :: ${it.cls.slice(0, 70)} :: "${it.text.slice(0, 50)}"`);
+  });
 
   const safe = (route.replace(/[^a-z0-9]+/gi, "_") || "root");
   await page.screenshot({ path: `output/mobile-audit/${safe}.png`, fullPage: true });

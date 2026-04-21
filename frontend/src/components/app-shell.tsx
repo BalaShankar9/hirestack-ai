@@ -561,8 +561,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         </header>
 
         {/* Page content */}
-        <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[1360px] px-3 py-4 sm:px-4 sm:py-6 lg:px-8">{children}</div>
+        <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="mx-auto max-w-[1360px] min-w-0 px-3 py-4 sm:px-4 sm:py-6 lg:px-8">{children}</div>
         </main>
       </div>
       <CommandPalette />

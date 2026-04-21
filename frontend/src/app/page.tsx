@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import {
   ArrowRight, Target, Sparkles, TrendingUp, Zap, Shield, BarChart3,
   CheckCircle2, FileText, Brain, Search, Users, Star, Globe, ChevronDown,
+  Menu, X,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -230,6 +231,7 @@ function FAQAccordion() {
 
 export default function HomePage() {
   const headerRef = useRef<HTMLElement>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const el = headerRef.current;
@@ -239,20 +241,30 @@ export default function HomePage() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Close mobile menu on route hash navigation
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onHash = () => setMobileMenuOpen(false);
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, [mobileMenuOpen]);
+
   return (
     <div className="min-h-screen bg-background">
       {/* ── Header ── */}
       <header ref={headerRef} className="fixed top-0 z-50 w-full border-b border-transparent bg-background elevation-on-scroll">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 shadow-glow-sm">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4">
+          <Link href="/" className="flex items-center gap-2.5 min-w-0">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 shadow-glow-sm shrink-0">
               <Sparkles className="h-4 w-4 text-white" />
             </div>
-            <span className="text-lg font-bold tracking-tight">
+            <span className="text-lg font-bold tracking-tight truncate">
               HireStack <span className="text-primary">AI</span>
             </span>
           </Link>
-          <div className="flex items-center gap-3">
+
+          {/* Desktop nav */}
+          <div className="hidden md:flex items-center gap-3">
             <Link href="/#how-it-works" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               How It Works
             </Link>
@@ -267,7 +279,57 @@ export default function HomePage() {
               Get Started <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
+
+          {/* Mobile actions */}
+          <div className="flex md:hidden items-center gap-1.5 shrink-0">
+            <ThemeToggle />
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen((v) => !v)}
+              aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={mobileMenuOpen}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-foreground hover:bg-muted/60 transition-colors"
+            >
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+          </div>
         </div>
+
+        {/* Mobile menu drawer */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <div className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-3">
+              <Link
+                href="/#how-it-works"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
+              >
+                How It Works
+              </Link>
+              <Link
+                href="/#features"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
+              >
+                Features
+              </Link>
+              <Link
+                href="/login"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
+              >
+                Sign In
+              </Link>
+              <Link
+                href="/login?mode=register&redirect=/new"
+                onClick={() => setMobileMenuOpen(false)}
+                className="mt-1 inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground btn-glow hover:shadow-glow-md transition-all hover:brightness-110"
+              >
+                Get Started <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* ── Hero ── */}
