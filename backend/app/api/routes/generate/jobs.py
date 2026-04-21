@@ -162,11 +162,71 @@ def _module_has_content(application_row: Dict[str, Any], module_key: str) -> boo
 async def _persist_application_patch(sb: Any, tables: Dict[str, str], application_id: str, patch: Dict[str, Any]) -> None:
     if not patch:
         return
-    await asyncio.to_thread(
-        lambda: sb.table(tables["applications"])
-        .update(patch)
-        .eq("id", application_id)
-        .execute()
+
+    # PGRST204 = "Could not find the '<col>' column of '<table>' in the
+    # schema cache" — happens when a migration hasn't been applied to
+    # production yet.  We do NOT want one missing column to throw away
+    # an entire generation run; the user has waited for this.  Strip the
+    # offending column and retry, logging loudly so the gap is visible.
+    #
+    # Cap retries so a malformed patch (every column missing) can't loop
+    # forever.  In practice production has at most one or two columns
+    # behind at any time.
+    max_retries = 8
+    working_patch = dict(patch)
+    dropped: list[str] = []
+
+    for _ in range(max_retries):
+        try:
+            await asyncio.to_thread(
+                lambda: sb.table(tables["applications"])
+                .update(working_patch)
+                .eq("id", application_id)
+                .execute()
+            )
+            if dropped:
+                logger.error(
+                    "application_patch_persisted_with_dropped_columns",
+                    application_id=application_id,
+                    dropped_columns=dropped,
+                    note="apply pending migrations to recover full persistence",
+                )
+            return
+        except Exception as exc:
+            err_text = str(exc)
+            # PostgREST schema-cache miss — extract the column name from
+            # the error message and drop it from the patch.
+            if "PGRST204" in err_text or "schema cache" in err_text.lower():
+                missing_col: Optional[str] = None
+                # Message shape: "Could not find the 'resume_html' column of 'applications' in the schema cache"
+                import re
+                m = re.search(r"the '([^']+)' column", err_text)
+                if m:
+                    missing_col = m.group(1)
+                if missing_col and missing_col in working_patch:
+                    working_patch.pop(missing_col, None)
+                    dropped.append(missing_col)
+                    logger.warning(
+                        "application_patch_dropping_missing_column",
+                        application_id=application_id,
+                        column=missing_col,
+                        remaining_keys=sorted(working_patch.keys()),
+                    )
+                    if not working_patch:
+                        logger.error(
+                            "application_patch_empty_after_drops",
+                            application_id=application_id,
+                            dropped_columns=dropped,
+                        )
+                        return
+                    continue
+            # Any other error, or PGRST204 we couldn't parse — re-raise.
+            raise
+
+    logger.error(
+        "application_patch_max_retries_exhausted",
+        application_id=application_id,
+        dropped_columns=dropped,
     )
 
 
@@ -186,7 +246,15 @@ async def _ensure_generation_job_schema_ready(sb: Any, tables: Dict[str, str]) -
         )
         await asyncio.to_thread(
             lambda: sb.table(tables["applications"])
-            .select("id,discovered_documents,generated_documents,benchmark_documents,document_strategy,company_intel")
+            .select(
+                # All columns the job runner will write back.  If any are
+                # missing, fail fast with a clear "apply migrations"
+                # message instead of running a 60s pipeline and then
+                # losing data on persistence.
+                "id,resume_html,personal_statement_html,portfolio_html,"
+                "discovered_documents,generated_documents,benchmark_documents,"
+                "document_strategy,company_intel,validation,scorecard,scores"
+            )
             .limit(1)
             .execute()
         )
