@@ -196,18 +196,39 @@ class DatabaseSink(EventSink):
             "status": event.status,
             **event.data,
         }
-        # Persist event row
+        # Persist event row.  Populate the dedicated top-level columns
+        # (message, agent_name, stage, status, latency_ms) in addition to
+        # stuffing them inside `payload`.  Without this the live agent dock
+        # only sees bare event names like "progress" / "tool_call" because
+        # the frontend mapper reads from the top-level columns.
+        agent_for_row = (
+            (event.data.get("agent") if isinstance(event.data.get("agent"), str) else None)
+            or self._phase_to_agent(event.phase or "")
+            or None
+        )
+        row = {
+            "job_id": self._job_id,
+            "user_id": self._user_id,
+            "application_id": self._application_id,
+            "sequence_no": self._sequence_no,
+            "event_name": event.event_type,
+            "message": (event.message or "")[:2000],
+            "payload": payload,
+        }
+        if agent_for_row:
+            row["agent_name"] = agent_for_row
+        if event.stage:
+            row["stage"] = event.stage
+        elif event.phase:
+            row["stage"] = event.phase
+        if event.status:
+            row["status"] = event.status
+        if event.latency_ms is not None:
+            row["latency_ms"] = int(event.latency_ms)
         try:
             await asyncio.to_thread(
                 lambda: self._db.table(self._tables["generation_job_events"])
-                .insert({
-                    "job_id": self._job_id,
-                    "user_id": self._user_id,
-                    "application_id": self._application_id,
-                    "sequence_no": self._sequence_no,
-                    "event_name": event.event_type,
-                    "payload": payload,
-                })
+                .insert(row)
                 .execute()
             )
         except Exception as e:

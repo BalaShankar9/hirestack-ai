@@ -164,6 +164,17 @@ export function mapGenerationJobRow(row: any): GenerationJobDoc {
 }
 
 export function mapGenerationJobEventRow(row: any): GenerationJobEventDoc {
+  // The backend's DBSink currently writes most rich fields (message, status,
+  // phase/stage, latency_ms, agent name) inside the JSONB `payload` column
+  // rather than into the dedicated top-level columns.  Fall back to payload
+  // values so the live agent dock shows real, descriptive log lines instead
+  // of bare event-name strings like "tool_call" / "progress".
+  const payload = (row.payload ?? {}) as Record<string, any>;
+  const fallbackMessage =
+    (typeof payload.message === "string" && payload.message.trim()) ||
+    (typeof payload.detail === "string" && payload.detail.trim()) ||
+    (typeof payload.text === "string" && payload.text.trim()) ||
+    "";
   return {
     id: String(row.id),
     jobId: row.job_id,
@@ -171,13 +182,18 @@ export function mapGenerationJobEventRow(row: any): GenerationJobEventDoc {
     applicationId: row.application_id,
     sequenceNo: typeof row.sequence_no === "number" ? row.sequence_no : 0,
     eventName: row.event_name ?? "progress",
-    agentName: row.agent_name ?? undefined,
-    stage: row.stage ?? undefined,
-    status: row.status ?? undefined,
-    message: row.message ?? "",
-    source: row.source ?? undefined,
-    url: row.url ?? undefined,
-    latencyMs: typeof row.latency_ms === "number" ? row.latency_ms : undefined,
+    agentName: row.agent_name ?? (typeof payload.agent === "string" ? payload.agent : undefined),
+    stage: row.stage ?? (typeof payload.phase === "string" ? payload.phase : (typeof payload.stage === "string" ? payload.stage : undefined)),
+    status: row.status ?? (typeof payload.status === "string" ? payload.status : undefined),
+    message: (row.message && String(row.message).trim()) || fallbackMessage,
+    source: row.source ?? (typeof payload.source === "string" ? payload.source : undefined),
+    url: row.url ?? (typeof payload.url === "string" ? payload.url : undefined),
+    latencyMs:
+      typeof row.latency_ms === "number"
+        ? row.latency_ms
+        : typeof payload.latency_ms === "number"
+        ? payload.latency_ms
+        : undefined,
     payload: row.payload ?? undefined,
     createdAt: ts(row.created_at),
   };

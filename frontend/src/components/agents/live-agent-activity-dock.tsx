@@ -97,7 +97,7 @@ function deriveAgentSummaries(events: GenerationJobEventDoc[]) {
   const summary: Record<string, { latest: string; agentKey: keyof typeof AGENT_REGISTRY; ts: number }> = {};
   for (const ev of events) {
     const agentKey = eventToAgent(ev);
-    const line = ev.message?.trim() || "";
+    const line = humanEventLabel(ev);
     if (!line) continue;
     const ts = typeof ev.createdAt === "number" ? ev.createdAt : 0;
     const prev = summary[agentKey];
@@ -169,6 +169,42 @@ function enrichedEventDetail(ev: GenerationJobEventDoc): string {
     default:
       return "";
   }
+}
+
+/** Humanise an event_name into a sentence so the feed is never empty.
+ *  Used as a fallback when ev.message is blank. */
+const EVENT_NAME_LABELS: Record<string, string> = {
+  progress: "Working…",
+  agent_status: "Agent status update",
+  tool_call: "Calling tool",
+  tool_result: "Tool finished",
+  cache_hit: "Cache hit",
+  evidence_added: "Evidence added",
+  policy_decision: "Policy decision",
+  "orchestration.plan_created": "Plan created",
+  pipeline_started: "Pipeline started",
+  pipeline_completed: "Pipeline completed",
+  pipeline_failed: "Pipeline failed",
+  agent_started: "Agent started",
+  agent_completed: "Agent completed",
+  agent_failed: "Agent failed",
+  detail: "Detail",
+};
+
+function humanEventLabel(ev: GenerationJobEventDoc): string {
+  if (ev.message && ev.message.trim()) return ev.message.trim();
+  const p = (ev.payload ?? {}) as Record<string, unknown>;
+  // Try common payload string fields the backend sometimes uses.
+  for (const k of ["message", "detail", "text", "summary", "description"]) {
+    const v = p[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  const named = ev.eventName && EVENT_NAME_LABELS[ev.eventName];
+  if (named) return named;
+  if (ev.eventName) {
+    return ev.eventName.replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  return "Working…";
 }
 
 /** ── Single-job event feed (expanded drawer body) ───────────────── */
@@ -255,7 +291,7 @@ function JobLiveFeed({ job }: { job: GenerationJobDoc }) {
                           eventTint && !ev.status && eventTint,
                         )}
                       >
-                        {ev.message || ev.eventName}
+                        {humanEventLabel(ev)}
                         {detail ? (
                           <span className="ml-1 text-muted-foreground/70">{detail}</span>
                         ) : null}
@@ -298,7 +334,39 @@ export function LiveAgentActivityDock() {
   const summary = useMemo(() => deriveAgentSummaries(headEvents), [headEvents]);
   const summaryAgents = Object.values(summary).slice(-3);
 
-  if (!userId || visibleJobs.length === 0 || !headJob) return null;
+  if (!userId) return null;
+
+  // If user dismissed all currently-active jobs, show a tiny "show" pill
+  // so they can bring the dock back without reloading the page.
+  const hiddenActive = activeJobs.filter((j) => dismissedJobIds.has(j.id));
+  if (visibleJobs.length === 0 || !headJob) {
+    if (hiddenActive.length === 0) return null;
+    return (
+      <div
+        className="pointer-events-none fixed bottom-3 right-3 sm:bottom-4 sm:right-4 z-40"
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+      >
+        <button
+          type="button"
+          onClick={() => setDismissedJobIds(new Set())}
+          className="pointer-events-auto group inline-flex items-center gap-2 rounded-full border border-border bg-background/90 backdrop-blur px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-lg ring-1 ring-primary/20 hover:text-foreground hover:border-primary/40 hover:ring-primary/40 transition-all"
+          aria-label={`Show ${hiddenActive.length} active agent job${hiddenActive.length === 1 ? "" : "s"}`}
+          title="Show live agent activity"
+        >
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+          </span>
+          Show agents
+          {hiddenActive.length > 1 ? (
+            <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary tabular-nums">
+              {hiddenActive.length}
+            </span>
+          ) : null}
+        </button>
+      </div>
+    );
+  }
 
   const hasMultiple = visibleJobs.length > 1;
 
