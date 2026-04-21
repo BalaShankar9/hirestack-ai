@@ -543,7 +543,7 @@ class IntelCoordinator:
             except Exception as e:
                 return label, {"results": [], "error": str(e)[:200]}
 
-        results = await asyncio.gather(*[_one(l, q) for l, q in queries], return_exceptions=False)
+        results = await asyncio.gather(*[_one(label, q) for label, q in queries], return_exceptions=False)
 
         evidence: list[dict] = []
         sources: list[str] = []
