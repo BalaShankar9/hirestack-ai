@@ -1870,6 +1870,51 @@ async def _run_generation_job_inner_runtime(job_id: str, user_id: str) -> None:
     )
     runtime = _PipelineRuntime(config=config, event_sink=sink)
 
+    # Phase A.3 / B.1.2: bridge enriched ContextVar events into the same
+    # generation_job_events table the dock listens to.  Without this, the
+    # runtime path emits only PipelineEvent rows (progress / detail) and
+    # all tool_call / tool_result / cache_hit / evidence_added /
+    # policy_decision events fired inside chains go to /dev/null.
+    from ai_engine.agent_events import set_event_emitter, reset_event_emitter
+
+    _runtime_event_seq = {"n": 0}
+
+    async def _runtime_emit(event_name: str, payload: Dict[str, Any]) -> None:
+        _runtime_event_seq["n"] += 1
+        try:
+            await _persist_generation_job_event(
+                sb, TABLES,
+                job_id=job_id, user_id=user_id, application_id=application_id,
+                sequence_no=_runtime_event_seq["n"] + 1_000_000,  # offset to avoid collision with sink seq
+                event_name=event_name, payload=payload,
+            )
+        except Exception as persist_err:
+            logger.debug(
+                "runtime_event_persist_failed",
+                event_name=event_name, error=str(persist_err)[:200],
+            )
+
+    _emitter_token = set_event_emitter(_runtime_emit)
+    try:
+        return await _run_generation_job_inner_runtime_body(
+            sb, job, app_data, application_id, requested_modules, runtime, job_id, user_id,
+        )
+    finally:
+        try:
+            reset_event_emitter(_emitter_token)
+        except Exception:
+            pass
+
+
+async def _run_generation_job_inner_runtime_body(
+    sb: Any, job: Dict[str, Any], app_data: Dict[str, Any],
+    application_id: str, requested_modules: List[str], runtime: Any,
+    job_id: str, user_id: str,
+) -> None:
+    """Inner runtime job body.  Split out so the outer wrapper can manage the
+    Phase A.2 emitter binding cleanly via try/finally."""
+    from app.core.database import TABLES
+
     # Mark job as running with full state
     await asyncio.to_thread(
         lambda: sb.table(TABLES["generation_jobs"])
