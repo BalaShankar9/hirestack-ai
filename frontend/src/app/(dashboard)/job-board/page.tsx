@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { sanitizeUrl } from "@/lib/sanitize";
 import { toast } from "@/hooks/use-toast";
+import { ProgressBar } from "@/components/ui/dynamic-style";
 import {
   Search, Loader2, Plus, ExternalLink, Star, ThumbsUp, ThumbsDown,
   Briefcase, MapPin, DollarSign, TrendingUp, Zap, ArrowRight,
@@ -34,7 +35,7 @@ function MatchGauge({ value }: { value: number }) {
     <div className="flex flex-col items-center gap-1">
       <div className={cn("text-2xl font-bold tabular-nums", color)}>{value}%</div>
       <div className="w-12 h-1 rounded-full bg-muted overflow-hidden">
-        <div className={cn("h-full rounded-full", bg)} style={{ width: `${value}%` }} />
+        <ProgressBar value={value} className={cn("h-full rounded-full", bg)} />
       </div>
       <span className="text-[9px] text-muted-foreground uppercase">Match</span>
     </div>

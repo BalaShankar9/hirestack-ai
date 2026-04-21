@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { SizedBox } from "@/components/ui/dynamic-style";
 
 interface ATSScorePanelProps {
   cvHtml: string;
@@ -21,7 +22,7 @@ function ScoreRing({ value, size = 100, label }: { value: number; size?: number;
 
   return (
     <div className="flex flex-col items-center gap-1">
-      <div className="relative" style={{ width: size, height: size }}>
+      <SizedBox width={size} height={size} className="relative">
         <svg width={size} height={size} className="-rotate-90">
           <circle cx={size / 2} cy={size / 2} r={r} strokeWidth={6} fill="none" className="stroke-muted" />
           <motion.circle
@@ -36,7 +37,7 @@ function ScoreRing({ value, size = 100, label }: { value: number; size?: number;
         <div className="absolute inset-0 flex items-center justify-center">
           <span className="text-xl font-bold tabular-nums">{value}</span>
         </div>
-      </div>
+      </SizedBox>
       <span className="text-[10px] text-muted-foreground font-medium">{label}</span>
     </div>
   );
