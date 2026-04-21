@@ -1,8 +1,6 @@
 """Phase C.2 — derive_style_signals unit tests."""
 from __future__ import annotations
 
-import pytest
-
 from ai_engine.agents.style_signal_deriver import derive_style_signals
 
 
