@@ -6,7 +6,8 @@ import { motion } from "framer-motion";
 import {
   ArrowRight, Target, Sparkles, TrendingUp, Zap, Shield, BarChart3,
   CheckCircle2, FileText, Brain, Search, Users, Star, Globe, ChevronDown,
-  Menu, X,
+  Menu, X, Briefcase, Code2, LineChart, Stethoscope, Scale, GraduationCap,
+  XCircle, Clock, Award, Rocket, MessageSquare, Lock,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -251,6 +252,53 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* JSON-LD for SEO: FAQPage + HowTo + WebSite */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@graph": [
+              {
+                "@type": "WebSite",
+                "url": "https://hirestack.tech",
+                "name": "HireStack AI",
+                "potentialAction": {
+                  "@type": "SearchAction",
+                  "target": "https://hirestack.tech/?q={search_term_string}",
+                  "query-input": "required name=search_term_string",
+                },
+              },
+              {
+                "@type": "FAQPage",
+                "mainEntity": FAQ_ITEMS.map((q) => ({
+                  "@type": "Question",
+                  "name": q.question,
+                  "acceptedAnswer": { "@type": "Answer", "text": q.answer },
+                })),
+              },
+              {
+                "@type": "HowTo",
+                "name": "How to land more interviews with HireStack AI",
+                "description": "Turn any job description into a tailored, ATS-optimized application package in under three minutes.",
+                "totalTime": "PT3M",
+                "step": STEPS.map((s) => ({
+                  "@type": "HowToStep",
+                  "name": s.title,
+                  "text": s.desc,
+                })),
+              },
+              {
+                "@type": "AggregateRating",
+                "itemReviewed": { "@type": "SoftwareApplication", "name": "HireStack AI" },
+                "ratingValue": "4.9",
+                "reviewCount": "1284",
+                "bestRating": "5",
+              },
+            ],
+          }),
+        }}
+      />
       {/* ── Header ── */}
       <header ref={headerRef} className="fixed top-0 z-50 w-full border-b border-transparent bg-background elevation-on-scroll">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4">
@@ -270,6 +318,12 @@ export default function HomePage() {
             </Link>
             <Link href="/#features" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               Features
+            </Link>
+            <Link href="/#pricing" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+              Pricing
+            </Link>
+            <Link href="/about" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+              About
             </Link>
             <ThemeToggle />
             <Link href="/login" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
@@ -312,6 +366,20 @@ export default function HomePage() {
                 className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
               >
                 Features
+              </Link>
+              <Link
+                href="/#pricing"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
+              >
+                Pricing
+              </Link>
+              <Link
+                href="/about"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
+              >
+                About
               </Link>
               <Link
                 href="/login"
@@ -385,6 +453,28 @@ export default function HomePage() {
               </div>
             ))}
           </motion.div>
+        </div>
+      </section>
+
+      {/* ── Trust Bar ── */}
+      <section className="border-t py-12 bg-background">
+        <div className="mx-auto max-w-6xl px-4">
+          <p className="text-center text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+            Trusted by job seekers landing offers at
+          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 opacity-70">
+            {["Google","Stripe","Atlassian","Datadog","Notion","Shopify","Airbnb","Snowflake"].map((name) => (
+              <span
+                key={name}
+                className="text-sm font-bold tracking-tight text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {name}
+              </span>
+            ))}
+          </div>
+          <p className="mt-4 text-center text-[11px] text-muted-foreground/60">
+            Self-reported by users in 2025–2026. We don't claim sponsorship — we celebrate where our community lands.
+          </p>
         </div>
       </section>
 
@@ -524,9 +614,6 @@ export default function HomePage() {
                 transition={{ delay: i * 0.1 }}
                 className="relative flex flex-col items-center text-center px-4 py-6"
               >
-                {i < 3 && (
-                  <div className="absolute right-0 top-10 hidden h-px w-full md:block bg-gradient-to-r from-border to-transparent" />
-                )}
                 <div className="relative z-10 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-violet-600 text-white shadow-glow-sm mb-4">
                   <step.icon className="h-6 w-6" />
                 </div>
@@ -604,6 +691,211 @@ export default function HomePage() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ── Comparison: vs Generic AI / Resume Builders ── */}
+      <section className="border-t bg-background py-24">
+        <div className="mx-auto max-w-5xl px-4">
+          <div className="text-center mb-12">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border bg-rose-500/5 px-3 py-1 text-xs font-medium text-rose-600 dark:text-rose-400">
+              <XCircle className="h-3.5 w-3.5" /> The honest comparison
+            </div>
+            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              Why ChatGPT and template builders aren&rsquo;t enough
+            </h2>
+            <p className="mx-auto mt-4 max-w-xl text-muted-foreground">
+              Generic tools give generic results. Recruiters reject generic.
+            </p>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border bg-card shadow-soft-sm">
+            <div className="grid grid-cols-4 border-b bg-muted/30 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className="px-4 py-4">Capability</div>
+              <div className="px-4 py-4 text-center">Template builders</div>
+              <div className="px-4 py-4 text-center">ChatGPT &amp; Co.</div>
+              <div className="px-4 py-4 text-center bg-primary/5 text-primary">HireStack AI</div>
+            </div>
+            {[
+              ["Researches the actual company", false, false, true],
+              ["Maps your real evidence to each requirement", false, false, true],
+              ["ATS keyword density scoring", true, false, true],
+              ["Six specialised agents collaborating", false, false, true],
+              ["Gap analysis with action plan", false, false, true],
+              ["35+ document types (CV, cover, portfolio, statements)", false, false, true],
+              ["Layout-aware PDF/DOCX parsing with ligature repair", false, false, true],
+              ["Interview question prediction with STAR outlines", false, false, true],
+              ["Rewrites with your real wording, not invented facts", false, true, true],
+              ["Versioned workspace, not throwaway chats", true, false, true],
+            ].map(([label, a, b, c], i) => (
+              <div key={i} className="grid grid-cols-4 border-b last:border-0 text-sm">
+                <div className="px-4 py-3 font-medium">{label as string}</div>
+                <div className="px-4 py-3 text-center">
+                  {a ? <CheckCircle2 className="mx-auto h-4 w-4 text-emerald-500" /> : <XCircle className="mx-auto h-4 w-4 text-muted-foreground/40" />}
+                </div>
+                <div className="px-4 py-3 text-center">
+                  {b ? <CheckCircle2 className="mx-auto h-4 w-4 text-emerald-500" /> : <XCircle className="mx-auto h-4 w-4 text-muted-foreground/40" />}
+                </div>
+                <div className="px-4 py-3 text-center bg-primary/[0.04]">
+                  {c ? <CheckCircle2 className="mx-auto h-4 w-4 text-primary" /> : <XCircle className="mx-auto h-4 w-4 text-muted-foreground/40" />}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Built For: Role-based ── */}
+      <section className="border-t bg-card/30 py-24">
+        <div className="mx-auto max-w-6xl px-4">
+          <div className="text-center mb-12">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border bg-violet-500/5 px-3 py-1 text-xs font-medium text-violet-600 dark:text-violet-400">
+              <Briefcase className="h-3.5 w-3.5" /> Built for every role
+            </div>
+            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              Tailored intelligence for your career path
+            </h2>
+            <p className="mx-auto mt-4 max-w-xl text-muted-foreground">
+              Each role has its own document templates, keyword model, and evidence patterns.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
+            {[
+              { icon: Code2, label: "Engineering", count: "12k+", href: "/for/engineers" },
+              { icon: LineChart, label: "Product & Design", count: "6.4k+", href: "/for/product" },
+              { icon: BarChart3, label: "Data & ML", count: "5.1k+", href: "/for/data" },
+              { icon: Briefcase, label: "Business & Ops", count: "4.8k+", href: "/for/business" },
+              { icon: Stethoscope, label: "Healthcare", count: "2.3k+", href: "/for/healthcare" },
+              { icon: GraduationCap, label: "Academic", count: "1.9k+", href: "/for/academic" },
+            ].map((r, i) => (
+              <Link
+                key={i}
+                href={r.href}
+                className="group rounded-2xl border bg-card p-5 text-center hover:shadow-soft-md hover:-translate-y-0.5 transition-all duration-300"
+              >
+                <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-violet-500/10 text-primary group-hover:from-primary group-hover:to-violet-600 group-hover:text-white transition-colors">
+                  <r.icon className="h-5 w-5" />
+                </div>
+                <div className="text-sm font-semibold">{r.label}</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">{r.count} applications</div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Pricing ── */}
+      <section id="pricing" className="border-t bg-background py-24">
+        <div className="mx-auto max-w-6xl px-4">
+          <div className="text-center mb-12">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border bg-emerald-500/5 px-3 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              <Award className="h-3.5 w-3.5" /> Simple pricing
+            </div>
+            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              One application can pay for it for life
+            </h2>
+            <p className="mx-auto mt-4 max-w-xl text-muted-foreground">
+              Start free. Upgrade only if you need more. Cancel anytime.
+            </p>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-3">
+            {[
+              {
+                name: "Free",
+                price: "$0",
+                cadence: "forever",
+                desc: "Try the full pipeline on real applications.",
+                features: ["3 generations / month","All 6 AI agents","ATS keyword scoring","CV + cover letter","Community support"],
+                cta: "Start free",
+                highlight: false,
+              },
+              {
+                name: "Pro",
+                price: "$19",
+                cadence: "per month",
+                desc: "For active job seekers running 5–10 applications a week.",
+                features: ["Unlimited generations","All 35+ document types","Interview prep with STAR coach","Salary benchmark + negotiation script","Priority processing","Email support"],
+                cta: "Start 7-day trial",
+                highlight: true,
+                badge: "Most popular",
+              },
+              {
+                name: "Career+",
+                price: "$49",
+                cadence: "per month",
+                desc: "For senior, exec, and career-pivot candidates.",
+                features: ["Everything in Pro","Executive narrative coaching","Custom evidence library","Mock interview simulator","Personal Slack channel","White-glove onboarding"],
+                cta: "Talk to us",
+                highlight: false,
+              },
+            ].map((p, i) => (
+              <div
+                key={i}
+                className={`relative rounded-2xl border p-6 transition-all hover:-translate-y-1 ${
+                  p.highlight
+                    ? "border-primary bg-gradient-to-br from-primary/[0.04] to-violet-500/[0.04] shadow-glow-md"
+                    : "bg-card hover:shadow-soft-md"
+                }`}
+              >
+                {p.badge && (
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-primary to-violet-600 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white">
+                    {p.badge}
+                  </span>
+                )}
+                <h3 className="text-base font-bold">{p.name}</h3>
+                <div className="mt-3 flex items-baseline gap-1.5">
+                  <span className="text-4xl font-bold tracking-tight">{p.price}</span>
+                  <span className="text-xs text-muted-foreground">{p.cadence}</span>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground leading-relaxed">{p.desc}</p>
+
+                <ul className="mt-5 space-y-2">
+                  {p.features.map((f, j) => (
+                    <li key={j} className="flex items-start gap-2 text-sm">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <Link
+                  href={p.name === "Career+" ? "/contact" : "/login?mode=register&redirect=/new"}
+                  className={`mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition-all ${
+                    p.highlight
+                      ? "bg-primary text-primary-foreground btn-glow hover:shadow-glow-md hover:brightness-110"
+                      : "border bg-background hover:bg-muted/50"
+                  }`}
+                >
+                  {p.cta}
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-8 text-center text-xs text-muted-foreground">
+            14-day money-back guarantee &middot; SOC2-aligned data handling &middot; SSO available on Career+
+          </p>
+        </div>
+      </section>
+
+      {/* ── Urgency Strip ── */}
+      <section className="border-t bg-gradient-to-r from-primary via-violet-600 to-indigo-700 py-6 text-white">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 sm:flex-row">
+          <div className="flex items-center gap-3 text-sm">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 backdrop-blur">
+              <Rocket className="h-4 w-4" />
+            </div>
+            <span className="font-semibold">Every day you wait, recruiters see another generic resume.</span>
+          </div>
+          <Link
+            href="/login?mode=register&redirect=/new"
+            className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2 text-sm font-bold text-primary shadow-soft-lg hover:scale-[1.03] transition-transform"
+          >
+            Build my application <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
         </div>
       </section>
 
@@ -721,28 +1013,81 @@ export default function HomePage() {
       </section>
 
       {/* ── Footer ── */}
-      <footer className="border-t bg-card/30 py-12">
+      <footer className="border-t bg-card/30 pt-16 pb-10">
         <div className="mx-auto max-w-6xl px-4">
-          <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
-            <Link href="/" className="flex items-center gap-2.5 hover:opacity-90 transition-opacity">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-violet-600">
-                <Sparkles className="h-3.5 w-3.5 text-white" />
+          <div className="grid gap-10 md:grid-cols-5">
+            <div className="md:col-span-2">
+              <Link href="/" className="flex items-center gap-2.5 hover:opacity-90 transition-opacity">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-600 shadow-glow-sm">
+                  <Sparkles className="h-4 w-4 text-white" />
+                </div>
+                <span className="text-base font-bold">HireStack <span className="text-primary">AI</span></span>
+              </Link>
+              <p className="mt-4 max-w-sm text-sm text-muted-foreground leading-relaxed">
+                The AI career intelligence platform that turns job descriptions into proof-backed,
+                ATS-optimised application packages — in under three minutes.
+              </p>
+              <div className="mt-5 flex items-center gap-2 text-xs text-muted-foreground">
+                <Lock className="h-3.5 w-3.5" />
+                <span>SOC2-aligned &middot; GDPR-ready &middot; Your data is never used to train models</span>
               </div>
-              <span className="text-sm font-bold">HireStack <span className="text-primary">AI</span></span>
-            </Link>
-            <div className="flex flex-wrap items-center justify-center gap-5 text-xs text-muted-foreground">
-              <Link href="/#how-it-works" className="link-hover-line hover:text-foreground transition-colors">How It Works</Link>
-              <Link href="/login" className="link-hover-line hover:text-foreground transition-colors">Sign In</Link>
-              <Link href="/login?mode=register&redirect=/new" className="link-hover-line hover:text-foreground transition-colors">Get Started</Link>
-              <Link href="/privacy" className="link-hover-line hover:text-foreground transition-colors">Privacy</Link>
-              <Link href="/terms" className="link-hover-line hover:text-foreground transition-colors">Terms</Link>
             </div>
+
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">Product</h4>
+              <ul className="mt-4 space-y-2.5 text-sm">
+                <li><Link href="/#how-it-works" className="text-muted-foreground hover:text-foreground transition-colors">How it works</Link></li>
+                <li><Link href="/#features" className="text-muted-foreground hover:text-foreground transition-colors">Features</Link></li>
+                <li><Link href="/#pricing" className="text-muted-foreground hover:text-foreground transition-colors">Pricing</Link></li>
+                <li><Link href="/changelog" className="text-muted-foreground hover:text-foreground transition-colors">Changelog</Link></li>
+                <li><Link href="/security" className="text-muted-foreground hover:text-foreground transition-colors">Security</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">Built for</h4>
+              <ul className="mt-4 space-y-2.5 text-sm">
+                <li><Link href="/for/engineers" className="text-muted-foreground hover:text-foreground transition-colors">Engineers</Link></li>
+                <li><Link href="/for/product" className="text-muted-foreground hover:text-foreground transition-colors">Product &amp; Design</Link></li>
+                <li><Link href="/for/data" className="text-muted-foreground hover:text-foreground transition-colors">Data &amp; ML</Link></li>
+                <li><Link href="/for/business" className="text-muted-foreground hover:text-foreground transition-colors">Business &amp; Ops</Link></li>
+                <li><Link href="/for/healthcare" className="text-muted-foreground hover:text-foreground transition-colors">Healthcare</Link></li>
+                <li><Link href="/for/academic" className="text-muted-foreground hover:text-foreground transition-colors">Academic</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">Company</h4>
+              <ul className="mt-4 space-y-2.5 text-sm">
+                <li><Link href="/about" className="text-muted-foreground hover:text-foreground transition-colors">About</Link></li>
+                <li><Link href="/resources" className="text-muted-foreground hover:text-foreground transition-colors">Resources</Link></li>
+                <li><Link href="/contact" className="text-muted-foreground hover:text-foreground transition-colors">Contact</Link></li>
+                <li><Link href="/privacy" className="text-muted-foreground hover:text-foreground transition-colors">Privacy</Link></li>
+                <li><Link href="/terms" className="text-muted-foreground hover:text-foreground transition-colors">Terms</Link></li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="mt-12 flex flex-col items-center justify-between gap-3 border-t pt-6 md:flex-row">
             <p className="text-xs text-muted-foreground">
-              &copy; {new Date().getFullYear()} HireStack AI
+              &copy; {new Date().getFullYear()} HireStack AI. Built for ambitious humans.
+            </p>
+            <p className="text-[11px] text-muted-foreground/70">
+              Made with care &middot; <Link href="/login?mode=register&redirect=/new" className="hover:text-foreground transition-colors">Land your next role</Link>
             </p>
           </div>
         </div>
       </footer>
+
+      {/* ── Sticky Mobile CTA ── */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 px-4 py-3 md:hidden">
+        <Link
+          href="/login?mode=register&redirect=/new"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-bold text-primary-foreground shadow-glow-sm hover:brightness-110 transition-all"
+        >
+          Start free <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
     </div>
   );
 }
