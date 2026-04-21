@@ -1658,11 +1658,44 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
 
         gap_chain = GapAnalyzerChain(ai)
 
+        # Phase B.2: prefer gap_analysis_pipeline over the raw chain so
+        # gap detection runs through the durable AgentPipeline (researcher
+        # off, critic + fact-checker on).  Falls back to the chain on
+        # import / runtime failure so the production path is never broken.
+        async def _run_gap_analysis() -> Dict[str, Any]:
+            if _AGENT_PIPELINES_AVAILABLE:
+                try:
+                    from ai_engine.agents.pipelines import gap_analysis_pipeline
+                    pipe = gap_analysis_pipeline(
+                        ai_client=ai,
+                        on_stage_update=lambda ev: emit("agent_status", ev),
+                        db=sb,
+                        tables=TABLES,
+                        user_id=user_id,
+                    )
+                    gap_result = await pipe.execute({
+                        "user_id": user_id,
+                        "user_profile": user_profile,
+                        "benchmark": benchmark_data,
+                        "job_title": job_title,
+                        "company": company_str,
+                    })
+                    if gap_result and isinstance(gap_result.content, dict):
+                        return gap_result.content
+                except Exception as _gap_err:
+                    logger.warning(
+                        "gap_analysis.pipeline_failed_fallback",
+                        error=str(_gap_err)[:200],
+                    )
+            return await gap_chain.analyze_gaps(
+                user_profile, benchmark_data, job_title, company_str
+            )
+
         # ── Parallelize gap analysis + document pack planning (H4-1) ──
         from app.services.document_catalog import discover_and_observe
 
         gap_analysis, _doc_pack_plan_job = await asyncio.gather(
-            gap_chain.analyze_gaps(user_profile, benchmark_data, job_title, company_str),
+            _run_gap_analysis(),
             discover_and_observe(
                 db=sb, tables=TABLES, ai_client=ai,
                 jd_text=jd_text_val, job_title=job_title,
