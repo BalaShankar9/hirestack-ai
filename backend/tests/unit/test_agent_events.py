@@ -8,14 +8,17 @@ import pytest
 
 from ai_engine.agent_events import (
     TimedTool,
+    chain_agent_scope,
     emit_cache_hit,
     emit_evidence_added,
     emit_policy_decision,
     emit_tool_call,
     emit_tool_result,
     event_emitter_scope,
+    get_current_chain_agent,
     get_event_emitter,
     reset_event_emitter,
+    set_chain_agent,
     set_event_emitter,
 )
 
@@ -186,3 +189,61 @@ async def test_timed_tool_async_context_manager_emits_pair() -> None:
     assert result["status"] == "completed"
     assert isinstance(result["latency_ms"], int)
     assert result["latency_ms"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_chain_agent_scope_attributes_nested_emits() -> None:
+    cap = _Capture()
+    with event_emitter_scope(cap):
+        with chain_agent_scope("recon", stage="research"):
+            emit_tool_call("github.fetch")
+            emit_evidence_added(tier="VERBATIM", source="JD", text="hi")
+        # Outside the scope: agent falls back to "pipeline".
+        emit_tool_call("after.scope")
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    by_name = {n: p for n, p in cap.events}
+    assert "tool_call" in by_name
+    # First tool_call inside scope was tagged recon.
+    inside = [p for n, p in cap.events if n == "tool_call" and p["tool"] == "github.fetch"][0]
+    assert inside["agent"] == "recon"
+    assert inside["stage"] == "research"
+    outside = [p for n, p in cap.events if n == "tool_call" and p["tool"] == "after.scope"][0]
+    assert outside["agent"] == "pipeline"
+    # Evidence inherits sub_agent from chain context.
+    ev = next(p for n, p in cap.events if n == "evidence_added")
+    assert ev["agent"] == "recon"
+
+
+@pytest.mark.asyncio
+async def test_set_chain_agent_persists_until_overridden() -> None:
+    """Sequential phase transitions should overwrite without needing reset."""
+    cap = _Capture()
+    with event_emitter_scope(cap):
+        set_chain_agent("recon", stage="research")
+        emit_tool_call("a")
+        set_chain_agent("quill", stage="documents")
+        emit_tool_call("b")
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    a = next(p for n, p in cap.events if n == "tool_call" and p["tool"] == "a")
+    b = next(p for n, p in cap.events if n == "tool_call" and p["tool"] == "b")
+    assert a["agent"] == "recon"
+    assert b["agent"] == "quill"
+    assert b["stage"] == "documents"
+    # After the test, the contextvar still holds "quill" — that's fine
+    # because each test gets its own asyncio task / context.
+    assert get_current_chain_agent() == "quill"
+
+
+@pytest.mark.asyncio
+async def test_explicit_agent_kwarg_overrides_chain_context() -> None:
+    cap = _Capture()
+    with event_emitter_scope(cap), chain_agent_scope("recon"):
+        emit_tool_call("x", agent="atlas")
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+    payload = cap.events[0][1]
+    assert payload["agent"] == "atlas"

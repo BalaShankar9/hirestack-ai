@@ -1257,7 +1257,11 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
     # (tool_call / tool_result / cache_hit / evidence_added /
     # policy_decision) without taking a publisher param through the call
     # stack.  Reset in `finally` to avoid leaking into subsequent tasks.
-    from ai_engine.agent_events import set_event_emitter, reset_event_emitter
+    from ai_engine.agent_events import (
+        set_event_emitter,
+        reset_event_emitter,
+        set_chain_agent,
+    )
     _emitter_token = set_event_emitter(emit)
 
     try:
@@ -1307,6 +1311,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             return
 
         await emit_progress("recon", 1, 8, "Recon is gathering company intelligence…")
+        set_chain_agent("recon", stage="research")
 
         if company_name.strip():
             recon_chain = CompanyIntelChain(ai)
@@ -1399,6 +1404,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         benchmark_chain = BenchmarkBuilderChain(ai)
 
         await emit_progress("profiling", 2, 18, "Atlas is parsing your resume and building the target benchmark…")
+        set_chain_agent("atlas", stage="profiling")
         await emit_detail("atlas", "Parsing resume text and role requirements.", "running", "resume")
 
         if resume_text_val.strip():
@@ -1506,6 +1512,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             return
 
         await emit_progress("gap_analysis", 3, 38, "Cipher is analyzing skill gaps and keyword misses…")
+        set_chain_agent("cipher", stage="gap_analysis")
         await emit_detail("cipher", "Comparing your profile against the benchmark and job requirements.", "running", "gap_analysis")
 
         gap_chain = GapAnalyzerChain(ai)
@@ -1553,6 +1560,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             return
 
         await emit_progress("documents", 4, 58, "Quill is generating the CV, cover letter, and learning plan…")
+        set_chain_agent("quill", stage="documents")
         await emit_detail("quill", "Drafting the tailored CV, cover letter, and roadmap in parallel.", "running", "documents")
 
         consultant = CareerConsultantChain(ai)
@@ -1666,6 +1674,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             return
 
         await emit_progress("portfolio", 5, 78, "Forge is building the personal statement and portfolio artifacts…")
+        set_chain_agent("forge", stage="portfolio")
         await emit_detail("forge", "Building the personal statement and portfolio outputs.", "running", "portfolio")
 
         ps_html = ""
@@ -1725,6 +1734,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             return
 
         await emit_progress("validation", 6, 92, "Sentinel is validating document quality and ATS readiness…")
+        set_chain_agent("sentinel", stage="validation")
         await emit_detail("sentinel", "Running final document quality checks.", "running", "validation")
 
         validation: Dict[str, Any] = {}
@@ -1746,6 +1756,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         await emit_detail("sentinel", "Validation and ATS checks completed.", "completed", "validation")
         await emit_progress("validation_done", 6, 96, "Sentinel finished the quality checks ✓")
         await emit_progress("formatting", 7, 98, "Nova is packaging your final application bundle…")
+        set_chain_agent("nova", stage="formatting")
         await emit_detail("nova", "Packaging the final application bundle and scorecard.", "running", "formatting")
 
         response = _format_response(

@@ -699,6 +699,19 @@ class AIClient:
         prompt = _sanitize_prompt_input(prompt)
         prompt = self._truncate_input(prompt)
 
+        # Telemetry helpers (best-effort; never raise into the agent).
+        from ai_engine.agent_events import (
+            emit_tool_call,
+            emit_tool_result,
+            emit_policy_decision,
+        )
+        tool_label = f"ai.{task_type}" if task_type else "ai.complete_json"
+        _t0 = time.monotonic()
+        emit_tool_call(
+            tool_label,
+            {"task_type": task_type, "model": model, "temperature": temperature},
+        )
+
         # Cache lookup
         from ai_engine.cache import get_ai_cache
         cache = get_ai_cache()
@@ -710,6 +723,13 @@ class AIClient:
         if cached is not None:
             _daily_tracker.record_cache_hit()
             logger.debug("cache_hit_json: task_type=%s model=%s", task_type, cache_model)
+            emit_tool_result(
+                tool_label,
+                {"keys": list(cached.keys()) if isinstance(cached, dict) else None},
+                latency_ms=int((time.monotonic() - _t0) * 1000),
+                cache_hit=True,
+                success=True,
+            )
             return cached
 
         from ai_engine.model_router import record_model_success, record_model_failure
@@ -737,11 +757,30 @@ class AIClient:
                         schema=schema, temperature=temperature, max_tokens=max_tokens,
                         response=result,
                     )
+                    emit_tool_result(
+                        tool_label,
+                        {
+                            "model": candidate_model,
+                            "keys": list(result.keys()) if isinstance(result, dict) else None,
+                        },
+                        latency_ms=int((time.monotonic() - _t0) * 1000),
+                        cache_hit=False,
+                        success=True,
+                    )
                     return result
             except CircuitBreakerOpen:
                 logger.info("model_breaker_open: skipping=%s", candidate_model)
                 if i < len(models) - 1:
+                    emit_policy_decision(
+                        "model_breaker_open",
+                        reason=f"breaker open on {candidate_model}, skipping to next",
+                        metadata={"failed": candidate_model, "next": models[i + 1]},
+                    )
                     continue
+                emit_tool_result(
+                    tool_label, latency_ms=int((time.monotonic() - _t0) * 1000),
+                    success=False, error=f"circuit_breaker_open: {candidate_model}",
+                )
                 raise
             except Exception as exc:
                 last_exc = exc
@@ -751,12 +790,25 @@ class AIClient:
                         "model_cascade_failover_json: failed=%s next=%s error=%s",
                         candidate_model, models[i + 1], str(exc)[:200],
                     )
+                    emit_policy_decision(
+                        "model_cascade_failover",
+                        reason=f"{candidate_model} failed → trying {models[i + 1]}",
+                        metadata={
+                            "failed": candidate_model,
+                            "next": models[i + 1],
+                            "error": str(exc)[:160],
+                        },
+                    )
                     try:
                         from app.core.metrics import MetricsCollector
                         MetricsCollector.get().record_model_failover(candidate_model, models[i + 1], str(exc))
                     except Exception:
                         pass
                     continue
+                emit_tool_result(
+                    tool_label, latency_ms=int((time.monotonic() - _t0) * 1000),
+                    success=False, error=str(exc)[:240],
+                )
                 raise
 
         raise last_exc

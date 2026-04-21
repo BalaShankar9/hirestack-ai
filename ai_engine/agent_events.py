@@ -50,6 +50,16 @@ _current_emitter: contextvars.ContextVar[Optional[EventEmitter]] = contextvars.C
     "agent_event_emitter", default=None
 )
 
+# Per-chain attribution: when a chain enters its main work, it sets this
+# so any nested AI / tool / cache call automatically inherits the agent
+# label without parameter drilling.
+_current_chain_agent: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "agent_event_chain_agent", default=None
+)
+_current_chain_stage: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "agent_event_chain_stage", default=None
+)
+
 
 # ─── Lifecycle ──────────────────────────────────────────────────────
 
@@ -80,6 +90,54 @@ def event_emitter_scope(emitter: Optional[EventEmitter]) -> Iterator[None]:
         yield
     finally:
         reset_event_emitter(token)
+
+
+# ─── Chain attribution ──────────────────────────────────────────────
+
+
+def get_current_chain_agent() -> Optional[str]:
+    return _current_chain_agent.get()
+
+
+def get_current_chain_stage() -> Optional[str]:
+    return _current_chain_stage.get()
+
+
+@contextmanager
+def chain_agent_scope(
+    agent: Optional[str], *, stage: Optional[str] = None
+) -> Iterator[None]:
+    """Mark the active code as belonging to a named agent / stage.
+
+    Anything emitted from within this block (including AI client calls,
+    cache lookups, evidence inserts) will be attributed to ``agent`` /
+    ``stage`` automatically when the helper does not receive an
+    explicit override.
+
+    Nested scopes inherit / override naturally because each call sets
+    its own ContextVar token.
+    """
+    a_token = _current_chain_agent.set(agent)
+    s_token = _current_chain_stage.set(stage) if stage is not None else None
+    try:
+        yield
+    finally:
+        _current_chain_agent.reset(a_token)
+        if s_token is not None:
+            _current_chain_stage.reset(s_token)
+
+
+def set_chain_agent(agent: Optional[str], *, stage: Optional[str] = None) -> None:
+    """Non-block-scoped chain attribution.
+
+    Convenient inside long sequential functions (e.g. the generation
+    job runner) that walk through fixed phases.  Each call simply
+    overwrites the previous ContextVar value.  No reset required —
+    the outer ``event_emitter_scope`` (or job exit) tears the whole
+    context down.
+    """
+    _current_chain_agent.set(agent)
+    _current_chain_stage.set(stage)
 
 
 # ─── Internal: best-effort fire-and-forget ─────────────────────────
@@ -146,10 +204,12 @@ def emit_tool_call(
 ) -> None:
     """A tool/function call is starting.  Use with `time.monotonic()` to
     pair with `emit_tool_result`."""
+    agent = agent or _current_chain_agent.get() or "pipeline"
+    stage = stage or _current_chain_stage.get()
     _fire(
         "tool_call",
         {
-            "agent": agent or "pipeline",
+            "agent": agent,
             "stage": stage,
             "status": "running",
             "tool": tool,
@@ -171,8 +231,10 @@ def emit_tool_result(
     error: Optional[str] = None,
 ) -> None:
     """A tool returned (or errored)."""
+    agent = agent or _current_chain_agent.get() or "pipeline"
+    stage = stage or _current_chain_stage.get()
     payload: Dict[str, Any] = {
-        "agent": agent or "pipeline",
+        "agent": agent,
         "stage": stage,
         "status": "completed" if success else "failed",
         "tool": tool,
@@ -199,10 +261,11 @@ def emit_cache_hit(
     key_preview: Optional[str] = None,
 ) -> None:
     """A cache lookup paid off — note for transparency + cost dashboard."""
+    agent = agent or _current_chain_agent.get() or "pipeline"
     _fire(
         "cache_hit",
         {
-            "agent": agent or "pipeline",
+            "agent": agent,
             "status": "info",
             "cache": cache_name,
             "saved_ms": saved_ms,
@@ -225,10 +288,11 @@ def emit_evidence_added(
     cross_confirmed: bool = False,
 ) -> None:
     """A new evidence item entered the ledger (or was cross-confirmed)."""
+    agent = sub_agent or _current_chain_agent.get() or "pipeline"
     _fire(
         "evidence_added",
         {
-            "agent": sub_agent or "pipeline",
+            "agent": agent,
             "status": "info",
             "tier": tier,
             "source": source,
@@ -253,8 +317,10 @@ def emit_policy_decision(
     metadata: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Any branch / retry / skip taken by orchestration policy."""
+    agent = agent or _current_chain_agent.get() or "pipeline"
+    stage = stage or _current_chain_stage.get()
     payload: Dict[str, Any] = {
-        "agent": agent or "pipeline",
+        "agent": agent,
         "stage": stage,
         "status": "info",
         "decision": decision,
