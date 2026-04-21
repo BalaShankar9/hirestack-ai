@@ -147,10 +147,32 @@ async def submit_application_feedback(
         except Exception as e:
             logger.warning("feedback.evidence_loop_failed", error=str(e)[:200])
 
+    # ── Phase C.3: Outcome → Style Score feedback loop ────────────
+    # Locked CV/PS variant from this application gets credit for the
+    # outcome.  Future generations bias toward higher-scoring styles.
+    style_feedback = None
+    if req.outcome:
+        try:
+            from ai_engine.agents.memory import AgentMemory
+            from ai_engine.agents.style_outcome_scorer import (
+                apply_outcome_to_style_scores,
+            )
+            style_feedback = await apply_outcome_to_style_scores(
+                memory=AgentMemory(sb),
+                sb=sb,
+                tables=TABLES,
+                user_id=user_id,
+                application_id=req.application_id,
+                outcome=req.outcome,
+            )
+        except Exception as e:
+            logger.warning("feedback.style_loop_failed", error=str(e)[:200])
+
     return {
         "status": "ok",
         "updated_fields": list(update.keys()),
         "evidence_feedback": evidence_feedback,
+        "style_feedback": style_feedback,
     }
 
 
