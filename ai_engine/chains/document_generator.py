@@ -2,7 +2,7 @@
 Document Generator Chain
 Creates personalized application documents based on user profile and target job
 """
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 import structlog
 
@@ -483,6 +483,93 @@ class DocumentGeneratorChain:
         except Exception as exc:
             logger.warning("generate_cv.failed", error=str(exc)[:200])
             return ""
+
+    # Phase D.1 — variant style nudges appended to CV_GENERATOR_PROMPT.
+    # Kept short and orthogonal so cost ≈ 1.4× (research/evidence shared
+    # by caller, only the drafting LLM call doubles).
+    CV_VARIANT_STYLES: Dict[str, Dict[str, str]] = {
+        "concise": {
+            "label": "Concise",
+            "nudge": (
+                "VARIANT STYLE: CONCISE — favour short, punchy bullets, "
+                "drop filler words, keep the document under one page worth "
+                "of content, lead every bullet with an action verb."
+            ),
+        },
+        "narrative": {
+            "label": "Narrative",
+            "nudge": (
+                "VARIANT STYLE: NARRATIVE — write in flowing prose where "
+                "appropriate, expand the professional summary, frame "
+                "achievements as connected stories rather than isolated "
+                "bullets. Keep it scannable but human."
+            ),
+        },
+    }
+
+    async def generate_cv_variants(
+        self,
+        user_profile: Dict[str, Any],
+        job_title: str,
+        company: str,
+        job_requirements: Dict[str, Any],
+        gap_insights: Dict[str, Any] = None,
+        variants: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Generate multiple CV variants in parallel.
+
+        Returns a list of dicts: ``[{"variant": "concise", "label": "Concise",
+        "content": "..."}, ...]``.  Variants with empty content (LLM
+        failure) are still returned — caller decides how to surface failure.
+        """
+        import asyncio
+        import json
+
+        variant_keys = variants or ["concise", "narrative"]
+        # Filter to known styles, preserving order
+        variant_keys = [v for v in variant_keys if v in self.CV_VARIANT_STYLES]
+        if not variant_keys:
+            return []
+
+        base_payload = dict(
+            user_profile=json.dumps(user_profile, indent=2),
+            job_title=job_title,
+            company=company,
+            job_requirements=json.dumps(job_requirements, indent=2),
+            gap_insights=json.dumps(gap_insights or {}, indent=2),
+        )
+
+        async def _run_variant(key: str) -> Dict[str, Any]:
+            style = self.CV_VARIANT_STYLES[key]
+            try:
+                prompt = CV_GENERATOR_PROMPT.format(**base_payload) + (
+                    "\n\n" + style["nudge"]
+                )
+                content = await self.ai_client.complete(
+                    prompt=prompt,
+                    system=DOCUMENT_SYSTEM,
+                    temperature=0.55 if key == "concise" else 0.7,
+                    max_tokens=4000,
+                    task_type="drafting",
+                )
+            except Exception as exc:
+                logger.warning(
+                    "generate_cv_variant.failed",
+                    variant=key,
+                    error=str(exc)[:200],
+                )
+                content = ""
+            return {
+                "variant": key,
+                "label": style["label"],
+                "content": content or "",
+            }
+
+        results = await asyncio.gather(
+            *[_run_variant(k) for k in variant_keys],
+            return_exceptions=False,
+        )
+        return list(results)
 
     async def generate_cover_letter(
         self,
