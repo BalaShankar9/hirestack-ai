@@ -125,16 +125,50 @@ class IntelCoordinator:
 
         phase1_time = time.monotonic() - start
 
+        # ── PHASE 1.5: Deep-crawl top-up ──────────────────────────
+        # If Phase 1 returned very fast (no search API keys, most sources empty),
+        # invest the remaining budget in targeted web queries instead of giving
+        # the user a 2-second "completed" that is actually empty.
+        MIN_BUDGET_S = float(__import__("os").getenv("RECON_MIN_BUDGET_S", "10"))
+        if phase1_time < MIN_BUDGET_S and len(data_sources) < 3:
+            remaining = MIN_BUDGET_S - phase1_time
+            if on_event:
+                await self._emit(
+                    on_event,
+                    f"Phase 1 finished in {phase1_time:.1f}s with {len(data_sources)}/5 sources — investing {remaining:.0f}s in deep web queries.",
+                    "running", "analysis",
+                    metadata={"remaining_budget_s": round(remaining, 1)},
+                )
+            try:
+                extra_evidence, extra_sources = await asyncio.wait_for(
+                    self._deep_web_topup(company, job_title, on_event),
+                    timeout=remaining,
+                )
+                all_evidence.extend(extra_evidence)
+                for s in extra_sources:
+                    if s not in data_sources:
+                        data_sources.append(s)
+                # Attach raw topup results so downstream synthesis can use them
+                raw_intel.setdefault("deep_web", {})
+                raw_intel["deep_web"] = {"evidence_count": len(extra_evidence), "sources": extra_sources}
+            except asyncio.TimeoutError:
+                pass
+            except Exception as e:
+                logger.warning("deep_web_topup_failed", error=str(e))
+
+        phase1_total_time = time.monotonic() - start
+
         if on_event:
             source_count = len(data_sources)
             await self._emit(
                 on_event,
-                f"Phase 1 complete: {source_count}/5 agents returned data in {phase1_time:.1f}s. Running synthesis…",
+                f"Phase 1 complete: {source_count}/5 agents returned data in {phase1_total_time:.1f}s. Running synthesis…",
                 "running", "analysis",
                 metadata={
                     "sources": data_sources,
                     "latencies": agent_latencies,
-                    "phase1_seconds": round(phase1_time, 1),
+                    "phase1_seconds": round(phase1_total_time, 1),
+                    "phase1_raw_seconds": round(phase1_time, 1),
                 },
             )
 
@@ -196,6 +230,76 @@ class IntelCoordinator:
             )
 
         return merged
+
+    async def _deep_web_topup(
+        self,
+        company: str,
+        job_title: str,
+        on_event: Optional[IntelEventCallback],
+    ) -> tuple[list[dict], list[str]]:
+        """
+        Fire a handful of targeted web queries to add verifiable evidence when
+        Phase 1 came back thin. Uses the multi-provider `_web_search` which
+        falls back to DuckDuckGo HTML + Wikipedia when no API keys are set,
+        so this works even in zero-config deployments.
+
+        Returns (evidence_items, source_labels).
+        """
+        try:
+            from ai_engine.agents.tools import _web_search
+        except Exception:
+            return [], []
+
+        queries: list[tuple[str, str]] = [
+            ("overview", f"{company} company overview what does it do"),
+            ("funding", f"{company} funding investors headcount employees"),
+            ("culture", f"{company} culture values employees reviews"),
+            ("recent", f"{company} news 2025 2026"),
+        ]
+        if job_title:
+            queries.append(("hiring", f"{company} {job_title} hiring team"))
+            queries.append(("interview", f"{company} {job_title} interview process"))
+
+        async def _one(label: str, q: str) -> tuple[str, dict]:
+            try:
+                return label, await _web_search(q, max_results=4)
+            except Exception as e:
+                return label, {"results": [], "error": str(e)[:200]}
+
+        results = await asyncio.gather(*[_one(l, q) for l, q in queries], return_exceptions=False)
+
+        evidence: list[dict] = []
+        sources: list[str] = []
+        for label, payload in results:
+            provider = payload.get("provider") or "unknown"
+            hits = payload.get("results") or []
+            if not hits:
+                continue
+            sources.append(f"web:{label}")
+            for item in hits[:3]:
+                snippet = item.get("snippet") or item.get("title") or ""
+                link = item.get("link") or ""
+                if not snippet:
+                    continue
+                evidence.append({
+                    "fact": f"[{label}] {snippet[:350]}",
+                    "source": link or f"search:{provider}:{label}",
+                    "tier": "DERIVED",
+                    "sub_agent": "deep_web",
+                    "provider": provider,
+                })
+            if on_event:
+                try:
+                    await self._emit(
+                        on_event,
+                        f"Deep-web [{label}] via {provider}: {len(hits)} result(s).",
+                        "running", "analysis",
+                        metadata={"provider": provider, "count": len(hits)},
+                    )
+                except Exception:
+                    pass
+
+        return evidence, sources
 
     def _merge_results(
         self,

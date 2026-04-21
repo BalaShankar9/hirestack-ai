@@ -655,35 +655,286 @@ import logging as _logging
 _ext_logger = _logging.getLogger("hirestack.agents.tools.external")
 
 
-async def _web_search(query: str, max_results: int = 5, **_: Any) -> dict:
-    """Search the web via SerpAPI. Falls back gracefully if no API key."""
-    api_key = os.getenv("SERPAPI_KEY") or os.getenv("GOOGLE_SEARCH_API_KEY")
-    if not api_key:
-        return {"results": [], "query": query, "error": "No search API key configured"}
+# ─────────────────────────────────────────────────────────────
+#  Multi-provider web search with free fallbacks + TTL cache
+#
+#  Provider priority (first one with a key wins, else free fallback):
+#    1. Tavily        (TAVILY_API_KEY)        — best snippets
+#    2. Serper.dev    (SERPER_API_KEY)        — cheap Google SERP
+#    3. SerpAPI       (SERPAPI_KEY / GOOGLE_SEARCH_API_KEY)
+#    4. Brave Search  (BRAVE_API_KEY)
+#    5. DuckDuckGo HTML (no key, best-effort)
+#    6. Wikipedia     (no key, last-resort noun lookup)
+#
+#  Results are cached in-process for 24h keyed by (provider, query, n).
+# ─────────────────────────────────────────────────────────────
 
+import time as _time
+import urllib.parse as _urlparse
+
+_SEARCH_CACHE: dict[str, tuple[float, dict]] = {}
+_SEARCH_CACHE_TTL = 60 * 60 * 24  # 24 hours
+_SEARCH_CACHE_MAX = 512
+
+
+def _search_cache_get(key: str) -> Optional[dict]:
+    hit = _SEARCH_CACHE.get(key)
+    if not hit:
+        return None
+    ts, payload = hit
+    if _time.time() - ts > _SEARCH_CACHE_TTL:
+        _SEARCH_CACHE.pop(key, None)
+        return None
+    return payload
+
+
+def _search_cache_put(key: str, payload: dict) -> None:
+    if len(_SEARCH_CACHE) >= _SEARCH_CACHE_MAX:
+        # Evict oldest
+        oldest_key = min(_SEARCH_CACHE, key=lambda k: _SEARCH_CACHE[k][0])
+        _SEARCH_CACHE.pop(oldest_key, None)
+    _SEARCH_CACHE[key] = (_time.time(), payload)
+
+
+async def _provider_tavily(query: str, max_results: int) -> list[dict]:
+    api_key = os.getenv("TAVILY_API_KEY")
+    if not api_key:
+        return []
     try:
         import httpx
-
-        params = {
-            "q": query,
-            "api_key": api_key,
-            "num": min(max_results, 10),
-            "engine": "google",
-        }
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get("https://serpapi.com/search", params=params)
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                "https://api.tavily.com/search",
+                json={
+                    "api_key": api_key,
+                    "query": query,
+                    "max_results": min(max_results, 10),
+                    "search_depth": "basic",
+                },
+            )
             resp.raise_for_status()
             data = resp.json()
+        return [
+            {"title": r.get("title", ""), "snippet": r.get("content", "")[:500], "link": r.get("url", "")}
+            for r in data.get("results", [])[:max_results]
+        ]
+    except Exception as e:
+        _ext_logger.debug("tavily_failed: %s", str(e))
+        return []
 
-        organic = data.get("organic_results", [])
-        results = [
+
+async def _provider_serper(query: str, max_results: int) -> list[dict]:
+    api_key = os.getenv("SERPER_API_KEY")
+    if not api_key:
+        return []
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                "https://google.serper.dev/search",
+                headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+                json={"q": query, "num": min(max_results, 10)},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        organic = data.get("organic", [])
+        return [
             {"title": r.get("title", ""), "snippet": r.get("snippet", ""), "link": r.get("link", "")}
             for r in organic[:max_results]
         ]
-        return {"results": results, "query": query, "count": len(results)}
     except Exception as e:
-        _ext_logger.warning("web_search_failed: %s", str(e))
-        return {"results": [], "query": query, "error": str(e)[:200]}
+        _ext_logger.debug("serper_failed: %s", str(e))
+        return []
+
+
+async def _provider_serpapi(query: str, max_results: int) -> list[dict]:
+    api_key = os.getenv("SERPAPI_KEY") or os.getenv("GOOGLE_SEARCH_API_KEY")
+    if not api_key:
+        return []
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                "https://serpapi.com/search",
+                params={
+                    "q": query,
+                    "api_key": api_key,
+                    "num": min(max_results, 10),
+                    "engine": "google",
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        organic = data.get("organic_results", [])
+        return [
+            {"title": r.get("title", ""), "snippet": r.get("snippet", ""), "link": r.get("link", "")}
+            for r in organic[:max_results]
+        ]
+    except Exception as e:
+        _ext_logger.debug("serpapi_failed: %s", str(e))
+        return []
+
+
+async def _provider_brave(query: str, max_results: int) -> list[dict]:
+    api_key = os.getenv("BRAVE_API_KEY") or os.getenv("BRAVE_SEARCH_API_KEY")
+    if not api_key:
+        return []
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                "https://api.search.brave.com/res/v1/web/search",
+                headers={"X-Subscription-Token": api_key, "Accept": "application/json"},
+                params={"q": query, "count": min(max_results, 10)},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        web_results = (data.get("web") or {}).get("results", [])
+        return [
+            {"title": r.get("title", ""), "snippet": r.get("description", ""), "link": r.get("url", "")}
+            for r in web_results[:max_results]
+        ]
+    except Exception as e:
+        _ext_logger.debug("brave_failed: %s", str(e))
+        return []
+
+
+async def _provider_duckduckgo(query: str, max_results: int) -> list[dict]:
+    """DuckDuckGo HTML scrape — no key required. Best-effort fallback."""
+    try:
+        import httpx
+        import re as _re
+        async with httpx.AsyncClient(
+            timeout=8.0,
+            follow_redirects=True,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; HireStack-AI/2.0)",
+                "Accept": "text/html,application/xhtml+xml",
+            },
+        ) as client:
+            resp = await client.post(
+                "https://html.duckduckgo.com/html/",
+                data={"q": query},
+            )
+            if resp.status_code != 200:
+                return []
+            html = resp.text
+        # Each result block: <a class="result__a" href="...">Title</a> … <a class="result__snippet">Snippet</a>
+        pattern = _re.compile(
+            r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>.*?'
+            r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>',
+            _re.DOTALL | _re.IGNORECASE,
+        )
+        out: list[dict] = []
+        for m in pattern.finditer(html):
+            raw_link, raw_title, raw_snippet = m.group(1), m.group(2), m.group(3)
+            # DDG wraps links as /l/?uddg=<encoded-target>
+            link = raw_link
+            if "uddg=" in link:
+                try:
+                    link = _urlparse.unquote(link.split("uddg=", 1)[1].split("&", 1)[0])
+                except Exception:
+                    pass
+            title = _re.sub(r"<[^>]+>", "", raw_title).strip()
+            snippet = _re.sub(r"<[^>]+>", "", raw_snippet).strip()
+            if title and link.startswith("http"):
+                out.append({"title": title, "snippet": snippet[:500], "link": link})
+            if len(out) >= max_results:
+                break
+        return out
+    except Exception as e:
+        _ext_logger.debug("ddg_failed: %s", str(e))
+        return []
+
+
+async def _provider_wikipedia(query: str, max_results: int) -> list[dict]:
+    """Wikipedia summary lookup — last-resort company identity fallback."""
+    try:
+        import httpx
+        async with httpx.AsyncClient(
+            timeout=6.0,
+            follow_redirects=True,
+            headers={
+                # Wikipedia requires a descriptive UA or 403s
+                "User-Agent": "HireStack-AI/2.0 (career-intel; contact: hirestack.tech)",
+                "Accept": "application/json",
+            },
+        ) as client:
+            resp = await client.get(
+                "https://en.wikipedia.org/w/api.php",
+                params={
+                    "action": "query",
+                    "list": "search",
+                    "srsearch": query,
+                    "srlimit": min(max_results, 5),
+                    "format": "json",
+                },
+            )
+            if resp.status_code != 200:
+                return []
+            data = resp.json()
+        hits = ((data.get("query") or {}).get("search") or [])
+        out: list[dict] = []
+        for h in hits[:max_results]:
+            title = h.get("title", "")
+            snippet = re.sub(r"<[^>]+>", "", h.get("snippet", "") or "")
+            if title:
+                out.append({
+                    "title": f"Wikipedia — {title}",
+                    "snippet": snippet[:400],
+                    "link": f"https://en.wikipedia.org/wiki/{title.replace(' ', '_')}",
+                })
+        return out
+    except Exception as e:
+        _ext_logger.debug("wiki_failed: %s", str(e))
+        return []
+
+
+async def _web_search(query: str, max_results: int = 5, **_: Any) -> dict:
+    """
+    Multi-provider web search with graceful fallback + 24h cache.
+
+    Tries paid providers first (if keys present), then free DDG/Wikipedia.
+    Returns {"results": [...], "query": query, "provider": "...", "count": n}.
+    """
+    if not query or not query.strip():
+        return {"results": [], "query": query, "error": "empty query"}
+
+    cache_key = f"{query}|{max_results}"
+    cached = _search_cache_get(cache_key)
+    if cached is not None:
+        return {**cached, "cache": True}
+
+    providers = [
+        ("tavily", _provider_tavily),
+        ("serper", _provider_serper),
+        ("serpapi", _provider_serpapi),
+        ("brave", _provider_brave),
+        ("duckduckgo", _provider_duckduckgo),
+        ("wikipedia", _provider_wikipedia),
+    ]
+
+    for name, fn in providers:
+        try:
+            results = await fn(query, max_results)
+        except Exception as e:
+            _ext_logger.warning("provider_%s_unhandled: %s", name, str(e))
+            results = []
+        if results:
+            payload = {
+                "results": results,
+                "query": query,
+                "provider": name,
+                "count": len(results),
+            }
+            _search_cache_put(cache_key, payload)
+            return payload
+
+    # No provider returned anything
+    empty = {"results": [], "query": query, "provider": "none", "count": 0,
+             "error": "all search providers returned 0 results"}
+    _search_cache_put(cache_key, empty)
+    return empty
 
 
 async def _search_company_info(company_name: str, **_: Any) -> dict:

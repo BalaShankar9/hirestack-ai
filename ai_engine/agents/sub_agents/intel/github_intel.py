@@ -72,6 +72,21 @@ class GitHubIntelAgent(SubAgent):
                 org_name = candidate
                 break
 
+        # Fallback: GitHub Search API — find orgs by display name when slug guessing failed.
+        if not org_data:
+            if on_event:
+                await _emit(on_event, f"Searching GitHub for org matching '{company}'…", "running", "github")
+            searched = await self._search_org(company)
+            if searched:
+                org_name, org_data = searched
+                if on_event:
+                    await _emit(
+                        on_event,
+                        f"GitHub search matched org: {org_name}",
+                        "running", "github",
+                        url=f"https://github.com/{org_name}",
+                    )
+
         if not org_data or not org_name:
             if on_event:
                 await _emit(on_event, "No GitHub organization found.", "warning", "github")
@@ -267,6 +282,72 @@ class GitHubIntelAgent(SubAgent):
                 return int(m.group(1)) if m else len(resp.json())
         except Exception:
             return 0
+
+    async def _search_org(self, company: str) -> tuple[str, dict] | None:
+        """
+        Fallback: use GitHub's search API to find an org whose display name
+        or login matches the company. Validates the hit by re-fetching the
+        org endpoint (so we get the full metadata shape the rest of the
+        agent expects).
+        """
+        q = company.strip()
+        if not q or len(q) < 2:
+            return None
+        # Clean company name similar to _guess_orgs so search is less noisy.
+        import re as _re
+        clean = _re.sub(
+            r"\s*(Inc|Ltd|LLC|Corp|Limited|PLC|GmbH|SA|AG|Co)\.?\s*$",
+            "", q, flags=_re.IGNORECASE,
+        ).strip()
+        if not clean:
+            return None
+
+        # Prefer the token endpoint if available for rate limit.
+        headers = dict(_GITHUB_HEADERS)
+        token = __import__("os").getenv("GITHUB_TOKEN") or __import__("os").getenv("GH_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                resp = await client.get(
+                    "https://api.github.com/search/users",
+                    params={"q": f"{clean} type:org", "per_page": 5},
+                    headers=headers,
+                )
+                if resp.status_code != 200:
+                    return None
+                items = (resp.json() or {}).get("items", [])
+        except Exception:
+            return None
+
+        # Score each hit: exact/substring match on login or name wins.
+        clean_lower = clean.lower().replace(" ", "")
+        best: tuple[int, str] | None = None
+        for item in items[:5]:
+            login = (item.get("login") or "").lower()
+            if not login:
+                continue
+            score = 0
+            if login == clean_lower:
+                score += 100
+            elif login.startswith(clean_lower) or clean_lower in login:
+                score += 40
+            elif clean_lower.startswith(login) and len(login) >= 3:
+                score += 20
+            # Prefer orgs with any public repos (signals real org, not empty placeholder)
+            if score > 0:
+                if best is None or score > best[0]:
+                    best = (score, login)
+
+        if not best or best[0] < 20:
+            return None
+
+        login = best[1]
+        full = await self._fetch_org(login)
+        if not full:
+            return None
+        return login, full
 
 
 async def _emit(callback, message, status, source, url=None, metadata=None):

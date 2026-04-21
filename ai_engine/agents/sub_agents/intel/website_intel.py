@@ -44,7 +44,7 @@ _TIMEOUT = 6  # per-page timeout
 
 
 def _guess_urls(company: str, company_url: Optional[str]) -> list[str]:
-    """Generate candidate base URLs for the company."""
+    """Generate candidate base URLs for the company (TLD enumeration fallback)."""
     urls: list[str] = []
     if company_url:
         urls.append(company_url.rstrip("/"))
@@ -62,6 +62,72 @@ def _guess_urls(company: str, company_url: Optional[str]) -> list[str]:
             if candidate_no_www not in urls:
                 urls.append(candidate_no_www)
     return urls
+
+
+# Domains we never want to treat as the company's official site, even if
+# they rank top in search results for the company name.
+_DOMAIN_BLOCKLIST = {
+    "linkedin.com", "twitter.com", "x.com", "facebook.com", "instagram.com",
+    "github.com", "crunchbase.com", "bloomberg.com", "glassdoor.com",
+    "indeed.com", "ziprecruiter.com", "wikipedia.org", "youtube.com",
+    "reddit.com", "medium.com", "forbes.com", "techcrunch.com",
+    "pitchbook.com", "owler.com", "zoominfo.com", "rocketreach.co",
+    "apollo.io", "similarweb.com",
+}
+
+
+def _domain_of(url: str) -> str:
+    try:
+        import urllib.parse as up
+        host = up.urlparse(url).netloc.lower()
+        if host.startswith("www."):
+            host = host[4:]
+        return host
+    except Exception:
+        return ""
+
+
+async def _discover_url_via_search(company: str) -> list[str]:
+    """
+    Use web search to find the company's official website.
+    Filters out social/aggregator sites and returns a ranked list of
+    plausible base URLs. Safe: returns [] if search is unavailable.
+    """
+    try:
+        from ai_engine.agents.tools import _web_search  # local import avoids circular
+    except Exception:
+        return []
+
+    queries = [
+        f'"{company}" official website',
+        f"{company} company site",
+        f"{company} about us",
+    ]
+    seen: set[str] = set()
+    ranked: list[str] = []
+    for q in queries:
+        try:
+            res = await _web_search(q, max_results=5)
+        except Exception:
+            continue
+        for item in (res.get("results") or []):
+            link = (item.get("link") or "").strip()
+            if not link.startswith("http"):
+                continue
+            domain = _domain_of(link)
+            if not domain or domain in _DOMAIN_BLOCKLIST:
+                continue
+            # Skip any subdomain of a blocklisted aggregator
+            if any(domain.endswith("." + blocked) for blocked in _DOMAIN_BLOCKLIST):
+                continue
+            base = f"https://{domain}"
+            if base in seen:
+                continue
+            seen.add(base)
+            ranked.append(base)
+        if len(ranked) >= 4:
+            break
+    return ranked[:4]
 
 
 def _extract_text(html: str) -> dict[str, str]:
@@ -132,7 +198,30 @@ class WebsiteIntelAgent(SubAgent):
         if not company:
             return SubAgentResult(agent_name=self.name, error="No company name")
 
-        base_urls = _guess_urls(company, company_url)
+        # URL discovery: explicit URL → web search → TLD guessing.
+        base_urls: list[str] = []
+        if company_url:
+            base_urls.append(company_url.rstrip("/"))
+
+        if not base_urls:
+            if on_event:
+                await _emit(on_event, f"Searching for official site of {company}…", "running", "website")
+            search_hits = await _discover_url_via_search(company)
+            if search_hits:
+                base_urls.extend(search_hits)
+                if on_event:
+                    await _emit(
+                        on_event,
+                        f"Search found {len(search_hits)} candidate site(s).",
+                        "running", "website",
+                        metadata={"candidates": search_hits},
+                    )
+
+        # Append TLD-guessed URLs last so they only get tried if search failed
+        for g in _guess_urls(company, None):
+            if g not in base_urls:
+                base_urls.append(g)
+
         if not base_urls:
             return SubAgentResult(agent_name=self.name, error="Cannot determine company URL")
 
