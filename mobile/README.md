@@ -20,7 +20,7 @@ and Supabase auth (`https://dkfmcnfhvbqwsgpkgoag.supabase.co`).
 | 4 | Pipeline + Candidates + Interview Coach | ✅ shipped |
 | 5 | Career analytics + Learning + Salary | ✅ shipped |
 | 6 | Doc Variants + Knowledge Library | ✅ shipped |
-| 7 | Polish + signed APK | not started |
+| 7 | Polish + signed-style release APK + sideload guide | ✅ shipped |
 
 ## Build (after toolchain installed)
 
@@ -31,3 +31,6 @@ cd mobile/android
 ```
 
 Toolchain prerequisites: JDK 17, Android SDK platform 34.
+
+For release APK, install instructions, and per-feature mapping see
+[mobile/SIDELOAD.md](SIDELOAD.md).

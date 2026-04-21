@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.hirestack.ai.BuildConfig
 import com.hirestack.ai.ui.auth.AuthViewModel
 
 @Composable
@@ -97,6 +98,14 @@ fun ProfileScreen(
         ) {
             Text("Sign out")
         }
+
+        Spacer(Modifier.height(20.dp))
+        Text(
+            "HireStack AI v${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_TYPE})",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

@@ -16,7 +16,7 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -45,12 +45,15 @@ android {
             versionNameSuffix = "-debug"
         }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            // Minification disabled for now — Hilt + Moshi codegen + ktor + serialization
+            // would need a curated proguard ruleset. Sideloaded APKs do not need shrinking;
+            // re-enable before submitting to Google Play.
+            isMinifyEnabled = false
+            isShrinkResources = false
+            // Sign release with the debug keystore so contributors can build a working
+            // release APK without setting up a personal keystore. Replace this with a
+            // real release keystore before publishing to Google Play.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
