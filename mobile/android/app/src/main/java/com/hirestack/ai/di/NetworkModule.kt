@@ -26,13 +26,17 @@ object NetworkModule {
         .build()
 
     @Provides @Singleton
-    fun provideOkHttp(authInterceptor: AuthInterceptor): OkHttpClient {
+    fun provideOkHttp(
+        authInterceptor: AuthInterceptor,
+        retryInterceptor: com.hirestack.ai.data.network.RetryInterceptor,
+    ): OkHttpClient {
         val log = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
             else HttpLoggingInterceptor.Level.NONE
         }
         return OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
+            .addInterceptor(retryInterceptor)
             .addInterceptor(log)
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)

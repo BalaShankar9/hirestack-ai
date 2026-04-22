@@ -45,14 +45,19 @@ android {
             versionNameSuffix = "-debug"
         }
         release {
-            // Minification disabled for now — Hilt + Moshi codegen + ktor + serialization
-            // would need a curated proguard ruleset. Sideloaded APKs do not need shrinking;
-            // re-enable before submitting to Google Play.
+            // Minification disabled for now — enabling is one-line: flip
+            // `isMinifyEnabled` and `isShrinkResources` to true. The curated
+            // proguard-rules.pro file already covers Hilt + Moshi + Retrofit
+            // + Ktor + kotlinx.serialization + Supabase + DataStore + Coil.
             isMinifyEnabled = false
             isShrinkResources = false
-            // Sign release with the debug keystore so contributors can build a working
-            // release APK without setting up a personal keystore. Replace this with a
-            // real release keystore before publishing to Google Play.
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            // Sign release with the debug keystore so contributors can build a
+            // working release APK without setting up a personal keystore.
+            // Replace before publishing to Google Play.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -83,6 +88,7 @@ dependencies {
 
     // Core + lifecycle
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")

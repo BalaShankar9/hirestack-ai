@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,23 +44,32 @@ fun JobBoardScreen(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = { vm.refresh() }, enabled = !state.isLoading) {
-                    Text(if (state.isLoading) "Loading…" else "Refresh")
+                if (state.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                    )
                 }
             }
             if (state.error != null) {
                 ErrorCard(state.error!!) { vm.clearError() }
             }
-            if (state.items.isEmpty() && !state.isLoading) {
-                EmptyState(onAdd = onAddJob)
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    items(state.items, key = { it.id }) { job ->
-                        JobRow(job = job, onClick = { onJobClick(job.id) })
+            PullToRefreshBox(
+                isRefreshing = state.isLoading,
+                onRefresh = { vm.refresh() },
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                if (state.items.isEmpty() && !state.isLoading) {
+                    EmptyState(onAdd = onAddJob)
+                } else {
+                    LazyColumn(
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        items(state.items, key = { it.id }) { job ->
+                            JobRow(job = job, onClick = { onJobClick(job.id) })
+                        }
                     }
                 }
             }

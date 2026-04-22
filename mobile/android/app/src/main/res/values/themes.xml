@@ -1,3 +1,25 @@
 <resources>
-    <style name="Theme.HireStack" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!--
+      Splash theme – shown briefly on cold start before Compose takes over.
+      Backed by androidx.core.splashscreen so we get the modern Android 12+
+      window-splash treatment everywhere down to API 26.
+    -->
+    <style name="Theme.HireStack.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.HireStack</item>
+    </style>
+
+    <!--
+      Activity theme used after the splash. The Compose `MaterialTheme` controls
+      all in-app colours, so this only sets window-level chrome (status bar,
+      navigation bar, edge-to-edge).
+    -->
+    <style name="Theme.HireStack" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
 </resources>
