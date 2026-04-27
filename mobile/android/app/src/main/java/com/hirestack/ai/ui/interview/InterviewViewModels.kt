@@ -41,6 +41,39 @@ class InterviewListViewModel @Inject constructor(
             }
         }
     }
+
+    fun delete(id: String) {
+        val before = _state.value.items
+        _state.value = _state.value.copy(items = before.filterNot { it.id == id })
+        viewModelScope.launch {
+            try {
+                api.deleteInterviewSession(id)
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(items = before, error = e.message ?: "Failed to delete")
+            }
+        }
+    }
+
+    fun removeLocally(id: String): InterviewSession? {
+        val before = _state.value.items
+        val item = before.firstOrNull { it.id == id } ?: return null
+        _state.value = _state.value.copy(items = before.filterNot { it.id == id })
+        return item
+    }
+
+    fun restore(item: InterviewSession) {
+        if (_state.value.items.any { it.id == item.id }) return
+        _state.value = _state.value.copy(items = _state.value.items + item)
+    }
+
+    fun commitDelete(id: String) {
+        viewModelScope.launch {
+            try { api.deleteInterviewSession(id) }
+            catch (e: Exception) { _state.value = _state.value.copy(error = e.message ?: "Failed to delete"); refresh() }
+        }
+    }
+
+    fun clearError() { _state.value = _state.value.copy(error = null) }
 }
 
 data class InterviewDetailState(

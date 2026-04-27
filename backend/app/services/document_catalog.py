@@ -344,7 +344,7 @@ async def discover_and_observe(
     Seed catalog → plan optimal doc pack → record observations.
 
     This is the single entry point that all execution paths (PipelineRuntime,
-    _run_sync_pipeline, _stream_agent_pipeline, _run_generation_job_inner)
+    _run_sync_pipeline, _stream_agent_pipeline)
     should call to ensure consistent catalog learning.
 
     Returns the DocumentPackPlan on success, or None on failure.

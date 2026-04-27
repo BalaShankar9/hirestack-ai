@@ -18,7 +18,7 @@ object Routes {
 }
 
 @Composable
-fun HireStackApp() {
+fun HireStackApp(initialDeepLink: String? = null) {
     val nav = rememberNavController()
     val authVm: AuthViewModel = hiltViewModel()
     val state by authVm.state.collectAsState()
@@ -56,6 +56,7 @@ fun HireStackApp() {
                         popUpTo(Routes.HOME) { inclusive = true }
                     }
                 },
+                initialDeepLink = initialDeepLink,
             )
         }
     }

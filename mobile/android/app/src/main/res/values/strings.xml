@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">HireStack AI</string>
+    <string name="shortcut_add_job_short">New job</string>
+    <string name="shortcut_add_job_long">Add a new job</string>
+    <string name="shortcut_scan_short">ATS scan</string>
+    <string name="shortcut_scan_long">Run an ATS scan</string>
+    <string name="shortcut_interview_short">Interview</string>
+    <string name="shortcut_interview_long">Open interview coach</string>
 </resources>

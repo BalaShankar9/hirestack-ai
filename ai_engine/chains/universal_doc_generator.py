@@ -282,7 +282,7 @@ class UniversalDocGeneratorChain:
                 prompt=prompt,
                 system=UNIVERSAL_RESUME_SYSTEM,
                 temperature=0.5,
-                max_tokens=6000,
+                max_tokens=8192,
                 task_type="drafting",
             )
         except Exception as exc:
@@ -298,7 +298,7 @@ class UniversalDocGeneratorChain:
                 prompt=prompt,
                 system=FULL_CV_SYSTEM,
                 temperature=0.5,
-                max_tokens=8000,
+                max_tokens=8192,
                 task_type="drafting",
             )
         except Exception as exc:
@@ -314,7 +314,7 @@ class UniversalDocGeneratorChain:
                 prompt=prompt,
                 system=PERSONAL_STATEMENT_SYSTEM,
                 temperature=0.65,
-                max_tokens=4000,
+                max_tokens=8192,
                 task_type="drafting",
             )
         except Exception as exc:
@@ -345,7 +345,7 @@ class UniversalDocGeneratorChain:
                 prompt=prompt,
                 system=PORTFOLIO_SYSTEM,
                 temperature=0.55,
-                max_tokens=6000,
+                max_tokens=8192,
                 task_type="drafting",
             )
         except Exception as exc:

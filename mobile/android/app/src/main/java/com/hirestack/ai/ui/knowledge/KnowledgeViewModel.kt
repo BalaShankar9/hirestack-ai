@@ -65,4 +65,25 @@ class KnowledgeViewModel @Inject constructor(
             }
         }
     }
+
+    fun removeRecLocally(id: String): KnowledgeRecommendation? {
+        val before = _state.value.recommendations
+        val item = before.firstOrNull { it.id == id } ?: return null
+        _state.value = _state.value.copy(recommendations = before.filterNot { it.id == id })
+        return item
+    }
+
+    fun restoreRec(rec: KnowledgeRecommendation) {
+        if (_state.value.recommendations.any { it.id == rec.id }) return
+        _state.value = _state.value.copy(recommendations = _state.value.recommendations + rec)
+    }
+
+    fun commitDismissRec(id: String) {
+        viewModelScope.launch {
+            try { api.dismissKnowledgeRecommendation(id) }
+            catch (e: Exception) { _state.value = _state.value.copy(error = e.message ?: "Failed to dismiss"); refresh() }
+        }
+    }
+
+    fun clearError() { _state.value = _state.value.copy(error = null) }
 }

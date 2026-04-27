@@ -33,10 +33,10 @@ logger = logging.getLogger("hirestack.worker")
 
 async def _handler(job_id: str, user_id: str) -> None:
     """Execute a generation job — delegates to the same runner the web process uses."""
-    from app.api.routes.generate.jobs import _run_generation_job
+    from app.api.routes.generate.jobs import _run_generation_job_via_runtime
 
     logger.info("worker.processing", extra={"job_id": job_id, "user_id": user_id})
-    await _run_generation_job(job_id, user_id)
+    await _run_generation_job_via_runtime(job_id, user_id)
     logger.info("worker.completed", extra={"job_id": job_id})
 
 

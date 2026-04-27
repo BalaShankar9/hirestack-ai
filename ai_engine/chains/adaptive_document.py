@@ -515,9 +515,9 @@ class AdaptiveDocumentChain:
         }
         small_legacy = {"executive_summary", "writing_sample", "salary_negotiation_script", "capability_statement", "expression_of_interest", "letter_of_intent"}
         if doc_type in large:
-            return 8000
+            return 8192
         if doc_type in medium:
-            return 4000
+            return 6000
         if doc_type in short:
             return short[doc_type]
         if doc_type in small_legacy:

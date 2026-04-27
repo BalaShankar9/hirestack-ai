@@ -1034,7 +1034,25 @@ export async function generateApplicationModules(
 
         const readyAt = Date.now();
         for (const mod of modules) {
-          moduleStates[mod] = { state: "ready", updatedAt: readyAt };
+          let hasContent = true;
+          if (mod === "cv" && !result.cvHtml) hasContent = false;
+          if (mod === "coverLetter" && !result.coverLetterHtml) hasContent = false;
+          if (mod === "personalStatement" && !result.personalStatementHtml) hasContent = false;
+          if (mod === "portfolio" && !result.portfolioHtml) hasContent = false;
+          if (mod === "learningPlan" && !result.learningPlan) hasContent = false;
+          if (mod === "gaps" && !result.gaps) hasContent = false;
+          if (mod === "benchmark" && !result.benchmark) hasContent = false;
+          if (mod === "scorecard" && !result.scorecard && !result.scores) hasContent = false;
+
+          if (hasContent) {
+            moduleStates[mod] = { state: "ready", updatedAt: readyAt };
+          } else {
+            moduleStates[mod] = { 
+              state: "error", 
+              error: `AI failed to generate ${mod}. Click Regenerate to retry.`,
+              updatedAt: readyAt 
+            };
+          }
         }
         patch.modules = moduleStates;
 

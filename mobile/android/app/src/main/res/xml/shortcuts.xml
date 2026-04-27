@@ -1,0 +1,38 @@
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="add_job"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_add_job"
+        android:shortcutShortLabel="@string/shortcut_add_job_short"
+        android:shortcutLongLabel="@string/shortcut_add_job_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.hirestack.ai"
+            android:targetClass="com.hirestack.ai.MainActivity"
+            android:data="hirestack://add-job" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="ats_scan"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_scan"
+        android:shortcutShortLabel="@string/shortcut_scan_short"
+        android:shortcutLongLabel="@string/shortcut_scan_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.hirestack.ai"
+            android:targetClass="com.hirestack.ai.MainActivity"
+            android:data="hirestack://ats" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="interview"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_interview"
+        android:shortcutShortLabel="@string/shortcut_interview_short"
+        android:shortcutLongLabel="@string/shortcut_interview_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.hirestack.ai"
+            android:targetClass="com.hirestack.ai.MainActivity"
+            android:data="hirestack://interview" />
+    </shortcut>
+</shortcuts>

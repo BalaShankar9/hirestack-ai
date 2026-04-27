@@ -205,7 +205,7 @@ class DrafterAgent(BaseAgent):
         result = await self.ai_client.complete_json(
             system=REVISION_SYSTEM_PROMPT,
             prompt=revision_prompt,
-            max_tokens=6000,
+            max_tokens=8192,
             temperature=0.4,
             task_type="drafting",
         )

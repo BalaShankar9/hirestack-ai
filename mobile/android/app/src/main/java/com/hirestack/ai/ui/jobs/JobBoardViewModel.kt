@@ -82,6 +82,25 @@ class JobBoardViewModel @Inject constructor(
         }
     }
 
+    fun removeLocally(id: String): com.hirestack.ai.data.network.Job? {
+        val before = _state.value.items
+        val item = before.firstOrNull { it.id == id } ?: return null
+        _state.value = _state.value.copy(items = before.filterNot { it.id == id })
+        return item
+    }
+
+    fun restore(item: com.hirestack.ai.data.network.Job) {
+        if (_state.value.items.any { it.id == item.id }) return
+        _state.value = _state.value.copy(items = _state.value.items + item)
+    }
+
+    fun commitDelete(id: String) {
+        viewModelScope.launch {
+            try { api.deleteJob(id) }
+            catch (e: Exception) { _state.value = _state.value.copy(error = e.message ?: "Failed to delete"); refresh() }
+        }
+    }
+
     fun clearError() {
         _state.value = _state.value.copy(error = null)
     }

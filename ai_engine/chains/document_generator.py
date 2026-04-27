@@ -477,7 +477,7 @@ class DocumentGeneratorChain:
                 prompt=prompt,
                 system=DOCUMENT_SYSTEM,
                 temperature=0.5,
-                max_tokens=4000,
+                max_tokens=8192,
                 task_type="drafting",
             )
         except Exception as exc:
@@ -549,7 +549,7 @@ class DocumentGeneratorChain:
                     prompt=prompt,
                     system=DOCUMENT_SYSTEM,
                     temperature=0.55 if key == "concise" else 0.7,
-                    max_tokens=4000,
+                    max_tokens=8192,
                     task_type="drafting",
                 )
             except Exception as exc:
@@ -596,7 +596,7 @@ class DocumentGeneratorChain:
                 prompt=prompt,
                 system=DOCUMENT_SYSTEM,
                 temperature=0.6,
-                max_tokens=2000,
+                max_tokens=8192,
                 task_type="drafting",
             )
         except Exception as exc:
@@ -624,7 +624,7 @@ class DocumentGeneratorChain:
                 prompt=prompt,
                 system=DOCUMENT_SYSTEM,
                 temperature=0.6,
-                max_tokens=3000,
+                max_tokens=8192,
                 task_type="reasoning",
             )
         except Exception as exc:
@@ -650,7 +650,7 @@ class DocumentGeneratorChain:
                 prompt=prompt,
                 system=DOCUMENT_SYSTEM,
                 temperature=0.5,
-                max_tokens=4000,
+                max_tokens=8192,
                 task_type="reasoning",
             )
         except Exception as exc:
@@ -734,7 +734,7 @@ class DocumentGeneratorChain:
                 prompt=prompt,
                 system=TAILORED_PS_SYSTEM,
                 temperature=0.65,
-                max_tokens=4000,
+                max_tokens=8192,
                 task_type="drafting",
             )
         except Exception as exc:
@@ -813,7 +813,7 @@ class DocumentGeneratorChain:
                     prompt=base_prompt + "\n\n" + style["nudge"],
                     system=TAILORED_PS_SYSTEM,
                     temperature=0.55 if key == "concise" else 0.75,
-                    max_tokens=4000,
+                    max_tokens=8192,
                     task_type="drafting",
                 )
             except Exception as exc:
@@ -869,7 +869,7 @@ class DocumentGeneratorChain:
                 prompt=prompt,
                 system=TAILORED_PORTFOLIO_SYSTEM,
                 temperature=0.55,
-                max_tokens=6000,
+                max_tokens=8192,
                 task_type="drafting",
             )
         except Exception as exc:
@@ -923,7 +923,7 @@ class DocumentGeneratorChain:
                 prompt=prompt,
                 system=TAILORED_CV_SYSTEM,
                 temperature=0.55,
-                max_tokens=6000,
+                max_tokens=8192,
                 task_type="drafting",
             )
         except Exception as exc:
@@ -992,7 +992,7 @@ class DocumentGeneratorChain:
                     prompt=base_prompt + "\n\n" + style["nudge"],
                     system=TAILORED_CV_SYSTEM,
                     temperature=0.55 if key == "concise" else 0.7,
-                    max_tokens=6000,
+                    max_tokens=8192,
                     task_type="drafting",
                 )
             except Exception as exc:
@@ -1051,7 +1051,7 @@ class DocumentGeneratorChain:
                 prompt=prompt,
                 system=TAILORED_CL_SYSTEM,
                 temperature=0.65,
-                max_tokens=2500,
+                max_tokens=8192,
                 task_type="drafting",
             )
         except Exception as exc:

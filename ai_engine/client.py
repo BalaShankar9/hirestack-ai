@@ -114,8 +114,8 @@ def _is_retryable(exc: BaseException) -> bool:
 _RETRY_KWARGS: Dict[str, Any] = dict(
     # Gemini free-tier often returns RetryInfo delays in the 30–60s range.
     # Give the SDK time to recover rather than failing the whole pipeline.
-    # Stop after 6 attempts OR 120s total — whichever comes first.
-    stop=(stop_after_attempt(6) | stop_after_delay(120)),
+    # Stop after 6 attempts OR 300s total — whichever comes first.
+    stop=(stop_after_attempt(6) | stop_after_delay(300)),
     wait=wait_exponential(multiplier=1, min=2, max=30),
     retry=retry_if_exception(_is_retryable),
     before_sleep=before_sleep_log(logger, logging.WARNING),

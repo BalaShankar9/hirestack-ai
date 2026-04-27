@@ -49,4 +49,6 @@ class DocsViewModel @Inject constructor(
         _state.value = _state.value.copy(category = category)
         refresh()
     }
+
+    fun clearError() { _state.value = _state.value.copy(error = null) }
 }

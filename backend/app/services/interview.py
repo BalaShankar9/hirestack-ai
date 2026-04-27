@@ -153,6 +153,14 @@ class InterviewService:
             return session
         return None
 
+    async def delete_session(self, session_id: str, user_id: str) -> bool:
+        session = await self.get_session(session_id, user_id)
+        if not session:
+            return False
+        return await self.db.delete(
+            COLLECTIONS.get("interview_sessions", "interview_sessions"), session_id
+        )
+
     async def _get_active_session(self, session_id: str, user_id: str) -> Dict[str, Any]:
         """Get a session and validate it's active and not expired."""
         session = await self.get_session(session_id, user_id)

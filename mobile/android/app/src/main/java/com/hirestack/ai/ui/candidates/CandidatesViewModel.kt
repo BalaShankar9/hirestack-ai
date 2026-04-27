@@ -58,4 +58,57 @@ class CandidatesViewModel @Inject constructor(
         _state.value = _state.value.copy(stage = stage)
         refresh()
     }
+
+    fun delete(id: String) {
+        val before = _state.value.items
+        _state.value = _state.value.copy(items = before.filterNot { it.id == id })
+        viewModelScope.launch {
+            try {
+                api.deleteCandidate(id)
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(items = before, error = e.message ?: "Failed to delete")
+            }
+        }
+    }
+
+    fun archive(id: String) {
+        val before = _state.value.items
+        _state.value = _state.value.copy(items = before.filterNot { it.id == id })
+        viewModelScope.launch {
+            try {
+                api.moveCandidateStage(id, mapOf("stage" to "rejected"))
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(items = before, error = e.message ?: "Failed to archive")
+            }
+        }
+    }
+
+    /** Removes locally and returns the snapshot for undo. */
+    fun removeLocally(id: String): Candidate? {
+        val before = _state.value.items
+        val item = before.firstOrNull { it.id == id } ?: return null
+        _state.value = _state.value.copy(items = before.filterNot { it.id == id })
+        return item
+    }
+
+    fun restore(item: Candidate) {
+        if (_state.value.items.any { it.id == item.id }) return
+        _state.value = _state.value.copy(items = _state.value.items + item)
+    }
+
+    fun commitDelete(id: String) {
+        viewModelScope.launch {
+            try { api.deleteCandidate(id) }
+            catch (e: Exception) { _state.value = _state.value.copy(error = e.message ?: "Failed to delete"); refresh() }
+        }
+    }
+
+    fun commitArchive(id: String) {
+        viewModelScope.launch {
+            try { api.moveCandidateStage(id, mapOf("stage" to "rejected")) }
+            catch (e: Exception) { _state.value = _state.value.copy(error = e.message ?: "Failed to archive"); refresh() }
+        }
+    }
+
+    fun clearError() { _state.value = _state.value.copy(error = null) }
 }

@@ -165,3 +165,19 @@ async def get_session(
             detail="Interview session not found",
         )
     return session
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("30/minute")
+async def delete_session(
+    request: Request,
+    session_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Delete an interview session."""
+    service = InterviewService()
+    if not await service.delete_session(session_id, current_user["id"]):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Interview session not found",
+        )
