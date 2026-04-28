@@ -1,51 +1,53 @@
 # FastAPI and server
-fastapi>=0.109,<0.116
-uvicorn[standard]>=0.27,<0.33
-python-multipart>=0.0.6,<0.1
+# Floors raised 2026-04-28 (S1-F1): pin to versions free of known CVEs.
+# python-multipart 0.0.26+ closes CVE-2026-40347.
+fastapi>=0.115,<0.130
+uvicorn[standard]>=0.27,<0.36
+python-multipart>=0.0.26,<0.1
 
 # Supabase
-supabase>=2.0,<2.12
+supabase>=2.0,<2.20
 
-# JWT verification
-PyJWT>=2.8,<2.10
+# JWT verification — 2.12.0 closes CVE-2026-32597 (auth path).
+PyJWT>=2.12.0,<3.0
 
 # AI
-openai>=1.30,<1.60
-google-genai>=1.0,<1.8
-json-repair>=0.30,<0.40
+openai>=1.30,<2.0
+google-genai>=1.0,<2.0
+json-repair>=0.30,<0.50
 
 # Validation
-pydantic>=2.10,<2.12
-pydantic-settings>=2.5,<2.8
+pydantic>=2.10,<3.0
+pydantic-settings>=2.5,<3.0
 email-validator==2.1.0
 
-# File processing
-python-docx>=1.1,<1.2
-pypdf>=4.0,<5.1
+# File processing — pypdf 6.10.2+ closes 23 CVEs; pillow 12.2.0+ closes CVE-2026-40192.
+python-docx>=1.1,<2.0
+pypdf>=6.10.2,<7.0
 pdfplumber>=0.10,<0.12
-reportlab>=4.0,<4.3
-Pillow>=10.2,<11.1
+reportlab>=4.0,<5.0
+Pillow>=12.2.0,<13.0
 
 # Async tasks
-redis>=5.0,<5.3
+redis>=5.0,<7.0
 
-# Testing
-pytest>=8.0,<8.4
-pytest-asyncio>=0.23,<0.25
+# Testing — pytest 9.0.3 closes CVE-2025-71176; pytest-asyncio 0.26 supports pytest 9.
+pytest>=9.0.3,<10.0
+pytest-asyncio>=1.0,<2.0
 
 # Monitoring
-sentry-sdk[fastapi]>=2.0,<2.20
+sentry-sdk[fastapi]>=2.0,<3.0
 
 # Billing
-stripe>=8.0,<9.1
+stripe>=8.0,<13.0
 
-# Utils
-httpx>=0.24,<0.28
-python-dateutil>=2.8,<2.10
-tenacity>=8.2,<9.1
-structlog>=24.1,<25.1
-aiofiles>=23.2,<24.2
-markdown>=3.5,<3.8
+# Utils — markdown 3.8.1+ closes CVE-2025-69534.
+httpx>=0.24,<1.0
+python-dateutil>=2.8,<3.0
+tenacity>=8.2,<10.0
+structlog>=24.1,<26.0
+aiofiles>=23.2,<26.0
+markdown>=3.8.1,<4.0
 slowapi>=0.1.9,<0.2
-nh3>=0.2,<0.3
+nh3>=0.2,<0.4
 selectolax>=0.3,<0.4
