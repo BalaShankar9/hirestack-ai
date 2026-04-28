@@ -35,7 +35,7 @@ Existing test surface (10 files): `test_critic_gate_enforcement`, `test_critic_g
 | F2 | Behavioral tests for `DatabaseSink.emit` — event row written to `generation_job_events` with top-level columns populated; `progress` events update `generation_jobs` snapshot; redundant updates skipped; insert failure does not break pipeline. | High | ≤300 | planned |
 | F3 | Behavioral tests for `_build_evidence_summary` — handles None, empty ledger, ledger with items, citation-classification counts, unlinked count. | Medium | ≤200 | planned |
 | F4 | Behavioral tests for `DatabaseSink._update_module_progress` 5%-throttle + state-filter (only touches `generating`/`queued` modules). | Medium | ≤200 | planned |
-| F5 | Extract `DatabaseSink` to `backend/app/services/pipeline/database_sink.py`. Pure move with re-export shim — no behavior change. Tests added in F2/F4 prove it. | High | ≤300 | planned |
+| F5 | Phase-metadata internal-consistency tests — `_PHASE_ORDER` ↔ `_PHASE_STEP` ↔ `_phase_to_agent` ↔ `_TOTAL_STEPS` must stay in lock-step. Catches the future-bug-magnet of adding a phase to one list and forgetting the others. (Re-scoped from "extract DatabaseSink to its own module" — the physical extraction is deferred; the F1-F4 tests already pin the contract that any future move must preserve.) | High | ≤200 | planned |
 | F6 | S3 sign-off doc + ADR-0005 on canonical-execution audit tag invariant. | Low | ≤150 | planned |
 
 Each fix ships as one commit with its tests; suite must stay green and <15s.
