@@ -19,6 +19,8 @@ logger = structlog.get_logger()
 MAX_JD_SIZE = 50_000       # 50KB — no JD is this long
 MAX_RESUME_SIZE = 100_000  # 100KB — generous for parsed text
 PIPELINE_TIMEOUT = 300     # 5 minutes — hard ceiling for the sync pipeline
+MIN_JD_LENGTH = 20         # Minimum non-whitespace chars for a meaningful JD
+JD_TRUNCATION_THRESHOLD = 10_000  # JDs above this are truncated before AI processing
 
 # ── Conditional imports: PipelineRuntime ──
 try:
@@ -671,16 +673,103 @@ def _classify_ai_error(exc: Exception) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _validate_pipeline_input(req: PipelineRequest) -> None:
-    """Reject oversized or empty inputs."""
+def _is_garbage_input(text: str) -> bool:
+    """Return True if text looks like garbage/placeholder input.
+
+    Catches obvious junk like "aaaaaaaaa..." or "xxxxxxxxx..." where a single
+    character dominates >90% of the content.  Does NOT catch legitimate
+    repetitive technical JDs.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return False
+    most_common_count = max(stripped.count(c) for c in set(stripped))
+    return most_common_count / len(stripped) >= 0.9
+
+
+def _truncate_long_jd(jd_text: str, max_chars: int = JD_TRUNCATION_THRESHOLD) -> tuple:
+    """Truncate a job description to *max_chars*, preserving structural boundaries.
+
+    Returns ``(truncated_text, was_truncated)``.  When truncation occurs the
+    cut is made at the nearest paragraph/sentence break so the text remains
+    coherent.
+    """
+    if len(jd_text) <= max_chars:
+        return jd_text, False
+
+    truncated = jd_text[:max_chars]
+
+    # Prefer cutting at a blank-line paragraph boundary first, then a
+    # sentence-ending punctuation, and finally a plain newline.
+    for sep in ("\n\n", "\n", ". ", "! ", "? "):
+        last_pos = truncated.rfind(sep)
+        if last_pos > int(max_chars * 0.7):
+            truncated = truncated[: last_pos + len(sep)]
+            break
+
+    return truncated.strip(), True
+
+
+def _validate_pipeline_input(req: PipelineRequest) -> dict:
+    """Validate and preprocess pipeline inputs.
+
+    Mutates *req.jd_text* in-place when the JD exceeds ``JD_TRUNCATION_THRESHOLD``
+    so downstream code automatically uses the shorter version.
+
+    Returns a metadata dict::
+
+        {
+            "no_resume_mode": bool,   # True when no resume was provided
+            "jd_truncated": bool,     # True when JD was truncated
+        }
+
+    Raises ``HTTPException`` for invalid inputs.
+    """
     if not req.job_title.strip():
         raise HTTPException(status_code=400, detail="Job title is required")
     if not req.jd_text.strip():
         raise HTTPException(status_code=400, detail="Job description is required")
+
+    # Minimum meaningful length (P2-09)
+    if len(req.jd_text.strip()) < MIN_JD_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Job description is too short (minimum {MIN_JD_LENGTH} characters). "
+                "Please provide a complete job description."
+            ),
+        )
+
+    # Garbage / placeholder detection (P2-09)
+    if _is_garbage_input(req.jd_text):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Job description appears to contain placeholder or test data. "
+                "Please provide a real job description."
+            ),
+        )
+
     if len(req.jd_text) > MAX_JD_SIZE:
         raise HTTPException(status_code=413, detail="Job description too large (max 50KB)")
     if len(req.resume_text) > MAX_RESUME_SIZE:
         raise HTTPException(status_code=413, detail="Resume text too large (max 100KB)")
+
+    # Truncate very long JDs before they hit the AI (P2-08).
+    # JDs above 10 K chars rarely add signal and inflate latency.
+    jd_truncated = False
+    if len(req.jd_text) > JD_TRUNCATION_THRESHOLD:
+        original_len = len(req.jd_text)
+        req.jd_text, jd_truncated = _truncate_long_jd(req.jd_text)
+        logger.info(
+            "pipeline_input.jd_truncated",
+            original_len=original_len,
+            truncated_len=len(req.jd_text),
+        )
+
+    no_resume_mode = not bool(req.resume_text.strip())
+
+    return {"no_resume_mode": no_resume_mode, "jd_truncated": jd_truncated}
 
 
 # ── SSE helpers ──

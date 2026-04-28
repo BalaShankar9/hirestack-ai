@@ -116,13 +116,13 @@ async def test_check_usage_guard_raises_429_on_cap_hit(monkeypatch):
     assert exc_info.value.detail["limit"] == 5
 
 
-# ── Anti-drift: all 4 generation entrypoints must call check_usage_guard ─
+# ── Anti-drift: all generation entrypoints must call check_usage_guard ─
 
 def test_generation_entrypoints_invoke_usage_guard():
     """Every AI-spend entrypoint must call check_usage_guard. Anti-drift."""
-    from app.api.routes.generate import planned, document, sync_pipeline, stream
+    from app.api.routes.generate import planned, document, sync_pipeline, stream, jobs
 
-    for mod in (planned, document, sync_pipeline, stream):
+    for mod in (planned, document, sync_pipeline, stream, jobs):
         src = inspect.getsource(mod)
         assert "check_usage_guard" in src, (
             f"{mod.__name__} must call check_usage_guard before billing"

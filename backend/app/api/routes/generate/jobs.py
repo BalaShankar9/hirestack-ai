@@ -2415,7 +2415,12 @@ async def create_generation_job(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Create a DB-backed generation job. Returns {job_id} immediately."""
+    from app.api.deps import check_usage_guard
+    from app.services.usage_guard import record_generation
     from app.core.database import get_supabase, TABLES
+
+    # Gate on daily generation cap before creating the job (P2-03 / P2-10)
+    await check_usage_guard(current_user)
 
     sb = get_supabase()
     user_id = current_user.get("id") or current_user.get("uid") or current_user.get("sub")
@@ -2449,6 +2454,13 @@ async def create_generation_job(
         .execute()
     )
     job_id = job_resp.data[0]["id"]
+
+    # Record this generation towards the user's daily quota (P2-03).
+    # Best-effort — never block job creation on counter failures.
+    try:
+        await record_generation(user_id)
+    except Exception as rec_err:
+        logger.warning("create_job.record_generation_failed", job_id=job_id, error=str(rec_err)[:200])
 
     # Emit initial "queued" event so frontend can subscribe immediately
     try:
