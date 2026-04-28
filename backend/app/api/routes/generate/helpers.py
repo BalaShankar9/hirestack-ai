@@ -677,33 +677,49 @@ def _is_garbage_input(text: str) -> bool:
     """Return True if text looks like garbage/placeholder input.
 
     Catches obvious junk like "aaaaaaaaa..." or "xxxxxxxxx..." where a single
-    character dominates >90% of the content.  Does NOT catch legitimate
+    character dominates ≥90% of the content.  Does NOT catch legitimate
     repetitive technical JDs.
     """
+    import collections
     stripped = text.strip()
     if not stripped:
         return False
-    most_common_count = max(stripped.count(c) for c in set(stripped))
+    counts = collections.Counter(stripped)
+    most_common_count = counts.most_common(1)[0][1]
     return most_common_count / len(stripped) >= 0.9
+
+
+# Minimum fraction of max_chars that must remain after boundary-seeking.
+# If no boundary is found within the last 30% of the window we fall back
+# to a hard cut, keeping at least 70% of the content intact.
+_JD_TRUNCATION_MIN_KEEP = 0.7
 
 
 def _truncate_long_jd(jd_text: str, max_chars: int = JD_TRUNCATION_THRESHOLD) -> tuple:
     """Truncate a job description to *max_chars*, preserving structural boundaries.
 
     Returns ``(truncated_text, was_truncated)``.  When truncation occurs the
-    cut is made at the nearest paragraph/sentence break so the text remains
-    coherent.
+    cut is made at the nearest structural break so the text remains coherent.
+    Separator priority (highest to lowest):
+
+    1. ``\\n\\n`` — blank-line paragraph break (most natural cut point)
+    2. ``\\n``    — single newline (section or bullet boundary)
+    3. ``". "``   — sentence-ending period
+    4. ``"! "``   — sentence-ending exclamation
+    5. ``"? "``   — sentence-ending question
+
+    If no separator is found within the final 30% of the window the text is
+    hard-cut at *max_chars* and stripped.
     """
     if len(jd_text) <= max_chars:
         return jd_text, False
 
     truncated = jd_text[:max_chars]
+    min_keep_chars = int(max_chars * _JD_TRUNCATION_MIN_KEEP)
 
-    # Prefer cutting at a blank-line paragraph boundary first, then a
-    # sentence-ending punctuation, and finally a plain newline.
     for sep in ("\n\n", "\n", ". ", "! ", "? "):
         last_pos = truncated.rfind(sep)
-        if last_pos > int(max_chars * 0.7):
+        if last_pos > min_keep_chars:
             truncated = truncated[: last_pos + len(sep)]
             break
 
