@@ -142,16 +142,22 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             ))
 
         # ── Phase 1a: Resume parse pipeline ──────────────────────────
+        no_resume_mode = not bool(req.resume_text.strip())
         yield _sse("progress", {
             "phase": "profiling",
             "step": 1,
             "totalSteps": 6,
             "progress": 8,
-            "message": "Agent: parsing resume…",
+            "message": (
+                "Agent: no resume provided — generating from job description…"
+                if no_resume_mode
+                else "Agent: parsing resume…"
+            ),
+            "no_resume_mode": no_resume_mode,
         })
 
         user_profile: dict = {}
-        if req.resume_text.strip():
+        if not no_resume_mode:
             pipe = resume_parse_pipeline(ai_client=ai, on_stage_update=stage_callback, db=sb, tables=TABLES)
             parse_result: PipelineResult = await pipe.execute({
                 "user_id": user_id,
@@ -761,15 +767,21 @@ async def generate_pipeline_stream(request: Request, req: PipelineRequest, curre
             profiler = RoleProfilerChain(ai)
             benchmark_chain = BenchmarkBuilderChain(ai)
 
+            no_resume_mode = not bool(req.resume_text.strip())
             yield _sse("progress", {
                 "phase": "profiling",
                 "step": 1,
                 "totalSteps": 6,
                 "progress": 10,
-                "message": "Parsing resume & building candidate benchmark…",
+                "message": (
+                    "No resume provided — generating documents from job description…"
+                    if no_resume_mode
+                    else "Parsing resume & building candidate benchmark…"
+                ),
+                "no_resume_mode": no_resume_mode,
             })
 
-            if req.resume_text.strip():
+            if not no_resume_mode:
                 user_profile, benchmark_data = await asyncio.gather(
                     profiler.parse_resume(req.resume_text),
                     benchmark_chain.create_ideal_profile(req.job_title, company, req.jd_text),

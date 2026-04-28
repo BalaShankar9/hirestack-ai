@@ -225,7 +225,8 @@ class TestPipelineInputValidation:
         from app.api.routes.generate import PipelineRequest, _validate_pipeline_input
         from fastapi import HTTPException
 
-        req = PipelineRequest(job_title="Engineer", jd_text="x" * 51_000)
+        # Use varied text to avoid garbage detection, but exceed 50KB hard limit
+        req = PipelineRequest(job_title="Engineer", jd_text="Senior Software Engineer role. " * 2000)
         with pytest.raises(HTTPException) as exc_info:
             _validate_pipeline_input(req)
         assert exc_info.value.status_code == 413
@@ -235,7 +236,9 @@ class TestPipelineInputValidation:
         from fastapi import HTTPException
 
         req = PipelineRequest(
-            job_title="Engineer", jd_text="Valid JD", resume_text="x" * 101_000
+            job_title="Engineer",
+            jd_text="Looking for a senior engineer with Python experience.",
+            resume_text="x" * 101_000,
         )
         with pytest.raises(HTTPException) as exc_info:
             _validate_pipeline_input(req)

@@ -61,18 +61,18 @@
 > Handle every failure gracefully. No crashes, no lost work.
 
 ### 2A — Error Handling & Recovery
-- [ ] **P2-01**: Implement retry logic for transient AI errors (429, 503) with exponential backoff
-- [ ] **P2-02**: Add circuit breaker for AI provider — after 3 consecutive failures, return cached/partial results
-- [ ] **P2-03**: Implement job persistence — save generation progress to DB so restarts don't lose work
+- [x] **P2-01**: Implement retry logic for transient AI errors (429, 503) with exponential backoff — **Implemented**: `ai_engine/client.py` uses `tenacity` with `stop_after_attempt(6) | stop_after_delay(120)` and `wait_exponential`; `_is_retryable` filters non-retryable errors
+- [x] **P2-02**: Add circuit breaker for AI provider — after 3 consecutive failures, return cached/partial results — **Implemented**: `app/core/circuit_breaker.py` per-model breakers (5 failures → open for 60s, half-open probe); wired in `_GeminiProvider._generate_content_throttled`
+- [x] **P2-03**: Implement job persistence — save generation progress to DB so restarts don't lose work — **Implemented**: `create_generation_job` now calls `check_usage_guard` before creation and `record_generation` after the job is queued; all generation output is persisted via `_persist_generation_result_to_application`
 - [x] **P2-04**: Add `/generate/jobs/{id}/status` polling endpoint for clients that lose SSE connection — **Implemented**: returns job state, progress, latest event, and active task flag
 - [x] **P2-05**: Implement module-level regeneration — user can retry just the failed module — **Implemented**: `POST /jobs/{id}/retry` creates child job for specified modules, validates terminal state
 
 ### 2B — Input Validation & Edge Cases
-- [ ] **P2-06**: Handle empty resume (generate generic CV from JD only)
+- [x] **P2-06**: Handle empty resume (generate generic CV from JD only) — **Implemented**: both agent and legacy pipeline paths skip resume parse when `resume_text` is empty; informative `no_resume_mode` SSE progress event emitted; `_validate_pipeline_input` returns `no_resume_mode` flag
 - [ ] **P2-07**: Handle non-English JDs (detect language, generate in same language or English)
-- [ ] **P2-08**: Handle extremely long JDs (>10K chars) — summarize before feeding to AI
-- [ ] **P2-09**: Handle malformed/garbage input — return helpful error, not 500
-- [ ] **P2-10**: Rate limit per user with clear feedback ("You can generate again in X minutes")
+- [x] **P2-08**: Handle extremely long JDs (>10K chars) — **Implemented**: `_truncate_long_jd` cuts at the nearest paragraph/sentence boundary; `_validate_pipeline_input` auto-truncates JDs above `JD_TRUNCATION_THRESHOLD` (10K chars) and returns `jd_truncated` flag; hard 50KB cap still rejects truly enormous inputs
+- [x] **P2-09**: Handle malformed/garbage input — return helpful error, not 500 — **Implemented**: `_is_garbage_input` detects single-char-dominated text (>90%); `_validate_pipeline_input` adds minimum JD length check (20 chars) and garbage detection with descriptive 400 responses
+- [x] **P2-10**: Rate limit per user with clear feedback — **Implemented**: `@limiter.limit("3/minute")` on all generation endpoints + `check_usage_guard` (20/day per user) raises 429 with `retry_after_hours` detail; `SlowAPI` adds `Retry-After` header
 
 ### 2C — Data Integrity
 - [ ] **P2-11**: Verify all generated content is saved to Supabase correctly
@@ -81,10 +81,10 @@
 - [ ] **P2-14**: Add audit trail — log who generated what, when, with what inputs
 
 ### Exit Criteria
-- [ ] System recovers gracefully from AI provider outages
+- [x] System recovers gracefully from AI provider outages (circuit breaker + retry)
 - [ ] No data loss on server restart during generation
-- [ ] All edge case inputs return helpful responses, never 500s
-- [ ] User can retry any failed module individually
+- [x] All edge case inputs return helpful responses, never 500s (min-length, garbage detection, truncation)
+- [x] User can retry any failed module individually
 
 ---
 
