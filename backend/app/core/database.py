@@ -256,7 +256,6 @@ class SupabaseDB:
 
     def __init__(self):
         self.client: Client = get_supabase()
-        self._lock: Optional[asyncio.Lock] = None
 
     @staticmethod
     def _is_transient_error(exc: BaseException) -> bool:
@@ -278,10 +277,17 @@ class SupabaseDB:
         ))
 
     async def _run(self, func, *args):
+        """Execute the (sync) supabase-py call on the default executor.
+
+        Historically wrapped in an asyncio.Lock to serialize all DB calls,
+        but the underlying postgrest/httpx client is already thread-safe at
+        the connection-pool level, and the SupabaseDB instance is a module
+        singleton — so the lock was forcing global serialization of every
+        DB call in the process (P-2 in S1 audit). Lock removed; parallel
+        DB calls now genuinely run in parallel up to the executor's
+        thread-pool size.
+        """
         loop = asyncio.get_running_loop()
-        if self._lock is None:
-            # Create lock inside the running loop (py3.9 asyncio primitives can be loop-bound).
-            self._lock = asyncio.Lock()
         # Retry tuning lives in Settings (config.py); these are read fresh
         # per call so tests / SIGHUP-style reloads can override at runtime
         # without rebinding the SupabaseDB instance.
@@ -293,8 +299,7 @@ class SupabaseDB:
         last_exc: Optional[BaseException] = None
         for attempt in range(1, attempts + 1):
             try:
-                async with self._lock:
-                    return await loop.run_in_executor(None, func, *args)
+                return await loop.run_in_executor(None, func, *args)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
