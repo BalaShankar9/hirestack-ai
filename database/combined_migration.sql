@@ -667,7 +667,7 @@ CREATE TABLE IF NOT EXISTS public.generation_jobs (
   requested_modules TEXT[] NOT NULL DEFAULT '{}'::text[],
 
   -- queued | running | succeeded | failed | cancelled
-  status VARCHAR(20) NOT NULL DEFAULT 'queued',
+  status VARCHAR(30) NOT NULL DEFAULT 'queued',
 
   -- UI-friendly progress fields (0-100)
   progress INTEGER NOT NULL DEFAULT 0,
