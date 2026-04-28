@@ -60,7 +60,7 @@ import { useApplication, useEvidence, useTasks } from "@/lib/firestore";
 import type { ModuleKey } from "@/lib/firestore";
 import type { PipelineProgress } from "@/lib/firestore/ops";
 import { lockCvVariant, lockPsVariant } from "@/lib/firestore/ops";
-import { VariantPicker } from "@/components/editor/variant-picker";
+import { DocumentEditorTab } from "@/components/workspace/document-editor-tab";
 import type { DocumentLibraryItem } from "@/lib/firestore/models";
 import { toast } from "@/hooks";
 import {
@@ -84,7 +84,7 @@ import { ReadinessTimeline } from "@/components/workspace/readiness-timeline";
 import { KeywordChips } from "@/components/workspace/keyword-chips";
 import { EvidencePicker } from "@/components/workspace/evidence-picker";
 import { VersionHistoryDrawer } from "@/components/workspace/version-history-drawer";
-import { DocEditorModule, ExportCard, EmptyState } from "@/components/workspace/doc-editor-module";
+import { ExportCard, EmptyState } from "@/components/workspace/doc-editor-module";
 import type { DocMode } from "@/components/workspace/diff-toggle";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { SectionErrorBoundary } from "@/components/error-boundary";
@@ -1922,17 +1922,7 @@ export default function ApplicationWorkspacePage() {
             </TabsContent>
 
             <TabsContent value="cv" className="mt-4">
-              {Array.isArray(app.cvVariants) && app.cvVariants.length >= 2 && (
-                <VariantPicker
-                  title="CV style"
-                  variants={app.cvVariants}
-                  onLock={async (key) => {
-                    const res = await lockCvVariant(appId, key);
-                    if (res.cvHtml) setCvLocal(res.cvHtml);
-                  }}
-                />
-              )}
-              <DocEditorModule
+              <DocumentEditorTab
                 title="Tailored CV"
                 subtitle="Two-pane editing: write + validate against keywords."
                 mode={cvMode}
@@ -1952,11 +1942,19 @@ export default function ApplicationWorkspacePage() {
                   setVersionsOpen(true);
                 }}
                 baseHtml={app.confirmedFacts?.resume?.text || ""}
+                variantPicker={Array.isArray(app.cvVariants) && app.cvVariants.length >= 2 ? {
+                  title: "CV style",
+                  variants: app.cvVariants,
+                  onLock: async (key) => {
+                    const res = await lockCvVariant(appId, key);
+                    if (res.cvHtml) setCvLocal(res.cvHtml);
+                  },
+                } : undefined}
               />
             </TabsContent>
 
             <TabsContent value="cover" className="mt-4">
-              <DocEditorModule
+              <DocumentEditorTab
                 title="Cover letter"
                 subtitle="Evidence-first narrative, not fluff."
                 mode={clMode}
@@ -1980,17 +1978,7 @@ export default function ApplicationWorkspacePage() {
             </TabsContent>
 
             <TabsContent value="statement" className="mt-4">
-              {Array.isArray(app.psVariants) && app.psVariants.length >= 2 && (
-                <VariantPicker
-                  title="Personal statement style"
-                  variants={app.psVariants}
-                  onLock={async (key) => {
-                    const res = await lockPsVariant(appId, key);
-                    if (res.personalStatementHtml) setPsLocal(res.personalStatementHtml);
-                  }}
-                />
-              )}
-              <DocEditorModule
+              <DocumentEditorTab
                 title="Personal statement"
                 subtitle="Your compelling motivation narrative — authentic, specific, memorable."
                 mode={psMode}
@@ -2010,11 +1998,19 @@ export default function ApplicationWorkspacePage() {
                   setVersionsOpen(true);
                 }}
                 baseHtml={app.confirmedFacts?.resume?.text || ""}
+                variantPicker={Array.isArray(app.psVariants) && app.psVariants.length >= 2 ? {
+                  title: "Personal statement style",
+                  variants: app.psVariants,
+                  onLock: async (key) => {
+                    const res = await lockPsVariant(appId, key);
+                    if (res.personalStatementHtml) setPsLocal(res.personalStatementHtml);
+                  },
+                } : undefined}
               />
             </TabsContent>
 
             <TabsContent value="portfolio" className="mt-4">
-              <DocEditorModule
+              <DocumentEditorTab
                 title="Portfolio & evidence"
                 subtitle="Showcase projects and proof of knowledge — irrefutable evidence of capability."
                 mode={portfolioMode}
