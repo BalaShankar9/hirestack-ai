@@ -12,8 +12,8 @@ def test_livez_endpoint_registered() -> None:
 
 def test_livez_does_not_touch_external_dependencies() -> None:
     """The whole point of /livez is to NOT call DB / Redis / AI."""
-    import main as backend_main
-    src = inspect.getsource(backend_main.liveness_probe)
+    from app.api.routes.health import liveness_probe
+    src = inspect.getsource(liveness_probe)
     forbidden = ("get_supabase", "get_redis", "ai_engine", "circuit_breaker", "MetricsCollector")
     for token in forbidden:
         assert token not in src, f"/livez must not call {token}"

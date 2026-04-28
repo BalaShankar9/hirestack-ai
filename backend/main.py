@@ -365,130 +365,10 @@ async def global_exception_handler(
     )
 
 
-# Health check — unauthenticated, so only expose operational status, not internals
-@app.get("/health", tags=["Health"])
-async def health_check():
-    """Health check endpoint — returns operational status.
+# Health and readiness routes (S1-F11: extracted to app/api/routes/health.py)
+from app.api.routes.health import router as health_router  # noqa: E402
 
-    Internal diagnostics (circuit breakers, model health, metrics, queue depth)
-    are only returned when DEBUG=true or ENVIRONMENT != production.
-    """
-    supabase_status = {"connected": False}
-    try:
-        client = get_supabase()
-        await asyncio.wait_for(
-            asyncio.to_thread(lambda: client.table("users").select("id").limit(1).execute()),
-            timeout=5,
-        )
-        supabase_status = {"connected": True}
-    except Exception as e:
-        _detail = str(e) if (settings.debug or settings.environment != "production") else "unavailable"
-        supabase_status = {"connected": False, "error": _detail}
-
-    # Check AI provider (Gemini only)
-    # Key presence is the best proxy we can check without incurring an API call.
-    # In production, a missing key means ALL generation requests will fail — mark degraded.
-    _ai_key_ok = bool(getattr(settings, "gemini_api_key", "")) or getattr(settings, "gemini_use_vertexai", False)
-    ai_status = {"provider": "gemini", "ok": _ai_key_ok}
-
-    # Redis cache health
-    redis_status = {"connected": False}
-    try:
-        from app.core.database import get_redis
-        r = get_redis()
-        if r is not None:
-            await asyncio.wait_for(asyncio.to_thread(r.ping), timeout=2)
-            redis_status = {"connected": True}
-    except Exception as e:
-        redis_status = {"connected": False, "error": str(e)[:200]}
-
-    # Circuit breaker state
-    breaker_status = {}
-    try:
-        from app.core.circuit_breaker import _breakers
-        for name, breaker in _breakers.items():
-            breaker_status[name] = {
-                "state": breaker.state.value,
-                "failure_count": breaker.failure_count,
-            }
-    except Exception:
-        pass
-
-    # Model health (cascade failover router)
-    model_health = {}
-    try:
-        from ai_engine.model_router import get_model_health
-        model_health = get_model_health()
-    except Exception:
-        pass
-
-    # Pipeline metrics summary
-    metrics_summary = {}
-    try:
-        from app.core.metrics import MetricsCollector
-        metrics_summary = MetricsCollector.get().get_stats()
-    except Exception:
-        pass
-
-    # Job queue depth
-    queue_info = {}
-    try:
-        from app.core.queue import queue_depth
-        depth = queue_depth()
-        queue_info = {"pending": depth, "backend": "redis_streams" if depth >= 0 else "in_process"}
-    except Exception:
-        queue_info = {"backend": "in_process"}
-
-    # Determine overall health.
-    # Supabase down = degraded (no auth or data access possible).
-    # AI key missing in production = degraded (all generation endpoints will fail).
-    _supabase_ok = supabase_status.get("connected", False)
-    _ai_degraded_in_prod = (
-        settings.environment == "production" and not ai_status.get("ok", False)
-    )
-    degraded = not _supabase_ok or _ai_degraded_in_prod
-    overall = "degraded" if degraded else "healthy"
-    code = status.HTTP_503_SERVICE_UNAVAILABLE if degraded else status.HTTP_200_OK
-
-    # Base response — safe for public exposure
-    content: dict = {
-        "status": overall,
-        "version": settings.app_version,
-    }
-
-    # Detailed internals only in non-production or debug mode
-    _show_internals = settings.debug or settings.environment != "production"
-    if _show_internals:
-        content.update({
-            "environment": settings.environment,
-            "supabase": supabase_status,
-            "ai": {
-                "provider": ai_status.get("provider", "unknown"),
-                "ok": ai_status.get("ok", False),
-            },
-            "redis": redis_status,
-            "circuit_breakers": breaker_status,
-            "model_health": model_health,
-            "metrics": metrics_summary,
-            "queue": queue_info,
-        })
-
-    def _json_safe(value):
-        """Best-effort conversion for values that may include test mocks."""
-        try:
-            json.dumps(value)
-            return value
-        except Exception:
-            if isinstance(value, dict):
-                return {str(k): _json_safe(v) for k, v in value.items()}
-            if isinstance(value, (list, tuple, set)):
-                return [_json_safe(v) for v in value]
-            return str(value)
-
-    return JSONResponse(
-        status_code=code,
-        content=_json_safe(content),
-    )
+app.include_router(health_router)
 
 
 # ── Frontend error collector ───────────────────────────────────────────
@@ -746,18 +626,7 @@ async def prometheus_metrics():
 # masking the real issue and making outages worse. /livez is the cheap
 # yes-I-am-still-running probe.
 
-@app.get("/livez", tags=["Health"], include_in_schema=False)
-async def liveness_probe():
-    """Lightweight liveness probe.
-
-    Returns 200 iff the event loop is responsive. NEVER touches DB,
-    Redis, or external APIs. Designed for kubelet liveness probes —
-    use /health for readiness instead.
-    """
-    return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content={"status": "alive", "version": settings.app_version},
-    )
+# (S1-F11: /livez extracted to app/api/routes/health.py and registered above.)
 
 
 class _FEError(BaseModel):
