@@ -51,6 +51,7 @@ from .schemas import (  # noqa: E402, F401
 from .jobs import (  # noqa: E402, F401
     _run_generation_job,
     _run_generation_job_inner,
+    _run_generation_job_via_runtime,
     _fetch_job_and_application,
     _normalize_requested_modules,
     _default_module_states,

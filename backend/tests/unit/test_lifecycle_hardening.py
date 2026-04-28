@@ -203,7 +203,7 @@ class TestRunGenerationJobFinalization:
         async def capture_finalize(job_id, *, status, error_message):
             finalize_calls.append({"job_id": job_id, "status": status})
 
-        with patch("app.api.routes.generate.jobs._run_generation_job_inner", side_effect=mock_inner), \
+        with patch("app.api.routes.generate.jobs._run_generation_job_inner_runtime", side_effect=mock_inner), \
              patch("app.api.routes.generate.jobs._finalize_orphaned_job", side_effect=capture_finalize):
             await _run_generation_job("job-1", "user-1")
 

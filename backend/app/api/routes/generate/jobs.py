@@ -968,27 +968,14 @@ async def _run_generation_job_via_runtime(job_id: str, user_id: str) -> None:
 
 
 async def _run_generation_job(job_id: str, user_id: str) -> None:
-    """Backward-compatible entrypoint used by tests and legacy imports."""
-    try:
-        await asyncio.wait_for(
-            _run_generation_job_inner(job_id, user_id),
-            timeout=1800,
-        )
-    except asyncio.TimeoutError:
-        logger.error("job_runtime.timeout", job_id=job_id)
-        await _finalize_orphaned_job(
-            job_id,
-            status="failed",
-            error_message="Generation timed out after 30 minutes.",
-        )
-    except asyncio.CancelledError:
-        logger.warning("job_runtime.cancelled", job_id=job_id)
-        await _finalize_orphaned_job(job_id, status="cancelled", error_message="Cancelled.")
-    except Exception as e:
-        logger.error("job_runtime.unexpected", job_id=job_id, error=str(e))
-        await _finalize_orphaned_job(job_id, status="failed", error_message="Unexpected failure.")
-    finally:
-        _ACTIVE_GENERATION_TASKS.pop(job_id, None)
+    """Thin adapter — always delegates to the canonical runtime entrypoint.
+
+    ``_run_generation_job_via_runtime`` is the authoritative execution path.
+    This shim exists only so that existing test imports keep working without
+    touching every test fixture.  Do NOT add logic here; extend the runtime
+    or its helpers instead.
+    """
+    await _run_generation_job_via_runtime(job_id, user_id)
 
 
 async def _run_generation_job_inner(job_id: str, user_id: str) -> None:
