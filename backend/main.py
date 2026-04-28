@@ -3,6 +3,7 @@ HireStack AI - FastAPI Application
 Main entry point for the backend API
 """
 import asyncio
+import json
 import sys
 from pathlib import Path
 
@@ -472,9 +473,21 @@ async def health_check():
             "queue": queue_info,
         })
 
+    def _json_safe(value):
+        """Best-effort conversion for values that may include test mocks."""
+        try:
+            json.dumps(value)
+            return value
+        except Exception:
+            if isinstance(value, dict):
+                return {str(k): _json_safe(v) for k, v in value.items()}
+            if isinstance(value, (list, tuple, set)):
+                return [_json_safe(v) for v in value]
+            return str(value)
+
     return JSONResponse(
         status_code=code,
-        content=content,
+        content=_json_safe(content),
     )
 
 

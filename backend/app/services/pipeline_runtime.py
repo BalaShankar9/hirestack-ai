@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 import traceback
 from abc import ABC, abstractmethod
@@ -21,7 +22,27 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import structlog
 
+from ai_engine.agents.event_taxonomy import (
+    EXECUTION_PATH_AGENT,
+    EXECUTION_PATH_LEGACY,
+    EXECUTION_PATH_UNKNOWN,
+)
+
 logger = structlog.get_logger("hirestack.pipeline_runtime")
+
+# Phase 1 (canonical execution): production must always run through the agent
+# orchestrator. The legacy chain-only path is preserved as a manually-enabled
+# escape hatch (e.g. for offline triage / partial outage). Set
+# HIRESTACK_ALLOW_LEGACY_PIPELINE=1 to opt in. In every other case a missing
+# agent stack is treated as a hard error so we never silently degrade quality.
+_LEGACY_OPT_IN_ENV = "HIRESTACK_ALLOW_LEGACY_PIPELINE"
+
+
+def _legacy_pipeline_allowed() -> bool:
+    """Return True when the operator has explicitly opted into the legacy path."""
+    return os.environ.get(_LEGACY_OPT_IN_ENV, "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
 
 PHASE_SLO_MS: Dict[str, int] = {
     "recon": 8_000,
@@ -100,6 +121,38 @@ class NullSink(EventSink):
 
     async def emit(self, event: PipelineEvent) -> None:
         pass
+
+
+class _ExecutionPathTaggingSink(EventSink):
+    """Internal sink wrapper that stamps every event with the runtime's
+    canonical-execution audit tag.
+
+    Phase 1 of the world-class roadmap: production traffic must always run
+    through the agent stack. Tagging events at the sink boundary lets
+    dashboards, replays, and tests prove that no degraded path leaked
+    into production without touching every emit site in the runtime.
+    """
+
+    def __init__(self, inner: EventSink, runtime: "PipelineRuntime") -> None:
+        self._inner = inner
+        self._runtime = runtime
+
+    async def emit(self, event: PipelineEvent) -> None:
+        # Mutate `event.data` in place — every existing emitter already
+        # builds a fresh dict, so this is safe.
+        if event.data is None:  # defensive
+            event.data = {}
+        event.data.setdefault("execution_path", self._runtime._execution_path)
+        await self._inner.emit(event)
+
+    async def close(self) -> None:
+        await self._inner.close()
+
+    def __getattr__(self, name: str):  # noqa: D401 - simple forwarder
+        # Transparent forwarding of inner-sink attributes (e.g. CollectorSink.events,
+        # SSESink.queue, SSESink.iter_events) so callers that previously held a
+        # bare CollectorSink/SSESink can keep introspecting through `runtime.sink`.
+        return getattr(self._inner, name)
 
 
 class CollectorSink(EventSink):
@@ -469,11 +522,23 @@ class PipelineRuntime:
         event_sink: Optional[EventSink] = None,
     ) -> None:
         self.config = config
-        self.sink = event_sink or NullSink()
+        # Wrap the user-supplied sink so every emitted event carries the
+        # canonical-execution audit tag (`execution_path`). The wrapper is
+        # transparent to existing emit sites that already write through
+        # `self.sink.emit(...)`.
+        self.sink = _ExecutionPathTaggingSink(
+            inner=event_sink or NullSink(),
+            runtime=self,
+        )
         self._cancelled = False
         self._failed_modules: List[Dict[str, str]] = []
         self._phase_started_at: Dict[str, float] = {}
         self._phase_latencies: Dict[str, int] = {}
+        # Phase 1 canonical-execution audit tag. Set by `execute()` once it
+        # decides agent vs legacy. Every event emitted carries this tag so
+        # dashboards / replay can prove no traffic ran through the
+        # degraded path.
+        self._execution_path: str = EXECUTION_PATH_UNKNOWN
         # Recon overlap state — populated when intel kicks off.
         self._intel_task: Optional[asyncio.Task] = None
         self._intel_started_at: Optional[float] = None
@@ -650,6 +715,7 @@ class PipelineRuntime:
             use_agents = self._agents_available()
 
             if use_agents:
+                self._execution_path = EXECUTION_PATH_AGENT
                 result = await self._run_agent_pipeline(
                     ai=ai, sb=sb, tables=TABLES,
                     job_title=job_title, company=company,
@@ -657,6 +723,29 @@ class PipelineRuntime:
                     user_id=user_id,
                 )
             else:
+                # Canonical-execution gate: refuse to silently degrade.
+                # The legacy chain-only path skips the orchestrator's critic,
+                # fact-checker, validator, and evidence ledger. We require an
+                # explicit opt-in env flag before allowing it.
+                if not _legacy_pipeline_allowed():
+                    logger.error(
+                        "pipeline_runtime.canonical_path_unavailable",
+                        mode=self.config.mode.value,
+                        reason="agent stack import failed and legacy fallback "
+                               "is disabled (set HIRESTACK_ALLOW_LEGACY_PIPELINE=1 "
+                               "to opt in)",
+                    )
+                    raise RuntimeError(
+                        "Canonical agent pipeline unavailable and legacy "
+                        "fallback is not enabled. Refusing to run a degraded "
+                        "generation path."
+                    )
+                logger.warning(
+                    "pipeline_runtime.legacy_path_engaged",
+                    mode=self.config.mode.value,
+                    reason="explicit HIRESTACK_ALLOW_LEGACY_PIPELINE opt-in",
+                )
+                self._execution_path = EXECUTION_PATH_LEGACY
                 result = await self._run_legacy_pipeline(
                     ai=ai,
                     job_title=job_title, company=company,

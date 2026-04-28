@@ -1,6 +1,5 @@
 """DB-backed generation jobs: endpoints, infrastructure, runtime, and cleanup."""
 import asyncio
-import traceback
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, AsyncGenerator
 
@@ -12,18 +11,11 @@ from app.core.security import limiter
 
 from .schemas import GenerationJobRequest, RetryModulesRequest
 from .helpers import (
-    _RUNTIME_AVAILABLE,
     _AGENT_PIPELINES_AVAILABLE,
-    _classify_ai_error,
-    _build_company_intel_summary,
-    _build_atlas_diagnostics,
-    _extract_pipeline_html,
-    _extract_keywords_from_jd,
-    _build_evidence_summary,
-    _format_response,
     _sse,
     _PIPELINE_NAMES,
     _STAGE_ORDER,
+    finalize_job_status_payload,
     logger,
 )
 
@@ -975,6 +967,345 @@ async def _run_generation_job_via_runtime(job_id: str, user_id: str) -> None:
         _ACTIVE_GENERATION_TASKS.pop(job_id, None)
 
 
+async def _run_generation_job(job_id: str, user_id: str) -> None:
+    """Backward-compatible entrypoint used by tests and legacy imports."""
+    try:
+        await asyncio.wait_for(
+            _run_generation_job_inner(job_id, user_id),
+            timeout=1800,
+        )
+    except asyncio.TimeoutError:
+        logger.error("job_runtime.timeout", job_id=job_id)
+        await _finalize_orphaned_job(
+            job_id,
+            status="failed",
+            error_message="Generation timed out after 30 minutes.",
+        )
+    except asyncio.CancelledError:
+        logger.warning("job_runtime.cancelled", job_id=job_id)
+        await _finalize_orphaned_job(job_id, status="cancelled", error_message="Cancelled.")
+    except Exception as e:
+        logger.error("job_runtime.unexpected", job_id=job_id, error=str(e))
+        await _finalize_orphaned_job(job_id, status="failed", error_message="Unexpected failure.")
+    finally:
+        _ACTIVE_GENERATION_TASKS.pop(job_id, None)
+
+
+async def _run_generation_job_inner(job_id: str, user_id: str) -> None:
+    """Backward-compatible legacy runner used by tests and compatibility imports.
+
+    Production in-process jobs run via `_run_generation_job_via_runtime`.
+    """
+    from app.core.database import get_supabase, TABLES
+
+    sb = get_supabase()
+
+    job_resp = await asyncio.to_thread(
+        lambda: sb.table(TABLES["generation_jobs"])
+        .select("*")
+        .eq("id", job_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    if not job_resp.data:
+        await _persist_generation_job_update(
+            sb,
+            TABLES,
+            job_id,
+            {
+                "status": "failed",
+                "error_message": "Generation job record not found.",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        return
+
+    job = job_resp.data[0]
+    application_id = str(job.get("application_id") or "")
+    requested_modules = _normalize_requested_modules(job.get("requested_modules"))
+
+    app_resp = await asyncio.to_thread(
+        lambda: sb.table(TABLES["applications"])
+        .select("*")
+        .eq("id", application_id)
+        .maybe_single()
+        .execute()
+    )
+    if not app_resp.data:
+        await _persist_generation_job_update(
+            sb,
+            TABLES,
+            job_id,
+            {
+                "status": "failed",
+                "error_message": "Application not found",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        return
+
+    application_row = app_resp.data
+    confirmed_facts = application_row.get("confirmed_facts") or {}
+    job_title = confirmed_facts.get("jobTitle") or confirmed_facts.get("job_title") or ""
+    company_name = confirmed_facts.get("company") or ""
+    jd_text_val = confirmed_facts.get("jdText") or confirmed_facts.get("jd_text") or ""
+    resume_text_val = (confirmed_facts.get("resume") or {}).get("text") or ""
+
+    event_sequence = 0
+
+    async def emit(event_name: str, payload: Dict[str, Any]) -> None:
+        nonlocal event_sequence
+        event_sequence += 1
+        await _persist_generation_job_event(
+            sb,
+            TABLES,
+            job_id=job_id,
+            user_id=user_id,
+            application_id=application_id,
+            sequence_no=event_sequence,
+            event_name=event_name,
+            payload=payload,
+        )
+
+    async def emit_progress(phase: str, step: int, progress: int, message: str) -> None:
+        await emit(
+            "progress",
+            {
+                "phase": phase,
+                "step": step,
+                "totalSteps": _JOB_TOTAL_STEPS,
+                "progress": progress,
+                "message": message,
+            },
+        )
+
+    async def emit_error(message: str, code: int) -> None:
+        await _persist_generation_job_update(
+            sb,
+            TABLES,
+            job_id,
+            {
+                "status": "cancelled" if code == 499 else "failed",
+                "error_message": message,
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        await emit("error", {"message": message, "code": code})
+
+    if not job_title or not jd_text_val:
+        await emit_error(
+            "Application is missing job title or job description — please complete the application first",
+            400,
+        )
+        return
+
+    if bool(job.get("cancel_requested")):
+        await emit_error("Generation cancelled.", 499)
+        return
+
+    await _persist_generation_job_update(
+        sb,
+        TABLES,
+        job_id,
+        {
+            "status": "running",
+            "progress": 5,
+            "phase": "initializing",
+            "message": "Initializing AI engine…",
+            "current_agent": "recon",
+            "completed_steps": 0,
+            "total_steps": _JOB_TOTAL_STEPS,
+            "active_sources_count": 0,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "error_message": None,
+        },
+    )
+    await _set_application_modules_generating(
+        sb,
+        TABLES,
+        application_id,
+        application_row.get("modules"),
+        requested_modules,
+    )
+
+    from ai_engine.client import AIClient
+    from ai_engine.chains.company_intel import CompanyIntelChain
+    from ai_engine.chains.role_profiler import RoleProfilerChain
+    from ai_engine.chains.benchmark_builder import BenchmarkBuilderChain
+    from ai_engine.chains.gap_analyzer import GapAnalyzerChain
+    from ai_engine.chains.document_generator import DocumentGeneratorChain
+    from ai_engine.chains.career_consultant import CareerConsultantChain
+    from ai_engine.chains.validator import ValidatorChain
+
+    ai = AIClient()
+    company_str = company_name or "the company"
+
+    await emit_progress("initializing", 0, 5, "Initializing AI engine…")
+    await emit_progress("recon", 1, 8, "Recon is gathering company intelligence…")
+
+    recon_chain = CompanyIntelChain(ai)
+    try:
+        company_intel = await recon_chain.gather_intel(
+            company=company_name,
+            job_title=job_title,
+            jd_text=jd_text_val,
+            on_event=None,
+        )
+    except Exception:
+        company_intel = {"confidence": "low", "data_sources": ["Job description analysis"]}
+    await emit_progress("recon_done", 1, 14, "Recon finished gathering public intel ✓")
+
+    await emit_progress("profiling", 2, 18, "Atlas is parsing your resume and building the target benchmark…")
+    profiler = RoleProfilerChain(ai)
+    benchmark_chain = BenchmarkBuilderChain(ai)
+    if resume_text_val.strip():
+        user_profile, benchmark_data = await asyncio.gather(
+            profiler.parse_resume(resume_text_val),
+            benchmark_chain.create_ideal_profile(job_title, company_str, jd_text_val),
+        )
+    else:
+        user_profile = {}
+        benchmark_data = await benchmark_chain.create_ideal_profile(job_title, company_str, jd_text_val)
+    await emit_progress("profiling_done", 2, 28, "Atlas finished the resume and benchmark analysis ✓")
+
+    await emit_progress("gap_analysis", 3, 38, "Cipher is analyzing skill gaps and keyword misses…")
+    gap_chain = GapAnalyzerChain(ai)
+    gap_analysis = await gap_chain.analyze_gaps(user_profile, benchmark_data, job_title, company_str)
+    await emit_progress("gap_analysis_done", 3, 48, "Cipher finished the gap analysis ✓")
+
+    await emit_progress("documents", 4, 62, "Quill is drafting your tailored documents…")
+    doc_chain = DocumentGeneratorChain(ai)
+    consultant_chain = CareerConsultantChain(ai)
+    validator_chain = ValidatorChain(ai)
+
+    async def safe_call(coro: Any, default: Any) -> Any:
+        try:
+            return await coro
+        except Exception:
+            return default
+
+    cv_html, cl_html, ps_html = await asyncio.gather(
+        safe_call(doc_chain.generate_tailored_cv(user_profile, benchmark_data, gap_analysis, job_title, company_str), ""),
+        safe_call(doc_chain.generate_tailored_cover_letter(user_profile, benchmark_data, gap_analysis, job_title, company_str), ""),
+        safe_call(doc_chain.generate_tailored_personal_statement(user_profile, benchmark_data, gap_analysis, job_title, company_str), ""),
+    )
+    portfolio_html = await safe_call(
+        doc_chain.generate_tailored_portfolio(user_profile, benchmark_data, gap_analysis, job_title, company_str),
+        "",
+    )
+    await emit_progress("documents_done", 4, 74, "Quill finished your core documents ✓")
+
+    await emit_progress("portfolio", 5, 82, "Forge is assembling your portfolio proof points…")
+    roadmap = await safe_call(consultant_chain.generate_roadmap(user_profile, benchmark_data, gap_analysis), {})
+    await emit_progress("portfolio_done", 5, 88, "Forge finished portfolio recommendations ✓")
+
+    await emit_progress("validation", 6, 94, "Sentinel is validating quality and structure…")
+    validation = await safe_call(validator_chain.validate_document(cv_html or cl_html or ""), (True, {}))
+    validation_payload = validation[1] if isinstance(validation, tuple) and len(validation) > 1 else {}
+    await emit_progress("validation_done", 6, 97, "Sentinel quality checks complete ✓")
+
+    await emit_progress("formatting", 7, 99, "Nova is finalizing output formatting…")
+
+    result = {
+        "cvHtml": cv_html,
+        "coverLetterHtml": cl_html,
+        "personalStatementHtml": ps_html,
+        "portfolioHtml": portfolio_html,
+        "benchmark": benchmark_data,
+        "gaps": gap_analysis,
+        "learningPlan": roadmap,
+        "validation": validation_payload,
+        "meta": {
+            "company_intel": company_intel,
+        },
+    }
+
+    await _persist_generation_result_to_application(
+        sb,
+        TABLES,
+        application_row=application_row,
+        requested_modules=requested_modules,
+        result=result,
+        user_id=user_id,
+    )
+
+    await _persist_generation_job_update(
+        sb,
+        TABLES,
+        job_id,
+        {
+            "status": "succeeded",
+            "progress": 100,
+            "phase": "formatting",
+            "message": "Generation complete",
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "result": result,
+        },
+    )
+    await _mark_application_generation_finished(
+        sb,
+        TABLES,
+        application_id,
+        application_row,
+        requested_modules,
+        status="succeeded",
+    )
+    await emit("complete", {"progress": 100, "result": result})
+
+
+async def _fetch_job_and_application(
+    job_id: str,
+    user_id: str,
+) -> Optional[tuple[Any, Dict[str, Any], Dict[str, Any], str, List[str]]]:
+    """Fetch the job row and its owning application for runtime execution."""
+    from app.core.database import get_supabase, TABLES
+
+    sb = get_supabase()
+
+    job_resp = await asyncio.to_thread(
+        lambda: sb.table(TABLES["generation_jobs"])
+        .select("id,user_id,application_id,requested_modules,status")
+        .eq("id", job_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    job_rows = job_resp.data if job_resp else None
+    job = job_rows[0] if isinstance(job_rows, list) and job_rows else None
+    if not job:
+        logger.warning("job_runtime.job_not_found", job_id=job_id, user_id=user_id)
+        return None
+
+    if job.get("status") in {"succeeded", "succeeded_with_warnings", "failed", "cancelled"}:
+        logger.info("job_runtime.skip_terminal", job_id=job_id, status=job.get("status"))
+        return None
+
+    application_id = str(job.get("application_id") or "")
+    if not application_id:
+        logger.error("job_runtime.missing_application_id", job_id=job_id)
+        await _finalize_orphaned_job(job_id, status="failed", error_message="Application not found for job.")
+        return None
+
+    app_resp = await asyncio.to_thread(
+        lambda: sb.table(TABLES["applications"])
+        .select("*")
+        .eq("id", application_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    app_rows = app_resp.data if app_resp else None
+    app_data = app_rows[0] if isinstance(app_rows, list) and app_rows else None
+    if not app_data:
+        logger.error("job_runtime.application_not_found", job_id=job_id, application_id=application_id)
+        await _finalize_orphaned_job(job_id, status="failed", error_message="Application not found.")
+        return None
+
+    requested_modules = _normalize_requested_modules(job.get("requested_modules"))
+    return sb, job, app_data, application_id, requested_modules
+
+
 async def _run_generation_job_inner_runtime(job_id: str, user_id: str) -> None:
     """Execute a generation job through PipelineRuntime with DB-backed event persistence."""
     fetched = await _fetch_job_and_application(job_id, user_id)
@@ -1098,12 +1429,10 @@ async def _run_generation_job_inner_runtime_body(
         # produces the same canonical payload as the orchestrator path
         # above. Critic-flagged runs become "succeeded_with_warnings"
         # automatically; ``doc_pack_plan`` is merged in as an extra field.
-        from .helpers import finalize_job_status_payload as _finalize_payload  # local import to avoid cycle
-
         _extra_fields: dict = {}
         if doc_pack_plan:
             _extra_fields["generation_plan"] = doc_pack_plan
-        _job_update = _finalize_payload(
+        _job_update = finalize_job_status_payload(
             result,
             total_steps=_JOB_TOTAL_STEPS,
             extra_fields=_extra_fields,
