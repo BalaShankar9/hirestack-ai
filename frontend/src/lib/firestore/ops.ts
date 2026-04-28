@@ -47,6 +47,7 @@ const DEFAULT_MODULES: Record<ModuleKey, ModuleStatus> = {
   gaps: { state: "idle" },
   learningPlan: { state: "idle" },
   cv: { state: "idle" },
+  resume: { state: "idle" },
   coverLetter: { state: "idle" },
   personalStatement: { state: "idle" },
   portfolio: { state: "idle" },

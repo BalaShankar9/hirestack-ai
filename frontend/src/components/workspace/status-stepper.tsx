@@ -10,6 +10,7 @@ const LABELS: Record<ModuleKey, string> = {
   gaps: "Gap analysis",
   learningPlan: "Learning plan",
   cv: "Tailored CV",
+  resume: "Tailored Resume",
   coverLetter: "Cover letter",
   personalStatement: "Personal statement",
   portfolio: "Portfolio & evidence",

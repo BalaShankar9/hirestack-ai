@@ -14,6 +14,7 @@ export type ModuleKey =
   | "gaps"
   | "learningPlan"
   | "cv"
+  | "resume"
   | "coverLetter"
   | "personalStatement"
   | "portfolio"

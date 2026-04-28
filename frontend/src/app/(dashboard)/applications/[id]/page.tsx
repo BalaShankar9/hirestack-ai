@@ -205,7 +205,7 @@ export default function ApplicationWorkspacePage() {
   const [autoInsertedEvidence, setAutoInsertedEvidence] = useState<string | null>(null);
 
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerTarget, setPickerTarget] = useState<"cv" | "coverLetter" | "personalStatement" | "portfolio">("cv");
+  const [pickerTarget, setPickerTarget] = useState<"cv" | "resume" | "coverLetter" | "personalStatement" | "portfolio">("cv");
 
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versionsTarget, setVersionsTarget] = useState<"cv" | "coverLetter" | "personalStatement" | "portfolio">("cv");
@@ -419,6 +419,7 @@ export default function ApplicationWorkspacePage() {
   const subtitle = app?.confirmedFacts?.company ? `@ ${app.confirmedFacts.company}` : undefined;
 
   const isCoveredCv = useCallback((kw: string) => strippedCv.includes(kw.toLowerCase()), [strippedCv]);
+  const isCoveredResume = useCallback((kw: string) => strippedResume.includes(kw.toLowerCase()), [strippedResume]);
   const isCoveredCl = useCallback((kw: string) => strippedCl.includes(kw.toLowerCase()), [strippedCl]);
   const isCoveredPs = useCallback((kw: string) => strippedPs.includes(kw.toLowerCase()), [strippedPs]);
   const isCoveredPortfolio = useCallback((kw: string) => strippedPortfolio.includes(kw.toLowerCase()), [strippedPortfolio]);
@@ -436,7 +437,7 @@ export default function ApplicationWorkspacePage() {
     }
   };
 
-  const openPicker = (target: "cv" | "coverLetter" | "personalStatement" | "portfolio") => {
+  const openPicker = (target: "cv" | "resume" | "coverLetter" | "personalStatement" | "portfolio") => {
     setPickerTarget(target);
     setPickerOpen(true);
   };
@@ -451,6 +452,7 @@ export default function ApplicationWorkspacePage() {
     const html = buildEvidenceHtml(e);
     let editor: any = null;
     if (pickerTarget === "cv") editor = cvEditorRef.current;
+    else if (pickerTarget === "resume") editor = resumeEditorRef.current;
     else if (pickerTarget === "coverLetter") editor = clEditorRef.current;
     else if (pickerTarget === "personalStatement") editor = psEditorRef.current;
     else if (pickerTarget === "portfolio") editor = portfolioEditorRef.current;
@@ -517,7 +519,7 @@ export default function ApplicationWorkspacePage() {
     if (!user || !app || regeneratingModule || regeneratingAll) return;
     // Show confirmation before firing a costly AI call
     const moduleLabel: Record<string, string> = {
-      benchmark: "Company Benchmark", gaps: "Gap Analysis", cv: "CV", coverLetter: "Cover Letter",
+      benchmark: "Company Benchmark", gaps: "Gap Analysis", cv: "CV", resume: "Resume", coverLetter: "Cover Letter",
       personalStatement: "Personal Statement", portfolio: "Portfolio", learningPlan: "Learning Plan",
     };
     setRegenConfirm({ module, label: moduleLabel[module] ?? module });
@@ -543,7 +545,7 @@ export default function ApplicationWorkspacePage() {
   };
 
   const moduleLabel: Record<string, string> = {
-    benchmark: "Company Benchmark", gaps: "Gap Analysis", cv: "CV", coverLetter: "Cover Letter",
+    benchmark: "Company Benchmark", gaps: "Gap Analysis", cv: "CV", resume: "Resume", coverLetter: "Cover Letter",
     personalStatement: "Personal Statement", portfolio: "Portfolio", learningPlan: "Learning Plan",
   };
 
@@ -1950,6 +1952,31 @@ export default function ApplicationWorkspacePage() {
                     if (res.cvHtml) setCvLocal(res.cvHtml);
                   },
                 } : undefined}
+              />
+            </TabsContent>
+
+            <TabsContent value="resume" className="mt-4">
+              <DocumentEditorTab
+                title="Tailored Resume"
+                subtitle="US-style 1-page resume — concise, achievement-driven, ATS-optimized."
+                mode={resumeMode}
+                onModeChange={setResumeMode}
+                keywords={keywords}
+                missingKeywords={missing}
+                isCovered={isCoveredResume}
+                value={resumeLocal}
+                onChange={setResumeLocal}
+                editorRef={resumeEditorRef}
+                onEditorReady={setResumeEditor}
+                onPickEvidence={() => openPicker("resume")}
+                onRegenerate={() => regenerate("resume")}
+                isRegenerating={regeneratingModule === "resume"}
+                onOpenVersions={() => {
+                  // Resume doesn't have a per-doc versions column yet —
+                  // version history is not surfaced for the tailored resume.
+                  // Regenerating produces a fresh document each time.
+                }}
+                baseHtml={app.confirmedFacts?.resume?.text || ""}
               />
             </TabsContent>
 
