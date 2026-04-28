@@ -508,14 +508,30 @@ import time as _time  # noqa: E402
 from collections import OrderedDict  # noqa: E402
 
 _TOKEN_CACHE_MAX_SIZE = 256
+_NEGATIVE_CACHE_MAX_SIZE = 512
+_NEGATIVE_CACHE_TTL_S = 60.0  # short — gives revoked/refreshed tokens a chance
 
 
 class _TokenCache:
-    """LRU cache for verified JWT claims, keyed by token hash."""
+    """LRU cache for verified JWT claims, keyed by token hash.
 
-    def __init__(self, max_size: int = _TOKEN_CACHE_MAX_SIZE):
+    Carries a separate, smaller-TTL *negative* cache so a flood of garbage
+    bearer tokens cannot pin the event loop on /auth/v1/user calls or
+    repeated PyJWT decode work (S1-F5: closes S-3 DoS amplifier).
+    """
+
+    def __init__(
+        self,
+        max_size: int = _TOKEN_CACHE_MAX_SIZE,
+        *,
+        negative_max_size: int = _NEGATIVE_CACHE_MAX_SIZE,
+        negative_ttl_s: float = _NEGATIVE_CACHE_TTL_S,
+    ):
         self._cache: OrderedDict[str, tuple[dict, float]] = OrderedDict()
         self._max_size = max_size
+        self._negative: OrderedDict[str, float] = OrderedDict()
+        self._negative_max_size = negative_max_size
+        self._negative_ttl_s = negative_ttl_s
 
     @staticmethod
     def _key(token: str) -> str:
@@ -547,13 +563,37 @@ class _TokenCache:
         # Evict oldest if over limit
         while len(self._cache) > self._max_size:
             self._cache.popitem(last=False)
+        # A token cannot be both valid and known-bad simultaneously.
+        self._negative.pop(key, None)
+
+    def is_known_bad(self, token: str) -> bool:
+        """Return True if *token* failed verification recently (< TTL)."""
+        key = self._key(token)
+        expires_at = self._negative.get(key)
+        if expires_at is None:
+            return False
+        if _time.time() >= expires_at:
+            self._negative.pop(key, None)
+            return False
+        self._negative.move_to_end(key)
+        return True
+
+    def mark_bad(self, token: str) -> None:
+        """Remember that *token* failed verification — short TTL."""
+        key = self._key(token)
+        self._negative[key] = _time.time() + self._negative_ttl_s
+        self._negative.move_to_end(key)
+        while len(self._negative) > self._negative_max_size:
+            self._negative.popitem(last=False)
 
     def invalidate(self, token: str) -> None:
         key = self._key(token)
         self._cache.pop(key, None)
+        self._negative.pop(key, None)
 
     def clear(self) -> None:
         self._cache.clear()
+        self._negative.clear()
 
 
 _token_cache = _TokenCache()
@@ -572,6 +612,14 @@ async def verify_token_async(id_token: str, db: Optional[SupabaseDB] = None) -> 
     if cached is not None:
         return cached
 
+    # ── 0b. Negative cache: short-circuit recently-failed tokens. ─────
+    # Closes S-3: a flood of garbage bearer tokens previously cost a
+    # PyJWT decode + (sometimes) a remote /auth/v1/user round-trip on
+    # every request. 60s TTL is short enough that real tokens minted
+    # right after a failure are still given a chance to verify.
+    if _token_cache.is_known_bad(id_token):
+        return None
+
     # ── 1. Local JWT decode (no network I/O) ──────────────────────────
     jwt_secret = (settings.supabase_jwt_secret or "").strip()
     if jwt_secret:
@@ -589,6 +637,7 @@ async def verify_token_async(id_token: str, db: Optional[SupabaseDB] = None) -> 
                     _token_cache.put(id_token, result)
                     return result
             except jwt.ExpiredSignatureError:
+                _token_cache.mark_bad(id_token)
                 return None
 
             # Try 2: base64-decoded bytes
@@ -599,6 +648,7 @@ async def verify_token_async(id_token: str, db: Optional[SupabaseDB] = None) -> 
                     _token_cache.put(id_token, result)
                     return result
             except jwt.ExpiredSignatureError:
+                _token_cache.mark_bad(id_token)
                 return None
             except Exception as e:
                 logger.warning("token_verification_b64_failed", extra={"error": str(e)})
@@ -613,10 +663,12 @@ async def verify_token_async(id_token: str, db: Optional[SupabaseDB] = None) -> 
         response = await _db._run(_get_user)
     except Exception as exc:
         # Treat transient network/timeouts as service-unavailable so the API can
-        # return a retryable 503 instead of a confusing 401.
+        # return a retryable 503 instead of a confusing 401. Do NOT add to the
+        # negative cache — the token may be valid; the dependency was sick.
         if SupabaseDB._is_transient_error(exc):
             raise AuthServiceUnavailable("Supabase auth verification timed out") from exc
         logger.warning("token_verification_failed_async", extra={"error": str(exc)})
+        _token_cache.mark_bad(id_token)
         return None
 
     if response and getattr(response, "user", None):
@@ -631,6 +683,8 @@ async def verify_token_async(id_token: str, db: Optional[SupabaseDB] = None) -> 
         }
         _token_cache.put(id_token, claims)
         return claims
+    # Remote returned no user → token is bad. Cache the rejection.
+    _token_cache.mark_bad(id_token)
     return None
 
 
