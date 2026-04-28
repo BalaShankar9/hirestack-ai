@@ -178,3 +178,89 @@ class TestDefaults:
         assert "https://hirestack.tech" in s.cors_origins
         assert "https://www.hirestack.tech" in s.cors_origins
         assert "http://localhost:3000" in s.cors_origins
+
+
+# ---------------------------------------------------------------------------
+# S1-F7: stray getenvs absorbed into Settings
+# ---------------------------------------------------------------------------
+
+class TestF7StrayEnvFields:
+    """Pin that retry / queue / worker tuning lives in Settings, not bare os.getenv."""
+
+    def test_supabase_http_retry_defaults(self) -> None:
+        from app.core.config import Settings
+
+        with patch.dict(os.environ, {"ENVIRONMENT": "development"}, clear=False):
+            for k in (
+                "SUPABASE_HTTP_RETRIES",
+                "SUPABASE_HTTP_RETRY_BASE_S",
+                "SUPABASE_HTTP_RETRY_MAX_S",
+            ):
+                os.environ.pop(k, None)
+            s = Settings(_env_file=None)
+        assert s.supabase_http_retries == 3
+        assert s.supabase_http_retry_base_s == 0.25
+        assert s.supabase_http_retry_max_s == 2.0
+
+    def test_supabase_http_retries_clamped_to_min_one(self) -> None:
+        from app.core.config import Settings
+
+        with patch.dict(
+            os.environ,
+            {"ENVIRONMENT": "development", "SUPABASE_HTTP_RETRIES": "0"},
+            clear=False,
+        ):
+            s = Settings(_env_file=None)
+        assert s.supabase_http_retries == 1
+
+    def test_supabase_http_retry_base_clamped_to_min(self) -> None:
+        from app.core.config import Settings
+
+        with patch.dict(
+            os.environ,
+            {"ENVIRONMENT": "development", "SUPABASE_HTTP_RETRY_BASE_S": "0.001"},
+            clear=False,
+        ):
+            s = Settings(_env_file=None)
+        assert s.supabase_http_retry_base_s == 0.05
+
+    def test_queue_require_active_consumer_default_true(self) -> None:
+        from app.core.config import Settings
+
+        with patch.dict(os.environ, {"ENVIRONMENT": "development"}, clear=False):
+            os.environ.pop("QUEUE_REQUIRE_ACTIVE_CONSUMER", None)
+            s = Settings(_env_file=None)
+        assert s.queue_require_active_consumer is True
+
+    def test_queue_require_active_consumer_disable(self) -> None:
+        from app.core.config import Settings
+
+        with patch.dict(
+            os.environ,
+            {"ENVIRONMENT": "development", "QUEUE_REQUIRE_ACTIVE_CONSUMER": "false"},
+            clear=False,
+        ):
+            s = Settings(_env_file=None)
+        assert s.queue_require_active_consumer is False
+
+    def test_worker_defaults(self) -> None:
+        from app.core.config import Settings
+
+        with patch.dict(os.environ, {"ENVIRONMENT": "development"}, clear=False):
+            for k in ("WORKER_NAME", "WORKER_CONCURRENCY"):
+                os.environ.pop(k, None)
+            s = Settings(_env_file=None)
+        assert s.worker_name == "worker-1"
+        assert s.worker_concurrency == 3
+
+    def test_worker_concurrency_clamped_to_min_one(self) -> None:
+        from app.core.config import Settings
+
+        with patch.dict(
+            os.environ,
+            {"ENVIRONMENT": "development", "WORKER_CONCURRENCY": "0"},
+            clear=False,
+        ):
+            s = Settings(_env_file=None)
+        assert s.worker_concurrency == 1
+

@@ -90,6 +90,33 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 100
     rate_limit_window: int = 60  # seconds
 
+    # Supabase HTTP retry tuning (used by SupabaseDB._run)
+    supabase_http_retries: int = 3
+    supabase_http_retry_base_s: float = 0.25
+    supabase_http_retry_max_s: float = 2.0
+
+    # Job queue
+    queue_require_active_consumer: bool = True
+
+    # Worker
+    worker_name: str = "worker-1"
+    worker_concurrency: int = 3
+
+    @field_validator("supabase_http_retries")
+    @classmethod
+    def _clamp_retries(cls, v: int) -> int:
+        return max(1, int(v))
+
+    @field_validator("supabase_http_retry_base_s")
+    @classmethod
+    def _clamp_retry_base(cls, v: float) -> float:
+        return max(0.05, float(v))
+
+    @field_validator("worker_concurrency")
+    @classmethod
+    def _clamp_worker_concurrency(cls, v: int) -> int:
+        return max(1, int(v))
+
     @field_validator("supabase_url", "supabase_service_role_key", "supabase_anon_key")
     @classmethod
     def _require_in_production(cls, v: str, info) -> str:

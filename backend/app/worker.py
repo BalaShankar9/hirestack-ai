@@ -43,8 +43,9 @@ async def _handler(job_id: str, user_id: str) -> None:
 async def main() -> None:
     from app.core.queue import QueueConsumer
 
-    consumer_name = os.environ.get("WORKER_NAME", "worker-1")
-    concurrency = int(os.environ.get("WORKER_CONCURRENCY", "3"))
+    from app.core.config import settings
+    consumer_name = settings.worker_name
+    concurrency = settings.worker_concurrency
 
     consumer = QueueConsumer(
         handler=_handler,

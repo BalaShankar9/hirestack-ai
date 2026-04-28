@@ -282,21 +282,13 @@ class SupabaseDB:
         if self._lock is None:
             # Create lock inside the running loop (py3.9 asyncio primitives can be loop-bound).
             self._lock = asyncio.Lock()
-        attempts_raw = os.getenv("SUPABASE_HTTP_RETRIES", "3")
-        base_delay_raw = os.getenv("SUPABASE_HTTP_RETRY_BASE_S", "0.25")
-        max_delay_raw = os.getenv("SUPABASE_HTTP_RETRY_MAX_S", "2.0")
-        try:
-            attempts = max(1, int(attempts_raw))
-        except Exception:
-            attempts = 3
-        try:
-            base_delay_s = max(0.05, float(base_delay_raw))
-        except Exception:
-            base_delay_s = 0.25
-        try:
-            max_delay_s = max(base_delay_s, float(max_delay_raw))
-        except Exception:
-            max_delay_s = 2.0
+        # Retry tuning lives in Settings (config.py); these are read fresh
+        # per call so tests / SIGHUP-style reloads can override at runtime
+        # without rebinding the SupabaseDB instance.
+        from app.core.config import settings as _settings
+        attempts = max(1, int(_settings.supabase_http_retries))
+        base_delay_s = max(0.05, float(_settings.supabase_http_retry_base_s))
+        max_delay_s = max(base_delay_s, float(_settings.supabase_http_retry_max_s))
 
         last_exc: Optional[BaseException] = None
         for attempt in range(1, attempts + 1):

@@ -65,9 +65,8 @@ async def enqueue_generation_job(job_id: str, user_id: str) -> bool:
 
         # Safety guard: if Redis is up but no worker is actively consuming,
         # don't enqueue and let caller fall back to in-process execution.
-        require_active_consumer = os.getenv("QUEUE_REQUIRE_ACTIVE_CONSUMER", "true").lower() in {
-            "1", "true", "yes", "on"
-        }
+        from app.core.config import settings as _settings
+        require_active_consumer = bool(_settings.queue_require_active_consumer)
         if require_active_consumer:
             consumers = await asyncio.to_thread(r.xinfo_consumers, STREAM_KEY, GROUP_NAME)
             active_consumers = [

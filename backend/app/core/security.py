@@ -22,6 +22,8 @@ from slowapi.util import get_remote_address
 
 from starlette.requests import Request
 
+from app.core.config import settings
+
 logger = logging.getLogger("hirestack.security")
 
 # ---------------------------------------------------------------------------
@@ -57,7 +59,7 @@ def get_user_or_ip(request: Request) -> str:
 limiter = Limiter(
     key_func=get_user_or_ip,
     storage_uri=_storage_uri,
-    default_limits=[f"{os.getenv('RATE_LIMIT_REQUESTS', '100')}/minute"],
+    default_limits=[f"{settings.rate_limit_requests}/minute"],
 )
 
 # ---------------------------------------------------------------------------
