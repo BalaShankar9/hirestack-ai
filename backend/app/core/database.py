@@ -286,29 +286,52 @@ class SupabaseDB:
         DB call in the process (P-2 in S1 audit). Lock removed; parallel
         DB calls now genuinely run in parallel up to the executor's
         thread-pool size.
+
+        Wrapped in the ``"supabase"`` circuit breaker — only consecutive
+        transient errors trip it, so business-logic exceptions (validation,
+        RLS denials, etc.) do not poison the breaker.
         """
         loop = asyncio.get_running_loop()
         # Retry tuning lives in Settings (config.py); these are read fresh
         # per call so tests / SIGHUP-style reloads can override at runtime
         # without rebinding the SupabaseDB instance.
         from app.core.config import settings as _settings
+        from app.core.circuit_breaker import (
+            CircuitBreakerOpen,
+            get_breaker_sync,
+        )
         attempts = max(1, int(_settings.supabase_http_retries))
         base_delay_s = max(0.05, float(_settings.supabase_http_retry_base_s))
         max_delay_s = max(base_delay_s, float(_settings.supabase_http_retry_max_s))
 
+        breaker = get_breaker_sync("supabase", failure_threshold=10, recovery_timeout=30.0)
+        # Gate: short-circuit immediately if the breaker is open.
+        try:
+            await breaker._before_call()
+        except CircuitBreakerOpen:
+            raise
+
         last_exc: Optional[BaseException] = None
         for attempt in range(1, attempts + 1):
             try:
-                return await loop.run_in_executor(None, func, *args)
+                result = await loop.run_in_executor(None, func, *args)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 last_exc = exc
+                if SupabaseDB._is_transient_error(exc):
+                    await breaker.record_failure()
+                # Non-transient errors do NOT trip the breaker (they reflect
+                # caller bugs / RLS denials, not Supabase health).
                 if attempt >= attempts or not SupabaseDB._is_transient_error(exc):
                     raise
                 # Exponential backoff + small jitter.
                 delay_s = min(max_delay_s, base_delay_s * (2 ** (attempt - 1))) + random.uniform(0.0, 0.2)
                 await asyncio.sleep(delay_s)
+                continue
+            else:
+                await breaker.record_success()
+                return result
 
         if last_exc is not None:
             raise last_exc

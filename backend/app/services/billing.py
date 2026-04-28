@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 import structlog
 
+from app.core.circuit_breaker import CircuitBreakerOpen, get_breaker_sync
 from app.core.database import get_db, TABLES, SupabaseDB
 
 logger = structlog.get_logger()
@@ -137,14 +138,21 @@ class BillingService:
             return None
 
         try:
-            session = stripe.checkout.Session.create(
-                mode="subscription",
-                line_items=[{"price": os.getenv(f"STRIPE_PRICE_{plan.upper()}", ""), "quantity": 1}],
-                success_url=success_url,
-                cancel_url=cancel_url,
-                metadata={"org_id": org_id, "plan": plan},
+            stripe_breaker = get_breaker_sync(
+                "stripe", failure_threshold=5, recovery_timeout=30.0
             )
+            async with stripe_breaker:
+                session = stripe.checkout.Session.create(
+                    mode="subscription",
+                    line_items=[{"price": os.getenv(f"STRIPE_PRICE_{plan.upper()}", ""), "quantity": 1}],
+                    success_url=success_url,
+                    cancel_url=cancel_url,
+                    metadata={"org_id": org_id, "plan": plan},
+                )
             return session.url
+        except CircuitBreakerOpen as e:
+            logger.warning("stripe_breaker_open", remaining_s=e.remaining_s)
+            return None
         except Exception as e:
             logger.error("stripe_checkout_failed", error=str(e)[:200])
             return None
@@ -165,11 +173,18 @@ class BillingService:
             return None
 
         try:
-            session = stripe.billing_portal.Session.create(
-                customer=org["stripe_customer_id"],
-                return_url=return_url,
+            stripe_breaker = get_breaker_sync(
+                "stripe", failure_threshold=5, recovery_timeout=30.0
             )
+            async with stripe_breaker:
+                session = stripe.billing_portal.Session.create(
+                    customer=org["stripe_customer_id"],
+                    return_url=return_url,
+                )
             return session.url
+        except CircuitBreakerOpen as e:
+            logger.warning("stripe_breaker_open", remaining_s=e.remaining_s)
+            return None
         except Exception as e:
             logger.error("stripe_portal_failed", error=str(e)[:200])
             return None
