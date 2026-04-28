@@ -82,3 +82,57 @@ def test_database_migrations_2026_have_supabase_counterpart() -> None:
         "`supabase db push`. Mirror these into supabase/migrations/: "
         f"{orphans}"
     )
+
+
+# ── S2-F3: every public table must have RLS enabled ──────────────────
+
+# Tables that are intentionally not RLS-protected. Keep this list TINY;
+# every entry needs a justification comment and a pointer to the migration
+# that defines the table.
+RLS_ALLOWLIST: dict[str, str] = {
+    # No exemptions today. Add only with a reviewed justification.
+}
+
+
+def _table_re() -> "re.Pattern[str]":
+    return re.compile(
+        r"^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?([a-z_][a-z0-9_]*)",
+        re.IGNORECASE | re.MULTILINE,
+    )
+
+
+def _rls_re() -> "re.Pattern[str]":
+    return re.compile(
+        r"ALTER\s+TABLE\s+(?:public\.)?([a-z_][a-z0-9_]*)\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY",
+        re.IGNORECASE,
+    )
+
+
+def test_every_public_table_has_rls_enabled() -> None:
+    """Defence-in-depth: every table created in supabase/migrations/
+    must have RLS enabled somewhere in supabase/migrations/.
+
+    The S2 audit found `ai_platform_spend_daily` was the lone gap;
+    20260428000000_rls_backstop_platform_spend.sql closes it. This
+    test prevents future tables from shipping without RLS.
+    """
+    table_re = _table_re()
+    rls_re = _rls_re()
+
+    declared: set[str] = set()
+    rls_enabled: set[str] = set()
+
+    for path in SUPABASE_DIR.glob("*.sql"):
+        text = path.read_text()
+        declared.update(m.group(1).lower() for m in table_re.finditer(text))
+        rls_enabled.update(m.group(1).lower() for m in rls_re.finditer(text))
+
+    missing = sorted(
+        t for t in declared if t not in rls_enabled and t not in RLS_ALLOWLIST
+    )
+
+    assert not missing, (
+        "These tables in supabase/migrations/ have no `ENABLE ROW LEVEL SECURITY` "
+        "statement. Add RLS or justify in RLS_ALLOWLIST: "
+        f"{missing}"
+    )
