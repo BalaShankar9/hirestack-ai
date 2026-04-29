@@ -44,7 +44,7 @@ sentry-sdk[fastapi]>=2.0,<3.0
 stripe>=8.0,<13.0
 
 # Utils — markdown 3.8.1+ closes CVE-2025-69534.
-httpx>=0.24,<1.0
+httpx>=0.28.1,<1.0
 python-dateutil>=2.8,<3.0
 tenacity>=8.2,<10.0
 structlog>=24.1,<26.0
