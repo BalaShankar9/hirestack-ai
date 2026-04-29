@@ -102,4 +102,60 @@ assert stats["pipeline_latency_p95"] <= 30.0  # SLO check
 
 ---
 
-*Last updated: Phase 1 — C4 SLO definitions*
+*Last updated: Phase 1 — C4 SLO definitions; Phase 11 (S11-F4) — alert manifest appended.*
+
+---
+
+## 8. Machine-Readable Alert Manifest (S11-F4)
+
+Single authoritative YAML block. Consumed by alertmanager / Grafana
+provisioning and pinned by `backend/tests/test_slo_alert_manifest.py`.
+Edit only this block; the prose tables above are derivative.
+
+```yaml
+# yaml-language-server: $schema=none
+version: 1
+slos:
+  - name: pipeline_sync_latency_p95
+    metric: hirestack_pipeline_duration_p95_ms
+    objective_ms: 30000
+    alert_ms: 35000
+    window: 1h
+    severity: warn
+  - name: pipeline_completion_rate
+    metric: hirestack_pipeline_completion_rate
+    objective_ratio: 0.995
+    alert_ratio: 0.99
+    window: 24h
+    severity: page
+  - name: pipeline_error_rate
+    metric: hirestack_pipeline_error_rate
+    objective_ratio: 0.005
+    alert_ratio: 0.01
+    window: 24h
+    severity: page
+    direction: above
+  - name: api_availability
+    metric: hirestack_api_availability_30d
+    objective_ratio: 0.999
+    alert_ratio: 0.998
+    window: 30d
+    severity: page
+  - name: health_p99_ms
+    metric: hirestack_health_latency_p99_ms
+    objective_ms: 200
+    alert_ms: 400
+    window: 1h
+    severity: warn
+  - name: model_failovers_burst
+    metric: hirestack_model_failovers_total
+    objective_per_min: 1
+    alert_per_min: 5
+    window: 5m
+    severity: warn
+  - name: error_budget_burn_fast
+    description: 2% burn in 1h means budget exhausts in 24h
+    objective_burn_rate_1h: 0.02
+    severity: page
+```
+
