@@ -13,6 +13,24 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _read_version() -> str:
+    """Read the canonical app version from ``backend/VERSION``.
+
+    The VERSION file is the single source of truth (S12-F2). Bumping it
+    bumps Sentry ``release``, the ``/health`` payload, and the
+    ``X-App-Version`` header in lock-step. If the file is missing or
+    empty we fall back to ``"0.0.0"`` so no import-time crash can take
+    the process down — the contract test ``test_version_file_contract``
+    guards the file itself.
+    """
+    version_file = _BACKEND_ROOT / "VERSION"
+    try:
+        text = version_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return "0.0.0"
+    return text or "0.0.0"
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
@@ -26,7 +44,7 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "HireStack AI"
-    app_version: str = "1.0.0"
+    app_version: str = _read_version()
     debug: bool = False
     environment: str = "development"
     sentry_dsn: str = ""
