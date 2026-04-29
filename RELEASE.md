@@ -87,6 +87,59 @@ For database hotfixes always include the migration in
 `supabase/migrations/` and verify with `scripts/run_migrations.py` in
 staging first.
 
+## Rollback
+
+When a release is bad, prefer the **fastest path back to a known-good
+revision** over chasing a forward-fix under fire.
+
+### 1. Backend (Railway)
+
+The Railway service `hirestack-ai` keeps every prior deployment as an
+immutable artefact. Rollback does NOT require git or CI.
+
+1. Open the Railway dashboard → service `hirestack-ai` → **Deployments**.
+2. Find the last green deployment (the one before the bad release; its
+   commit SHA matches the previous `vX.Y.Z` tag in `git log`).
+3. Click **⋯ → Redeploy**. Railway re-runs the same image; no rebuild,
+   no CI, typically <60s back to serving traffic.
+4. Smoke-check `/health`: `python scripts/health_check.py
+   https://api.hirestack.ai`. The `version` field should now show the
+   previous `backend/VERSION` value.
+
+### 2. Frontend (Netlify)
+
+Netlify keeps every deploy. From the Netlify dashboard → site
+`hirestack-ai` → **Deploys**, find the last green deploy and click
+**Publish deploy**. Same model as Railway: instant, no rebuild.
+
+### 3. Git history (re-establish source-of-truth match)
+
+Once production is back on the prior version, reconcile git so
+`backend/VERSION` and `CHANGELOG.md` describe what's actually live:
+
+```bash
+# Identify the bad release commit.
+git log --oneline -5
+
+# Revert it (creates a new commit; preserves audit trail).
+git revert <bad-release-sha>
+
+# Push. CI will run; deploy will trigger; the now-current version
+# matches what production already serves (because Railway/Netlify
+# rolled back independently above).
+git push origin main
+```
+
+Do **not** `git reset --hard` or force-push to undo a tagged release.
+The tag stays in history as a record of the bad release; the revert
+commit is the audit-trail.
+
+If the bad release introduced a database migration that has already
+run, **the rollback is not complete until the migration is reversed**.
+Write the down-migration as a new `supabase/migrations/` file (do not
+delete the original) and ship it as a hotfix per the Hotfix path
+above.
+
 ## Verification gates (every release)
 
 - Backend: `cd backend && python -m pytest tests/ -q` (≥2000 tests
