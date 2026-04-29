@@ -48,16 +48,7 @@ class PipelineSse @Inject constructor(
         val source: EventSource = factory.newEventSource(req, object : EventSourceListener() {
             override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
                 val parsed = runCatching { mapAdapter.fromJson(data) as? Map<*, *> }.getOrNull()
-                val ev = PipelineEvent(
-                    name = type ?: "message",
-                    progress = (parsed?.get("progress") as? Number)?.toInt(),
-                    phase = parsed?.get("phase") as? String,
-                    agent = (parsed?.get("agent") ?: parsed?.get("agent_name")) as? String,
-                    stage = parsed?.get("stage") as? String,
-                    status = parsed?.get("status") as? String,
-                    message = parsed?.get("message") as? String,
-                    raw = parsed,
-                )
+                val ev = PipelineEvent.from(type, parsed)
                 trySend(ev)
                 if (type == "complete" || type == "error") {
                     eventSource.cancel()
@@ -93,4 +84,34 @@ data class PipelineEvent(
     val status: String? = null,
     val message: String? = null,
     val raw: Map<*, *>? = null,
-)
+) {
+    companion object {
+        /**
+         * Build a [PipelineEvent] from an SSE `event:` type and an
+         * already-parsed JSON `data:` payload (or null when the payload
+         * could not be parsed as a JSON object).
+         *
+         * Contract pinned by S9-F3:
+         *  - `name` defaults to "message" when `type` is null.
+         *  - `progress` accepts any [Number] (Int/Long/Double from JSON)
+         *    and coerces to Int; non-numeric / missing → null.
+         *  - `agent` falls back to `agent_name` when `agent` is missing
+         *    (handles both backend payload spellings).
+         *  - `phase` / `stage` / `status` / `message` read as String only;
+         *    non-string values are dropped silently.
+         *  - `raw` echoes the parsed map (or null) verbatim for callers
+         *    that need fields not promoted into the typed envelope.
+         */
+        fun from(type: String?, parsed: Map<*, *>?): PipelineEvent =
+            PipelineEvent(
+                name = type ?: "message",
+                progress = (parsed?.get("progress") as? Number)?.toInt(),
+                phase = parsed?.get("phase") as? String,
+                agent = (parsed?.get("agent") ?: parsed?.get("agent_name")) as? String,
+                stage = parsed?.get("stage") as? String,
+                status = parsed?.get("status") as? String,
+                message = parsed?.get("message") as? String,
+                raw = parsed,
+            )
+    }
+}
