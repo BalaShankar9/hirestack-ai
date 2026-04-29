@@ -22,7 +22,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}")
 AWS_KEY_RE = re.compile(r"AKIA[0-9A-Z]{16}")
 GH_PAT_RE = re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}")
-OPENAI_RE = re.compile(r"sk-(?:proj-)?[A-Za-z0-9_-]{20,}")
+# Require at least one digit in the body — real OpenAI keys are
+# high-entropy random and always contain digits, while English-word-
+# shaped strings like "sk-and-strategy-memory" (ADR filename in a
+# docstring) do not. Avoids false positives on doc references.
+OPENAI_RE = re.compile(r"sk-(?:proj-)?(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{20,}")
 
 # Files allowed to mention example-shaped credentials. The example files
 # stop at "eyJ\u2026" so they will not match JWT_RE; this allow-list is

@@ -40,7 +40,7 @@ class DocVariantService:
 
         for tone in tones_to_generate:
             content = await chain.generate_variant(
-                original_content=original_content,
+                document_content=original_content,
                 document_type=document_type,
                 tone=tone,
                 job_title=job_title,
@@ -62,24 +62,47 @@ class DocVariantService:
             doc_id = await self.db.create(TABLES["doc_variants"], record)
             saved.append({**record, "id": doc_id})
 
-        # Compare variants
+        # Compare variants — adds evidence_coverage, deltas, and a
+        # system-recommended winner with AI-generated reasoning.
         comparison = await chain.compare_variants(
             variants=variants,
             job_title=job_title,
             company=company,
+            original_content=original_content,
         )
 
-        # Update scores from comparison
+        winner_tone = (comparison.get("winner") or {}).get("variant")
+
+        # Update scores from comparison and persist evidence_coverage +
+        # winner metadata in ai_analysis JSONB.
         for comp in comparison.get("comparison", []):
             variant_name = comp.get("variant", "")
             for s in saved:
                 if s["variant_name"] == variant_name:
+                    is_winner = winner_tone == variant_name
+                    ai_analysis = dict(comp)
+                    if is_winner:
+                        ai_analysis["winner_reasoning"] = (
+                            comparison.get("winner") or {}
+                        ).get("reasoning")
                     await self.db.update(TABLES["doc_variants"], s["id"], {
                         "ats_score": comp.get("ats_score"),
                         "readability_score": comp.get("readability_score"),
                         "keyword_density": comp.get("keyword_density"),
-                        "ai_analysis": comp,
+                        "ai_analysis": ai_analysis,
+                        "is_selected": is_winner if winner_tone else s["is_selected"],
                     })
+                    # Reflect persisted state on the in-memory record so
+                    # callers see ats_score / evidence_coverage / winner.
+                    s["ats_score"] = comp.get("ats_score")
+                    s["readability_score"] = comp.get("readability_score")
+                    s["keyword_density"] = comp.get("keyword_density")
+                    s["evidence_coverage"] = comp.get("evidence_coverage")
+                    s["composite_score"] = comp.get("composite_score")
+                    s["delta_vs_original"] = comp.get("delta_vs_original")
+                    s["ai_analysis"] = ai_analysis
+                    if winner_tone:
+                        s["is_selected"] = is_winner
 
         logger.info("variants_generated", count=len(saved), doc_type=document_type)
         return {
