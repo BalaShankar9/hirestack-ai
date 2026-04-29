@@ -758,12 +758,20 @@ def api_call(method, path, data=None, token=None):
     except Exception as e:
         return 0, {"error": str(e)}
 
-# Try to get a token
+# Try to get a token (env-driven; never hardcode credentials)
 try:
-    ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrZm1jbmZodmJxd3NncGtnb2FnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzg3MzY3MzIsImV4cCI6MjA1NDMxMjczMn0.BlYZFR_2BhW1VjWxqbmOaG3MJBssJBY51jS0M2yJqrM"
-    auth_body = json.dumps({"email": "balashankarbollineni4@gmail.com", "password": "Test1234!"}).encode()
+    ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+    SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    EMAIL = os.environ.get("SMOKE_TEST_EMAIL", "")
+    PW = os.environ.get("SMOKE_TEST_PASSWORD", "")
+    if not (ANON_KEY and SUPABASE_URL and EMAIL and PW):
+        raise RuntimeError(
+            "Set SUPABASE_URL, SUPABASE_ANON_KEY, SMOKE_TEST_EMAIL, "
+            "SMOKE_TEST_PASSWORD to enable authenticated checks"
+        )
+    auth_body = json.dumps({"email": EMAIL, "password": PW}).encode()
     auth_req = urllib.request.Request(
-        "https://dkfmcnfhvbqwsgpkgoag.supabase.co/auth/v1/token?grant_type=password",
+        f"{SUPABASE_URL}/auth/v1/token?grant_type=password",
         data=auth_body,
         headers={"Content-Type": "application/json", "apikey": ANON_KEY},
     )

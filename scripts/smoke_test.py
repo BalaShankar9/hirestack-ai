@@ -1,16 +1,52 @@
-"""Smoke test: auth, endpoints, generation pipeline."""
+"""Smoke test: auth, endpoints, generation pipeline.
+
+Reads ALL credentials from environment — nothing about the target
+project is hardcoded. Required env vars (script exits 2 with a clear
+message if any are missing):
+
+    SUPABASE_URL                 e.g. https://<ref>.supabase.co
+    SUPABASE_ANON_KEY            anon JWT for sign-in
+    SUPABASE_SERVICE_ROLE_KEY    service-role JWT for direct REST writes
+    SMOKE_TEST_EMAIL             test account email
+    SMOKE_TEST_PASSWORD          test account password
+
+Optional:
+    SMOKE_TEST_BASE_URL          backend base URL (default http://127.0.0.1:8000)
+
+Security: never commit real credentials here. The CI secret-scanner
+(see tests/test_no_hardcoded_secrets.py) blocks any JWT-shaped string
+in tracked source files.
+"""
+import os
 import requests, json, time, sys
 
-SUPABASE_URL = "https://dkfmcnfhvbqwsgpkgoag.supabase.co"
-ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrZm1jbmZodmJxd3NncGtnb2FnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0OTY0MjEsImV4cCI6MjA4NzA3MjQyMX0._kUDmWamD-77Pkf817W08EfRz3UxQ_Mwygpi18uEUWc"
-SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrZm1jbmZodmJxd3NncGtnb2FnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTQ5NjQyMSwiZXhwIjoyMDg3MDcyNDIxfQ.DEa-TJ-c-oD918I_6BA68WjoMn6_kg5g2HmrYXwSths"
-BASE = "http://127.0.0.1:8000"
-email = "e2etest@hirestack.dev"
+_REQUIRED = (
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SMOKE_TEST_EMAIL",
+    "SMOKE_TEST_PASSWORD",
+)
+_missing = [k for k in _REQUIRED if not os.environ.get(k)]
+if _missing:
+    print("ERROR: smoke_test.py requires the following env vars:", file=sys.stderr)
+    for k in _missing:
+        print(f"  - {k}", file=sys.stderr)
+    print("\nDo NOT add credentials to this file — set them in your shell", file=sys.stderr)
+    print("or via a .env file outside source control.", file=sys.stderr)
+    sys.exit(2)
+
+SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
+ANON_KEY = os.environ["SUPABASE_ANON_KEY"]
+SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+BASE = os.environ.get("SMOKE_TEST_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+email = os.environ["SMOKE_TEST_EMAIL"]
+_password = os.environ["SMOKE_TEST_PASSWORD"]
 
 # Sign in
 r = requests.post(f"{SUPABASE_URL}/auth/v1/token?grant_type=password",
     headers={"apikey": ANON_KEY, "Content-Type": "application/json"},
-    json={"email": email, "password": "E2eTest1234!"})
+    json={"email": email, "password": _password})
 if r.status_code != 200:
     print(f"Sign-in failed: {r.status_code}")
     sys.exit(1)

@@ -105,10 +105,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Scan for hardcoded secrets
+        # Pattern set kept in sync with backend/tests/test_no_hardcoded_secrets.py.
+        # The JWT pattern catches Supabase anon/service_role keys, which the
+        # prior scanner missed (a service-role key shipped to git history in
+        # scripts/smoke_test.py before S10-F1).
         run: |
-          FOUND=$(grep -rn 'sk-proj-\|AKIA[A-Z0-9]\{16\}\|ghp_[A-Za-z0-9]\{36\}\|ghu_[A-Za-z0-9]\{36\}' \
-            --include='*.py' --include='*.ts' --include='*.tsx' --include='*.js' --include='*.json' \
-            . 2>/dev/null | grep -v node_modules | grep -v '.env.example' || true)
+          FOUND=$(grep -rEn 'sk-(proj-)?[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}' \
+            --include='*.py' --include='*.ts' --include='*.tsx' --include='*.js' --include='*.json' --include='*.kt' --include='*.yml' --include='*.yaml' --include='*.toml' \
+            . 2>/dev/null | grep -v node_modules | grep -v '.env.example' | grep -v 'test_no_hardcoded_secrets.py' || true)
           if [ -n "$FOUND" ]; then
             echo "::error::Hardcoded secrets detected in source code"
             echo "$FOUND"
