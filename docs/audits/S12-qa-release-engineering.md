@@ -28,10 +28,10 @@ Surveyed: `pyproject.toml`, `backend/pytest.ini`, `frontend/{package.json,vitest
 
 ## Fix-wave plan
 
-- **F1** — Create `CHANGELOG.md` seeded with squads S1–S12 and a "Keep a Changelog" header. Add a contract test pinning the file's existence and the latest version row.
-- **F2** — Switch `settings.app_version` to read from a single source-of-truth file (`backend/VERSION` plain text) so a release script can bump it atomically. Add tests pinning the read path and the file's presence.
-- **F3** — Add `vitest` coverage threshold (lines/statements/functions/branches at sensible floors based on current actuals) and a coverage threshold gate at the backend `[pytest]` level via `--cov-fail-under` in CI command (NOT pytest.ini, to keep local runs unimpacted).
-- **F4** — Add `pytest-timeout` to `backend/requirements.txt` and a test asserting the runtime warning is gone (or the constraint is enforced).
+- **F1** ✅ — `CHANGELOG.md` (Keep a Changelog) + 7 contract tests.
+- **F2** ✅ — `backend/VERSION` source of truth + 9 tests.
+- **F3** ⏭️ **Deferred to operations.** Adding hard coverage thresholds without empirically-grounded floors risks failing CI on innocuous changes. Recommended follow-up: run `vitest run --coverage` and `pytest --cov` in a one-off CI job, observe the numbers, then PR thresholds set 5–10 pp below current actuals. Tracked in `/memories/repo/s12-qa-release-engineering-2026-04-21.md`.
+- **F4** ✅ — `pytest-timeout` in `backend/requirements.txt` + 3 tests.
 - **F5** — `RELEASE.md` runbook + ADR-0014 + S12 sign-off.
 
 ## Out of scope (forwarded)
