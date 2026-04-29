@@ -378,14 +378,56 @@ from typing import List  # noqa: E402
 
 # ── Prometheus-compatible metrics endpoint ─────────────────────────────
 
+def _check_metrics_auth(request: Request) -> JSONResponse | None:
+    """S11-F1: Gate /metrics behind a Bearer token in production.
+
+    Returns a JSONResponse to short-circuit the request, or None to allow.
+
+    Behaviour:
+      - settings.metrics_auth_token set → require `Authorization: Bearer <token>`.
+      - settings.metrics_auth_token unset AND environment == "production" → 403.
+      - settings.metrics_auth_token unset AND environment != "production" → allow
+        (dev/test convenience).
+    """
+    token = settings.metrics_auth_token
+    if not token:
+        if settings.environment == "production":
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content={"error": "metrics endpoint not configured for production"},
+            )
+        return None  # dev/test: open
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"error": "missing bearer token"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    presented = auth[7:].strip()
+    # Constant-time comparison to avoid timing oracle.
+    import hmac
+    if not hmac.compare_digest(presented, token):
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"error": "invalid bearer token"},
+        )
+    return None
+
+
 @app.get("/metrics", tags=["Observability"], include_in_schema=False)
-async def prometheus_metrics():
+async def prometheus_metrics(request: Request):
     """Expose pipeline metrics in Prometheus text exposition format.
 
     Provides gauges and counters for pipeline performance, circuit breakers,
     model health, and queue depth — compatible with Prometheus scrapers,
     Grafana Cloud, and Railway metrics.
+
+    S11-F1: gated by `settings.metrics_auth_token` Bearer in production.
     """
+    auth_fail = _check_metrics_auth(request)
+    if auth_fail is not None:
+        return auth_fail
     lines: list[str] = []
 
     # Pipeline run metrics

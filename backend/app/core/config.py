@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     environment: str = "development"
     sentry_dsn: str = ""
 
+    # Observability — when set, /metrics requires Bearer token. In
+    # production this MUST be set or /metrics returns 403. In
+    # development/test it may be left empty (open access).
+    metrics_auth_token: str = ""
+
     # Server
     host: str = "0.0.0.0"
     port: int = 8000
