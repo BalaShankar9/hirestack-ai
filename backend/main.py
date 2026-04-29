@@ -25,6 +25,7 @@ from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.database import init_supabase, get_supabase
 from app.core.tracing import RequestIDMiddleware, AccessLogMiddleware, MaxBodySizeMiddleware, TimeoutMiddleware, request_id_var
+from app.core.observability import redact_event_dict, sentry_before_send
 from app.api.routes import router as api_router
 
 # ── Sentry Error Monitoring ────────────────────────────────────────────
@@ -34,9 +35,11 @@ if settings.sentry_dsn:
         sentry_sdk.init(
             dsn=settings.sentry_dsn,
             environment=settings.environment,
+            release=settings.app_version,  # S11-F2 R6: bisect by deploy
             traces_sample_rate=0.1 if settings.environment == "production" else 1.0,
             profiles_sample_rate=0.1,
             send_default_pii=False,
+            before_send=sentry_before_send,  # S11-F2 R3: scrub bodies/qs/extra
         )
     except ImportError:
         pass
@@ -56,6 +59,7 @@ structlog.configure(
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         _add_request_id,
+        redact_event_dict,  # S11-F2 R2: scrub sensitive keys before render
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.JSONRenderer(),
     ],
