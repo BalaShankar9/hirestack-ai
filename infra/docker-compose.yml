@@ -18,8 +18,10 @@ services:
       - DEBUG=${DEBUG:-false}
     depends_on:
       - redis
+    # Source bind-mounts intentionally absent: this file is the
+    # production-shaped compose (see docs/adrs/0012). For local
+    # iteration with hot-reload, run `make dev-backend` directly.
     volumes:
-      - ../backend:/app
       - uploads:/app/uploads
     restart: unless-stopped
     deploy:
@@ -45,10 +47,7 @@ services:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     depends_on:
       - backend
-    volumes:
-      - ../frontend:/app
-      - /app/node_modules
-      - /app/.next
+    # Source bind-mounts intentionally absent (see backend service).
     restart: unless-stopped
     deploy:
       resources:
@@ -89,8 +88,6 @@ services:
     depends_on:
       - redis
       - backend
-    volumes:
-      - ../backend:/app
     restart: unless-stopped
     deploy:
       resources:
