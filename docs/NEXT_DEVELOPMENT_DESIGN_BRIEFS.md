@@ -2,6 +2,36 @@
 
 Date: 2026-04-11
 
+> **STATUS — 2026-04-29 (post v1.0.1).** This doc is partially
+> superseded by what shipped during S1–S12. Read
+> [`audits/S13-roadmap-reconciliation.md`](audits/S13-roadmap-reconciliation.md)
+> first. Summary:
+>
+> - **Brief 1 (Final-State Intelligence Loop) — SHIPPED.**
+>   `optimizer_final_analysis` + `fact_checker_final` are in
+>   `_STAGE_ORDER`; `final_analysis_report` lives on
+>   `PipelineResult`; observability + validator + 3 dedicated tests
+>   are wired.
+> - **Brief 2 (Replay & Failure Intelligence) — SHIPPED.**
+>   `ai_engine/evals/{replay_runner,failure_taxonomy,replay_report}.py`
+>   plus admin `replay-drawer.tsx` and 2 test modules.
+> - **Brief 3 (Evidence Graph v1) — SHIPPED.** Migration
+>   `20260411000000_evidence_graph_v1.sql` defines the canonical
+>   tables with RLS; `ai_engine/agents/evidence_graph.py` feeds
+>   the planner.
+> - **Brief 4 (Adaptive Planner & Strategy Memory) — PARTIAL.**
+>   Risk-mode taxonomy diverges from this brief
+>   (`conservative/normal/aggressive` shipped; brief specified
+>   `fast/balanced/strict/evidence_first`). Strategy-memory
+>   primitives not yet enforced as a typed contract. Slated as
+>   S13-F1.
+> - **Brief 5 (Mission Control UX v2) — MOSTLY SHIPPED.** Timeline
+>   rail, evidence inspector, risk panel, action queue 2.0 all
+>   present. **Variant Lab missing** — slated as S13-F2.
+>
+> Do not start "Brief 1" from scratch. The remaining surface is
+> S13-F1 (planner reconciliation) and S13-F2 (Variant Lab) only.
+
 ## Current Baseline
 
 The platform is now in a materially better state than the original agent pipeline.
