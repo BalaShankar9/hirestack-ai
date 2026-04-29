@@ -34,19 +34,23 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: railway up --service hirestack-ai --detach
 
-      - name: Health check
+      - name: Health check (scripts/health_check.py)
+        # Use the canonical health checker so every deploy gate enforces
+        # the same critical/non-critical contract that the smoke suite
+        # uses locally. See backend/tests/test_health_check_script.py.
         run: |
           sleep 30
-          for i in $(seq 1 12); do
-            HTTP=$(curl -sf -o /dev/null -w "%{http_code}" https://hirestack-ai-production.up.railway.app/health 2>/dev/null || echo "000")
-            if [ "$HTTP" = "200" ]; then
-              echo "::notice::Backend healthy — https://hirestack-ai-production.up.railway.app/health"
+          for i in $(seq 1 6); do
+            if python scripts/health_check.py \
+                 --backend  https://hirestack-ai-production.up.railway.app \
+                 --frontend https://hirestack.tech ; then
+              echo "::notice::health_check.py PASS on attempt $i"
               exit 0
             fi
-            echo "Attempt $i/12 — HTTP $HTTP, retrying in 15s…"
-            sleep 15
+            echo "Attempt $i/6 failed; retrying in 30s..."
+            sleep 30
           done
-          echo "::error::Backend health check failed after 3 minutes"
+          echo "::error::Backend health check failed after 6 attempts"
           exit 1
 
   # ── Frontend → Netlify (auto-deploy, verify only) ─────
