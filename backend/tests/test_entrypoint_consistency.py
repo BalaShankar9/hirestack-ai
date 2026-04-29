@@ -125,12 +125,18 @@ def test_no_config_still_references_broken_app_main() -> None:
         "backend/Dockerfile",
         "infra/Dockerfile.backend",
         "Makefile",
+        # Root docker-compose.yml was deleted in S10-F3 (canonical is
+        # infra/docker-compose.yml). If it ever comes back, the scan
+        # below will pick it up automatically.
         "docker-compose.yml",
         "infra/docker-compose.yml",
     ]
     leaks: list[str] = []
     for rel in files:
-        if "app.main:app" in _read(rel):
+        path = REPO_ROOT / rel
+        if not path.exists():
+            continue
+        if "app.main:app" in path.read_text(encoding="utf-8"):
             leaks.append(rel)
     assert not leaks, (
         "Files still reference the non-existent module 'app.main:app' "
