@@ -2,8 +2,8 @@
 
 Date: 2026-04-11
 
-> **STATUS — 2026-04-29 (post v1.0.1).** This doc is partially
-> superseded by what shipped during S1–S12. Read
+> **STATUS — 2026-04-29 (post v1.0.1, refreshed S13-F4).** This doc is
+> superseded by what shipped during S1–S13. Read
 > [`audits/S13-roadmap-reconciliation.md`](audits/S13-roadmap-reconciliation.md)
 > first. Summary:
 >
@@ -14,23 +14,34 @@ Date: 2026-04-11
 >   are wired.
 > - **Brief 2 (Replay & Failure Intelligence) — SHIPPED.**
 >   `ai_engine/evals/{replay_runner,failure_taxonomy,replay_report}.py`
->   plus admin `replay-drawer.tsx` and 2 test modules.
+>   plus admin `replay-drawer.tsx` and 2 test modules. The 10-class
+>   taxonomy set is pinned by name in
+>   `test_replay_system.py::test_named_class_set_is_pinned` (S13-F4).
 > - **Brief 3 (Evidence Graph v1) — SHIPPED.** Migration
 >   `20260411000000_evidence_graph_v1.sql` defines the canonical
 >   tables with RLS; `ai_engine/agents/evidence_graph.py` feeds
->   the planner.
-> - **Brief 4 (Adaptive Planner & Strategy Memory) — PARTIAL.**
->   Risk-mode taxonomy diverges from this brief
->   (`conservative/normal/aggressive` shipped; brief specified
->   `fast/balanced/strict/evidence_first`). Strategy-memory
->   primitives not yet enforced as a typed contract. Slated as
->   S13-F1.
-> - **Brief 5 (Mission Control UX v2) — MOSTLY SHIPPED.** Timeline
->   rail, evidence inspector, risk panel, action queue 2.0 all
->   present. **Variant Lab missing** — slated as S13-F2.
+>   the planner. `pipeline_runtime` now invokes
+>   `graph_builder.detect_contradictions()` after canonicalize so
+>   `evidence_contradictions` actually receives rows in production
+>   and the contradiction penalty in
+>   `compute_evidence_strength_score()` flows into the planner's
+>   risk_mode. Wiring pinned by
+>   `test_pipeline_evidence_graph_wiring.py` (S13-F4).
+> - **Brief 4 (Adaptive Planner & Strategy Memory) — SHIPPED in
+>   S13-F1.** Risk-mode taxonomy `conservative/normal/aggressive` is
+>   ratified by [`adrs/0015-planner-risk-mode-and-strategy-memory.md`](adrs/0015-planner-risk-mode-and-strategy-memory.md);
+>   strategy-memory primitives ship as separate per-primitive
+>   modules under `ai_engine/agents/` (`style_outcome_scorer`,
+>   `style_signal_deriver`, `user_style_hints`).
+> - **Brief 5 (Mission Control UX v2) — SHIPPED.** Timeline rail,
+>   evidence inspector, risk panel, action queue 2.0 all present.
+>   Variant Lab shipped in S13-F2 with composite scoring
+>   (Evidence 45 / ATS 35 / Readability 20) ratified by
+>   [`adrs/0016-variant-lab-winner-pick.md`](adrs/0016-variant-lab-winner-pick.md);
+>   AI cannot override the score pick.
 >
-> Do not start "Brief 1" from scratch. The remaining surface is
-> S13-F1 (planner reconciliation) and S13-F2 (Variant Lab) only.
+> All five briefs are now SHIPPED. The remaining surface lives in
+> the next-cycle backlog (no S13 residuals open).
 
 ## Current Baseline
 

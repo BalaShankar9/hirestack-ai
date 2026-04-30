@@ -1393,6 +1393,17 @@ class PipelineRuntime:
                         ledger_raw = EvidenceLedger.from_dict(ledger_raw)
                     graph_builder.canonicalize(ledger_raw)
 
+            # Detect cross-job contradictions from canonicalized nodes; the
+            # builder auto-persists into evidence_contradictions when a DB is
+            # bound. The penalty term in compute_evidence_strength_score()
+            # then folds them into the planner's risk_mode signal — closing
+            # Brief 3's "validator/critic consume contradiction signals"
+            # path end-to-end (S13-F4).
+            contradictions = graph_builder.detect_contradictions()
+            unresolved_contradictions = sum(
+                1 for c in contradictions if c.severity != "resolved"
+            )
+
             evidence_score = graph_builder.compute_evidence_strength_score()
 
             planner = PlannerAgent(ai_client=ai)
@@ -1416,6 +1427,8 @@ class PipelineRuntime:
                 jd_score=plan_artifact.jd_quality_score,
                 profile_score=plan_artifact.profile_quality_score,
                 evidence_score=evidence_score,
+                contradictions_total=len(contradictions),
+                contradictions_unresolved=unresolved_contradictions,
             )
         except Exception as eg_err:
             logger.warning("pipeline_runtime.evidence_graph_skipped", error=str(eg_err)[:200])

@@ -20,6 +20,23 @@ class TestFailureClass:
         for cls in FailureClass.all_classes():
             assert isinstance(cls, str)
 
+    def test_named_class_set_is_pinned(self):
+        """Brief 2 (Replay & Failure Intelligence) ratifies these ten
+        classes as the contract surface. Renaming or dropping one is a
+        breaking change to replay reports — pin the exact set here."""
+        assert set(FailureClass.all_classes()) == {
+            "contract_drift",
+            "artifact_gap",
+            "evidence_binding_miss",
+            "citation_freshness_miss",
+            "stage_timeout",
+            "provider_failure",
+            "planner_misclassification",
+            "low_evidence_input",
+            "validator_escape",
+            "unknown",
+        }
+
 
 class TestClassifyFailure:
     def _base_kwargs(self, **overrides):
