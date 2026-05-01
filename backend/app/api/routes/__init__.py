@@ -37,6 +37,7 @@ from app.api.routes.intel import router as intel_router
 from app.api.routes.ppt import router as ppt_router
 from app.api.routes.interview_sim import router as interview_sim_router
 from app.api.routes.linkedin import router as linkedin_router
+from app.api.routes.salary_negotiate import router as salary_negotiate_router
 
 router = APIRouter()
 
@@ -76,3 +77,4 @@ router.include_router(intel_router, prefix="", tags=["Intel"])
 router.include_router(ppt_router, prefix="/ppt", tags=["PPT Generation"])
 router.include_router(interview_sim_router, prefix="/interview", tags=["Interview Simulator"])
 router.include_router(linkedin_router, prefix="/linkedin", tags=["LinkedIn Optimizer"])
+router.include_router(salary_negotiate_router, prefix="/salary", tags=["Salary Negotiation"])
