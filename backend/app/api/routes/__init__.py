@@ -40,6 +40,7 @@ from app.api.routes.linkedin import router as linkedin_router
 from app.api.routes.salary_negotiate import router as salary_negotiate_router
 from app.api.routes.networking import router as networking_router
 from app.api.routes.culture_fit import router as culture_fit_router
+from app.api.routes.portfolio import router as portfolio_router
 
 router = APIRouter()
 
@@ -82,3 +83,4 @@ router.include_router(linkedin_router, prefix="/linkedin", tags=["LinkedIn Optim
 router.include_router(salary_negotiate_router, prefix="/salary", tags=["Salary Negotiation"])
 router.include_router(networking_router, prefix="/networking", tags=["Networking Outreach"])
 router.include_router(culture_fit_router, prefix="/culture-fit", tags=["Culture Fit Coach"])
+router.include_router(portfolio_router, prefix="/portfolio", tags=["Portfolio Site Generator"])
