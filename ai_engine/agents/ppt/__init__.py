@@ -39,6 +39,13 @@ try:
 except Exception:  # noqa: BLE001
     ImageFetcher = None  # type: ignore[assignment]
 
+# Integration helpers — tool registry, intent detection, storage shim.
+from ai_engine.agents.ppt.integration import (
+    build_ppt_tools,
+    detect_ppt_intent,
+    generate_and_store_pptx,
+)
+
 __all__ = [
     "DeckSpec",
     "SlideSpec",
@@ -52,4 +59,7 @@ __all__ = [
     "ChartRenderer",
     "ChartSelector",
     "ImageFetcher",
+    "build_ppt_tools",
+    "detect_ppt_intent",
+    "generate_and_store_pptx",
 ]
