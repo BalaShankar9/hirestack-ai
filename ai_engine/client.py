@@ -8,7 +8,8 @@ import json
 import logging
 import os
 import time
-from typing import Optional, Dict, Any, List
+from contextvars import ContextVar, Token
+from typing import Optional, Dict, Any, List, Callable, Awaitable, Union
 import asyncio
 
 from tenacity import (
@@ -56,6 +57,31 @@ def _sanitize_prompt_input(text: str) -> str:
     if cleaned != text:
         logger.warning("prompt_injection_attempt_detected", original_length=len(text))
     return cleaned
+
+
+# ── S14-F3b: per-task token streaming sink ─────────────────────────────
+# Pipeline runtime sets this contextvar with an async callable BEFORE
+# invoking a sub-pipeline. AIClient.complete_json reads it and, when
+# STREAMING_TOKENS_ENABLED, takes a streaming code path that forwards
+# every Gemini chunk to the sink for live SSE paint. Contextvars
+# propagate to child Tasks automatically, so parallel agent.run()
+# invocations each inherit the right sink.
+TokenSink = Callable[[str], Awaitable[None]]
+_TOKEN_SINK_VAR: ContextVar[Optional[TokenSink]] = ContextVar(
+    "hirestack_token_sink", default=None,
+)
+
+
+def set_token_sink(sink: Optional[TokenSink]) -> Token:
+    return _TOKEN_SINK_VAR.set(sink)
+
+
+def reset_token_sink(token: Token) -> None:
+    _TOKEN_SINK_VAR.reset(token)
+
+
+def get_token_sink() -> Optional[TokenSink]:
+    return _TOKEN_SINK_VAR.get()
 
 
 # ── Per-model circuit breakers ─────────────────────────────────────────
@@ -393,6 +419,36 @@ class _GeminiProvider:
                 yield item
         finally:
             await producer
+
+    async def complete_json_streaming(
+        self, prompt: str, system: Optional[str] = None,
+        max_tokens: Optional[int] = None, temperature: float = 0.3,
+        schema: Optional[Dict[str, Any]] = None, model: Optional[str] = None,
+        token_sink: Optional[TokenSink] = None,
+    ) -> Dict[str, Any]:
+        """Streaming variant of complete_json: streams chunks through
+        ``token_sink`` for live SSE paint, then parses the accumulated
+        text as JSON via the same ``_parse_json`` post-processor used by
+        the non-streaming path. Raises if the accumulated payload is
+        unparseable so the caller can fall back to ``complete_json``.
+        """
+        system_prompt = (system or "You are a helpful AI assistant.")
+        system_prompt += "\n\nIMPORTANT: Respond ONLY with valid JSON. No markdown, no explanations, just pure JSON."
+
+        chunks: list[str] = []
+        async for chunk in self.stream_completion(
+            prompt=prompt, system=system_prompt,
+            max_tokens=max_tokens, temperature=temperature,
+            response_format="json", model=model,
+        ):
+            chunks.append(chunk)
+            if token_sink is not None:
+                try:
+                    await token_sink(chunk)
+                except Exception as sink_err:  # noqa: BLE001 - sink errors must never break generation
+                    logger.warning("token_sink_emit_failed: %s", str(sink_err)[:200])
+        return _parse_json("".join(chunks))
+
 
 def _is_auth_or_permission_error(exc: BaseException) -> bool:
     """Return True if the error is an auth/permission issue (key invalid, leaked, etc.)."""
@@ -801,6 +857,54 @@ class AIClient:
                 success=True,
             )
             return cached
+
+        # ── S14-F3b: streaming fast-path ──────────────────────────────
+        # When the env switch is on AND a per-task token sink is registered,
+        # serve the request via the streaming Gemini path so the workspace
+        # can paint tokens live. On ANY failure (provider error, JSON parse
+        # error, validation error) we fall through to the legacy cascade
+        # below — streaming is best-effort UX, never authoritative.
+        from ai_engine.agents.event_taxonomy import streaming_tokens_enabled as _streaming_enabled
+        sink = get_token_sink()
+        if sink is not None and _streaming_enabled():
+            stream_model = self._resolve_model(task_type, model) or self.model
+            stream_breaker = _get_model_breaker(stream_model)
+            try:
+                async with stream_breaker:
+                    streamed = await self._provider.complete_json_streaming(
+                        prompt=prompt, system=system, max_tokens=max_tokens,
+                        temperature=temperature, schema=schema, model=stream_model,
+                        token_sink=sink,
+                    )
+                    streamed = _validate_json_response(streamed, schema)
+                    self._track_usage(
+                        prompt + (system or ""), json.dumps(streamed),
+                        model=stream_model, task_type=task_type or "",
+                    )
+                    cache.put(
+                        prompt=prompt, system=system, model=stream_model,
+                        schema=schema, temperature=temperature, max_tokens=max_tokens,
+                        response=streamed,
+                    )
+                    emit_tool_result(
+                        tool_label,
+                        {"model": stream_model, "streamed": True,
+                         "keys": list(streamed.keys()) if isinstance(streamed, dict) else None},
+                        latency_ms=int((time.monotonic() - _t0) * 1000),
+                        cache_hit=False, success=True,
+                    )
+                    return streamed
+            except Exception as stream_exc:
+                logger.warning(
+                    "streaming_complete_json_fallback: model=%s error=%s",
+                    stream_model, str(stream_exc)[:200],
+                )
+                emit_policy_decision(
+                    "streaming_complete_json_fallback",
+                    reason=f"stream failed → falling back to non-streaming cascade",
+                    metadata={"model": stream_model, "error": str(stream_exc)[:160]},
+                )
+                # fall through to legacy non-streaming cascade
 
         from ai_engine.model_router import record_model_success, record_model_failure
         from app.core.circuit_breaker import CircuitBreakerOpen

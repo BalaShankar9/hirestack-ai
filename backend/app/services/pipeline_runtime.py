@@ -27,7 +27,9 @@ from ai_engine.agents.event_taxonomy import (
     EXECUTION_PATH_AGENT,
     EXECUTION_PATH_LEGACY,
     EXECUTION_PATH_UNKNOWN,
+    streaming_tokens_enabled as _streaming_tokens_enabled,
 )
+from ai_engine import client as _ai_client_mod
 
 logger = structlog.get_logger("hirestack.pipeline_runtime")
 
@@ -1874,8 +1876,30 @@ class PipelineRuntime:
         consultant = CareerConsultantChain(ai)
 
         # Wrap each parallel task to emit mid-phase progress as they complete
+        async def _run_with_token_sink(stage: str, doc_kind: str, awaitable_factory):
+            """S14-F3b: bind a per-task token streaming sink before invoking
+            the sub-pipeline. The contextvar propagates into every nested
+            ``ai_client.complete_json`` call inside this Task.
+            """
+            if not _streaming_tokens_enabled():
+                return await awaitable_factory()
+            seq = [0]
+
+            async def _delta(text: str) -> None:
+                await self.sink.emit_token_delta(
+                    stage=stage, document_kind=doc_kind,
+                    delta=text, sequence=seq[0],
+                )
+                seq[0] += 1
+
+            tok = _ai_client_mod.set_token_sink(_delta)
+            try:
+                return await awaitable_factory()
+            finally:
+                _ai_client_mod.reset_token_sink(tok)
+
         async def _run_cv():
-            r = await cv_pipe.execute(doc_context)
+            r = await _run_with_token_sink("quill", "cv", lambda: cv_pipe.execute(doc_context))
             await self.sink.emit(PipelineEvent(
                 event_type="progress", phase="quill", progress=58,
                 message="CV generation complete, finishing others…",
@@ -1883,7 +1907,7 @@ class PipelineRuntime:
             return r
 
         async def _run_cl():
-            r = await cl_pipe.execute(doc_context)
+            r = await _run_with_token_sink("quill", "cover_letter", lambda: cl_pipe.execute(doc_context))
             await self.sink.emit(PipelineEvent(
                 event_type="progress", phase="quill", progress=63,
                 message="Cover letter complete, finishing others…",
@@ -2031,7 +2055,22 @@ class PipelineRuntime:
         )
 
         async def _run_ps():
-            r = await ps_pipe.execute(doc_context)
+            async def _exec():
+                if not _streaming_tokens_enabled():
+                    return await ps_pipe.execute(doc_context)
+                seq = [0]
+                async def _delta(text: str) -> None:
+                    await self.sink.emit_token_delta(
+                        stage="forge", document_kind="personal_statement",
+                        delta=text, sequence=seq[0],
+                    )
+                    seq[0] += 1
+                tok = _ai_client_mod.set_token_sink(_delta)
+                try:
+                    return await ps_pipe.execute(doc_context)
+                finally:
+                    _ai_client_mod.reset_token_sink(tok)
+            r = await _exec()
             await self.sink.emit(PipelineEvent(
                 event_type="progress", phase="forge", progress=79,
                 message="Personal statement complete…",
@@ -2039,7 +2078,22 @@ class PipelineRuntime:
             return r
 
         async def _run_pf():
-            r = await pf_pipe.execute(doc_context)
+            async def _exec():
+                if not _streaming_tokens_enabled():
+                    return await pf_pipe.execute(doc_context)
+                seq = [0]
+                async def _delta(text: str) -> None:
+                    await self.sink.emit_token_delta(
+                        stage="forge", document_kind="portfolio",
+                        delta=text, sequence=seq[0],
+                    )
+                    seq[0] += 1
+                tok = _ai_client_mod.set_token_sink(_delta)
+                try:
+                    return await pf_pipe.execute(doc_context)
+                finally:
+                    _ai_client_mod.reset_token_sink(tok)
+            r = await _exec()
             await self.sink.emit(PipelineEvent(
                 event_type="progress", phase="forge", progress=81,
                 message="Portfolio complete…",

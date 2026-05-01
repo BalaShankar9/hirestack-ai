@@ -226,3 +226,200 @@ async def test_stream_completion_bypasses_cache(monkeypatch):
     # Neither cache.get nor cache.put may be called.
     assert fake_cache.get.call_count == 0
     assert fake_cache.put.call_count == 0
+
+
+# ─── S14-F3b: complete_json streaming fast-path ────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_complete_json_streaming_fast_path(monkeypatch):
+    """When env enabled + sink set, complete_json streams chunks then parses."""
+    from ai_engine import client as ai_client_mod
+    from ai_engine.client import AIClient
+
+    monkeypatch.setenv("STREAMING_TOKENS_ENABLED", "1")
+    client = AIClient()
+    seen: list[str] = []
+
+    async def streaming_complete_json(**kwargs):
+        sink = kwargs.get("token_sink")
+        for tok in ['{"a":', ' "hello",', ' "b": 42}']:
+            await sink(tok)
+        return {"a": "hello", "b": 42}
+
+    monkeypatch.setattr(client._provider, "complete_json_streaming", streaming_complete_json)
+    # Block legacy provider.complete_json so we'd notice if it's called.
+    monkeypatch.setattr(client._provider, "complete_json",
+                        AsyncMock(side_effect=AssertionError("legacy path used")))
+
+    async def sink(delta: str) -> None:
+        seen.append(delta)
+
+    tok = ai_client_mod.set_token_sink(sink)
+    try:
+        result = await client.complete_json(prompt='emit json', task_type="drafting")
+    finally:
+        ai_client_mod.reset_token_sink(tok)
+
+    assert result == {"a": "hello", "b": 42}
+    assert seen == ['{"a":', ' "hello",', ' "b": 42}']
+    assert client.token_usage["call_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_complete_json_fallback_when_env_disabled(monkeypatch):
+    """Sink set but env off → legacy path, sink never called."""
+    from ai_engine import client as ai_client_mod
+    from ai_engine.client import AIClient
+    from ai_engine import cache as cache_mod
+
+    monkeypatch.delenv("STREAMING_TOKENS_ENABLED", raising=False)
+    fake_cache = MagicMock()
+    fake_cache.get = MagicMock(return_value=None)
+    fake_cache.put = MagicMock()
+    monkeypatch.setattr(cache_mod, "get_ai_cache", lambda: fake_cache)
+
+    client = AIClient()
+    monkeypatch.setattr(client._provider, "complete_json",
+                        AsyncMock(return_value={"ok": True}))
+    monkeypatch.setattr(client._provider, "complete_json_streaming",
+                        AsyncMock(side_effect=AssertionError("streaming path used")))
+
+    seen: list[str] = []
+
+    async def sink(delta: str) -> None:
+        seen.append(delta)
+
+    tok = ai_client_mod.set_token_sink(sink)
+    try:
+        result = await client.complete_json(prompt="hi", task_type="drafting")
+    finally:
+        ai_client_mod.reset_token_sink(tok)
+
+    assert result == {"ok": True}
+    assert seen == []  # streaming never invoked
+
+
+@pytest.mark.asyncio
+async def test_complete_json_falls_back_on_streaming_failure(monkeypatch):
+    """Streaming path raises → silently falls through to legacy cascade."""
+    from ai_engine import client as ai_client_mod
+    from ai_engine.client import AIClient
+    from ai_engine import cache as cache_mod
+
+    monkeypatch.setenv("STREAMING_TOKENS_ENABLED", "1")
+    fake_cache = MagicMock()
+    fake_cache.get = MagicMock(return_value=None)
+    fake_cache.put = MagicMock()
+    monkeypatch.setattr(cache_mod, "get_ai_cache", lambda: fake_cache)
+
+    client = AIClient()
+    monkeypatch.setattr(client._provider, "complete_json_streaming",
+                        AsyncMock(side_effect=RuntimeError("stream blew up")))
+    monkeypatch.setattr(client._provider, "complete_json",
+                        AsyncMock(return_value={"recovered": True}))
+
+    async def sink(delta: str) -> None:
+        pass
+
+    tok = ai_client_mod.set_token_sink(sink)
+    try:
+        result = await client.complete_json(prompt="hi", task_type="drafting")
+    finally:
+        ai_client_mod.reset_token_sink(tok)
+    assert result == {"recovered": True}
+
+
+@pytest.mark.asyncio
+async def test_complete_json_no_streaming_when_no_sink(monkeypatch):
+    """Env on but no sink registered → legacy cascade."""
+    from ai_engine.client import AIClient
+    from ai_engine import cache as cache_mod
+
+    monkeypatch.setenv("STREAMING_TOKENS_ENABLED", "1")
+    fake_cache = MagicMock()
+    fake_cache.get = MagicMock(return_value=None)
+    fake_cache.put = MagicMock()
+    monkeypatch.setattr(cache_mod, "get_ai_cache", lambda: fake_cache)
+
+    client = AIClient()
+    monkeypatch.setattr(client._provider, "complete_json",
+                        AsyncMock(return_value={"plain": True}))
+    monkeypatch.setattr(client._provider, "complete_json_streaming",
+                        AsyncMock(side_effect=AssertionError("streaming path used")))
+
+    result = await client.complete_json(prompt="hi", task_type="drafting")
+    assert result == {"plain": True}
+
+
+@pytest.mark.asyncio
+async def test_provider_complete_json_streaming_pipes_chunks(monkeypatch):
+    """_GeminiProvider.complete_json_streaming streams chunks + parses JSON."""
+    from ai_engine.client import _GeminiProvider
+
+    provider = _GeminiProvider.__new__(_GeminiProvider)
+
+    async def fake_stream(**kwargs):
+        for c in ['{"x":', ' 1}']:
+            yield c
+
+    monkeypatch.setattr(provider, "stream_completion", fake_stream)
+    seen: list[str] = []
+
+    async def sink(delta: str) -> None:
+        seen.append(delta)
+
+    result = await provider.complete_json_streaming(
+        prompt="give me JSON", token_sink=sink,
+    )
+    assert result == {"x": 1}
+    assert seen == ['{"x":', ' 1}']
+
+
+@pytest.mark.asyncio
+async def test_token_sink_contextvar_isolated_across_tasks(monkeypatch):
+    """Concurrent Tasks must see independent token sinks."""
+    from ai_engine import client as ai_client_mod
+
+    captured: dict[str, list[str]] = {"a": [], "b": []}
+
+    async def task(name: str, deltas: list[str]):
+        async def sink(t: str) -> None:
+            captured[name].append(t)
+        tok = ai_client_mod.set_token_sink(sink)
+        try:
+            cur = ai_client_mod.get_token_sink()
+            for d in deltas:
+                await cur(d)
+            await asyncio.sleep(0)
+        finally:
+            ai_client_mod.reset_token_sink(tok)
+
+    await asyncio.gather(
+        task("a", ["a1", "a2"]),
+        task("b", ["b1", "b2", "b3"]),
+    )
+    assert captured["a"] == ["a1", "a2"]
+    assert captured["b"] == ["b1", "b2", "b3"]
+
+
+@pytest.mark.asyncio
+async def test_provider_streaming_swallows_sink_errors(monkeypatch):
+    """A misbehaving sink must NEVER break generation."""
+    from ai_engine.client import _GeminiProvider
+
+    provider = _GeminiProvider.__new__(_GeminiProvider)
+
+    async def fake_stream(**kwargs):
+        for c in ['{"y":', ' 2}']:
+            yield c
+
+    monkeypatch.setattr(provider, "stream_completion", fake_stream)
+
+    async def bad_sink(_: str) -> None:
+        raise RuntimeError("sink exploded")
+
+    result = await provider.complete_json_streaming(
+        prompt="x", token_sink=bad_sink,
+    )
+    assert result == {"y": 2}
