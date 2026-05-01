@@ -108,6 +108,21 @@ class CompanyIntelChain:
                 company_url=company_url,
                 on_event=on_event,
             )
+            # S18 — opt-in Recon Swarm v2 augmentation. Env-gated; default OFF.
+            try:
+                from ai_engine.chains.recon_swarm_bridge import augment_with_recon_swarm
+                result = await augment_with_recon_swarm(
+                    result,
+                    company=company,
+                    job_title=job_title,
+                    company_url=company_url or "",
+                    ai_client=self.ai_client,
+                )
+            except Exception as augment_err:  # noqa: BLE001
+                logger.warning(
+                    "recon_swarm_augment_skipped",
+                    error=str(augment_err)[:200],
+                )
             return result
 
         except Exception as e:
