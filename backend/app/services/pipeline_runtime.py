@@ -16,9 +16,10 @@ import os
 import time
 import traceback
 from abc import ABC, abstractmethod
+from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Deque, Dict, List, Optional, Tuple
 
 import structlog
 
@@ -165,11 +166,103 @@ class CollectorSink(EventSink):
         self.events.append(event)
 
 
-class SSESink(EventSink):
-    """Formats events as SSE strings and pushes to an async queue."""
+# ── S14-F2: bounded coalescing SSE queue ───────────────────────────────
+#
+# The legacy `asyncio.Queue()` was unbounded — a slow client + chatty pipeline
+# could pile up thousands of stale progress events in memory and starve the
+# event loop. The new queue is bounded (default 256, env-tunable) with two
+# explicit overflow strategies:
+#   1. Coalesce: if a NON-terminal event with the same (event_type, stage)
+#      key is already queued, replace it in place. Stale progress events get
+#      collapsed instead of accumulating.
+#   2. Drop-oldest-non-terminal: if still over capacity, evict the oldest
+#      non-terminal entry. Terminal events (complete, error, agent_status
+#      completed/failed, and the close() sentinel) are NEVER dropped — even
+#      if that means the queue temporarily exceeds maxsize.
+#
+# Tunable: HIRESTACK_SSE_QUEUE_MAXSIZE (int, default 256).
+_SSE_QUEUE_MAXSIZE_ENV = "HIRESTACK_SSE_QUEUE_MAXSIZE"
+_SSE_SENTINEL_KEY: Tuple[str, str] = ("__sentinel__", "")
 
-    def __init__(self) -> None:
-        self.queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+def _sse_queue_maxsize() -> int:
+    raw = os.environ.get(_SSE_QUEUE_MAXSIZE_ENV, "").strip()
+    if not raw:
+        return 256
+    try:
+        value = int(raw)
+    except ValueError:
+        return 256
+    return max(8, value)
+
+
+class _CoalescingQueue:
+    """Bounded async queue with coalesce + drop-oldest-non-terminal policy.
+
+    Mirrors the public surface used by SSESink consumers (`get`, `put`,
+    `qsize`) so existing tests that introspect `sink.queue` keep working.
+    """
+
+    def __init__(self, maxsize: int) -> None:
+        self._items: Deque[Tuple[Tuple[str, str], bool, Any]] = deque()
+        self._maxsize = max(1, maxsize)
+        self._cond = asyncio.Condition()
+        self.coalesced: int = 0
+        self.dropped: int = 0
+
+    async def put(
+        self,
+        item: Any,
+        *,
+        key: Tuple[str, str] = _SSE_SENTINEL_KEY,
+        terminal: bool = False,
+    ) -> None:
+        async with self._cond:
+            # Coalesce: replace newest non-terminal entry with same key.
+            if not terminal and key != _SSE_SENTINEL_KEY:
+                for i in range(len(self._items) - 1, -1, -1):
+                    k, term, _ = self._items[i]
+                    if k == key and not term:
+                        self._items[i] = (k, term, item)
+                        self.coalesced += 1
+                        self._cond.notify()
+                        return
+            # Make room for non-terminal items.
+            if not terminal and len(self._items) >= self._maxsize:
+                for i, (_, term, _) in enumerate(self._items):
+                    if not term:
+                        del self._items[i]
+                        self.dropped += 1
+                        break
+            self._items.append((key, terminal, item))
+            self._cond.notify()
+
+    async def get(self) -> Any:
+        async with self._cond:
+            while not self._items:
+                await self._cond.wait()
+            _, _, item = self._items.popleft()
+            return item
+
+    def get_nowait(self) -> Any:
+        if not self._items:
+            raise asyncio.QueueEmpty()
+        _, _, item = self._items.popleft()
+        return item
+
+    def qsize(self) -> int:
+        return len(self._items)
+
+
+_TERMINAL_AGENT_STATUSES = {"completed", "failed"}
+_TERMINAL_EVENT_TYPES = {"complete", "error"}
+
+
+class SSESink(EventSink):
+    """Formats events as SSE strings and pushes to a bounded coalescing queue."""
+
+    def __init__(self, maxsize: Optional[int] = None) -> None:
+        self.queue = _CoalescingQueue(maxsize if maxsize is not None else _sse_queue_maxsize())
 
     async def emit(self, event: PipelineEvent) -> None:
         if event.event_type == "agent_status":
@@ -192,10 +285,17 @@ class SSESink(EventSink):
                 **event.data,
             }
             sse_str = f"event: {event.event_type}\ndata: {json.dumps(sse_data)}\n\n"
-        await self.queue.put(sse_str)
+
+        terminal = (
+            event.event_type in _TERMINAL_EVENT_TYPES
+            or (event.event_type == "agent_status" and event.status in _TERMINAL_AGENT_STATUSES)
+        )
+        key = (event.event_type, event.stage or event.phase)
+        await self.queue.put(sse_str, key=key, terminal=terminal)
 
     async def close(self) -> None:
-        await self.queue.put(None)  # sentinel
+        # Sentinel is always terminal so it survives any overflow policy.
+        await self.queue.put(None, key=_SSE_SENTINEL_KEY, terminal=True)
 
     async def iter_events(self) -> AsyncGenerator[str, None]:
         """Yield SSE strings until close() sentinel."""

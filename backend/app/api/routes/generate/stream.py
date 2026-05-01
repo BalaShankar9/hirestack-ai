@@ -1,5 +1,6 @@
 """SSE streaming pipeline endpoint (POST /pipeline/stream)."""
 import asyncio
+import os
 import traceback
 import time
 from typing import Dict, Any, AsyncGenerator
@@ -705,10 +706,27 @@ async def generate_pipeline_stream(request: Request, req: PipelineRequest, curre
                 "jd_text": req.jd_text,
                 "resume_text": req.resume_text,
             }))
-            async for event_str in sink.iter_events():
-                yield event_str
-            # Await the task to propagate exceptions if any
-            await task
+            # S14-F2: universal SSE-comment heartbeat. If the queue is silent
+            # for >SSE_HEARTBEAT_INTERVAL seconds (default 15), emit a `: ping`
+            # comment so proxies / load balancers don't reap the connection
+            # and the EventSource client knows the link is alive.
+            heartbeat_interval = float(os.environ.get("HIRESTACK_SSE_HEARTBEAT_SECS", "15") or 15)
+            try:
+                while True:
+                    try:
+                        item = await asyncio.wait_for(sink.queue.get(), timeout=heartbeat_interval)
+                    except asyncio.TimeoutError:
+                        yield ": ping\n\n"
+                        continue
+                    if item is None:
+                        break
+                    yield item
+            finally:
+                # Await the task to propagate exceptions if any
+                try:
+                    await task
+                except Exception:  # noqa: BLE001 — already surfaced via SSE error event
+                    pass
 
         return StreamingResponse(
             runtime_stream(),
