@@ -639,6 +639,27 @@ class PipelineRuntime:
     def _begin_phase(self, phase: str) -> None:
         self._phase_started_at[phase] = time.perf_counter()
 
+    async def _open_phase(self, phase: str) -> None:
+        """Mark a phase as started and broadcast a ``phase_started`` event.
+
+        S14-F1: previously phases started silently — the rail had to
+        wait for the first explicit ``progress`` event in the phase
+        body to light up. Emitting here means consumers can render the
+        rail position the moment the phase is scheduled, even before
+        the first agent has produced any output.
+
+        Kept as a separate async helper so call sites can be updated
+        gradually and so legacy unit tests that exercise ``_begin_phase``
+        directly (no event loop) still work.
+        """
+        self._begin_phase(phase)
+        await self.sink.emit(PipelineEvent(
+            event_type="phase_started",
+            phase=phase,
+            message=f"Phase {phase} started",
+            status="running",
+        ))
+
     def _finish_phase(self, phase: str, *, success: bool = True, error_class: str = "") -> int:
         started_at = self._phase_started_at.pop(phase, None)
         if started_at is None:
@@ -980,7 +1001,7 @@ class PipelineRuntime:
         sentinel_validation: Optional[Dict[str, Any]] = None
 
         # ── Phase 0: Company Intelligence (best-effort, parallel-ready) ─
-        self._begin_phase("recon")
+        await self._open_phase("recon")
         if progress_calc is not None:
             try:
                 progress_calc.mark_started("recon.intel")
@@ -1102,7 +1123,7 @@ class PipelineRuntime:
             ))
 
         # ── Phase 1: Resume parse ─────────────────────────────────────
-        self._begin_phase("atlas")
+        await self._open_phase("atlas")
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="atlas", progress=8,
             message="Agent: parsing resume…",
@@ -1321,7 +1342,7 @@ class PipelineRuntime:
         self._finish_phase("atlas")
 
         # ── Phase 2: Gap analysis ─────────────────────────────────────
-        self._begin_phase("cipher")
+        await self._open_phase("cipher")
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="cipher", progress=30,
             message="Agent: analyzing skill gaps…",
@@ -1627,7 +1648,7 @@ class PipelineRuntime:
         self._finish_phase("cipher")
 
         # ── Phase 3: Core docs + Roadmap (parallel) ──────────────────
-        self._begin_phase("quill")
+        await self._open_phase("quill")
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="quill", progress=50,
             message="Agents: generating CV, cover letter & learning plan…",
@@ -1803,7 +1824,7 @@ class PipelineRuntime:
         self._finish_phase("quill")
 
         # ── Phase 4: Personal statement + Portfolio (parallel) ────────
-        self._begin_phase("forge")
+        await self._open_phase("forge")
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="forge", progress=75,
             message="Agents: building personal statement & portfolio…",
@@ -2020,7 +2041,7 @@ class PipelineRuntime:
         self._finish_phase("forge")
 
         # ── Phase 5: Validation ───────────────────────────────────────
-        self._begin_phase("sentinel")
+        await self._open_phase("sentinel")
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="sentinel", progress=92,
             message="Validating documents…",
@@ -2162,7 +2183,7 @@ class PipelineRuntime:
         self._finish_phase("sentinel")
 
         # ── Phase 6: Format response ─────────────────────────────────
-        self._begin_phase("nova")
+        await self._open_phase("nova")
         await self.sink.emit(PipelineEvent(
             event_type="progress", phase="nova", progress=98,
             message="Packaging your application…",
@@ -2263,7 +2284,7 @@ class PipelineRuntime:
             logger.warning("pipeline_runtime.meta_augment_failed", error=str(meta_err)[:200])
 
         # ── Persist to document_library table (isolated) ──────────────
-        self._begin_phase("persist")
+        await self._open_phase("persist")
         try:
             await self._persist_to_document_library(
                 sb=sb, tables=tables, user_id=user_id,

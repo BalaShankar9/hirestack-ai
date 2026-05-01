@@ -63,7 +63,12 @@ except ImportError:
     _AGENT_PIPELINES_AVAILABLE = False
 
 _PIPELINE_NAMES = ["cv_generation", "cover_letter", "personal_statement", "portfolio"]
-_STAGE_ORDER = ["researcher", "drafter", "critic", "optimizer", "fact_checker", "validator"]
+# S14-F1: lift from the canonical contract so a future stage addition
+# (e.g. ``optimizer_final_analysis`` in S13) cannot drift here again.
+# get_resume_point() in jobs.py iterates this list, so under-counting
+# stages would cause completed stages to be re-run on resume.
+from ai_engine.agents.stage_contract import DOCUMENT_STAGE_ORDER as _DOCUMENT_STAGE_ORDER
+_STAGE_ORDER = list(_DOCUMENT_STAGE_ORDER)
 
 
 # ── Utility functions ──
@@ -690,8 +695,8 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-def _agent_sse(pipeline_name: str, stage: str, status: str, latency_ms: int = 0, message: str = "", quality_scores: dict | None = None) -> str:
-    """Emit an agent_status SSE event."""
+def _agent_sse(pipeline_name: str, stage: str, status: str, latency_ms: int = 0, message: str = "", quality_scores: dict | None = None, log_level: str | None = None, log_message: str | None = None) -> str:
+    """Emit an agent_status SSE event (status) or agent_log (DEBUG/INFO logs)."""
     data = {
         "pipeline_name": pipeline_name,
         "stage": stage,
@@ -702,6 +707,10 @@ def _agent_sse(pipeline_name: str, stage: str, status: str, latency_ms: int = 0,
     }
     if quality_scores:
         data["quality_scores"] = quality_scores
+    if log_level:
+        data["log_level"] = log_level
+        data["log_message"] = log_message or message
+        return f"event: agent_log\ndata: {json.dumps(data)}\n\n"
     return f"event: agent_status\ndata: {json.dumps(data)}\n\n"
 
 

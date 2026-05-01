@@ -501,7 +501,11 @@ class AgentPipeline:
             )
 
         # v3: resume support — determine which stages to skip
-        _STAGE_ORDER = ["researcher", "drafter", "critic", "optimizer", "fact_checker", "optimizer_final_analysis", "validator"]
+        # S14-F1: source from canonical contract so this list cannot
+        # drift from the helpers.py resume-point logic or the frontend
+        # timeline rail. See ``ai_engine/agents/stage_contract.py``.
+        from ai_engine.agents.stage_contract import DOCUMENT_STAGE_ORDER
+        _STAGE_ORDER = list(DOCUMENT_STAGE_ORDER)
         resume_from = context.get("resume_from_stage")
         resume_skip: set[str] = set()
         # v3.1: rehydrated artifacts from prior pipeline run
