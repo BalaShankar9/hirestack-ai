@@ -34,6 +34,7 @@ from app.api.routes.knowledge import router as knowledge_router
 from app.api.routes.global_skills import router as global_skills_router
 from app.api.routes.me import router as me_router
 from app.api.routes.intel import router as intel_router
+from app.api.routes.ppt import router as ppt_router
 
 router = APIRouter()
 
@@ -70,3 +71,4 @@ router.include_router(knowledge_router, prefix="/knowledge", tags=["Knowledge Li
 router.include_router(global_skills_router, prefix="/development", tags=["Global Skills & Development"])
 router.include_router(me_router, prefix="", tags=["Account"])
 router.include_router(intel_router, prefix="", tags=["Intel"])
+router.include_router(ppt_router, prefix="/ppt", tags=["PPT Generation"])
