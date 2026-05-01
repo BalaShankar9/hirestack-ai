@@ -319,10 +319,80 @@ class _GeminiProvider:
         )
         return response.text or ""
 
+    async def stream_completion(
+        self, prompt: str, system: Optional[str] = None,
+        max_tokens: Optional[int] = None, temperature: float = 0.7,
+        response_format: str = "text", model: Optional[str] = None,
+    ):
+        """Async generator yielding incremental text chunks from Gemini.
 
-# ═══════════════════════════════════════════════════════════════════════
-#  Unified AIClient facade
-# ═══════════════════════════════════════════════════════════════════════
+        S14-F3: token-by-token streaming primitive. Bypasses the cache and
+        the @retry decorator on purpose — partial streams cannot be cached
+        or transparently retried mid-flight. Callers should fall back to
+        complete()/complete_json() on exception.
+
+        Yields:
+            str chunks. The concatenation of all yielded chunks equals the
+            full response text the equivalent .complete() call would return.
+        """
+        from google.genai import types
+        _modality = getattr(types, "MediaModality", None) or getattr(types, "Modality", None)
+        max_out = max(int(max_tokens or self.max_tokens), 64)
+        config: Dict[str, Any] = {
+            "temperature": temperature,
+            "max_output_tokens": max_out,
+        }
+        if _modality is not None:
+            config["response_modalities"] = [_modality.TEXT]
+        if system:
+            config["system_instruction"] = system
+        if response_format == "json":
+            config["response_mime_type"] = "application/json"
+
+        effective_model = model or self.model_name
+        if self._throttle_lock is None:
+            self._throttle_lock = asyncio.Lock()
+        async with self._throttle_lock:
+            if self._min_interval_s > 0:
+                now = time.monotonic()
+                wait_s = self._min_interval_s - (now - self._last_call_started)
+                if wait_s > 0:
+                    await asyncio.sleep(wait_s)
+                self._last_call_started = time.monotonic()
+
+        # Drive the blocking iterator from a worker thread, push chunks into
+        # an asyncio.Queue, and yield them out of the main event loop.
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=64)
+        _SENTINEL: Any = object()
+
+        def _produce() -> None:
+            try:
+                stream = self._get_client().models.generate_content_stream(
+                    model=effective_model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(**config),
+                )
+                for chunk in stream:
+                    text = getattr(chunk, "text", "") or ""
+                    if text:
+                        asyncio.run_coroutine_threadsafe(queue.put(text), loop).result()
+            except Exception as exc:  # noqa: BLE001 - re-raised on consumer side
+                asyncio.run_coroutine_threadsafe(queue.put(exc), loop).result()
+            finally:
+                asyncio.run_coroutine_threadsafe(queue.put(_SENTINEL), loop).result()
+
+        producer = asyncio.create_task(asyncio.to_thread(_produce))
+        try:
+            while True:
+                item = await queue.get()
+                if item is _SENTINEL:
+                    break
+                if isinstance(item, BaseException):
+                    raise item
+                yield item
+        finally:
+            await producer
 
 def _is_auth_or_permission_error(exc: BaseException) -> bool:
     """Return True if the error is an auth/permission issue (key invalid, leaked, etc.)."""
@@ -812,6 +882,46 @@ class AIClient:
                 raise
 
         raise last_exc
+
+
+    # ── S14-F3: token streaming facade ──────────────────────────────
+    async def stream_completion(
+        self, prompt: str, system: Optional[str] = None,
+        max_tokens: Optional[int] = None, temperature: float = 0.7,
+        response_format: str = "text",
+        task_type: Optional[str] = None,
+        model: Optional[str] = None,
+    ):
+        """Async generator yielding text chunks AND tracking usage at end.
+
+        Behaviour vs `complete()`:
+          * No cache lookup or write (partial streams are not cacheable).
+          * No model cascade — streaming exceptions terminate the iterator;
+            callers should fall back to `complete()` on failure.
+          * Token usage tracked once on completion based on accumulated text.
+          * Budget check + prompt sanitisation + truncation still applied.
+        """
+        self._check_budget()
+        prompt = _sanitize_prompt_input(prompt)
+        prompt = self._truncate_input(prompt)
+        candidate_model = self._resolve_model(task_type, model) or self.model
+
+        accumulated: list[str] = []
+        try:
+            async for chunk in self._provider.stream_completion(
+                prompt=prompt, system=system, max_tokens=max_tokens,
+                temperature=temperature, response_format=response_format,
+                model=candidate_model,
+            ):
+                accumulated.append(chunk)
+                yield chunk
+        finally:
+            full_text = "".join(accumulated)
+            if full_text:
+                self._track_usage(
+                    prompt + (system or ""), full_text,
+                    model=candidate_model, task_type=task_type or "",
+                )
 
     async def chat(self, messages: List[Dict[str, str]], system: Optional[str] = None,
                    max_tokens: Optional[int] = None,

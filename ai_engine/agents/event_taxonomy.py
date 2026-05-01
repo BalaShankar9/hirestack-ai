@@ -25,6 +25,11 @@ DETAIL = "detail"                # human-readable substep / sub-message
 COMPLETE = "complete"            # pipeline reached terminal success
 ERROR = "error"                  # pipeline failed (terminal)
 WARNING = "warning"              # non-fatal warning during a phase
+PHASE_STARTED = "phase_started"  # S14-F1: phase scheduled (rail lights up)
+TOKEN_DELTA = "token_delta"      # S14-F3: incremental LLM token chunk
+SUBSTEP_STARTED = "substep_started"      # S14-F4: typed substep open
+SUBSTEP_COMPLETED = "substep_completed"  # S14-F4: typed substep close
+RETRY = "retry"                  # S14-F5: smart-retry attempt
 
 # ─── Agent + orchestration events ───────────────────────────────────
 # Emitted by AgentPipeline + agent_events.py emitter helpers.
@@ -43,6 +48,7 @@ VALIDATION_FAILED = "validation_failed"
 
 PIPELINE_LIFECYCLE_EVENTS: FrozenSet[str] = frozenset({
     PROGRESS, DETAIL, COMPLETE, ERROR, WARNING,
+    PHASE_STARTED, TOKEN_DELTA, SUBSTEP_STARTED, SUBSTEP_COMPLETED, RETRY,
 })
 
 AGENT_EVENTS: FrozenSet[str] = frozenset({
@@ -67,3 +73,16 @@ EXECUTION_PATH_UNKNOWN = "unknown"  # pre-dispatch (early init events)
 def is_canonical(event_type: str) -> bool:
     """Return True when ``event_type`` belongs to the documented taxonomy."""
     return event_type in CANONICAL_EVENT_TYPES
+
+
+# ─── S14-F3: token streaming kill switch ──────────────────────────────
+# Setting STREAMING_TOKENS_ENABLED=1 (or true/yes/on) flips drafter +
+# optimizer onto the `stream_completion` path so the workspace can paint
+# tokens live. Defaults OFF until the frontend hook + skeleton ship.
+import os as _os
+
+
+def streaming_tokens_enabled() -> bool:
+    return _os.environ.get("STREAMING_TOKENS_ENABLED", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }

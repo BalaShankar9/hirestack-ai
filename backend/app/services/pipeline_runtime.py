@@ -113,6 +113,29 @@ class EventSink(ABC):
     async def emit(self, event: PipelineEvent) -> None:
         """Process a pipeline event."""
 
+    async def emit_token_delta(
+        self,
+        *,
+        stage: str,
+        document_kind: str,
+        delta: str,
+        sequence: int,
+    ) -> None:
+        """S14-F3: incremental LLM token chunk.
+
+        Default implementation funnels through `emit()` so existing sinks
+        (CollectorSink, _ExecutionPathTaggingSink) automatically get the
+        events. Sinks that should drop them (DatabaseSink) override with
+        a no-op; sinks that need a custom wire format (SSESink) override
+        for efficiency.
+        """
+        await self.emit(PipelineEvent(
+            event_type="token_delta",
+            stage=stage,
+            message=delta,
+            data={"document_kind": document_kind, "delta": delta, "sequence": sequence},
+        ))
+
     async def close(self) -> None:
         """Cleanup when pipeline completes."""
 
@@ -145,6 +168,20 @@ class _ExecutionPathTaggingSink(EventSink):
             event.data = {}
         event.data.setdefault("execution_path", self._runtime._execution_path)
         await self._inner.emit(event)
+
+    async def emit_token_delta(
+        self,
+        *,
+        stage: str,
+        document_kind: str,
+        delta: str,
+        sequence: int,
+    ) -> None:
+        # Forward directly to inner sink; tagging is irrelevant for token chunks
+        # (they're never persisted and the SSE schema already pins identity).
+        await self._inner.emit_token_delta(
+            stage=stage, document_kind=document_kind, delta=delta, sequence=sequence,
+        )
 
     async def close(self) -> None:
         await self._inner.close()
@@ -297,6 +334,35 @@ class SSESink(EventSink):
         # Sentinel is always terminal so it survives any overflow policy.
         await self.queue.put(None, key=_SSE_SENTINEL_KEY, terminal=True)
 
+    async def emit_token_delta(
+        self,
+        *,
+        stage: str,
+        document_kind: str,
+        delta: str,
+        sequence: int,
+    ) -> None:
+        """S14-F3: serialise as `event: token_delta` SSE frame.
+
+        Token deltas use a per-(stage, document_kind, sequence) key so the
+        coalescing queue NEVER collapses them — every chunk's sequence is
+        unique. They remain non-terminal so they can still be dropped under
+        extreme backpressure (preferable to stalling the pipeline).
+        """
+        sse_data = {
+            "schema_version": PIPELINE_EVENT_SCHEMA_VERSION,
+            "stage": stage,
+            "document_kind": document_kind,
+            "delta": delta,
+            "sequence": sequence,
+        }
+        sse_str = f"event: token_delta\ndata: {json.dumps(sse_data)}\n\n"
+        await self.queue.put(
+            sse_str,
+            key=("token_delta", f"{stage}:{document_kind}:{sequence}"),
+            terminal=False,
+        )
+
     async def iter_events(self) -> AsyncGenerator[str, None]:
         """Yield SSE strings until close() sentinel."""
         while True:
@@ -318,6 +384,19 @@ class DatabaseSink(EventSink):
     # Phase names that signal the *previous* phase is done
     _PHASE_ORDER = ["recon", "atlas", "cipher", "quill", "forge", "sentinel", "nova"]
     _TOTAL_STEPS = 7
+
+    async def emit_token_delta(
+        self,
+        *,
+        stage: str,
+        document_kind: str,
+        delta: str,
+        sequence: int,
+    ) -> None:
+        """S14-F3: token deltas are NEVER persisted (would explode the events
+        table at hundreds of rows per generation). Intentional no-op.
+        """
+        return None
 
     def __init__(
         self,
