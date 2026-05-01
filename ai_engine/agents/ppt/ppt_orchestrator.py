@@ -53,6 +53,16 @@ class PPTOrchestrator:
         chart_renderer: Optional[object] = None,
         image_resolver: Optional[object] = None,
     ) -> None:
+        # Default to the matplotlib chart galaxy if no renderer was provided.
+        # We import lazily so a missing matplotlib install (optional dep) doesn't
+        # break the planner-only / text-only code paths.
+        if chart_renderer is None:
+            try:
+                from ai_engine.agents.ppt.chart_renderer import ChartRenderer
+                chart_renderer = ChartRenderer()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("ppt_chart_renderer_unavailable: %s", exc)
+                chart_renderer = None
         self.planner = OutlinePlanner(ai_client=ai_client)
         self.composer = SlideComposer(
             chart_renderer=chart_renderer,

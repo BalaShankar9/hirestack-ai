@@ -26,6 +26,14 @@ from ai_engine.agents.ppt.outline_planner import OutlinePlanner
 from ai_engine.agents.ppt.slide_composer import SlideComposer
 from ai_engine.agents.ppt.ppt_orchestrator import PPTOrchestrator
 
+# Optional engines — guarded so the package is importable even if matplotlib
+# (P2) or httpx-based image clients (P3) are unavailable.
+try:
+    from ai_engine.agents.ppt.chart_renderer import ChartRenderer, ChartSelector
+except Exception:  # noqa: BLE001
+    ChartRenderer = None  # type: ignore[assignment]
+    ChartSelector = None  # type: ignore[assignment]
+
 __all__ = [
     "DeckSpec",
     "SlideSpec",
@@ -36,4 +44,6 @@ __all__ = [
     "OutlinePlanner",
     "SlideComposer",
     "PPTOrchestrator",
+    "ChartRenderer",
+    "ChartSelector",
 ]
