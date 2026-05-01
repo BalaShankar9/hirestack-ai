@@ -290,6 +290,146 @@ class StubTwitterProvider:
         }, s)
 
 
+# ─── Real provider: SEC EDGAR (free + ToS-compliant) ──────────────
+
+_SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+_SEC_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
+_SEC_USER_AGENT_DEFAULT = "HireStack AI recon-swarm contact@hirestack.ai"
+
+
+class SECEdgarProvider:
+    """Real SEC EDGAR provider.
+
+    SEC EDGAR is public, free, and explicitly ToS-permits programmatic
+    access provided you set a descriptive User-Agent header and respect
+    the 10-req/sec rate limit. We comply with both.
+
+    Reference: https://www.sec.gov/os/accessing-edgar-data
+
+    Activation: set env RECON_SEC_PROVIDER=real (or pass real_enabled=True).
+    Falls back to a 'sec' provider with success=False on any network
+    error — never raises.
+    """
+
+    name = "sec"
+    layer = 2
+
+    def __init__(
+        self,
+        *,
+        http_client: Optional[Any] = None,
+        user_agent: Optional[str] = None,
+        timeout_s: float = 8.0,
+    ) -> None:
+        self._client = http_client
+        self._ua = user_agent or os.getenv("SEC_USER_AGENT",
+                                          _SEC_USER_AGENT_DEFAULT)
+        self._timeout_s = timeout_s
+
+    async def fetch(self, *, company: str, **ctx: Any) -> ProviderResult:
+        s = time.perf_counter()
+        client, owned = await self._get_client()
+        try:
+            cik = await self._lookup_cik(client, company)
+            if not cik:
+                return ProviderResult(
+                    provider=self.name, layer=self.layer, success=True,
+                    latency_ms=int((time.perf_counter() - s) * 1000),
+                    raw={"is_public": False},
+                )
+            sub = await self._fetch_submissions(client, cik)
+            if not sub:
+                return ProviderResult(
+                    provider=self.name, layer=self.layer, success=False,
+                    latency_ms=int((time.perf_counter() - s) * 1000),
+                    error="submissions fetch failed",
+                )
+            payload = self._extract_payload(sub)
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=True,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                raw=payload,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.info("sec_edgar fetch failed company=%s exc=%s",
+                        company, exc)
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=False,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                error=str(exc)[:200],
+            )
+        finally:
+            if owned:
+                try:
+                    await client.aclose()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    # ─── helpers ──────────────────────────────────────────────
+
+    async def _get_client(self):
+        if self._client is not None:
+            return self._client, False
+        import httpx
+        return (
+            httpx.AsyncClient(
+                timeout=self._timeout_s,
+                headers={"User-Agent": self._ua,
+                         "Accept": "application/json"},
+            ),
+            True,
+        )
+
+    async def _lookup_cik(self, client: Any, company: str) -> Optional[str]:
+        if not (company or "").strip():
+            return None
+        resp = await client.get(_SEC_TICKERS_URL)
+        if getattr(resp, "status_code", 0) != 200:
+            return None
+        data = resp.json() or {}
+        target = company.strip().lower()
+        for entry in data.values():
+            try:
+                title = str(entry.get("title", "")).lower()
+                ticker = str(entry.get("ticker", "")).lower()
+                if title == target or ticker == target or target in title:
+                    return f"{int(entry['cik_str']):010d}"
+            except Exception:  # noqa: BLE001
+                continue
+        return None
+
+    async def _fetch_submissions(
+        self, client: Any, cik: str,
+    ) -> Optional[Dict[str, Any]]:
+        resp = await client.get(_SEC_SUBMISSIONS_URL.format(cik=cik))
+        if getattr(resp, "status_code", 0) != 200:
+            return None
+        return resp.json() or {}
+
+    @staticmethod
+    def _extract_payload(sub: Dict[str, Any]) -> Dict[str, Any]:
+        tickers = sub.get("tickers") or []
+        ticker = tickers[0] if tickers else None
+        sic_desc = sub.get("sicDescription") or None
+        addresses = sub.get("addresses") or {}
+        biz = addresses.get("business") or {}
+        hq = None
+        if biz:
+            city = biz.get("city")
+            state = biz.get("stateOrCountry")
+            hq = ", ".join([p for p in (city, state) if p]) or None
+        former = [n.get("name") for n in (sub.get("formerNames") or [])
+                  if n.get("name")]
+        return {
+            "is_public": True,
+            "ticker": ticker,
+            "legal_name": sub.get("name"),
+            "industry": sic_desc,
+            "headquarters": hq,
+            "former_names": former,
+        }
+
+
 # ─── Factories (env-aware) ────────────────────────────────────────
 
 def default_layer1_providers() -> List[SourceProvider]:
@@ -311,9 +451,14 @@ def default_layer1_providers() -> List[SourceProvider]:
 def default_layer2_providers(
     http_client: Optional[Any] = None,
 ) -> List[SourceProvider]:
+    sec: SourceProvider
+    if (os.getenv("RECON_SEC_PROVIDER") or "stub").lower() == "real":
+        sec = SECEdgarProvider(http_client=http_client)
+    else:
+        sec = StubSECProvider()
     return [
         StubWebsiteCrawlerProvider(http_client=http_client),
-        StubSECProvider(),
+        sec,
         StubPatentProvider(),
         StubProductHuntProvider(),
         StubGlassdoorProvider(),

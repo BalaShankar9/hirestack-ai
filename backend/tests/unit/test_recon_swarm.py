@@ -13,6 +13,7 @@ from ai_engine.agents.sub_agents.recon_swarm import (
     ProviderResult,
     ReconSwarmCoordinator,
     ReconSwarmRequest,
+    SECEdgarProvider,
     StubBuiltWithProvider,
     StubCrunchbaseProvider,
     StubGitHubProvider,
@@ -327,3 +328,101 @@ def test_build_recon_swarm_tools_registers_one_tool():
 def test_default_factories_return_expected_counts():
     assert len(default_layer1_providers()) == 5
     assert len(default_layer2_providers()) == 6
+
+
+# ─── SEC EDGAR real provider (httpx injected) ───────────────────────
+
+class _FakeResp:
+    def __init__(self, status_code: int, payload: Any) -> None:
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self) -> Any:
+        return self._payload
+
+
+class _FakeClient:
+    def __init__(self, route_map: dict) -> None:
+        self._routes = route_map
+        self.calls: list[str] = []
+
+    async def get(self, url: str, **_kw: Any) -> _FakeResp:
+        self.calls.append(url)
+        for prefix, resp in self._routes.items():
+            if url.startswith(prefix):
+                return resp
+        return _FakeResp(404, {})
+
+    async def aclose(self) -> None:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_sec_edgar_real_provider_extracts_payload():
+    tickers_payload = {
+        "0": {"cik_str": 320193, "ticker": "AAPL",
+              "title": "Apple Inc."},
+        "1": {"cik_str": 789019, "ticker": "MSFT",
+              "title": "Microsoft Corp"},
+    }
+    submissions_payload = {
+        "name": "Apple Inc.",
+        "tickers": ["AAPL"],
+        "sicDescription": "Electronic Computers",
+        "addresses": {"business": {"city": "Cupertino",
+                                    "stateOrCountry": "CA"}},
+        "formerNames": [{"name": "Apple Computer Inc."}],
+    }
+    client = _FakeClient({
+        "https://www.sec.gov/files/company_tickers.json":
+            _FakeResp(200, tickers_payload),
+        "https://data.sec.gov/submissions/CIK0000320193.json":
+            _FakeResp(200, submissions_payload),
+    })
+    p = SECEdgarProvider(http_client=client)
+    r = await p.fetch(company="Apple")
+    assert r.success is True
+    assert r.raw["is_public"] is True
+    assert r.raw["ticker"] == "AAPL"
+    assert r.raw["legal_name"] == "Apple Inc."
+    assert r.raw["industry"] == "Electronic Computers"
+    assert r.raw["headquarters"] == "Cupertino, CA"
+    assert "Apple Computer Inc." in r.raw["former_names"]
+
+
+@pytest.mark.asyncio
+async def test_sec_edgar_real_provider_unknown_company_returns_not_public():
+    client = _FakeClient({
+        "https://www.sec.gov/files/company_tickers.json":
+            _FakeResp(200, {}),
+    })
+    p = SECEdgarProvider(http_client=client)
+    r = await p.fetch(company="Some Private LLC")
+    assert r.success is True
+    assert r.raw == {"is_public": False}
+
+
+@pytest.mark.asyncio
+async def test_sec_edgar_real_provider_network_error_degrades():
+    class _Boom:
+        async def get(self, *_a: Any, **_kw: Any):
+            raise RuntimeError("network down")
+
+        async def aclose(self) -> None:
+            pass
+
+    p = SECEdgarProvider(http_client=_Boom())
+    r = await p.fetch(company="Apple")
+    assert r.success is False
+    assert "network down" in (r.error or "")
+
+
+def test_default_layer2_factory_swaps_to_real_when_env_set(monkeypatch):
+    monkeypatch.setenv("RECON_SEC_PROVIDER", "real")
+    providers = default_layer2_providers()
+    sec = next(p for p in providers if p.name in {"sec", "sec_stub"})
+    assert sec.name == "sec"
+    monkeypatch.setenv("RECON_SEC_PROVIDER", "stub")
+    providers2 = default_layer2_providers()
+    sec2 = next(p for p in providers2 if p.name in {"sec", "sec_stub"})
+    assert sec2.name == "sec_stub"
