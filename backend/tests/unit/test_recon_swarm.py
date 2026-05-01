@@ -13,6 +13,7 @@ from ai_engine.agents.sub_agents.recon_swarm import (
     ProviderResult,
     ReconSwarmCoordinator,
     ReconSwarmRequest,
+    GitHubProvider,
     SECEdgarProvider,
     StubBuiltWithProvider,
     StubCrunchbaseProvider,
@@ -426,3 +427,88 @@ def test_default_layer2_factory_swaps_to_real_when_env_set(monkeypatch):
     providers2 = default_layer2_providers()
     sec2 = next(p for p in providers2 if p.name in {"sec", "sec_stub"})
     assert sec2.name == "sec_stub"
+
+
+# ─── GitHub real provider tests ───────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_github_real_provider_extracts_payload():
+    org_payload = {
+        "login": "openai",
+        "description": "AI research and deployment company.",
+        "blog": "https://openai.com",
+        "public_repos": 173,
+    }
+    repos = [
+        {"name": "gym", "language": "Python"},
+        {"name": "whisper", "language": "Python"},
+        {"name": "openai-node", "language": "TypeScript"},
+        {"name": "no-lang", "language": None},
+    ]
+    client = _FakeClient({
+        "https://api.github.com/orgs/openai/repos":
+            _FakeResp(200, repos),
+        "https://api.github.com/orgs/openai":
+            _FakeResp(200, org_payload),
+    })
+    p = GitHubProvider(http_client=client)
+    r = await p.fetch(company="OpenAI")
+    assert r.success is True
+    assert r.raw["github_orgs"] == ["openai"]
+    assert r.raw["repo_count"] == 173
+    assert r.raw["languages"][0] == "Python"
+    assert "TypeScript" in r.raw["languages"]
+    assert r.raw["website"] == "https://openai.com"
+    assert "AI research" in r.raw["description"]
+
+
+@pytest.mark.asyncio
+async def test_github_real_provider_org_not_found_degrades():
+    client = _FakeClient({
+        "https://api.github.com/orgs/totally-not-a-real-org":
+            _FakeResp(404, {"message": "Not Found"}),
+    })
+    p = GitHubProvider(http_client=client)
+    r = await p.fetch(company="totally not a real org")
+    assert r.success is False
+    assert "404" in (r.error or "")
+
+
+@pytest.mark.asyncio
+async def test_github_real_provider_network_error_degrades():
+    class _Boom:
+        async def get(self, *_a: Any, **_kw: Any):
+            raise RuntimeError("github offline")
+
+        async def aclose(self) -> None:
+            pass
+
+    p = GitHubProvider(http_client=_Boom())
+    r = await p.fetch(company="OpenAI")
+    assert r.success is False
+    assert "github offline" in (r.error or "")
+
+
+def test_github_provider_org_slug_derivation():
+    cases = {
+        "OpenAI": "openai",
+        "Acme, Inc.": "acme-inc",
+        "  Stripe  ": "stripe",
+        "Hugging Face": "hugging-face",
+        "": None,
+        "   ": None,
+    }
+    for company, expected in cases.items():
+        assert GitHubProvider._derive_org(company) == expected
+
+
+def test_default_layer1_factory_swaps_github_to_real_when_env_set(monkeypatch):
+    monkeypatch.setenv("RECON_GITHUB_PROVIDER", "real")
+    providers = default_layer1_providers()
+    gh = next(p for p in providers if p.name in {"github", "github_stub"})
+    assert gh.name == "github"
+    monkeypatch.setenv("RECON_GITHUB_PROVIDER", "stub")
+    providers2 = default_layer1_providers()
+    gh2 = next(p for p in providers2 if p.name in {"github", "github_stub"})
+    assert gh2.name == "github_stub"

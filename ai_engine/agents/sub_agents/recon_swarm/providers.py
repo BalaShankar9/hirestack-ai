@@ -124,6 +124,131 @@ class StubGitHubProvider:
         }, s)
 
 
+# ─── Real provider: GitHub (free public API) ──────────────────────
+
+_GH_ORG_URL = "https://api.github.com/orgs/{org}"
+_GH_REPOS_URL = "https://api.github.com/orgs/{org}/repos?per_page=100&type=public"
+
+
+class GitHubProvider:
+    """Real GitHub provider.
+
+    GitHub's public REST API is free up to 60 req/hr unauthenticated and
+    5,000 req/hr with a token (set GITHUB_TOKEN). Org slug is derived
+    from the company name (lowercase, dashes). On 404 (org not found)
+    or any HTTP/network error, returns success=False without raising.
+
+    Activation: RECON_GITHUB_PROVIDER=real (default stub).
+    """
+
+    name = "github"
+    layer = 1
+
+    def __init__(
+        self,
+        *,
+        http_client: Optional[Any] = None,
+        token: Optional[str] = None,
+        timeout_s: float = 8.0,
+    ) -> None:
+        self._client = http_client
+        self._token = token or os.getenv("GITHUB_TOKEN")
+        self._timeout_s = timeout_s
+
+    async def fetch(self, *, company: str, **ctx: Any) -> ProviderResult:
+        s = time.perf_counter()
+        org = self._derive_org(company)
+        if not org:
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=False,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                error="could not derive github org",
+            )
+        client, owned = await self._get_client()
+        try:
+            org_resp = await client.get(_GH_ORG_URL.format(org=org))
+            if getattr(org_resp, "status_code", 0) != 200:
+                return ProviderResult(
+                    provider=self.name, layer=self.layer, success=False,
+                    latency_ms=int((time.perf_counter() - s) * 1000),
+                    error=f"org lookup status={org_resp.status_code}",
+                )
+            repos_resp = await client.get(_GH_REPOS_URL.format(org=org))
+            repos = []
+            if getattr(repos_resp, "status_code", 0) == 200:
+                repos = repos_resp.json() or []
+            payload = self._extract(org_resp.json() or {}, repos, org)
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=True,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                raw=payload,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.info("github fetch failed company=%s exc=%s", company, exc)
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=False,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                error=str(exc)[:200],
+            )
+        finally:
+            if owned:
+                try:
+                    await client.aclose()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    @staticmethod
+    def _derive_org(company: str) -> Optional[str]:
+        s = (company or "").strip().lower()
+        if not s:
+            return None
+        # Conservative slug: lowercase, replace spaces with dash, strip
+        # punctuation. GitHub org slugs are limited to [a-z0-9-].
+        cleaned = "".join(
+            c if c.isalnum() or c == "-" else ("-" if c.isspace() else "")
+            for c in s
+        )
+        cleaned = cleaned.strip("-")
+        return cleaned or None
+
+    async def _get_client(self):
+        if self._client is not None:
+            return self._client, False
+        import httpx
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "HireStack-AI-Recon-Swarm",
+        }
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+        return httpx.AsyncClient(timeout=self._timeout_s, headers=headers), True
+
+    @staticmethod
+    def _extract(
+        org_payload: Dict[str, Any],
+        repos: List[Dict[str, Any]],
+        org_slug: str,
+    ) -> Dict[str, Any]:
+        # Aggregate languages weighted by repo count
+        lang_counts: Dict[str, int] = {}
+        for r in repos:
+            lang = r.get("language")
+            if lang:
+                lang_counts[lang] = lang_counts.get(lang, 0) + 1
+        languages = [l for l, _ in sorted(
+            lang_counts.items(), key=lambda kv: kv[1], reverse=True,
+        )][:8]
+        return {
+            "github_orgs": [org_slug],
+            "repo_count": int(org_payload.get("public_repos")
+                              or len(repos) or 0),
+            "languages": languages,
+            "description": org_payload.get("description") or None,
+            "website": org_payload.get("blog") or None,
+        }
+
+
 class StubGoogleNewsProvider:
     name = "google_news_stub"
     layer = 1
@@ -435,11 +560,16 @@ class SECEdgarProvider:
 def default_layer1_providers() -> List[SourceProvider]:
     """Layer-1 default set. Real-API providers slot in here when
     their key env vars are configured (follow-up work)."""
+    gh: SourceProvider
+    if (os.getenv("RECON_GITHUB_PROVIDER") or "stub").lower() == "real":
+        gh = GitHubProvider()
+    else:
+        gh = StubGitHubProvider()
     providers: List[SourceProvider] = [
         StubCrunchbaseProvider(),
         StubLinkedInProvider(),
         StubBuiltWithProvider(),
-        StubGitHubProvider(),
+        gh,
         StubGoogleNewsProvider(),
     ]
     # Future:

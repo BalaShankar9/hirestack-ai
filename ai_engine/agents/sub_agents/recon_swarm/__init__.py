@@ -28,6 +28,7 @@ from .intel_fusion import IntelFusion
 from .integration import build_recon_swarm_tools, detect_recon_swarm_intent
 from .providers import (
     SourceProvider,
+    GitHubProvider,
     SECEdgarProvider,
     StubBuiltWithProvider,
     StubCrunchbaseProvider,
@@ -62,6 +63,7 @@ __all__ = [
     "ReconSwarmCoordinator",
     "ReconSwarmReport",
     "ReconSwarmRequest",
+    "GitHubProvider",
     "SECEdgarProvider",
     "SourceProvider",
     "StubBuiltWithProvider",
