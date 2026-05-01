@@ -63,6 +63,16 @@ class PPTOrchestrator:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ppt_chart_renderer_unavailable: %s", exc)
                 chart_renderer = None
+        # Default to the stock-image resolver. With no API keys it gracefully
+        # returns None for every query, so the composer falls back to a
+        # placeholder card — still safe in offline / unit-test environments.
+        if image_resolver is None:
+            try:
+                from ai_engine.agents.ppt.image_fetcher import ImageFetcher
+                image_resolver = ImageFetcher()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("ppt_image_resolver_unavailable: %s", exc)
+                image_resolver = None
         self.planner = OutlinePlanner(ai_client=ai_client)
         self.composer = SlideComposer(
             chart_renderer=chart_renderer,

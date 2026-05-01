@@ -34,6 +34,11 @@ except Exception:  # noqa: BLE001
     ChartRenderer = None  # type: ignore[assignment]
     ChartSelector = None  # type: ignore[assignment]
 
+try:
+    from ai_engine.agents.ppt.image_fetcher import ImageFetcher
+except Exception:  # noqa: BLE001
+    ImageFetcher = None  # type: ignore[assignment]
+
 __all__ = [
     "DeckSpec",
     "SlideSpec",
@@ -46,4 +51,5 @@ __all__ = [
     "PPTOrchestrator",
     "ChartRenderer",
     "ChartSelector",
+    "ImageFetcher",
 ]
