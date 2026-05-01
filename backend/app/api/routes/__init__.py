@@ -42,6 +42,7 @@ from app.api.routes.networking import router as networking_router
 from app.api.routes.culture_fit import router as culture_fit_router
 from app.api.routes.portfolio import router as portfolio_router
 from app.api.routes.video_pitch import router as video_pitch_router
+from app.api.routes.recon_swarm import router as recon_swarm_router
 
 router = APIRouter()
 
@@ -86,3 +87,4 @@ router.include_router(networking_router, prefix="/networking", tags=["Networking
 router.include_router(culture_fit_router, prefix="/culture-fit", tags=["Culture Fit Coach"])
 router.include_router(portfolio_router, prefix="/portfolio", tags=["Portfolio Site Generator"])
 router.include_router(video_pitch_router, prefix="/video-pitch", tags=["Executive Video Pitch"])
+router.include_router(recon_swarm_router, prefix="/recon-swarm", tags=["Recon Swarm v2"])
