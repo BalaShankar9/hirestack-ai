@@ -29,6 +29,7 @@ from .integration import build_recon_swarm_tools, detect_recon_swarm_intent
 from .providers import (
     SourceProvider,
     GitHubProvider,
+    GoogleNewsProvider,
     SECEdgarProvider,
     StubBuiltWithProvider,
     StubCrunchbaseProvider,
@@ -64,6 +65,7 @@ __all__ = [
     "ReconSwarmReport",
     "ReconSwarmRequest",
     "GitHubProvider",
+    "GoogleNewsProvider",
     "SECEdgarProvider",
     "SourceProvider",
     "StubBuiltWithProvider",

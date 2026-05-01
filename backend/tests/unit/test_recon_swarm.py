@@ -14,6 +14,7 @@ from ai_engine.agents.sub_agents.recon_swarm import (
     ReconSwarmCoordinator,
     ReconSwarmRequest,
     GitHubProvider,
+    GoogleNewsProvider,
     SECEdgarProvider,
     StubBuiltWithProvider,
     StubCrunchbaseProvider,
@@ -512,3 +513,130 @@ def test_default_layer1_factory_swaps_github_to_real_when_env_set(monkeypatch):
     providers2 = default_layer1_providers()
     gh2 = next(p for p in providers2 if p.name in {"github", "github_stub"})
     assert gh2.name == "github_stub"
+
+
+# ─── Google News real provider tests ──────────────────────────────────
+
+
+_GNEWS_RSS_SAMPLE = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+<title>Google News</title>
+<item>
+  <title>Stripe launches new AI tool - TechCrunch</title>
+  <link>https://news.google.com/...</link>
+  <pubDate>Tue, 14 Apr 2026 10:30:00 GMT</pubDate>
+  <source url="https://techcrunch.com">TechCrunch</source>
+</item>
+<item>
+  <title>Stripe expands engineering team in Dublin - The Information</title>
+  <link>https://news.google.com/...</link>
+  <pubDate>Mon, 13 Apr 2026 09:00:00 GMT</pubDate>
+</item>
+<item>
+  <title>Stripe and partners announce open standard</title>
+  <pubDate>Fri, 10 Apr 2026 14:00:00 GMT</pubDate>
+</item>
+</channel></rss>"""
+
+
+class _FakeTextResp:
+    def __init__(self, status_code: int, text: str) -> None:
+        self.status_code = status_code
+        self.text = text
+
+
+class _FakeTextClient:
+    def __init__(self, status: int, text: str) -> None:
+        self._resp = _FakeTextResp(status, text)
+        self.calls: list[str] = []
+
+    async def get(self, url: str, **_kw: Any) -> _FakeTextResp:
+        self.calls.append(url)
+        return self._resp
+
+    async def aclose(self) -> None:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_google_news_real_provider_parses_rss():
+    client = _FakeTextClient(200, _GNEWS_RSS_SAMPLE)
+    p = GoogleNewsProvider(http_client=client, max_items=5)
+    r = await p.fetch(company="Stripe")
+    assert r.success is True
+    items = r.raw["recent_news"]
+    assert len(items) == 3
+    # Title-suffix source extraction
+    assert items[0]["title"] == "Stripe launches new AI tool"
+    assert items[0]["source"] == "TechCrunch"
+    assert items[0]["date"] == "2026-04-14"
+    assert items[1]["source"] == "The Information"
+    # No source/title-suffix → default Google News
+    assert items[2]["source"] == "Google News"
+    # URL was query-encoded
+    assert "Stripe" in client.calls[0] or "stripe" in client.calls[0].lower()
+
+
+@pytest.mark.asyncio
+async def test_google_news_real_provider_max_items_caps():
+    client = _FakeTextClient(200, _GNEWS_RSS_SAMPLE)
+    p = GoogleNewsProvider(http_client=client, max_items=2)
+    r = await p.fetch(company="Stripe")
+    assert r.success is True
+    assert len(r.raw["recent_news"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_google_news_real_provider_empty_company_fails_fast():
+    client = _FakeTextClient(200, _GNEWS_RSS_SAMPLE)
+    p = GoogleNewsProvider(http_client=client)
+    r = await p.fetch(company="   ")
+    assert r.success is False
+    assert "empty" in (r.error or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_google_news_real_provider_bad_xml_returns_empty():
+    client = _FakeTextClient(200, "<<<not-xml")
+    p = GoogleNewsProvider(http_client=client)
+    r = await p.fetch(company="Stripe")
+    assert r.success is True
+    assert r.raw["recent_news"] == []
+
+
+@pytest.mark.asyncio
+async def test_google_news_real_provider_non_200_degrades():
+    client = _FakeTextClient(503, "service unavailable")
+    p = GoogleNewsProvider(http_client=client)
+    r = await p.fetch(company="Stripe")
+    assert r.success is False
+    assert "503" in (r.error or "")
+
+
+@pytest.mark.asyncio
+async def test_google_news_real_provider_network_error_degrades():
+    class _Boom:
+        async def get(self, *_a: Any, **_kw: Any):
+            raise RuntimeError("rss offline")
+
+        async def aclose(self) -> None:
+            pass
+
+    p = GoogleNewsProvider(http_client=_Boom())
+    r = await p.fetch(company="Stripe")
+    assert r.success is False
+    assert "rss offline" in (r.error or "")
+
+
+def test_default_layer1_factory_swaps_news_to_real_when_env_set(monkeypatch):
+    monkeypatch.setenv("RECON_GOOGLE_NEWS_PROVIDER", "real")
+    monkeypatch.setenv("RECON_GITHUB_PROVIDER", "stub")
+    providers = default_layer1_providers()
+    news = next(p for p in providers
+                if p.name in {"google_news", "google_news_stub"})
+    assert news.name == "google_news"
+    monkeypatch.setenv("RECON_GOOGLE_NEWS_PROVIDER", "stub")
+    providers2 = default_layer1_providers()
+    news2 = next(p for p in providers2
+                 if p.name in {"google_news", "google_news_stub"})
+    assert news2.name == "google_news_stub"

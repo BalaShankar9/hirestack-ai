@@ -266,6 +266,139 @@ class StubGoogleNewsProvider:
         }, s)
 
 
+# ─── Real provider: Google News RSS (free, no key) ────────────────────
+
+_GNEWS_URL = (
+    "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
+)
+
+
+class GoogleNewsProvider:
+    """Real Google News provider via the public RSS endpoint.
+
+    No API key, no auth. Returns up to N most-recent items. Parses RSS
+    with stdlib xml.etree (no extra dep). Source name is extracted from
+    the <source> element when present, else from <title> suffix
+    ('Title - Source'). Gracefully degrades on any error.
+
+    Activation: RECON_GOOGLE_NEWS_PROVIDER=real (default stub).
+    """
+
+    name = "google_news"
+    layer = 1
+
+    def __init__(
+        self,
+        *,
+        http_client: Optional[Any] = None,
+        max_items: int = 10,
+        timeout_s: float = 8.0,
+    ) -> None:
+        self._client = http_client
+        self._max_items = max(1, int(max_items))
+        self._timeout_s = timeout_s
+
+    async def fetch(self, *, company: str, **ctx: Any) -> ProviderResult:
+        s = time.perf_counter()
+        q = (company or "").strip()
+        if not q:
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=False,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                error="empty company",
+            )
+        from urllib.parse import quote_plus
+        url = _GNEWS_URL.format(q=quote_plus(q))
+        client, owned = await self._get_client()
+        try:
+            resp = await client.get(url)
+            if getattr(resp, "status_code", 0) != 200:
+                return ProviderResult(
+                    provider=self.name, layer=self.layer, success=False,
+                    latency_ms=int((time.perf_counter() - s) * 1000),
+                    error=f"rss status={resp.status_code}",
+                )
+            text = resp.text if hasattr(resp, "text") else ""
+            items = self._parse_rss(text, self._max_items)
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=True,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                raw={"recent_news": items},
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.info("google_news fetch failed company=%s exc=%s",
+                        company, exc)
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=False,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                error=str(exc)[:200],
+            )
+        finally:
+            if owned:
+                try:
+                    await client.aclose()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    async def _get_client(self):
+        if self._client is not None:
+            return self._client, False
+        import httpx
+        return httpx.AsyncClient(
+            timeout=self._timeout_s,
+            headers={"User-Agent": "HireStack-AI-Recon-Swarm"},
+            follow_redirects=True,
+        ), True
+
+    @staticmethod
+    def _parse_rss(text: str, limit: int) -> List[Dict[str, Any]]:
+        if not text:
+            return []
+        import xml.etree.ElementTree as ET
+        try:
+            root = ET.fromstring(text)
+        except ET.ParseError:
+            return []
+        out: List[Dict[str, Any]] = []
+        # RSS layout: <rss><channel><item>...</item>*</channel></rss>
+        for item in root.iter("item"):
+            title = (item.findtext("title") or "").strip()
+            if not title:
+                continue
+            pub = (item.findtext("pubDate") or "").strip()
+            source_el = item.find("source")
+            src = (source_el.text if source_el is not None else "") or ""
+            src = src.strip()
+            # Google News titles often look like "Headline - Source".
+            # Strip the trailing source attribution from title.
+            if " - " in title:
+                head, _, tail = title.rpartition(" - ")
+                if head and tail and len(tail) <= 60:
+                    title = head.strip()
+                    if not src:
+                        src = tail.strip()
+            out.append({
+                "title": title,
+                "date": GoogleNewsProvider._normalize_date(pub),
+                "source": src or "Google News",
+            })
+            if len(out) >= limit:
+                break
+        return out
+
+    @staticmethod
+    def _normalize_date(pub: str) -> str:
+        # RFC-822: 'Tue, 14 Apr 2026 10:30:00 GMT' -> '2026-04-14'
+        if not pub:
+            return ""
+        from email.utils import parsedate_to_datetime
+        try:
+            dt = parsedate_to_datetime(pub)
+            return dt.date().isoformat()
+        except Exception:  # noqa: BLE001
+            return pub[:10]
+
+
 # ─── Layer 2 — deep extraction stubs ──────────────────────────────
 
 class _SafeWebsiteFetcher:
@@ -565,12 +698,17 @@ def default_layer1_providers() -> List[SourceProvider]:
         gh = GitHubProvider()
     else:
         gh = StubGitHubProvider()
+    news: SourceProvider
+    if (os.getenv("RECON_GOOGLE_NEWS_PROVIDER") or "stub").lower() == "real":
+        news = GoogleNewsProvider()
+    else:
+        news = StubGoogleNewsProvider()
     providers: List[SourceProvider] = [
         StubCrunchbaseProvider(),
         StubLinkedInProvider(),
         StubBuiltWithProvider(),
         gh,
-        StubGoogleNewsProvider(),
+        news,
     ]
     # Future:
     #   if os.getenv("CRUNCHBASE_API_KEY"):
