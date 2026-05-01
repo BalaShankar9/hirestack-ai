@@ -17,9 +17,10 @@ import time
 import traceback
 from abc import ABC, abstractmethod
 from collections import deque
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncGenerator, Deque, Dict, List, Optional, Tuple
+from typing import Any, AsyncGenerator, Awaitable, Callable, Deque, Dict, List, Optional, Tuple
 
 import structlog
 
@@ -46,6 +47,34 @@ def _legacy_pipeline_allowed() -> bool:
     return os.environ.get(_LEGACY_OPT_IN_ENV, "").strip().lower() in {
         "1", "true", "yes", "on",
     }
+
+
+# ─── S14-F4: substep emitter contextvar ─────────────────────────────
+# pipeline_runtime binds a per-stage substep emitter into this contextvar
+# before invoking sub-pipelines / sub-agents. SubAgent.safe_run reads it
+# and emits substep_started / substep_completed events without forcing
+# every sub-agent to take an explicit sink kwarg. None means "no SSE
+# stream is listening" — emissions are silently dropped.
+
+SubstepEmitter = Callable[[str, str, int, str, Optional[Dict[str, Any]]], Awaitable[None]]
+# args: (sub_agent, status, latency_ms, message, data)
+
+_SUBSTEP_EMITTER_VAR: ContextVar[Optional[SubstepEmitter]] = ContextVar(
+    "hirestack_substep_emitter", default=None,
+)
+
+
+def set_substep_emitter(emitter: Optional[SubstepEmitter]) -> Token:
+    return _SUBSTEP_EMITTER_VAR.set(emitter)
+
+
+def reset_substep_emitter(token: Token) -> None:
+    _SUBSTEP_EMITTER_VAR.reset(token)
+
+
+def get_substep_emitter() -> Optional[SubstepEmitter]:
+    return _SUBSTEP_EMITTER_VAR.get()
+
 
 PHASE_SLO_MS: Dict[str, int] = {
     "recon": 8_000,
@@ -138,6 +167,42 @@ class EventSink(ABC):
             data={"document_kind": document_kind, "delta": delta, "sequence": sequence},
         ))
 
+    async def emit_substep(
+        self,
+        *,
+        stage: str,
+        sub_agent: str,
+        status: str,
+        latency_ms: int = 0,
+        message: str = "",
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """S14-F4: typed substep open/close events for nested specialists.
+
+        ``status`` is one of "started", "completed", "failed". The default
+        implementation funnels through ``emit()`` as either a
+        ``substep_started`` or ``substep_completed`` PipelineEvent so SSE
+        and DB sinks automatically forward them. Substep volume is bounded
+        (≈10 per stage) so persistence is cheap; we do NOT special-case
+        DatabaseSink the way we do for token deltas.
+        """
+        et = "substep_started" if status == "started" else "substep_completed"
+        payload: Dict[str, Any] = {
+            "sub_agent": sub_agent,
+            "status": status,
+            "latency_ms": latency_ms,
+        }
+        if data:
+            payload.update(data)
+        await self.emit(PipelineEvent(
+            event_type=et,
+            stage=stage,
+            status=status,
+            latency_ms=latency_ms,
+            message=message or f"{sub_agent} {status}",
+            data=payload,
+        ))
+
     async def close(self) -> None:
         """Cleanup when pipeline completes."""
 
@@ -183,6 +248,23 @@ class _ExecutionPathTaggingSink(EventSink):
         # (they're never persisted and the SSE schema already pins identity).
         await self._inner.emit_token_delta(
             stage=stage, document_kind=document_kind, delta=delta, sequence=sequence,
+        )
+
+    async def emit_substep(
+        self,
+        *,
+        stage: str,
+        sub_agent: str,
+        status: str,
+        latency_ms: int = 0,
+        message: str = "",
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        # Forward directly so SSE/DB sinks own the wire format. Execution
+        # path tagging is irrelevant for substeps — they're sub-agent scoped.
+        await self._inner.emit_substep(
+            stage=stage, sub_agent=sub_agent, status=status,
+            latency_ms=latency_ms, message=message, data=data,
         )
 
     async def close(self) -> None:
@@ -1877,26 +1959,43 @@ class PipelineRuntime:
 
         # Wrap each parallel task to emit mid-phase progress as they complete
         async def _run_with_token_sink(stage: str, doc_kind: str, awaitable_factory):
-            """S14-F3b: bind a per-task token streaming sink before invoking
-            the sub-pipeline. The contextvar propagates into every nested
-            ``ai_client.complete_json`` call inside this Task.
+            """S14-F3b/F4: bind per-Task token + substep emitters before
+            invoking the sub-pipeline. ContextVars propagate into every
+            nested ``ai_client.complete_json`` and ``SubAgent.safe_run`` call
+            inside this Task.
             """
-            if not _streaming_tokens_enabled():
-                return await awaitable_factory()
-            seq = [0]
-
-            async def _delta(text: str) -> None:
-                await self.sink.emit_token_delta(
-                    stage=stage, document_kind=doc_kind,
-                    delta=text, sequence=seq[0],
+            # ---- Substep emitter (always bind; cheap & low-volume) ----
+            async def _substep(
+                sub_agent: str, status: str, latency_ms: int,
+                message: str, data: Optional[Dict[str, Any]],
+            ) -> None:
+                await self.sink.emit_substep(
+                    stage=stage, sub_agent=sub_agent, status=status,
+                    latency_ms=latency_ms, message=message,
+                    data={"document_kind": doc_kind, **(data or {})},
                 )
-                seq[0] += 1
 
-            tok = _ai_client_mod.set_token_sink(_delta)
+            substep_tok = set_substep_emitter(_substep)
+            token_tok = None
             try:
+                # ---- Token sink (gated on env switch) ----
+                if _streaming_tokens_enabled():
+                    seq = [0]
+
+                    async def _delta(text: str) -> None:
+                        await self.sink.emit_token_delta(
+                            stage=stage, document_kind=doc_kind,
+                            delta=text, sequence=seq[0],
+                        )
+                        seq[0] += 1
+
+                    token_tok = _ai_client_mod.set_token_sink(_delta)
+
                 return await awaitable_factory()
             finally:
-                _ai_client_mod.reset_token_sink(tok)
+                if token_tok is not None:
+                    _ai_client_mod.reset_token_sink(token_tok)
+                reset_substep_emitter(substep_tok)
 
         async def _run_cv():
             r = await _run_with_token_sink("quill", "cv", lambda: cv_pipe.execute(doc_context))
@@ -2054,23 +2153,46 @@ class PipelineRuntime:
             db=sb, tables=tables, user_id=user_id,
         )
 
+        async def _run_with_emitters(stage: str, doc_kind: str, factory):
+            """S14-F3b/F4 helper for forge sub-pipelines: bind both the
+            substep emitter and (when env enabled) the token sink before
+            running ``factory()``.
+            """
+            async def _substep(
+                sub_agent: str, status: str, latency_ms: int,
+                message: str, data: Optional[Dict[str, Any]],
+            ) -> None:
+                await self.sink.emit_substep(
+                    stage=stage, sub_agent=sub_agent, status=status,
+                    latency_ms=latency_ms, message=message,
+                    data={"document_kind": doc_kind, **(data or {})},
+                )
+
+            substep_tok = set_substep_emitter(_substep)
+            token_tok = None
+            try:
+                if _streaming_tokens_enabled():
+                    seq = [0]
+
+                    async def _delta(text: str) -> None:
+                        await self.sink.emit_token_delta(
+                            stage=stage, document_kind=doc_kind,
+                            delta=text, sequence=seq[0],
+                        )
+                        seq[0] += 1
+
+                    token_tok = _ai_client_mod.set_token_sink(_delta)
+                return await factory()
+            finally:
+                if token_tok is not None:
+                    _ai_client_mod.reset_token_sink(token_tok)
+                reset_substep_emitter(substep_tok)
+
         async def _run_ps():
-            async def _exec():
-                if not _streaming_tokens_enabled():
-                    return await ps_pipe.execute(doc_context)
-                seq = [0]
-                async def _delta(text: str) -> None:
-                    await self.sink.emit_token_delta(
-                        stage="forge", document_kind="personal_statement",
-                        delta=text, sequence=seq[0],
-                    )
-                    seq[0] += 1
-                tok = _ai_client_mod.set_token_sink(_delta)
-                try:
-                    return await ps_pipe.execute(doc_context)
-                finally:
-                    _ai_client_mod.reset_token_sink(tok)
-            r = await _exec()
+            r = await _run_with_emitters(
+                "forge", "personal_statement",
+                lambda: ps_pipe.execute(doc_context),
+            )
             await self.sink.emit(PipelineEvent(
                 event_type="progress", phase="forge", progress=79,
                 message="Personal statement complete…",
@@ -2078,22 +2200,10 @@ class PipelineRuntime:
             return r
 
         async def _run_pf():
-            async def _exec():
-                if not _streaming_tokens_enabled():
-                    return await pf_pipe.execute(doc_context)
-                seq = [0]
-                async def _delta(text: str) -> None:
-                    await self.sink.emit_token_delta(
-                        stage="forge", document_kind="portfolio",
-                        delta=text, sequence=seq[0],
-                    )
-                    seq[0] += 1
-                tok = _ai_client_mod.set_token_sink(_delta)
-                try:
-                    return await pf_pipe.execute(doc_context)
-                finally:
-                    _ai_client_mod.reset_token_sink(tok)
-            r = await _exec()
+            r = await _run_with_emitters(
+                "forge", "portfolio",
+                lambda: pf_pipe.execute(doc_context),
+            )
             await self.sink.emit(PipelineEvent(
                 event_type="progress", phase="forge", progress=81,
                 message="Portfolio complete…",

@@ -94,14 +94,50 @@ class SubAgent(ABC):
 
     async def safe_run(self, context: dict) -> SubAgentResult:
         """Run with error isolation — never raises, returns error result instead."""
+        # S14-F4: emit substep_started/completed if the surrounding
+        # pipeline runtime bound an emitter into the contextvar. Lazy
+        # import keeps ai_engine free of a hard dependency on backend.
+        emitter = None
+        try:
+            from app.services.pipeline_runtime import get_substep_emitter
+            emitter = get_substep_emitter()
+        except Exception:  # noqa: BLE001
+            try:
+                # Fallback for environments where backend is on sys.path
+                # under the `backend.` prefix instead of bare `app.`.
+                from backend.app.services.pipeline_runtime import get_substep_emitter  # type: ignore
+                emitter = get_substep_emitter()
+            except Exception:  # noqa: BLE001
+                emitter = None
+        if emitter is not None:
+            try:
+                await emitter(self.name, "started", 0, "", None)
+            except Exception as emit_err:  # noqa: BLE001
+                logger.debug("substep_started emit failed: %s", emit_err)
+
         start = time.monotonic_ns()
         try:
             result = await self.run(context)
             result.latency_ms = int((time.monotonic_ns() - start) / 1_000_000)
+            if emitter is not None:
+                try:
+                    await emitter(
+                        self.name, "completed", result.latency_ms, "",
+                        {"confidence": result.confidence},
+                    )
+                except Exception as emit_err:  # noqa: BLE001
+                    logger.debug("substep_completed emit failed: %s", emit_err)
             return result
         except Exception as exc:
             elapsed = int((time.monotonic_ns() - start) / 1_000_000)
             logger.warning("SubAgent %s failed: %s", self.name, exc)
+            if emitter is not None:
+                try:
+                    await emitter(
+                        self.name, "failed", elapsed, str(exc)[:200], None,
+                    )
+                except Exception as emit_err:  # noqa: BLE001
+                    logger.debug("substep_failed emit failed: %s", emit_err)
             return SubAgentResult(
                 agent_name=self.name,
                 error=str(exc),
