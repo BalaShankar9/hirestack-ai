@@ -144,9 +144,69 @@ _RETRY_KWARGS: Dict[str, Any] = dict(
     stop=(stop_after_attempt(6) | stop_after_delay(300)),
     wait=wait_exponential(multiplier=1, min=2, max=30),
     retry=retry_if_exception(_is_retryable),
-    before_sleep=before_sleep_log(logger, logging.WARNING),
+    before_sleep=lambda rs: _retry_event_before_sleep(rs),
     reraise=True,
 )
+
+
+# ── S14-F5: retry event emission ───────────────────────────────────────
+# tenacity calls ``before_sleep`` between every failed attempt and the
+# next wait. We forward the attempt metadata to the per-Task retry
+# emitter (bound by pipeline_runtime) so the SSE stream surfaces a
+# ``retry`` event. Falls back to the stdlib log if no emitter is bound.
+
+def _get_retry_emitter():
+    """Lazy import to keep ai_engine free of a backend dependency."""
+    try:
+        from app.services.pipeline_runtime import get_retry_emitter
+        return get_retry_emitter()
+    except Exception:  # noqa: BLE001
+        try:
+            from backend.app.services.pipeline_runtime import get_retry_emitter  # type: ignore
+            return get_retry_emitter()
+        except Exception:  # noqa: BLE001
+            return None
+
+
+# Reuse the stock log helper as a fallback so we keep the historical
+# WARNING-level signal in non-pipeline call sites (eval scripts, ad hoc
+# REPL usage, unit tests without a runtime).
+_RETRY_LOG_FALLBACK = before_sleep_log(logger, logging.WARNING)
+
+
+def _retry_event_before_sleep(retry_state) -> None:
+    """tenacity before_sleep callback: emit ``retry`` SSE event + log.
+
+    Schedules an async send onto the running loop so we never block the
+    sleep window. If no loop is running OR no emitter is bound, we just
+    log and move on.
+    """
+    # Always log (matches pre-F5 behaviour).
+    try:
+        _RETRY_LOG_FALLBACK(retry_state)
+    except Exception:  # noqa: BLE001
+        pass
+
+    emitter = _get_retry_emitter()
+    if emitter is None:
+        return
+    exc = (retry_state.outcome.exception()
+           if retry_state.outcome and retry_state.outcome.failed else None)
+    reason = (str(exc)[:200] if exc else "transient_error")
+    attempt = int(getattr(retry_state, "attempt_number", 0) or 0)
+    wait_ms = int((getattr(retry_state, "next_action", None)
+                   and getattr(retry_state.next_action, "sleep", 0.0) or 0.0) * 1000)
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    # Best-effort schedule — never let an emit failure break tenacity.
+    try:
+        loop.create_task(emitter(
+            attempt=attempt, max_attempts=6, reason=reason, wait_ms=wait_ms,
+        ))
+    except Exception as emit_err:  # noqa: BLE001
+        logger.debug("retry_emit_failed: %s", str(emit_err)[:200])
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -245,6 +305,18 @@ class _GeminiProvider:
                         self.model_name,
                         str(exc)[:200],
                     )
+                    # S14-F5: surface cascade failover as a retry event.
+                    _emitter = _get_retry_emitter()
+                    if _emitter is not None:
+                        try:
+                            await _emitter(
+                                attempt=1, max_attempts=2,
+                                reason=f"quota_exhausted:{str(exc)[:160]}",
+                                model=effective_model,
+                                next_model=self.model_name,
+                            )
+                        except Exception as emit_err:  # noqa: BLE001
+                            logger.debug("retry_emit_failed: %s", str(emit_err)[:200])
                     return await asyncio.to_thread(
                         self._get_client().models.generate_content,
                         model=self.model_name,

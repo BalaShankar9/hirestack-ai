@@ -76,6 +76,32 @@ def get_substep_emitter() -> Optional[SubstepEmitter]:
     return _SUBSTEP_EMITTER_VAR.get()
 
 
+# ─── S14-F5: retry emitter contextvar ───────────────────────────────
+# Bound by pipeline_runtime before invoking sub-pipelines. AIClient
+# tenacity hook + routed-model fallback read this and emit ``retry``
+# events surfaced through the SSE stream.
+
+RetryEmitter = Callable[..., Awaitable[None]]
+# Concrete signature exercised by callers:
+#   await emitter(attempt, max_attempts, reason, model=..., next_model=..., wait_ms=...)
+
+_RETRY_EMITTER_VAR: ContextVar[Optional[RetryEmitter]] = ContextVar(
+    "hirestack_retry_emitter", default=None,
+)
+
+
+def set_retry_emitter(emitter: Optional[RetryEmitter]) -> Token:
+    return _RETRY_EMITTER_VAR.set(emitter)
+
+
+def reset_retry_emitter(token: Token) -> None:
+    _RETRY_EMITTER_VAR.reset(token)
+
+
+def get_retry_emitter() -> Optional[RetryEmitter]:
+    return _RETRY_EMITTER_VAR.get()
+
+
 PHASE_SLO_MS: Dict[str, int] = {
     "recon": 8_000,
     "atlas": 12_000,
@@ -203,6 +229,43 @@ class EventSink(ABC):
             data=payload,
         ))
 
+    async def emit_retry(
+        self,
+        *,
+        stage: Optional[str],
+        attempt: int,
+        max_attempts: int,
+        reason: str,
+        model: Optional[str] = None,
+        next_model: Optional[str] = None,
+        wait_ms: int = 0,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """S14-F5: smart-retry attempt event.
+
+        Default impl funnels through ``emit()`` as a ``retry`` PipelineEvent.
+        Used by both the tenacity ``before_sleep`` hook (transient provider
+        errors) and the routed-model fallback (cascade failover).
+        """
+        payload: Dict[str, Any] = {
+            "attempt": attempt,
+            "max_attempts": max_attempts,
+            "reason": reason[:200],
+            "wait_ms": wait_ms,
+        }
+        if model:
+            payload["model"] = model
+        if next_model:
+            payload["next_model"] = next_model
+        if data:
+            payload.update(data)
+        await self.emit(PipelineEvent(
+            event_type="retry",
+            stage=stage,
+            message=f"Retrying ({attempt}/{max_attempts}): {reason[:120]}",
+            data=payload,
+        ))
+
     async def close(self) -> None:
         """Cleanup when pipeline completes."""
 
@@ -265,6 +328,26 @@ class _ExecutionPathTaggingSink(EventSink):
         await self._inner.emit_substep(
             stage=stage, sub_agent=sub_agent, status=status,
             latency_ms=latency_ms, message=message, data=data,
+        )
+
+    async def emit_retry(
+        self,
+        *,
+        stage: Optional[str],
+        attempt: int,
+        max_attempts: int,
+        reason: str,
+        model: Optional[str] = None,
+        next_model: Optional[str] = None,
+        wait_ms: int = 0,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        # Forward directly to the inner sink. Execution-path tagging is
+        # not interesting for retry events — we already log the model.
+        await self._inner.emit_retry(
+            stage=stage, attempt=attempt, max_attempts=max_attempts,
+            reason=reason, model=model, next_model=next_model,
+            wait_ms=wait_ms, data=data,
         )
 
     async def close(self) -> None:
@@ -1975,7 +2058,21 @@ class PipelineRuntime:
                     data={"document_kind": doc_kind, **(data or {})},
                 )
 
+            # ---- S14-F5: retry emitter (always bind; ultra-low volume) ----
+            async def _retry(
+                attempt: int, max_attempts: int, reason: str, **kw: Any,
+            ) -> None:
+                await self.sink.emit_retry(
+                    stage=stage, attempt=attempt, max_attempts=max_attempts,
+                    reason=reason,
+                    model=kw.get("model"),
+                    next_model=kw.get("next_model"),
+                    wait_ms=int(kw.get("wait_ms") or 0),
+                    data={"document_kind": doc_kind, **(kw.get("data") or {})},
+                )
+
             substep_tok = set_substep_emitter(_substep)
+            retry_tok = set_retry_emitter(_retry)
             token_tok = None
             try:
                 # ---- Token sink (gated on env switch) ----
@@ -1995,6 +2092,7 @@ class PipelineRuntime:
             finally:
                 if token_tok is not None:
                     _ai_client_mod.reset_token_sink(token_tok)
+                reset_retry_emitter(retry_tok)
                 reset_substep_emitter(substep_tok)
 
         async def _run_cv():
@@ -2168,7 +2266,20 @@ class PipelineRuntime:
                     data={"document_kind": doc_kind, **(data or {})},
                 )
 
+            async def _retry(
+                attempt: int, max_attempts: int, reason: str, **kw: Any,
+            ) -> None:
+                await self.sink.emit_retry(
+                    stage=stage, attempt=attempt, max_attempts=max_attempts,
+                    reason=reason,
+                    model=kw.get("model"),
+                    next_model=kw.get("next_model"),
+                    wait_ms=int(kw.get("wait_ms") or 0),
+                    data={"document_kind": doc_kind, **(kw.get("data") or {})},
+                )
+
             substep_tok = set_substep_emitter(_substep)
+            retry_tok = set_retry_emitter(_retry)
             token_tok = None
             try:
                 if _streaming_tokens_enabled():
@@ -2186,6 +2297,7 @@ class PipelineRuntime:
             finally:
                 if token_tok is not None:
                     _ai_client_mod.reset_token_sink(token_tok)
+                reset_retry_emitter(retry_tok)
                 reset_substep_emitter(substep_tok)
 
         async def _run_ps():
