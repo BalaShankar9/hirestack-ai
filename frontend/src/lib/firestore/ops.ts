@@ -6,6 +6,11 @@
  */
 
 import { supabase } from "@/lib/supabase";
+import {
+  publishTokenDelta,
+  resetTokenStream,
+  type TokenDeltaPayload,
+} from "@/lib/streams/token-stream-bus";
 import { TABLES } from "./paths";
 import type {
   ApplicationDoc,
@@ -642,6 +647,11 @@ export async function generateApplicationModules(
   let persistedJobId: string | null = null;
   let serverOwnsPersistence = false;
 
+  // S14-F3c: clear any leftover token-stream buffers so the new generation
+  // starts from a clean slate (sequence 0). Without this, a re-run within
+  // the same page session would render previous tokens at the top.
+  resetTokenStream();
+
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     let abortedBy: "user" | "hard_timeout" | "inactivity" | null = null;
     let jobId: string | null = persistedJobId;
@@ -878,6 +888,11 @@ export async function generateApplicationModules(
                   opts?.onAgentEvent?.(data as PipelineAgentEvent);
                 } else if (currentEvent === "detail") {
                   opts?.onDetailEvent?.(data as PipelineDetailEvent);
+                } else if (currentEvent === "token_delta") {
+                  // S14-F3c: route live token deltas to the token-stream bus.
+                  // Components subscribe via useTokenStream(stage, documentKind)
+                  // to paint the workspace document preview live.
+                  publishTokenDelta(data as TokenDeltaPayload);
                 } else if (currentEvent === "complete") {
                   result = data.result;
                   onProgress?.({
