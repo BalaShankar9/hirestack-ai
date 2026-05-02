@@ -328,7 +328,7 @@ def test_build_recon_swarm_tools_registers_one_tool():
 # ─── factories ────────────────────────────────────────────────────
 
 def test_default_factories_return_expected_counts():
-    assert len(default_layer1_providers()) == 7
+    assert len(default_layer1_providers()) == 8
     assert len(default_layer2_providers()) == 6
 
 
@@ -1032,3 +1032,132 @@ def test_default_layer1_factory_swaps_reddit_to_real_when_env_set(monkeypatch):
     rd2 = next(p for p in providers2
                if p.name in {"reddit", "reddit_stub"})
     assert rd2.name == "reddit_stub"
+
+
+# ─── Stack Exchange real provider (httpx injected) ────────────────
+
+from ai_engine.agents.sub_agents.recon_swarm import (  # noqa: E402
+    StackExchangeProvider,
+    StubStackExchangeProvider,
+)
+
+
+@pytest.mark.asyncio
+async def test_stub_stackexchange_returns_recent_news_items():
+    p = StubStackExchangeProvider()
+    r = await p.fetch(company="Stripe")
+    assert r.success is True
+    assert r.layer == 1
+    items = r.raw["recent_news"]
+    assert isinstance(items, list) and len(items) >= 1
+    assert all("title" in it and it["source"] == "Stack Overflow"
+               for it in items)
+
+
+@pytest.mark.asyncio
+async def test_stackexchange_real_provider_extracts_questions():
+    payload = {
+        "items": [
+            {
+                "title": "How to handle Stripe webhook idempotency?",
+                "link": "https://stackoverflow.com/q/12345",
+                "creation_date": 1733097600,
+                "score": 42, "answer_count": 3,
+                "is_answered": True,
+                "tags": ["stripe-payments", "webhooks", "node.js"],
+            },
+            {
+                # &amp; should be unescaped
+                "title": "Stripe API &amp; idempotency keys",
+                "link": "https://stackoverflow.com/q/67890",
+                "creation_date": 1730000000,
+                "score": 12, "answer_count": 1,
+                "is_answered": False,
+                "tags": ["stripe-payments"],
+            },
+            {"title": ""},  # skipped
+        ],
+    }
+    client = _FakeClient({
+        "https://api.stackexchange.com/2.3/search/advanced":
+            _FakeResp(200, payload),
+    })
+    p = StackExchangeProvider(http_client=client, max_items=5)
+    r = await p.fetch(company="Stripe")
+    assert r.success is True
+    items = r.raw["recent_news"]
+    assert len(items) == 2
+    assert items[0]["title"] == "How to handle Stripe webhook idempotency?"
+    assert items[0]["source"] == "Stack Overflow"
+    assert items[0]["score"] == 42
+    assert items[0]["is_answered"] is True
+    assert "stripe-payments" in items[0]["tags"]
+    assert items[0]["date"]  # parsed
+    # html unescape
+    assert items[1]["title"] == "Stripe API & idempotency keys"
+
+
+@pytest.mark.asyncio
+async def test_stackexchange_real_provider_respects_max_items():
+    items = [
+        {"title": f"q{i}", "link": f"https://so.com/{i}",
+         "creation_date": 1730000000 + i,
+         "score": 1, "answer_count": 0, "tags": []}
+        for i in range(20)
+    ]
+    client = _FakeClient({
+        "https://api.stackexchange.com/2.3/search/advanced":
+            _FakeResp(200, {"items": items}),
+    })
+    p = StackExchangeProvider(http_client=client, max_items=4)
+    r = await p.fetch(company="Acme")
+    assert r.success is True
+    assert len(r.raw["recent_news"]) == 4
+
+
+@pytest.mark.asyncio
+async def test_stackexchange_real_provider_handles_non_200():
+    client = _FakeClient({
+        "https://api.stackexchange.com/2.3/search/advanced":
+            _FakeResp(429, {"error": "throttle"}),
+    })
+    p = StackExchangeProvider(http_client=client)
+    r = await p.fetch(company="Acme")
+    assert r.success is False
+    assert "429" in (r.error or "")
+
+
+@pytest.mark.asyncio
+async def test_stackexchange_real_provider_empty_company_fails_fast():
+    p = StackExchangeProvider()
+    r = await p.fetch(company="")
+    assert r.success is False
+    assert r.error == "empty company"
+
+
+@pytest.mark.asyncio
+async def test_stackexchange_real_provider_swallows_network_exceptions():
+    class _BoomClient:
+        async def get(self, url, **_kw):
+            raise RuntimeError("read timeout")
+
+        async def aclose(self):
+            pass
+
+    p = StackExchangeProvider(http_client=_BoomClient())
+    r = await p.fetch(company="Acme")
+    assert r.success is False
+    assert "read timeout" in (r.error or "")
+
+
+def test_default_layer1_factory_swaps_stackexchange_to_real_when_env_set(monkeypatch):
+    monkeypatch.setenv("RECON_STACKEXCHANGE_PROVIDER", "real")
+    providers = default_layer1_providers()
+    se = next(p for p in providers
+              if p.name in {"stackexchange", "stackexchange_stub"})
+    assert se.name == "stackexchange"
+    monkeypatch.setenv("RECON_STACKEXCHANGE_PROVIDER", "stub")
+    providers2 = default_layer1_providers()
+    se2 = next(p for p in providers2
+               if p.name in {"stackexchange", "stackexchange_stub"})
+    assert se2.name == "stackexchange_stub"

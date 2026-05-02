@@ -694,6 +694,159 @@ class RedditProvider:
         return out
 
 
+# ─── Stack Exchange (StackOverflow API) — dev signal, free, no auth
+
+class StubStackExchangeProvider:
+    name = "stackexchange_stub"
+    layer = 1
+
+    async def fetch(self, *, company: str, **ctx: Any) -> ProviderResult:
+        s = time.perf_counter()
+        items = [
+            {"title": f"How does {company}'s API handle rate limits?",
+             "url": "https://stackoverflow.com/questions/stub1",
+             "date": "2026-04-05",
+             "source": "Stack Overflow"},
+            {"title": f"Best practices integrating {company}",
+             "url": "https://stackoverflow.com/questions/stub2",
+             "date": "2026-03-22",
+             "source": "Stack Overflow"},
+        ]
+        return await _wrapped(self.name, self.layer, {
+            "recent_news": items,
+        }, s)
+
+
+_STACKEXCHANGE_SEARCH_URL = (
+    "https://api.stackexchange.com/2.3/search/advanced"
+    "?order=desc&sort=activity&q={q}&site=stackoverflow"
+    "&pagesize={n}&filter=default"
+)
+
+
+class StackExchangeProvider:
+    """Real Stack Exchange provider via the public Stack API.
+
+    Free tier: 10,000 requests/IP/day with no key. Returns recent
+    questions matching the company name as `recent_news` items so
+    they fuse alongside HN / Reddit / Google News signals at the
+    IntelFusion list-merge step.
+
+    Reference: https://api.stackexchange.com/docs/advanced-search
+    Activation: RECON_STACKEXCHANGE_PROVIDER=real (default: stub).
+    """
+
+    name = "stackexchange"
+    layer = 1
+
+    def __init__(
+        self,
+        *,
+        http_client: Optional[Any] = None,
+        max_items: int = 10,
+        timeout_s: float = 8.0,
+    ) -> None:
+        self._client = http_client
+        self._max_items = max(1, int(max_items))
+        self._timeout_s = timeout_s
+
+    async def fetch(self, *, company: str, **ctx: Any) -> ProviderResult:
+        s = time.perf_counter()
+        q = (company or "").strip()
+        if not q:
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=False,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                error="empty company",
+            )
+        from urllib.parse import quote_plus
+        url = _STACKEXCHANGE_SEARCH_URL.format(
+            q=quote_plus(q), n=self._max_items,
+        )
+        client, owned = await self._get_client()
+        try:
+            resp = await client.get(url)
+            if getattr(resp, "status_code", 0) != 200:
+                return ProviderResult(
+                    provider=self.name, layer=self.layer, success=False,
+                    latency_ms=int((time.perf_counter() - s) * 1000),
+                    error=f"stackexchange status={resp.status_code}",
+                )
+            data = resp.json() or {}
+            items = self._extract_items(data, self._max_items)
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=True,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                raw={"recent_news": items},
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.info("stackexchange fetch failed company=%s exc=%s",
+                        company, exc)
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=False,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                error=str(exc)[:200],
+            )
+        finally:
+            if owned:
+                try:
+                    await client.aclose()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    async def _get_client(self):
+        if self._client is not None:
+            return self._client, False
+        import httpx
+        return (
+            httpx.AsyncClient(
+                timeout=self._timeout_s,
+                headers={
+                    "User-Agent": "HireStack-AI-Recon-Swarm/1.0",
+                    "Accept": "application/json",
+                },
+                follow_redirects=True,
+            ),
+            True,
+        )
+
+    @staticmethod
+    def _extract_items(
+        data: Dict[str, Any], limit: int,
+    ) -> List[Dict[str, Any]]:
+        import html
+        items_raw = data.get("items") or []
+        out: List[Dict[str, Any]] = []
+        for q in items_raw:
+            if not isinstance(q, dict):
+                continue
+            title = html.unescape((q.get("title") or "").strip())
+            if not title:
+                continue
+            link = q.get("link") or ""
+            ts = q.get("creation_date")
+            date_iso = ""
+            if isinstance(ts, (int, float)) and ts > 0:
+                from datetime import datetime, timezone
+                date_iso = datetime.fromtimestamp(
+                    float(ts), tz=timezone.utc,
+                ).date().isoformat()
+            tags = q.get("tags") or []
+            out.append({
+                "title": title,
+                "url": link,
+                "date": date_iso,
+                "source": "Stack Overflow",
+                "score": int(q.get("score") or 0),
+                "answers": int(q.get("answer_count") or 0),
+                "is_answered": bool(q.get("is_answered")),
+                "tags": tags if isinstance(tags, list) else [],
+            })
+            if len(out) >= limit:
+                break
+        return out
+
+
 # ─── Layer 2 — deep extraction stubs ──────────────────────────────
 
 class _SafeWebsiteFetcher:
@@ -1179,6 +1332,11 @@ def default_layer1_providers() -> List[SourceProvider]:
         rd = RedditProvider()
     else:
         rd = StubRedditProvider()
+    se: SourceProvider
+    if (os.getenv("RECON_STACKEXCHANGE_PROVIDER") or "stub").lower() == "real":
+        se = StackExchangeProvider()
+    else:
+        se = StubStackExchangeProvider()
     providers: List[SourceProvider] = [
         StubCrunchbaseProvider(),
         StubLinkedInProvider(),
@@ -1187,6 +1345,7 @@ def default_layer1_providers() -> List[SourceProvider]:
         news,
         hn,
         rd,
+        se,
     ]
     # Future:
     #   if os.getenv("CRUNCHBASE_API_KEY"):
