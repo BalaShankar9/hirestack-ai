@@ -121,6 +121,30 @@ export interface Archetype {
   rationale?: string;
 }
 
+/**
+ * ATLAS v2 — One claim cross-checked by `ValidationSwarm`.
+ * Mirrors `CandidateValidationClaim.model_dump()` from
+ * `ai_engine/agents/artifact_contracts.py`.
+ */
+export interface CandidateValidationClaim {
+  claim: string;
+  /** e.g. "github_commits", "date_consistency", "company_exists". */
+  validator: string;
+  status: "verified" | "unverified" | "conflicted";
+  detail: string;
+}
+
+/**
+ * ATLAS v2 — Output of `ValidationSwarm.validate(candidate_profile)`.
+ * Surfaced under `result.meta.atlas_candidate_validation` in the SSE
+ * complete payload (Slice 4.2).
+ */
+export interface CandidateValidationReport {
+  claims: CandidateValidationClaim[];
+  verified_count: number;
+  conflicted_count: number;
+}
+
 export interface BenchmarkDimension {
   name: string;
   weight: number;
