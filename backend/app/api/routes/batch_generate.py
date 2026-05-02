@@ -40,11 +40,45 @@ from app.services.batch_evaluator import (
     MAX_URLS,
     MIN_FIT_SCORE_CEIL,
     MIN_FIT_SCORE_FLOOR,
+    BatchEntry,
     BatchPlan,
+    RankedBatch,
+    ScoringResult,
     plan_batch,
+    rank_batch,
+)
+from app.services.batch_scorer_worker import (
+    DEFAULT_CONCURRENCY,
+    MAX_CONCURRENCY,
+    Scorer,
+    score_plan,
 )
 
 router = APIRouter()
+
+
+# ── Scorer dependency ────────────────────────────────────────────────
+#
+# The real scorer (LLM chain hitting the AI router) is not yet wired —
+# that is its own slice (B0.scorer) so that the route + contract +
+# rate limit can ship now and tests stay AI-free.  The default scorer
+# returns a typed failure so a misconfigured prod deploy doesn't
+# silently return zeros; the route still 200s with a fully populated
+# `failed` bucket so the UI can render "scoring backend unavailable"
+# per row instead of choking on an exception.
+
+
+async def _stub_scorer(entry: BatchEntry) -> ScoringResult:
+    return ScoringResult(
+        canonical_url=entry.canonical_url,
+        fit_score=None,
+        error="scorer_not_configured",
+    )
+
+
+def get_scorer() -> Scorer:
+    """FastAPI dependency — override in tests via app.dependency_overrides."""
+    return _stub_scorer
 
 
 # ── Request / Response models ────────────────────────────────────────
@@ -134,4 +168,115 @@ async def plan_batch_route(
     return body
 
 
-__all__ = ["router", "BatchPlanRequest"]
+# ── Score route ──────────────────────────────────────────────────────
+
+
+class BatchScoreRequest(BaseModel):
+    """Payload for ``POST /api/generate/batch/score``.
+
+    Same shape as ``BatchPlanRequest`` plus an optional concurrency
+    knob.  Concurrency is clamped inside ``score_plan`` to
+    ``[1, MAX_CONCURRENCY]`` regardless of what the caller passes,
+    so an over-eager client cannot drain the AI rate-limit budget.
+    """
+    urls: List[str] = Field(default_factory=list)
+    min_fit_score: float = Field(
+        default=MIN_FIT_SCORE_FLOOR,
+        ge=MIN_FIT_SCORE_FLOOR,
+        le=MIN_FIT_SCORE_CEIL,
+    )
+    concurrency: int = Field(
+        default=DEFAULT_CONCURRENCY,
+        ge=1,
+        le=MAX_CONCURRENCY,
+        description=(
+            f"Parallel scorer slots. Range: [1, {MAX_CONCURRENCY}]. "
+            f"Default: {DEFAULT_CONCURRENCY}."
+        ),
+    )
+
+
+def _serialize_scoring_result(r: ScoringResult) -> Dict[str, Any]:
+    return {
+        "canonical_url": r.canonical_url,
+        "fit_score": r.fit_score,
+        "error": r.error,
+        "title": r.title,
+        "company": r.company,
+    }
+
+
+def _serialize_ranked(ranked: RankedBatch) -> Dict[str, Any]:
+    return {
+        "ranked": [_serialize_scoring_result(r) for r in ranked.ranked],
+        "below_threshold": [_serialize_scoring_result(r) for r in ranked.below_threshold],
+        "failed": [_serialize_scoring_result(r) for r in ranked.failed],
+        "summary": {
+            "ranked_count": len(ranked.ranked),
+            "below_threshold_count": len(ranked.below_threshold),
+            "failed_count": len(ranked.failed),
+        },
+    }
+
+
+@router.post("/generate/batch/score")
+@limiter.limit("5/minute")
+async def score_batch_route(
+    request: Request,
+    payload: BatchScoreRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    scorer: Scorer = Depends(get_scorer),
+) -> Dict[str, Any]:
+    """Validate, score, and rank a batch of URLs in one shot.
+
+    Pipeline:
+        1. ``plan_batch`` — validate / canonicalize / dedupe URLs.
+        2. ``score_plan`` — fan out to the injected ``Scorer`` under
+           a concurrency cap.  Per-entry failures become
+           ``ScoringResult(error=...)`` and route to ``failed``.
+        3. ``rank_batch`` — bucket into ``ranked`` (>= threshold,
+           sorted desc), ``below_threshold`` (< threshold, sorted
+           desc), and ``failed``.
+
+    Response shape::
+
+        {
+          "plan":   <same shape as /plan response>,
+          "scored": {
+              "ranked":          [ScoringResult, ...],
+              "below_threshold": [ScoringResult, ...],
+              "failed":          [ScoringResult, ...],
+              "summary": {ranked_count, below_threshold_count,
+                          failed_count}
+          },
+          "min_fit_score": float
+        }
+
+    Rate-limited at 5/min (half of /plan): scoring is the expensive
+    side and we don't want a paste bot draining the AI budget.
+
+    Persistence (writing the ranked rows into ``applications``) is
+    the next slice (B0.persist) — keeping it out of this route means
+    the score route stays idempotent and safe to retry.
+    """
+    plan = plan_batch(payload.urls)
+    scored = await score_plan(
+        plan.accepted,
+        scorer=scorer,
+        concurrency=payload.concurrency,
+    )
+    ranked = rank_batch(scored, min_fit_score=payload.min_fit_score)
+
+    return {
+        "plan": _serialize_plan(plan),
+        "scored": _serialize_ranked(ranked),
+        "min_fit_score": payload.min_fit_score,
+    }
+
+
+__all__ = [
+    "router",
+    "BatchPlanRequest",
+    "BatchScoreRequest",
+    "get_scorer",
+]

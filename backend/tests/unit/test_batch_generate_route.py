@@ -177,3 +177,172 @@ class TestPlanBatchRoute:
         a = client.post("/api/generate/batch/plan", json=payload).json()
         b = client.post("/api/generate/batch/plan", json=payload).json()
         assert a == b
+
+
+# ── Score route ──────────────────────────────────────────────────────
+
+
+from app.api.routes.batch_generate import get_scorer  # noqa: E402
+from app.services.batch_evaluator import BatchEntry, ScoringResult  # noqa: E402
+
+
+def _ok_scorer_factory(score_map):
+    """Return a scorer that maps canonical_url → fit_score from the dict."""
+    async def _scorer(entry: BatchEntry) -> ScoringResult:
+        return ScoringResult(
+            canonical_url=entry.canonical_url,
+            fit_score=score_map.get(entry.canonical_url, 1.0),
+            error=None,
+            title="t",
+            company="c",
+        )
+    return _scorer
+
+
+def _build_score_app(scorer=None) -> FastAPI:
+    app = FastAPI()
+    app.state.limiter = batch_route.limiter
+    app.include_router(batch_route.router, prefix="/api")
+    app.dependency_overrides[api_deps.get_current_user] = lambda: _FAKE_USER
+    if scorer is not None:
+        app.dependency_overrides[get_scorer] = lambda: scorer
+    return app
+
+
+@pytest.fixture()
+def score_client_factory():
+    def _factory(scorer=None) -> TestClient:
+        try:
+            batch_route.limiter.reset()
+        except Exception:
+            pass
+        return TestClient(_build_score_app(scorer))
+    return _factory
+
+
+class TestScoreBatchRoute:
+    def test_empty_payload_returns_empty_buckets(self, score_client_factory) -> None:
+        client = score_client_factory()
+        resp = client.post("/api/generate/batch/score", json={"urls": []})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["plan"]["summary"]["is_empty"] is True
+        assert body["scored"]["ranked"] == []
+        assert body["scored"]["below_threshold"] == []
+        assert body["scored"]["failed"] == []
+        assert body["scored"]["summary"]["ranked_count"] == 0
+
+    def test_default_stub_scorer_marks_all_failed(self, score_client_factory) -> None:
+        """No scorer configured → every URL lands in `failed` with the typed error."""
+        client = score_client_factory()
+        resp = client.post("/api/generate/batch/score", json={
+            "urls": ["https://boards.greenhouse.io/acme/jobs/101"],
+        })
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["scored"]["summary"]["failed_count"] == 1
+        assert body["scored"]["failed"][0]["error"] == "scorer_not_configured"
+        assert body["scored"]["ranked"] == []
+
+    def test_injected_scorer_above_threshold_ranked(self, score_client_factory) -> None:
+        u1 = "https://boards.greenhouse.io/acme/jobs/101"
+        u2 = "https://jobs.lever.co/foo/abc-123"
+        scorer = _ok_scorer_factory({u1: 4.5, u2: 2.0})
+        client = score_client_factory(scorer=scorer)
+        resp = client.post("/api/generate/batch/score", json={
+            "urls": [u1, u2],
+            "min_fit_score": 3.0,
+        })
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["scored"]["summary"]["ranked_count"] == 1
+        assert body["scored"]["summary"]["below_threshold_count"] == 1
+        assert body["scored"]["ranked"][0]["fit_score"] == 4.5
+        assert body["scored"]["below_threshold"][0]["fit_score"] == 2.0
+
+    def test_min_fit_score_echoed(self, score_client_factory) -> None:
+        scorer = _ok_scorer_factory({})
+        client = score_client_factory(scorer=scorer)
+        resp = client.post("/api/generate/batch/score", json={
+            "urls": [],
+            "min_fit_score": 3.7,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["min_fit_score"] == 3.7
+
+    def test_min_fit_score_out_of_range_422(self, score_client_factory) -> None:
+        client = score_client_factory()
+        resp = client.post("/api/generate/batch/score", json={
+            "urls": [],
+            "min_fit_score": MIN_FIT_SCORE_CEIL + 1,
+        })
+        assert resp.status_code == 422
+
+    def test_concurrency_out_of_range_422(self, score_client_factory) -> None:
+        client = score_client_factory()
+        # MAX_CONCURRENCY=16, so 1000 should 422.
+        resp = client.post("/api/generate/batch/score", json={
+            "urls": [],
+            "concurrency": 1000,
+        })
+        assert resp.status_code == 422
+
+        resp2 = client.post("/api/generate/batch/score", json={
+            "urls": [],
+            "concurrency": 0,
+        })
+        assert resp2.status_code == 422
+
+    def test_invalid_urls_dont_reach_scorer(self, score_client_factory) -> None:
+        called_with = []
+
+        async def scorer(entry: BatchEntry) -> ScoringResult:
+            called_with.append(entry.canonical_url)
+            return ScoringResult(canonical_url=entry.canonical_url, fit_score=4.0, error=None)
+
+        client = score_client_factory(scorer=scorer)
+        resp = client.post("/api/generate/batch/score", json={
+            "urls": ["", "not-a-url", "https://boards.greenhouse.io/acme/jobs/101"],
+        })
+        assert resp.status_code == 200
+        # Only the 1 valid URL reaches the scorer.
+        assert len(called_with) == 1
+        body = resp.json()
+        assert body["plan"]["summary"]["accepted_count"] == 1
+        assert body["plan"]["summary"]["rejected_count"] == 2
+
+    def test_scorer_failure_routes_to_failed_bucket(self, score_client_factory) -> None:
+        async def scorer(entry: BatchEntry) -> ScoringResult:
+            raise RuntimeError("boom")
+
+        client = score_client_factory(scorer=scorer)
+        resp = client.post("/api/generate/batch/score", json={
+            "urls": ["https://boards.greenhouse.io/acme/jobs/101"],
+        })
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["scored"]["summary"]["failed_count"] == 1
+        assert body["scored"]["failed"][0]["error"].startswith("scorer_bug:")
+
+    def test_response_is_json_serializable(self, score_client_factory) -> None:
+        import json
+        scorer = _ok_scorer_factory({})
+        client = score_client_factory(scorer=scorer)
+        resp = client.post("/api/generate/batch/score", json={
+            "urls": ["https://boards.greenhouse.io/acme/jobs/101"],
+        })
+        assert resp.status_code == 200
+        json.dumps(resp.json())
+
+    def test_plan_payload_included_in_response(self, score_client_factory) -> None:
+        """Response must include the plan so UI can show rejections + scores in one shot."""
+        scorer = _ok_scorer_factory({})
+        client = score_client_factory(scorer=scorer)
+        resp = client.post("/api/generate/batch/score", json={
+            "urls": ["", "https://boards.greenhouse.io/acme/jobs/101"],
+        })
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "plan" in body
+        assert body["plan"]["summary"]["accepted_count"] == 1
+        assert body["plan"]["summary"]["rejected_count"] == 1
