@@ -981,6 +981,271 @@ class ArxivProvider:
         return out
 
 
+# ─── Wikidata SPARQL/Entity provider (Layer 2, opt-in) ────────────
+
+_WIKIDATA_API = "https://www.wikidata.org/w/api.php"
+
+
+class WikidataProvider:
+    """Real Wikidata provider via the public Action API (no key, no auth).
+
+    Two-step flow per company:
+      1) ``wbsearchentities`` to resolve company name → Q-id.
+      2) ``wbgetentities`` to fetch claims for that Q-id.
+
+    Optional 3rd batched call resolves Q-id-valued claims (HQ city,
+    founder) to human-readable labels in one shot.
+
+    Fills hard scalar fields the swarm otherwise can only stub:
+    ``founded_year``, ``headquarters``, ``ticker``, ``website``,
+    ``eng_headcount`` (total employees), and adds founders to
+    ``leadership``. Failures degrade silently (success=False with no
+    raw payload), so partial outages never break the swarm.
+
+    Opt-in: ``RECON_WIKIDATA_PROVIDER=real``. Costs 2-3 HTTP calls per
+    fetch — kept off by default to honour Wikidata's
+    "be a good citizen" guidance under high parallel load.
+    """
+    name = "wikidata"
+    layer = 2
+
+    def __init__(
+        self,
+        http_client: Optional[Any] = None,
+        timeout_s: float = 10.0,
+    ) -> None:
+        self._client = http_client
+        self._timeout = float(timeout_s)
+
+    async def fetch(self, *, company: str, **ctx: Any) -> ProviderResult:
+        started = time.perf_counter()
+        q = (company or "").strip()
+        if not q:
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=False,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                error="empty company",
+            )
+        try:
+            import httpx
+            owns = self._client is None
+            client = self._client or httpx.AsyncClient(
+                timeout=self._timeout,
+                headers={"User-Agent": "HireStack-AI-Recon-Swarm/1.0 (wikidata)"},
+            )
+            try:
+                qid = await self._search_qid(client, q)
+                if not qid:
+                    return ProviderResult(
+                        provider=self.name, layer=self.layer, success=False,
+                        latency_ms=int((time.perf_counter() - started) * 1000),
+                        error="no entity match",
+                    )
+                claims = await self._get_claims(client, qid)
+                if not claims:
+                    return ProviderResult(
+                        provider=self.name, layer=self.layer, success=False,
+                        latency_ms=int((time.perf_counter() - started) * 1000),
+                        error="no claims",
+                    )
+                # Direct-value extracts (no resolution needed)
+                founded_year = self._extract_year(claims.get("P571"))
+                ticker = self._extract_string(claims.get("P249"))
+                website = self._extract_string(claims.get("P856"))
+                employees = self._extract_quantity(claims.get("P1128"))
+                # Q-id-valued claims need a follow-up label fetch
+                hq_qid = self._extract_qid(claims.get("P159"))
+                founder_qids = self._extract_qids(claims.get("P112"), limit=3)
+                qids_to_resolve: List[str] = []
+                if hq_qid:
+                    qids_to_resolve.append(hq_qid)
+                qids_to_resolve.extend(founder_qids)
+                labels: Dict[str, str] = {}
+                if qids_to_resolve:
+                    labels = await self._resolve_labels(client, qids_to_resolve)
+                hq = labels.get(hq_qid) if hq_qid else None
+                founders = [labels[q] for q in founder_qids if q in labels]
+            finally:
+                if owns:
+                    await client.aclose()
+            raw: Dict[str, Any] = {
+                "wikidata_qid": qid,
+                "wikidata_url": f"https://www.wikidata.org/wiki/{qid}",
+            }
+            if founded_year:
+                raw["founded_year"] = founded_year
+            if hq:
+                raw["headquarters"] = hq
+            if ticker:
+                raw["ticker"] = ticker
+            if website:
+                raw["website"] = website
+            if employees:
+                raw["eng_headcount"] = employees  # total employees as proxy
+            if founders:
+                raw["leadership"] = [
+                    {"name": f, "title": "Founder", "source": "wikidata"}
+                    for f in founders
+                ]
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=True,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                raw=raw,
+            )
+        except Exception as exc:  # pragma: no cover - network jitter
+            logger.info("wikidata provider failure: %s", exc)
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=False,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                error=str(exc)[:200],
+            )
+
+    async def _search_qid(self, client: Any, q: str) -> Optional[str]:
+        params = {
+            "action": "wbsearchentities",
+            "search": q,
+            "language": "en",
+            "type": "item",
+            "limit": 5,
+            "format": "json",
+        }
+        url = _WIKIDATA_API + "?" + "&".join(f"{k}={v}" for k, v in params.items())
+        resp = await client.get(url)
+        if getattr(resp, "status_code", 0) != 200:
+            return None
+        try:
+            data = resp.json()
+        except Exception:
+            return None
+        hits = data.get("search") or []
+        if not hits:
+            return None
+        # First hit is best textual match. We do not filter by P31
+        # here because a second filter call doubles HTTP cost; the
+        # claims themselves will be empty for non-companies.
+        return hits[0].get("id")
+
+    async def _get_claims(self, client: Any, qid: str) -> Dict[str, Any]:
+        url = (
+            f"{_WIKIDATA_API}?action=wbgetentities&ids={qid}"
+            "&props=claims&format=json"
+        )
+        resp = await client.get(url)
+        if getattr(resp, "status_code", 0) != 200:
+            return {}
+        try:
+            data = resp.json()
+        except Exception:
+            return {}
+        ent = (data.get("entities") or {}).get(qid) or {}
+        return ent.get("claims") or {}
+
+    async def _resolve_labels(
+        self, client: Any, qids: List[str]
+    ) -> Dict[str, str]:
+        if not qids:
+            return {}
+        ids = "|".join(qids[:10])  # cap to avoid URL bloat
+        url = (
+            f"{_WIKIDATA_API}?action=wbgetentities&ids={ids}"
+            "&props=labels&languages=en&format=json"
+        )
+        resp = await client.get(url)
+        if getattr(resp, "status_code", 0) != 200:
+            return {}
+        try:
+            data = resp.json()
+        except Exception:
+            return {}
+        out: Dict[str, str] = {}
+        for qid, ent in (data.get("entities") or {}).items():
+            label = (
+                ((ent or {}).get("labels") or {})
+                .get("en", {})
+                .get("value")
+            )
+            if label:
+                out[qid] = label
+        return out
+
+    @staticmethod
+    def _first_mainsnak(claim_list: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(claim_list, list) or not claim_list:
+            return None
+        snak = (claim_list[0] or {}).get("mainsnak") or {}
+        if snak.get("snaktype") != "value":
+            return None
+        return snak.get("datavalue") or None
+
+    @classmethod
+    def _extract_year(cls, claim_list: Any) -> Optional[int]:
+        dv = cls._first_mainsnak(claim_list)
+        if not dv:
+            return None
+        time_str = (dv.get("value") or {}).get("time")
+        # Format: "+2010-01-01T00:00:00Z"
+        if not isinstance(time_str, str) or len(time_str) < 5:
+            return None
+        try:
+            year = int(time_str[1:5]) if time_str[0] in "+-" else int(time_str[:4])
+            if 1700 < year < 2100:
+                return year
+        except (ValueError, TypeError):
+            return None
+        return None
+
+    @classmethod
+    def _extract_string(cls, claim_list: Any) -> Optional[str]:
+        dv = cls._first_mainsnak(claim_list)
+        if not dv:
+            return None
+        val = dv.get("value")
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+        return None
+
+    @classmethod
+    def _extract_quantity(cls, claim_list: Any) -> Optional[int]:
+        dv = cls._first_mainsnak(claim_list)
+        if not dv:
+            return None
+        amt = (dv.get("value") or {}).get("amount")
+        if not isinstance(amt, str):
+            return None
+        try:
+            # Format: "+150000" or "+1.5e6"
+            n = int(float(amt))
+            if n > 0:
+                return n
+        except (ValueError, TypeError):
+            return None
+        return None
+
+    @classmethod
+    def _extract_qid(cls, claim_list: Any) -> Optional[str]:
+        dv = cls._first_mainsnak(claim_list)
+        if not dv:
+            return None
+        qid = (dv.get("value") or {}).get("id")
+        if isinstance(qid, str) and qid.startswith("Q"):
+            return qid
+        return None
+
+    @classmethod
+    def _extract_qids(cls, claim_list: Any, limit: int = 3) -> List[str]:
+        if not isinstance(claim_list, list):
+            return []
+        out: List[str] = []
+        for c in claim_list[:limit]:
+            snak = (c or {}).get("mainsnak") or {}
+            if snak.get("snaktype") != "value":
+                continue
+            qid = ((snak.get("datavalue") or {}).get("value") or {}).get("id")
+            if isinstance(qid, str) and qid.startswith("Q"):
+                out.append(qid)
+        return out
+
+
 # ─── Layer 2 — deep extraction stubs ──────────────────────────────
 
 class _SafeWebsiteFetcher:
@@ -1506,6 +1771,11 @@ def default_layer2_providers(
         wiki = WikipediaProvider(http_client=http_client)
     else:
         wiki = None  # type: ignore[assignment]
+    wd: SourceProvider
+    if (os.getenv("RECON_WIKIDATA_PROVIDER") or "off").lower() == "real":
+        wd = WikidataProvider(http_client=http_client)
+    else:
+        wd = None  # type: ignore[assignment]
     base: List[SourceProvider] = [
         StubWebsiteCrawlerProvider(http_client=http_client),
         sec,
@@ -1516,4 +1786,6 @@ def default_layer2_providers(
     ]
     if wiki is not None:
         base.append(wiki)
+    if wd is not None:
+        base.append(wd)
     return base

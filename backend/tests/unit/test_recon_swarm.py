@@ -1406,3 +1406,162 @@ def test_mapper_handles_small_valuation():
     intel = _intel_with(valuation_usd=85_000_000)
     kit = ApplicationMapper().map(intel)
     assert any("$85M" in q for q in kit.interview_questions)
+
+
+# ─── Wikidata real provider (httpx injected) ───────────────────────
+
+@pytest.mark.asyncio
+async def test_wikidata_provider_extracts_company_facts():
+    from ai_engine.agents.sub_agents.recon_swarm.providers import WikidataProvider
+    search_payload = {
+        "search": [
+            {"id": "Q312", "label": "Apple Inc.", "description": "tech co"},
+        ]
+    }
+    entity_payload = {
+        "entities": {
+            "Q312": {
+                "claims": {
+                    "P571": [{"mainsnak": {"snaktype": "value",
+                                            "datavalue": {"value": {
+                                                "time": "+1976-04-01T00:00:00Z"
+                                            }}}}],
+                    "P159": [{"mainsnak": {"snaktype": "value",
+                                            "datavalue": {"value": {
+                                                "id": "Q1413102"
+                                            }}}}],
+                    "P112": [
+                        {"mainsnak": {"snaktype": "value",
+                                       "datavalue": {"value": {"id": "Q19837"}}}},
+                        {"mainsnak": {"snaktype": "value",
+                                       "datavalue": {"value": {"id": "Q312087"}}}},
+                    ],
+                    "P249": [{"mainsnak": {"snaktype": "value",
+                                            "datavalue": {"value": "AAPL"}}}],
+                    "P856": [{"mainsnak": {"snaktype": "value",
+                                            "datavalue": {"value": "https://www.apple.com/"}}}],
+                    "P1128": [{"mainsnak": {"snaktype": "value",
+                                             "datavalue": {"value": {
+                                                 "amount": "+161000"
+                                             }}}}],
+                }
+            }
+        }
+    }
+    labels_payload = {
+        "entities": {
+            "Q1413102": {"labels": {"en": {"language": "en",
+                                            "value": "Cupertino"}}},
+            "Q19837":   {"labels": {"en": {"language": "en",
+                                            "value": "Steve Jobs"}}},
+            "Q312087":  {"labels": {"en": {"language": "en",
+                                            "value": "Steve Wozniak"}}},
+        }
+    }
+    client = _FakeClient({
+        "https://www.wikidata.org/w/api.php?action=wbsearchentities":
+            _FakeResp(200, search_payload),
+        "https://www.wikidata.org/w/api.php?action=wbgetentities&ids=Q312&props=claims":
+            _FakeResp(200, entity_payload),
+        "https://www.wikidata.org/w/api.php?action=wbgetentities&ids=Q1413102|Q19837|Q312087":
+            _FakeResp(200, labels_payload),
+    })
+    p = WikidataProvider(http_client=client)
+    r = await p.fetch(company="Apple")
+    assert r.success is True
+    assert r.raw["wikidata_qid"] == "Q312"
+    assert r.raw["founded_year"] == 1976
+    assert r.raw["headquarters"] == "Cupertino"
+    assert r.raw["ticker"] == "AAPL"
+    assert r.raw["website"] == "https://www.apple.com/"
+    assert r.raw["eng_headcount"] == 161000
+    leadership = r.raw["leadership"]
+    names = {entry["name"] for entry in leadership}
+    assert "Steve Jobs" in names
+    assert "Steve Wozniak" in names
+    assert all(entry["title"] == "Founder" for entry in leadership)
+
+
+@pytest.mark.asyncio
+async def test_wikidata_provider_no_match_returns_failure():
+    from ai_engine.agents.sub_agents.recon_swarm.providers import WikidataProvider
+    client = _FakeClient({
+        "https://www.wikidata.org/w/api.php?action=wbsearchentities":
+            _FakeResp(200, {"search": []}),
+    })
+    p = WikidataProvider(http_client=client)
+    r = await p.fetch(company="Nonexistent Co")
+    assert r.success is False
+    assert r.raw == {}
+
+
+@pytest.mark.asyncio
+async def test_wikidata_provider_handles_partial_claims():
+    """Company with only founded_year + ticker, no HQ/founder."""
+    from ai_engine.agents.sub_agents.recon_swarm.providers import WikidataProvider
+    search_payload = {"search": [{"id": "Q999"}]}
+    entity_payload = {
+        "entities": {
+            "Q999": {
+                "claims": {
+                    "P571": [{"mainsnak": {"snaktype": "value",
+                                            "datavalue": {"value": {
+                                                "time": "+2015-06-01T00:00:00Z"
+                                            }}}}],
+                    "P249": [{"mainsnak": {"snaktype": "value",
+                                            "datavalue": {"value": "TEST"}}}],
+                }
+            }
+        }
+    }
+    client = _FakeClient({
+        "https://www.wikidata.org/w/api.php?action=wbsearchentities":
+            _FakeResp(200, search_payload),
+        "https://www.wikidata.org/w/api.php?action=wbgetentities&ids=Q999&props=claims":
+            _FakeResp(200, entity_payload),
+    })
+    p = WikidataProvider(http_client=client)
+    r = await p.fetch(company="Test Co")
+    assert r.success is True
+    assert r.raw["founded_year"] == 2015
+    assert r.raw["ticker"] == "TEST"
+    assert "headquarters" not in r.raw
+    assert "leadership" not in r.raw
+
+
+@pytest.mark.asyncio
+async def test_wikidata_provider_empty_company_returns_failure():
+    from ai_engine.agents.sub_agents.recon_swarm.providers import WikidataProvider
+    p = WikidataProvider(http_client=_FakeClient({}))
+    r = await p.fetch(company="   ")
+    assert r.success is False
+
+
+@pytest.mark.asyncio
+async def test_wikidata_provider_handles_500():
+    from ai_engine.agents.sub_agents.recon_swarm.providers import WikidataProvider
+    client = _FakeClient({
+        "https://www.wikidata.org/w/api.php?action=wbsearchentities":
+            _FakeResp(500, {}),
+    })
+    p = WikidataProvider(http_client=client)
+    r = await p.fetch(company="Apple")
+    assert r.success is False
+
+
+def test_wikidata_provider_in_layer2_factory_when_enabled(monkeypatch):
+    from ai_engine.agents.sub_agents.recon_swarm.providers import (
+        WikidataProvider, default_layer2_providers,
+    )
+    monkeypatch.setenv("RECON_WIKIDATA_PROVIDER", "real")
+    provs = default_layer2_providers()
+    assert any(isinstance(p, WikidataProvider) for p in provs)
+
+
+def test_wikidata_provider_off_by_default():
+    from ai_engine.agents.sub_agents.recon_swarm.providers import (
+        WikidataProvider, default_layer2_providers,
+    )
+    # default env: should NOT include WikidataProvider
+    provs = default_layer2_providers()
+    assert not any(isinstance(p, WikidataProvider) for p in provs)

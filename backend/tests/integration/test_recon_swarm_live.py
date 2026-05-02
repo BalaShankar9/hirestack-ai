@@ -142,3 +142,15 @@ async def test_arxiv_live_transformer_search():
         assert it["title"]
         assert it["url"].startswith("http://arxiv.org/abs/")
         assert isinstance(it.get("authors", []), list)
+
+
+@pytest.mark.asyncio
+async def test_wikidata_provider_live_apple():
+    from ai_engine.agents.sub_agents.recon_swarm.providers import WikidataProvider
+    p = WikidataProvider()
+    r = await p.fetch(company="Apple Inc.")
+    assert r.success is True, f"wikidata failed: {r.error}"
+    assert r.raw.get("wikidata_qid", "").startswith("Q")
+    # Apple was founded 1976 — extremely stable Wikidata fact
+    fy = r.raw.get("founded_year")
+    assert fy is None or 1970 < fy < 2000
