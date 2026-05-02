@@ -1344,3 +1344,47 @@ def test_mapper_skips_research_papers_when_empty():
     kit = ApplicationMapper().map(intel)
     # No research papers → no arXiv mentions
     assert not any("arxiv" in q.lower() for q in kit.interview_questions)
+
+
+def test_mapper_uses_sec_risk_factors():
+    intel = _intel_with(
+        sec_risk_factors=["Concentration risk in top 3 customers",
+                          "Regulatory exposure in EU"],
+    )
+    kit = ApplicationMapper().map(intel, role_target="Strategy Lead")
+    assert any("Concentration risk in top 3 customers" in q
+               for q in kit.interview_questions)
+    assert any("10-K" in q for q in kit.interview_questions)
+
+
+def test_mapper_uses_product_launches():
+    intel = _intel_with(
+        product_launches=[{"name": "Acme v3", "date": "2026-04-15"}],
+    )
+    kit = ApplicationMapper().map(intel, role_target="PM")
+    assert any("Acme v3" in q for q in kit.interview_questions)
+
+
+def test_mapper_uses_products_in_talking_points():
+    intel = _intel_with(products=["Acme API", "Acme Pay"])
+    kit = ApplicationMapper().map(intel)
+    assert any("Acme API" in t for t in kit.talking_points)
+
+
+def test_mapper_flags_work_style_mismatch():
+    intel = _intel_with(work_style="onsite")
+    kit = ApplicationMapper().map(
+        intel,
+        candidate_values=["remote"],
+    )
+    assert any("work-style" in r.lower() and "onsite" in r.lower()
+               for r in kit.red_flags)
+
+
+def test_mapper_no_work_style_red_flag_when_aligned():
+    intel = _intel_with(work_style="remote-first")
+    kit = ApplicationMapper().map(
+        intel,
+        candidate_values=["remote"],
+    )
+    assert not any("work-style" in r.lower() for r in kit.red_flags)

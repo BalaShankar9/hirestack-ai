@@ -129,6 +129,23 @@ class ApplicationMapper:
                     f" — how does that research feed into the"
                     f" product roadmap, and where can {role} contribute?"
                 )
+        if intel.sec_risk_factors.value:
+            risks = [r for r in intel.sec_risk_factors.value
+                     if isinstance(r, str) and r.strip()]
+            if risks:
+                questions.append(
+                    f"Your latest 10-K flags \"{risks[0]}\" — how is"
+                    f" the team operationally hedging against that, and"
+                    f" does {role} touch any of those mitigations?"
+                )
+        if intel.product_launches.value:
+            launch = intel.product_launches.value[0]
+            if isinstance(launch, dict) and launch.get("name"):
+                questions.append(
+                    f"What did the {launch['name']} launch teach the team"
+                    f" — and how is {role} positioned to apply those"
+                    " lessons?"
+                )
         if intel.leadership.value:
             questions.append(
                 "Which leader's portfolio would this role most directly"
@@ -166,6 +183,14 @@ class ApplicationMapper:
                 talking_points.append(
                     f"Reference the team's paper \"{title}\" — shows you"
                     " engaged with their published research."
+                )
+        if intel.products.value:
+            for product in intel.products.value[:2]:
+                if not product:
+                    continue
+                talking_points.append(
+                    f"Bring a hands-on observation about {product} — most"
+                    " candidates will not have actually used the product."
                 )
 
         # Differentiation angles
@@ -208,6 +233,20 @@ class ApplicationMapper:
                 red_flags.append(
                     f"Repeated review theme: \"{theme}\". Validate work-style"
                     " expectations explicitly before signing."
+                )
+        ws = intel.work_style.value
+        if isinstance(ws, str) and ws:
+            ws_norm = ws.strip().lower()
+            cand_ws = {self._norm(v) for v in candidate_values}
+            ws_pref = next(
+                (v for v in ("remote", "hybrid", "onsite", "in-office")
+                 if v in cand_ws),
+                None,
+            )
+            if ws_pref and ws_pref not in ws_norm and ws_norm not in ws_pref:
+                red_flags.append(
+                    f"Company work-style is '{ws}' but you indicated"
+                    f" '{ws_pref}'. Confirm flexibility before signing."
                 )
         # Misalignment with candidate values
         norm_co_values = {self._norm(v) for v in (intel.values.value or [])}
