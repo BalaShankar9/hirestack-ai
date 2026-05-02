@@ -169,3 +169,169 @@ def derive_style_signals(
             signals["preferred_keywords"] = kept[:8]
 
     return signals
+
+
+# ─────────────────────────────────────────────────────────────────────
+# V2 — writing-style calibration from user-supplied past pieces.
+# ─────────────────────────────────────────────────────────────────────
+#
+# `derive_style_signals` (above) extracts style FROM a successful
+# pipeline run.  `calibrate_writing_style` (below) extracts style
+# FROM raw user samples (cover letters, emails, motivation
+# statements they've previously written).  Both feed the same
+# downstream consumer — the agent_memory / profile.writing_style
+# blob — but the input shape and trust model differ:
+#
+#  derive_style_signals → backend-controlled, gated on critic score,
+#                         emits only when we're confident.
+#  calibrate_writing_style → user-supplied, no critic gate; we trust
+#                         the user but still apply conservative
+#                         thresholds (need ≥1 strong signal per
+#                         dimension to emit it).
+#
+# Pure function, no I/O.  Caller persists the result on
+# profiles.writing_style.
+
+# Lexicons re-used by the sample-based tone classifier.  Same buckets
+# as `_infer_tone_from_jd` so downstream consumers see one vocabulary.
+_TONE_LEXICONS_SAMPLE: Dict[str, frozenset] = {
+    "formal": frozenset({
+        "moreover", "furthermore", "therefore", "thus", "regarding",
+        "pursuant", "esteemed", "respectfully", "honored", "kindly",
+        "regards", "sincerely", "endeavor", "obtain", "facilitate",
+        "leverage", "stakeholder", "governance", "compliance",
+    }),
+    "technical": frozenset({
+        "architecture", "throughput", "latency", "kubernetes", "kafka",
+        "distributed", "microservices", "scalability", "observability",
+        "deployed", "implemented", "engineered", "optimized", "reduced",
+        "increased", "migrated", "refactored", "instrumented",
+    }),
+    "conversational": frozenset({
+        "honestly", "really", "super", "totally", "kinda", "actually",
+        "basically", "love", "excited", "stoked", "amazing", "awesome",
+        "cool", "fun", "thrilled", "obsessed",
+    }),
+}
+
+
+def _strip_html_minimal(text: str) -> str:
+    """Best-effort HTML strip without pulling in a parser dep.
+    Matches the conservative approach in voice_guard but inline so
+    this module stays self-contained."""
+    if not isinstance(text, str) or "<" not in text:
+        return text or ""
+    return re.sub(r"<[^>]+>", " ", text)
+
+
+def _classify_tone_from_samples(samples_text: str) -> Optional[str]:
+    """Return the dominant tone bucket from concatenated sample text,
+    or None when the signal is weak.  Requires ≥3 hits in the winner
+    AND winner ≥ 1.5× the runner-up so we don't claim a writer is
+    "formal" off two stray words."""
+    if not samples_text:
+        return None
+    tokens = _tokenize(samples_text)
+    if not tokens:
+        return None
+    bag = Counter(tokens)
+    scores: Dict[str, int] = {}
+    for bucket, lex in _TONE_LEXICONS_SAMPLE.items():
+        scores[bucket] = sum(bag[t] for t in lex if t in bag)
+    top_bucket, top_score = max(scores.items(), key=lambda kv: kv[1])
+    if top_score < 3:
+        return None
+    others = sorted(
+        (v for k, v in scores.items() if k != top_bucket), reverse=True
+    )
+    if others and top_score < others[0] * 1.5:
+        return None
+    return top_bucket
+
+
+def _distinctive_keywords(samples_text: str, *, top_n: int = 10) -> List[str]:
+    """Top non-stopword tokens from the user's samples — these become
+    `preferred_keywords` so the next draft echoes the user's own
+    vocabulary.  Lower bar than `_extract_jd_keywords` because the
+    input is shorter; require length ≥ 4 to avoid noise."""
+    if not samples_text:
+        return []
+    tokens = _tokenize(samples_text)
+    counter = Counter(
+        t for t in tokens
+        if t not in _STOPWORDS and len(t) >= 4
+    )
+    return [t for t, count in counter.most_common(top_n) if count >= 2]
+
+
+def calibrate_writing_style(
+    samples: List[str],
+    *,
+    max_samples: int = 5,
+) -> Dict[str, Any]:
+    """Derive writing-style signals from raw user-supplied samples.
+
+    Args:
+        samples: list of past pieces the user has written (cover
+            letters, motivation statements, emails).  Empty / blank
+            entries are filtered out.  At least one non-trivial
+            sample (≥50 words) is required for any signal to be
+            emitted.
+        max_samples: hard cap to bound input cost.  Excess samples
+            are silently truncated.
+
+    Returns:
+        dict with any subset of:
+          - "length"             : "short" | "medium" | "long"
+          - "tone"               : "formal" | "technical" | "conversational"
+          - "preferred_keywords" : list[str] (user's own vocabulary)
+          - "sample_count"       : int (samples actually used)
+          - "total_words"        : int
+        Returns {} when no samples were usable.
+
+    Pure function — caller persists on profiles.writing_style.
+    """
+    if not isinstance(samples, list):
+        return {}
+
+    cleaned: List[str] = []
+    for raw in samples[:max_samples]:
+        if not isinstance(raw, str):
+            continue
+        stripped = _strip_html_minimal(raw).strip()
+        if stripped and _word_count(stripped) >= 20:
+            cleaned.append(stripped)
+
+    if not cleaned:
+        return {}
+
+    combined = "\n\n".join(cleaned)
+    total_words = _word_count(combined)
+    if total_words < 50:
+        return {}
+
+    signals: Dict[str, Any] = {
+        "sample_count": len(cleaned),
+        "total_words": total_words,
+    }
+
+    # ── Length: bucket the AVERAGE sample, not the combined text,
+    # so a user pasting three short samples is classified as a
+    # short-form writer (not "long" because we concatenated).
+    avg_words = total_words // len(cleaned)
+    bucket = _bucket_length(avg_words)
+    if bucket:
+        signals["length"] = bucket
+
+    # ── Tone: classify from combined sample text.
+    tone = _classify_tone_from_samples(combined)
+    if tone:
+        signals["tone"] = tone
+
+    # ── Preferred keywords: user's own distinctive vocabulary.
+    keywords = _distinctive_keywords(combined, top_n=10)
+    if len(keywords) >= 3:
+        signals["preferred_keywords"] = keywords[:8]
+
+    return signals
+

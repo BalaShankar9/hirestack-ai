@@ -216,6 +216,89 @@ async def reparse_profile(
     return profile
 
 
+# ── V2: Writing-style calibration ──────────────────────────────────────
+
+
+class WritingStyleCalibrateRequest(BaseModel):
+    """User-supplied past pieces (cover letters, motivation statements,
+    emails) that the deriver will mine for length / tone / vocabulary."""
+    samples: list = Field(..., min_length=1, max_length=5)
+
+
+@router.post("/{profile_id}/writing-style/calibrate")
+@limiter.limit("10/minute")
+async def calibrate_writing_style_endpoint(
+    request: Request,
+    profile_id: str,
+    body: WritingStyleCalibrateRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """V2 — derive writing-style signals from user-pasted samples and
+    persist them on `profiles.writing_style`. The Drafter reads this
+    blob via enriched_context so the next pipeline run mirrors the
+    user's own voice instead of the generic baseline.
+    """
+    validate_uuid(profile_id, "profile_id")
+
+    # Defensive: only accept string samples (BaseModel `list` is
+    # untyped here so we coerce + validate in code rather than via
+    # pydantic so we can reject with a 400 not a 422).
+    samples = [s for s in body.samples if isinstance(s, str)]
+    if not samples:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one non-empty text sample is required.",
+        )
+
+    from ai_engine.agents.style_signal_deriver import calibrate_writing_style
+
+    signals = calibrate_writing_style(samples)
+    if not signals:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Samples too short or empty to derive writing-style signals (need ≥50 total words).",
+        )
+
+    service = ProfileService()
+    updated = await service.update_profile(
+        profile_id=profile_id,
+        user_id=current_user["id"],
+        update_data={"writing_style": signals},
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found"
+        )
+
+    from app.core.database import cache_invalidate_prefix
+    await cache_invalidate_prefix(f"profiles:{current_user['id']}")
+    await cache_invalidate_prefix(f"profiles:list:{current_user['id']}")
+    await cache_invalidate_prefix(f"profiles:primary:{current_user['id']}")
+
+    return {"profile_id": profile_id, "writing_style": signals}
+
+
+@router.get("/{profile_id}/writing-style")
+@limiter.limit("30/minute")
+async def get_writing_style(
+    request: Request,
+    profile_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Return the cached writing-style signals for a profile."""
+    validate_uuid(profile_id, "profile_id")
+    service = ProfileService()
+    profile = await service.get_profile(profile_id, current_user["id"])
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found"
+        )
+    return {
+        "profile_id": profile_id,
+        "writing_style": profile.get("writing_style") or {},
+    }
+
+
 # ── Career Intelligence ────────────────────────────────────────────────
 
 
