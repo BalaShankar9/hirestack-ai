@@ -131,6 +131,24 @@ def merge_swarm_into_intel(
     patents = _intel_value(swarm_intel.get("patents_count"))
     if patents is not None and not te.get("patents_count"):
         te["patents_count"] = patents
+    research_papers = _intel_value(swarm_intel.get("research_papers")) or []
+    if isinstance(research_papers, list) and research_papers:
+        existing_papers = te.setdefault("research_papers", [])
+        if isinstance(existing_papers, list):
+            existing_keys = {
+                (p.get("title") or p.get("url") or "")
+                for p in existing_papers if isinstance(p, dict)
+            }
+            for p in research_papers:
+                if not isinstance(p, dict):
+                    continue
+                key = p.get("title") or p.get("url") or ""
+                if not key or key in existing_keys:
+                    continue
+                existing_papers.append(p)
+                existing_keys.add(key)
+                if len(existing_papers) >= 15:
+                    break
 
     # ─── market_position ────────────────────────────────────────────
     mp = intel["market_position"]

@@ -278,6 +278,18 @@ def _make_extended_swarm_report() -> dict:
             "twitter_sentiment": {"value": "positive",
                                   "confidence": "low",
                                   "sources": ["twitter_stub"]},
+            "research_papers": {
+                "value": [
+                    {"title": "Scaling Acme", "url": "http://arxiv.org/abs/1",
+                     "date": "2026-04-01", "source": "arXiv",
+                     "authors": ["A. Researcher"], "category": "cs.LG"},
+                    {"title": "Acme Optimizer", "url": "http://arxiv.org/abs/2",
+                     "date": "2026-03-15", "source": "arXiv",
+                     "authors": ["B. Scientist"], "category": "cs.AI"},
+                ],
+                "confidence": "high",
+                "sources": ["arxiv"],
+            },
             "field_count": 20,
             "high_confidence_count": 5,
             "profile_completeness": 0.55,
@@ -383,3 +395,31 @@ def test_merge_swarm_product_launches_dedupes_by_name():
     assert len(launches) == 1
     # existing entry wins
     assert launches[0]["date"] == "2025-12-01"
+
+
+def test_bridge_wires_research_papers_into_tech_and_engineering():
+    merged = merge_swarm_into_intel({}, _make_extended_swarm_report())
+    te = merged.get("tech_and_engineering") or {}
+    papers = te.get("research_papers") or []
+    assert isinstance(papers, list)
+    titles = {p.get("title") for p in papers if isinstance(p, dict)}
+    assert {"Scaling Acme", "Acme Optimizer"} <= titles
+
+
+def test_bridge_research_papers_dedupes_by_title_and_caps():
+    intel = {
+        "tech_and_engineering": {
+            "research_papers": [
+                {"title": "Scaling Acme", "url": "existing"},
+            ],
+        },
+    }
+    merged = merge_swarm_into_intel(intel, _make_extended_swarm_report())
+    te = merged["tech_and_engineering"]
+    papers = te["research_papers"]
+    titles = [p.get("title") for p in papers if isinstance(p, dict)]
+    # Existing "Scaling Acme" preserved (with url="existing"), Acme Optimizer added
+    assert titles.count("Scaling Acme") == 1
+    assert "Acme Optimizer" in titles
+    existing = next(p for p in papers if p.get("title") == "Scaling Acme")
+    assert existing["url"] == "existing"  # additive: existing wins

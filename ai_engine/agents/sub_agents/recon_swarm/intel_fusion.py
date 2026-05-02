@@ -35,6 +35,7 @@ _LIST_FIELDS = {
     "tech_stack", "products", "github_orgs", "languages",
     "competitors", "recent_news", "product_launches",
     "glassdoor_themes", "values", "benefits", "sec_risk_factors",
+    "research_papers",
 }
 
 

@@ -75,6 +75,7 @@ class CompanyIntelV2(BaseModel):
     recent_news: IntelField = Field(default_factory=lambda: IntelField(value=[]))
     product_launches: IntelField = Field(default_factory=lambda: IntelField(value=[]))
     patents_count: IntelField = Field(default_factory=lambda: IntelField(value=None))
+    research_papers: IntelField = Field(default_factory=lambda: IntelField(value=[]))
 
     # Reputation
     glassdoor_rating: IntelField = Field(default_factory=lambda: IntelField(value=None))

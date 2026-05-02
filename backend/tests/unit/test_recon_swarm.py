@@ -1299,3 +1299,21 @@ def test_default_layer1_factory_swaps_arxiv_to_real_when_env_set(monkeypatch):
     ax2 = next(p for p in providers2
                if p.name in {"arxiv", "arxiv_stub"})
     assert ax2.name == "arxiv_stub"
+
+
+@pytest.mark.asyncio
+async def test_fusion_merges_research_papers_from_arxiv():
+    fusion = IntelFusion()
+    paper_a = {"title": "Paper A", "url": "http://arxiv.org/abs/1",
+               "source": "arXiv", "date": "2026-04-01"}
+    paper_b = {"title": "Paper B", "url": "http://arxiv.org/abs/2",
+               "source": "arXiv", "date": "2026-03-15"}
+    results = [
+        ProviderResult(provider="arxiv", layer=1, success=True,
+                       raw={"research_papers": [paper_a, paper_b]}),
+    ]
+    intel = await fusion.fuse("Acme", results)
+    papers = intel.research_papers.value
+    assert isinstance(papers, list)
+    titles = {p.get("title") for p in papers if isinstance(p, dict)}
+    assert {"Paper A", "Paper B"} <= titles
