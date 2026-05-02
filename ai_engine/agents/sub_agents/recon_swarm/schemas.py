@@ -88,6 +88,11 @@ class CompanyIntelV2(BaseModel):
     benefits: IntelField = Field(default_factory=lambda: IntelField(value=[]))
     work_style: IntelField = Field(default_factory=lambda: IntelField(value=None))
 
+    # External knowledge-base deep links
+    wikipedia_url: IntelField = Field(default_factory=lambda: IntelField(value=None))
+    wikidata_url: IntelField = Field(default_factory=lambda: IntelField(value=None))
+    wikidata_qid: IntelField = Field(default_factory=lambda: IntelField(value=None))
+
     # SEC (public companies)
     sec_risk_factors: IntelField = Field(default_factory=lambda: IntelField(value=[]))
     sec_revenue_usd: IntelField = Field(default_factory=lambda: IntelField(value=None))

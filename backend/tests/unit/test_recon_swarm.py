@@ -1607,3 +1607,56 @@ def test_mapper_adds_recent_news_talking_point():
         "Acme launches B2B Studio" in t and "active tracking" in t
         for t in kit.talking_points
     )
+
+
+# ─── Schema/fusion: wikipedia_url + wikidata deep links ─────────────
+
+@pytest.mark.asyncio
+async def test_fusion_persists_wikipedia_url_through_pipeline():
+    """Wikipedia provider populates wikipedia_url; fusion must surface it."""
+    from ai_engine.agents.sub_agents.recon_swarm.intel_fusion import IntelFusion
+    from ai_engine.agents.sub_agents.recon_swarm.schemas import ProviderResult
+    pr = ProviderResult(
+        provider="wikipedia", layer=2, success=True, latency_ms=12,
+        raw={"wikipedia_url": "https://en.wikipedia.org/wiki/Apple_Inc."},
+    )
+    intel = await IntelFusion().fuse(company="Apple", results=[pr])
+    assert intel.wikipedia_url.value == "https://en.wikipedia.org/wiki/Apple_Inc."
+
+
+@pytest.mark.asyncio
+async def test_fusion_persists_wikidata_url_and_qid():
+    from ai_engine.agents.sub_agents.recon_swarm.intel_fusion import IntelFusion
+    from ai_engine.agents.sub_agents.recon_swarm.schemas import ProviderResult
+    pr = ProviderResult(
+        provider="wikidata", layer=2, success=True, latency_ms=18,
+        raw={
+            "wikidata_qid": "Q312",
+            "wikidata_url": "https://www.wikidata.org/wiki/Q312",
+            "founded_year": 1976,
+        },
+    )
+    intel = await IntelFusion().fuse(company="Apple", results=[pr])
+    assert intel.wikidata_qid.value == "Q312"
+    assert intel.wikidata_url.value == "https://www.wikidata.org/wiki/Q312"
+    assert intel.founded_year.value == 1976
+
+
+def test_bridge_wires_wikidata_url_into_company_overview():
+    from ai_engine.chains.recon_swarm_bridge import merge_swarm_into_intel
+    swarm = {
+        "intel": {
+            "wikipedia_url": {"value": "https://en.wikipedia.org/wiki/X",
+                               "confidence": "high", "sources": ["wikipedia"]},
+            "wikidata_qid": {"value": "Q42",
+                              "confidence": "high", "sources": ["wikidata"]},
+            "wikidata_url": {"value": "https://www.wikidata.org/wiki/Q42",
+                              "confidence": "high", "sources": ["wikidata"]},
+        },
+        "application_kit": {},
+    }
+    out = merge_swarm_into_intel({}, swarm)
+    co = out["company_overview"]
+    assert co["wikipedia_url"] == "https://en.wikipedia.org/wiki/X"
+    assert co["wikidata_qid"] == "Q42"
+    assert co["wikidata_url"] == "https://www.wikidata.org/wiki/Q42"

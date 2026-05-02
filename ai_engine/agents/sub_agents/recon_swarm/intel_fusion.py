@@ -29,6 +29,7 @@ _SCALAR_FIELDS = {
     "headcount", "eng_headcount", "open_roles_count", "repo_count",
     "patents_count", "glassdoor_rating", "twitter_handle",
     "twitter_sentiment", "work_style", "sec_revenue_usd",
+    "wikipedia_url", "wikidata_url", "wikidata_qid",
 }
 _LIST_FIELDS = {
     "sub_industries", "investors", "leadership", "hiring_managers",

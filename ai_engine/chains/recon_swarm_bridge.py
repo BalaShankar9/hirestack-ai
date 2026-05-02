@@ -85,6 +85,8 @@ def merge_swarm_into_intel(
         ("ticker", "ticker"),
         ("is_public", "is_public"),
         ("wikipedia_url", "wikipedia_url"),
+        ("wikidata_url", "wikidata_url"),
+        ("wikidata_qid", "wikidata_qid"),
         ("work_style", "work_style"),
     ]:
         v = _intel_value(swarm_intel.get(src_key))
