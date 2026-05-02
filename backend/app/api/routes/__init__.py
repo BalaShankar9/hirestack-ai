@@ -45,6 +45,7 @@ from app.api.routes.video_pitch import router as video_pitch_router
 from app.api.routes.recon_swarm import router as recon_swarm_router
 from app.api.routes.ghost_check import router as ghost_check_router
 from app.api.routes.insights import router as insights_router
+from app.api.routes.batch_generate import router as batch_generate_router
 
 router = APIRouter()
 
@@ -92,3 +93,4 @@ router.include_router(video_pitch_router, prefix="/video-pitch", tags=["Executiv
 router.include_router(recon_swarm_router, prefix="/recon-swarm", tags=["Recon Swarm v2"])
 router.include_router(ghost_check_router, prefix="", tags=["Ghost Check (Public)"])
 router.include_router(insights_router, prefix="", tags=["Insights Dashboard"])
+router.include_router(batch_generate_router, prefix="", tags=["Batch Generate"])
