@@ -295,3 +295,138 @@ def test_generate_passes_job_context_into_prompt():
     assert "Stripe" in prompt
     assert captured["temperature"] == 0.4
     assert captured["max_tokens"] == 2048
+
+
+# ---------------------------------------------------------------------------
+# Salary band injection (Slice 2.4)
+# ---------------------------------------------------------------------------
+
+class _StubProviderResult:
+    def __init__(self, *, success, raw=None):
+        self.success = success
+        self.raw = raw or {}
+
+
+class _StubSalaryProvider:
+    def __init__(self, result):
+        self._result = result
+        self.calls = []
+
+    async def fetch(self, **kwargs):
+        self.calls.append(kwargs)
+        return self._result
+
+
+def _stub_client_with_payload():
+    class _C:
+        async def complete_json(self, **_kw):
+            return _good_payload()
+    return _C()
+
+
+def test_salary_band_default_off_no_provider_no_band(monkeypatch):
+    monkeypatch.delenv("RECON_LEVELS_PROVIDER", raising=False)
+    g = ArchetypeGenerator(ai_client=_stub_client_with_payload())
+    out = _run(g.generate(
+        job_description="JD", company_name="Stripe", role_target="senior_eng",
+    ))
+    assert len(out) == 3
+    for a in out:
+        assert a.salary_band == {}
+
+
+def test_salary_band_injected_when_provider_supplied():
+    band = {"p25": 160000, "p50": 185000, "p75": 220000}
+    provider = _StubSalaryProvider(_StubProviderResult(
+        success=True, raw={"salary_band": band},
+    ))
+    g = ArchetypeGenerator(
+        ai_client=_stub_client_with_payload(),
+        salary_provider=provider,
+    )
+    out = _run(g.generate(
+        job_description="JD", company_name="Stripe", role_target="senior_eng",
+    ))
+    assert len(out) == 3
+    assert all(a.salary_band == band for a in out)
+    # Single fetch (shared across all 3 archetypes — same company+role)
+    assert len(provider.calls) == 1
+    assert provider.calls[0]["company"] == "Stripe"
+    assert provider.calls[0]["role"] == "senior_eng"
+
+
+def test_salary_band_per_archetype_isolation():
+    """Each archetype should have its own dict instance (no shared mutation)."""
+    band = {"p50": 200000}
+    provider = _StubSalaryProvider(_StubProviderResult(
+        success=True, raw={"salary_band": band},
+    ))
+    g = ArchetypeGenerator(
+        ai_client=_stub_client_with_payload(),
+        salary_provider=provider,
+    )
+    out = _run(g.generate(job_description="JD", company_name="Acme"))
+    out[0].salary_band["mutated"] = 1
+    assert "mutated" not in out[1].salary_band
+    assert "mutated" not in out[2].salary_band
+
+
+def test_salary_band_provider_failure_keeps_band_empty():
+    provider = _StubSalaryProvider(_StubProviderResult(success=False))
+    g = ArchetypeGenerator(
+        ai_client=_stub_client_with_payload(),
+        salary_provider=provider,
+    )
+    out = _run(g.generate(job_description="JD", company_name="Acme"))
+    assert all(a.salary_band == {} for a in out)
+
+
+def test_salary_band_provider_exception_keeps_band_empty():
+    class _BoomProvider:
+        async def fetch(self, **_kw):
+            raise RuntimeError("network")
+
+    g = ArchetypeGenerator(
+        ai_client=_stub_client_with_payload(),
+        salary_provider=_BoomProvider(),
+    )
+    out = _run(g.generate(job_description="JD", company_name="Acme"))
+    assert all(a.salary_band == {} for a in out)
+
+
+def test_salary_band_skipped_when_no_company_name():
+    provider = _StubSalaryProvider(_StubProviderResult(
+        success=True, raw={"salary_band": {"p50": 100000}},
+    ))
+    g = ArchetypeGenerator(
+        ai_client=_stub_client_with_payload(),
+        salary_provider=provider,
+    )
+    out = _run(g.generate(job_description="JD", company_name=""))
+    assert all(a.salary_band == {} for a in out)
+    assert provider.calls == []  # never even attempted
+
+
+def test_salary_band_env_flag_lazy_imports_provider(monkeypatch):
+    """RECON_LEVELS_PROVIDER=real should attempt to import LevelsFYIProvider."""
+    monkeypatch.setenv("RECON_LEVELS_PROVIDER", "real")
+
+    captured = {}
+
+    class _FakeLevels:
+        def __init__(self, *a, **kw):
+            captured["constructed"] = True
+
+        async def fetch(self, **kw):
+            captured["fetch_called"] = kw
+            return _StubProviderResult(success=True, raw={"salary_band": {"p50": 999}})
+
+    # Patch the module that ArchetypeGenerator imports lazily.
+    import ai_engine.agents.sub_agents.atlas.sources.levels_fyi as lv_mod
+    monkeypatch.setattr(lv_mod, "LevelsFYIProvider", _FakeLevels)
+
+    g = ArchetypeGenerator(ai_client=_stub_client_with_payload())
+    out = _run(g.generate(job_description="JD", company_name="Acme"))
+    assert captured.get("constructed") is True
+    assert captured.get("fetch_called", {}).get("company") == "Acme"
+    assert all(a.salary_band == {"p50": 999} for a in out)

@@ -9,8 +9,8 @@ Each archetype carries:
 * ``name`` (human-readable, e.g. "Stripe Senior Eng")
 * ``must_have_skills`` / ``nice_to_have_skills``
 * ``years_min`` / ``years_max``
-* ``salary_band`` (placeholder ``{}`` until Slice 2.3 wires in
-  ``levels.fyi``)
+* ``salary_band`` — populated from levels.fyi when the
+  ``RECON_LEVELS_PROVIDER=real`` env flag is set; otherwise ``{}``.
 * ``cultural_signals``
 * ``rationale``
 
@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import time
 from typing import Any, Dict, List, Optional
 
@@ -230,10 +231,19 @@ def _dict_to_archetype(d: Dict[str, Any]) -> Archetype:
 class ArchetypeGenerator:
     """LLM-driven generator that returns exactly 3 :class:`Archetype`s."""
 
-    def __init__(self, ai_client: Any) -> None:
+    def __init__(
+        self,
+        ai_client: Any,
+        *,
+        salary_provider: Optional[Any] = None,
+    ) -> None:
         if ai_client is None:
             raise ValueError("ArchetypeGenerator requires an ai_client")
         self._client = ai_client
+        # Optional injection point — defaults to None so unit tests stay
+        # hermetic. Live wiring happens lazily inside `generate` when the
+        # RECON_LEVELS_PROVIDER=real env flag is set.
+        self._salary_provider = salary_provider
 
     async def generate(
         self,
@@ -291,7 +301,15 @@ class ArchetypeGenerator:
                 _TARGET_ARCHETYPE_COUNT,
                 len(archetypes),
             )
+            # Best-effort salary enrichment even on partial responses.
+            await self._maybe_apply_salary_band(
+                archetypes, company_name=company_name, role_target=role_target,
+            )
             return archetypes  # caller may still consume a partial list
+
+        await self._maybe_apply_salary_band(
+            archetypes, company_name=company_name, role_target=role_target,
+        )
 
         if use_cache:
             try:
@@ -300,3 +318,56 @@ class ArchetypeGenerator:
                 logger.warning("ArchetypeGenerator cache write failed: %s", exc)
 
         return archetypes
+
+    async def _maybe_apply_salary_band(
+        self,
+        archetypes: List[Archetype],
+        *,
+        company_name: str,
+        role_target: str,
+    ) -> None:
+        """Populate ``salary_band`` on each archetype from levels.fyi.
+
+        Strict opt-in: requires ``RECON_LEVELS_PROVIDER=real`` env var
+        OR an explicit ``salary_provider`` injected at construction.
+        Single fetch is shared across all 3 archetypes (levels.fyi
+        pages are per company+role, not per seniority). Failures are
+        silently ignored — archetypes keep ``salary_band={}``.
+        """
+        if not archetypes or not company_name:
+            return
+
+        provider = self._salary_provider
+        if provider is None:
+            if os.environ.get("RECON_LEVELS_PROVIDER", "").strip().lower() != "real":
+                return
+            try:
+                from ai_engine.agents.sub_agents.atlas.sources.levels_fyi import (
+                    LevelsFYIProvider,
+                )
+                provider = LevelsFYIProvider()
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("ArchetypeGenerator salary provider import failed: %s", exc)
+                return
+
+        try:
+            result = await provider.fetch(
+                company=company_name,
+                role=role_target or "software-engineer",
+            )
+        except Exception as exc:
+            logger.warning("ArchetypeGenerator salary fetch raised: %s", exc)
+            return
+
+        if not getattr(result, "success", False):
+            return
+
+        raw = getattr(result, "raw", None) or {}
+        band = raw.get("salary_band") if isinstance(raw, dict) else None
+        if not isinstance(band, dict) or not band:
+            return
+
+        # Clone band per archetype so future per-archetype overrides
+        # (e.g. seniority multipliers) don't bleed across instances.
+        for a in archetypes:
+            a.salary_band = dict(band)
