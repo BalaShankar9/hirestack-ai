@@ -328,7 +328,7 @@ def test_build_recon_swarm_tools_registers_one_tool():
 # ─── factories ────────────────────────────────────────────────────
 
 def test_default_factories_return_expected_counts():
-    assert len(default_layer1_providers()) == 5
+    assert len(default_layer1_providers()) == 6
     assert len(default_layer2_providers()) == 6
 
 
@@ -640,3 +640,120 @@ def test_default_layer1_factory_swaps_news_to_real_when_env_set(monkeypatch):
     news2 = next(p for p in providers2
                  if p.name in {"google_news", "google_news_stub"})
     assert news2.name == "google_news_stub"
+
+
+# ─── Hacker News real provider (httpx injected) ───────────────────
+
+from ai_engine.agents.sub_agents.recon_swarm import (  # noqa: E402
+    HackerNewsProvider,
+    StubHackerNewsProvider,
+)
+
+
+@pytest.mark.asyncio
+async def test_stub_hackernews_returns_recent_news_items():
+    p = StubHackerNewsProvider()
+    r = await p.fetch(company="Stripe")
+    assert r.success is True
+    assert r.layer == 1
+    items = r.raw["recent_news"]
+    assert isinstance(items, list) and len(items) >= 1
+    assert all("title" in it and "source" in it for it in items)
+    assert any("Stripe" in it["title"] for it in items)
+
+
+@pytest.mark.asyncio
+async def test_hackernews_real_provider_extracts_hits():
+    payload = {
+        "hits": [
+            {"title": "Show HN: OpenAI launches Sora",
+             "url": "https://example.com/sora",
+             "created_at": "2026-04-01T12:34:56Z",
+             "points": 412, "num_comments": 188},
+            {"story_title": "OpenAI ships GPT-6",
+             "story_url": "https://example.com/gpt6",
+             "created_at": "2026-03-20T09:00:00Z",
+             "points": 999, "num_comments": 543},
+            {"title": "", "url": "https://example.com/empty"},  # skipped
+        ],
+    }
+    client = _FakeClient({
+        "https://hn.algolia.com/api/v1/search": _FakeResp(200, payload),
+    })
+    p = HackerNewsProvider(http_client=client, max_items=5)
+    r = await p.fetch(company="OpenAI")
+    assert r.success is True
+    items = r.raw["recent_news"]
+    assert len(items) == 2
+    assert items[0]["title"].startswith("Show HN")
+    assert items[0]["source"] == "Hacker News"
+    assert items[0]["date"] == "2026-04-01"
+    assert items[0]["points"] == 412
+    assert items[1]["title"] == "OpenAI ships GPT-6"
+    assert items[1]["url"] == "https://example.com/gpt6"
+
+
+@pytest.mark.asyncio
+async def test_hackernews_real_provider_respects_max_items():
+    hits = [
+        {"title": f"story {i}", "url": f"https://x/{i}",
+         "created_at": "2026-01-01T00:00:00Z",
+         "points": 10, "num_comments": 1}
+        for i in range(20)
+    ]
+    client = _FakeClient({
+        "https://hn.algolia.com/api/v1/search":
+            _FakeResp(200, {"hits": hits}),
+    })
+    p = HackerNewsProvider(http_client=client, max_items=3)
+    r = await p.fetch(company="Acme")
+    assert r.success is True
+    assert len(r.raw["recent_news"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_hackernews_real_provider_handles_non_200():
+    client = _FakeClient({
+        "https://hn.algolia.com/api/v1/search":
+            _FakeResp(503, {"error": "service unavailable"}),
+    })
+    p = HackerNewsProvider(http_client=client)
+    r = await p.fetch(company="Acme")
+    assert r.success is False
+    assert "503" in (r.error or "")
+
+
+@pytest.mark.asyncio
+async def test_hackernews_real_provider_empty_company_fails_fast():
+    p = HackerNewsProvider()
+    r = await p.fetch(company="")
+    assert r.success is False
+    assert r.error == "empty company"
+
+
+@pytest.mark.asyncio
+async def test_hackernews_real_provider_swallows_network_exceptions():
+    class _BoomClient:
+        async def get(self, url, **_kw):
+            raise RuntimeError("connection reset")
+
+        async def aclose(self):
+            pass
+
+    p = HackerNewsProvider(http_client=_BoomClient())
+    r = await p.fetch(company="Acme")
+    assert r.success is False
+    assert "connection reset" in (r.error or "")
+
+
+def test_default_layer1_factory_swaps_hackernews_to_real_when_env_set(monkeypatch):
+    monkeypatch.setenv("RECON_HACKERNEWS_PROVIDER", "real")
+    providers = default_layer1_providers()
+    hn = next(p for p in providers
+              if p.name in {"hacker_news", "hacker_news_stub"})
+    assert hn.name == "hacker_news"
+    monkeypatch.setenv("RECON_HACKERNEWS_PROVIDER", "stub")
+    providers2 = default_layer1_providers()
+    hn2 = next(p for p in providers2
+               if p.name in {"hacker_news", "hacker_news_stub"})
+    assert hn2.name == "hacker_news_stub"

@@ -399,6 +399,139 @@ class GoogleNewsProvider:
             return pub[:10]
 
 
+# ─── Hacker News (Algolia) — community signal, free, no auth ──────
+
+class StubHackerNewsProvider:
+    name = "hacker_news_stub"
+    layer = 1
+
+    async def fetch(self, *, company: str, **ctx: Any) -> ProviderResult:
+        s = time.perf_counter()
+        items = [
+            {"title": f"Show HN: {company} launches new product",
+             "url": "https://news.ycombinator.com/item?id=stub1",
+             "date": "2026-04-01", "source": "Hacker News"},
+            {"title": f"{company} raises Series B",
+             "url": "https://news.ycombinator.com/item?id=stub2",
+             "date": "2026-03-15", "source": "Hacker News"},
+        ]
+        return await _wrapped(self.name, self.layer, {
+            "recent_news": items,
+        }, s)
+
+
+_HN_ALGOLIA_URL = (
+    "https://hn.algolia.com/api/v1/search?query={q}"
+    "&tags=story&hitsPerPage={n}"
+)
+
+
+class HackerNewsProvider:
+    """Real Hacker News provider via the public Algolia search API.
+
+    Free, no auth, no rate-limit ceremony. Returns top story hits as
+    `recent_news` items so they fuse with Google News / Crunchbase
+    items in IntelFusion's list-merge step.
+
+    Reference: https://hn.algolia.com/api
+
+    Activation: RECON_HACKERNEWS_PROVIDER=real (default: stub).
+    """
+
+    name = "hacker_news"
+    layer = 1
+
+    def __init__(
+        self,
+        *,
+        http_client: Optional[Any] = None,
+        max_items: int = 10,
+        timeout_s: float = 8.0,
+    ) -> None:
+        self._client = http_client
+        self._max_items = max(1, int(max_items))
+        self._timeout_s = timeout_s
+
+    async def fetch(self, *, company: str, **ctx: Any) -> ProviderResult:
+        s = time.perf_counter()
+        q = (company or "").strip()
+        if not q:
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=False,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                error="empty company",
+            )
+        from urllib.parse import quote_plus
+        url = _HN_ALGOLIA_URL.format(q=quote_plus(q), n=self._max_items)
+        client, owned = await self._get_client()
+        try:
+            resp = await client.get(url)
+            if getattr(resp, "status_code", 0) != 200:
+                return ProviderResult(
+                    provider=self.name, layer=self.layer, success=False,
+                    latency_ms=int((time.perf_counter() - s) * 1000),
+                    error=f"hn status={resp.status_code}",
+                )
+            data = resp.json() or {}
+            items = self._extract_items(data, self._max_items)
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=True,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                raw={"recent_news": items},
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.info("hacker_news fetch failed company=%s exc=%s",
+                        company, exc)
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=False,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                error=str(exc)[:200],
+            )
+        finally:
+            if owned:
+                try:
+                    await client.aclose()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    async def _get_client(self):
+        if self._client is not None:
+            return self._client, False
+        import httpx
+        return (
+            httpx.AsyncClient(
+                timeout=self._timeout_s,
+                headers={"User-Agent": "HireStack-AI-Recon-Swarm",
+                         "Accept": "application/json"},
+            ),
+            True,
+        )
+
+    @staticmethod
+    def _extract_items(data: Dict[str, Any], limit: int) -> List[Dict[str, Any]]:
+        hits = data.get("hits") or []
+        out: List[Dict[str, Any]] = []
+        for h in hits:
+            if not isinstance(h, dict):
+                continue
+            title = (h.get("title") or h.get("story_title") or "").strip()
+            if not title:
+                continue
+            url = h.get("url") or h.get("story_url") or ""
+            created = (h.get("created_at") or "")[:10]
+            out.append({
+                "title": title,
+                "url": url,
+                "date": created,
+                "source": "Hacker News",
+                "points": int(h.get("points") or 0),
+                "comments": int(h.get("num_comments") or 0),
+            })
+            if len(out) >= limit:
+                break
+        return out
+
+
 # ─── Layer 2 — deep extraction stubs ──────────────────────────────
 
 class _SafeWebsiteFetcher:
@@ -703,12 +836,18 @@ def default_layer1_providers() -> List[SourceProvider]:
         news = GoogleNewsProvider()
     else:
         news = StubGoogleNewsProvider()
+    hn: SourceProvider
+    if (os.getenv("RECON_HACKERNEWS_PROVIDER") or "stub").lower() == "real":
+        hn = HackerNewsProvider()
+    else:
+        hn = StubHackerNewsProvider()
     providers: List[SourceProvider] = [
         StubCrunchbaseProvider(),
         StubLinkedInProvider(),
         StubBuiltWithProvider(),
         gh,
         news,
+        hn,
     ]
     # Future:
     #   if os.getenv("CRUNCHBASE_API_KEY"):
