@@ -117,6 +117,95 @@ class BenchmarkProfile(ArtifactBase):
 
 
 # ─────────────────────────────────────────────────────────────────────────
+#  Atlas v2: multi-source candidate fusion + dynamic archetypes
+#
+#  Additive types for the ATLAS rebuild (see /memories/session/
+#  atlas-rebuild-plan.md). The original `BenchmarkProfile` above is
+#  preserved untouched — these types live alongside it and are produced
+#  by new optional providers (default OFF). `SkillMatch` is intentionally
+#  re-used from `ai_engine.agents.sub_agents.atlas.skill_graph` and is
+#  not re-declared here.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class SkillProvenance(BaseModel):
+    """Single (source -> evidence) record backing a candidate skill claim."""
+    source: str                             # e.g. "resume", "github_user", "linkedin_public"
+    confidence: float = 0.5                 # 0..1
+    evidence: str = ""                      # short quoted snippet or repo name
+    last_used_at: Optional[str] = None      # ISO date if known
+
+
+class CandidateSkill(BaseModel):
+    """One skill claim, fused across N sources with provenance."""
+    name: str
+    level: Literal["expert", "advanced", "intermediate", "beginner"] = "intermediate"
+    years: float = 0.0
+    proficiency: float = 0.5                # 0..1, decay-adjusted
+    provenance: List[SkillProvenance] = Field(default_factory=list)
+    verified: bool = False                  # True when ≥2 sources agree
+
+
+class ImpactSignal(BaseModel):
+    """Quantitative impact claim extracted from a candidate's narrative."""
+    metric: str                             # e.g. "users", "revenue", "team_size"
+    value: str                              # raw matched value, e.g. "10M+", "$2.4M ARR"
+    confidence: float = 0.5
+    source: str = ""                        # which document/section the claim came from
+    evidence: str = ""                      # surrounding sentence
+
+
+class CandidateProfile(ArtifactBase):
+    """Atlas v2 — fused multi-source candidate profile.
+
+    Mirrors `BenchmarkProfile` structurally but every skill carries
+    multi-source provenance so downstream agents can cite where each
+    claim came from. Produced by `CandidateFusion.fuse(...)`.
+    """
+
+    candidate_name: str = ""
+    headline: str = ""
+    summary: str = ""
+    years_experience: float = 0.0
+    skills: List[CandidateSkill] = Field(default_factory=list)
+    experience: List[Dict[str, Any]] = Field(default_factory=list)
+    education: List[Dict[str, Any]] = Field(default_factory=list)
+    impact_signals: List[ImpactSignal] = Field(default_factory=list)
+    sources_used: List[str] = Field(default_factory=list)
+
+
+class Archetype(BaseModel):
+    """One dynamic target archetype (e.g. 'Stripe Senior Eng')."""
+    name: str
+    must_have_skills: List[str] = Field(default_factory=list)
+    nice_to_have_skills: List[str] = Field(default_factory=list)
+    years_min: int = 0
+    years_max: int = 0
+    salary_band: Dict[str, Any] = Field(default_factory=dict)   # {p25, p50, p75, currency}
+    cultural_signals: List[str] = Field(default_factory=list)
+    rationale: str = ""
+
+
+class CandidateValidationClaim(BaseModel):
+    """One validated claim from `ValidationSwarm`."""
+    claim: str
+    validator: str                          # e.g. "github_commits", "company_exists"
+    status: Literal["verified", "unverified", "conflicted"] = "unverified"
+    detail: str = ""
+
+
+class CandidateValidationReport(ArtifactBase):
+    """Atlas v2 — output of `ValidationSwarm.validate(candidate_profile)`.
+
+    Distinct from `ValidationReport` (Sentinel doc validator) — this one
+    cross-checks candidate-claim factuality against external sources.
+    """
+    claims: List[CandidateValidationClaim] = Field(default_factory=list)
+    verified_count: int = 0
+    conflicted_count: int = 0
+
+
+# ─────────────────────────────────────────────────────────────────────────
 #  Recon: CompanyIntelReport
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -316,6 +405,8 @@ class BuildPlan(ArtifactBase):
 
 ARTIFACT_TYPES: Dict[str, type[ArtifactBase]] = {
     "BenchmarkProfile": BenchmarkProfile,
+    "CandidateProfile": CandidateProfile,
+    "CandidateValidationReport": CandidateValidationReport,
     "CompanyIntelReport": CompanyIntelReport,
     "SkillGapMap": SkillGapMap,
     "LearningRecommendationSet": LearningRecommendationSet,
