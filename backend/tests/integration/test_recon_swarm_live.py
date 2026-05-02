@@ -9,6 +9,7 @@ They make real outbound calls to:
   - https://api.github.com/orgs/openai (public REST API)
   - https://news.google.com/rss (public RSS)
   - https://hn.algolia.com (HN Algolia search API — free, no auth)
+  - https://www.reddit.com (Reddit search.json — free, no auth)
   - https://en.wikipedia.org (Wikipedia REST API — free, no auth)
 
 Each test is best-effort: a transient network/rate-limit failure logs
@@ -24,6 +25,7 @@ from ai_engine.agents.sub_agents.recon_swarm import (
     GitHubProvider,
     GoogleNewsProvider,
     HackerNewsProvider,
+    RedditProvider,
     SECEdgarProvider,
     WikipediaProvider,
 )
@@ -94,3 +96,16 @@ async def test_wikipedia_live_apple_lookup():
     # Description text should mention Apple or technology somewhere.
     desc = (r.raw.get("description") or "").lower()
     assert "apple" in desc or "technology" in desc
+
+
+@pytest.mark.asyncio
+async def test_reddit_live_openai_search():
+    p = RedditProvider(max_items=3)
+    r = await p.fetch(company="OpenAI")
+    if not r.success:
+        pytest.xfail(f"Reddit live call failed: {r.error}")
+    items = r.raw.get("recent_news", [])
+    for it in items:
+        assert it["source"].startswith("Reddit")
+        assert "title" in it and it["title"]
+        assert isinstance(it.get("score", 0), int)

@@ -328,7 +328,7 @@ def test_build_recon_swarm_tools_registers_one_tool():
 # ─── factories ────────────────────────────────────────────────────
 
 def test_default_factories_return_expected_counts():
-    assert len(default_layer1_providers()) == 6
+    assert len(default_layer1_providers()) == 7
     assert len(default_layer2_providers()) == 6
 
 
@@ -901,3 +901,134 @@ def test_default_layer2_factory_appends_wikipedia_when_env_set(monkeypatch):
     grown = default_layer2_providers()
     assert any(p.name == "wikipedia" for p in grown)
     assert len(grown) == 7
+
+
+# ─── Reddit real provider (httpx injected) ────────────────────────
+
+from ai_engine.agents.sub_agents.recon_swarm import (  # noqa: E402
+    RedditProvider,
+    StubRedditProvider,
+)
+
+
+@pytest.mark.asyncio
+async def test_stub_reddit_returns_recent_news_items():
+    p = StubRedditProvider()
+    r = await p.fetch(company="Stripe")
+    assert r.success is True
+    assert r.layer == 1
+    items = r.raw["recent_news"]
+    assert isinstance(items, list) and len(items) >= 1
+    assert all("title" in it and "source" in it for it in items)
+    assert any("Stripe" in it["title"] for it in items)
+
+
+@pytest.mark.asyncio
+async def test_reddit_real_provider_extracts_hits():
+    payload = {
+        "data": {
+            "children": [
+                {"data": {
+                    "title": "Has anyone interviewed at Stripe recently?",
+                    "permalink": "/r/cscareerquestions/comments/abc/",
+                    "subreddit": "cscareerquestions",
+                    "created_utc": 1733097600,  # 2024-12-02 UTC
+                    "score": 142, "num_comments": 88,
+                }},
+                {"data": {
+                    "title": "Stripe internship review",
+                    "url": "https://reddit.com/r/csmajors/xyz",
+                    "subreddit": "csmajors",
+                    "created_utc": 1730000000,
+                    "score": 50, "num_comments": 12,
+                }},
+                {"data": {"title": ""}},  # skipped
+            ],
+        },
+    }
+    client = _FakeClient({
+        "https://www.reddit.com/search.json": _FakeResp(200, payload),
+    })
+    p = RedditProvider(http_client=client, max_items=5)
+    r = await p.fetch(company="Stripe")
+    assert r.success is True
+    items = r.raw["recent_news"]
+    assert len(items) == 2
+    assert items[0]["title"].startswith("Has anyone interviewed")
+    assert items[0]["source"] == "Reddit r/cscareerquestions"
+    assert items[0]["url"].startswith(
+        "https://www.reddit.com/r/cscareerquestions",
+    )
+    assert items[0]["date"]  # parsed
+    assert items[0]["score"] == 142
+    assert items[1]["source"] == "Reddit r/csmajors"
+
+
+@pytest.mark.asyncio
+async def test_reddit_real_provider_respects_max_items():
+    children = [
+        {"data": {
+            "title": f"post {i}",
+            "permalink": f"/r/x/{i}/",
+            "subreddit": "x",
+            "created_utc": 1730000000 + i,
+            "score": 1, "num_comments": 1,
+        }}
+        for i in range(20)
+    ]
+    client = _FakeClient({
+        "https://www.reddit.com/search.json":
+            _FakeResp(200, {"data": {"children": children}}),
+    })
+    p = RedditProvider(http_client=client, max_items=4)
+    r = await p.fetch(company="Acme")
+    assert r.success is True
+    assert len(r.raw["recent_news"]) == 4
+
+
+@pytest.mark.asyncio
+async def test_reddit_real_provider_handles_non_200():
+    client = _FakeClient({
+        "https://www.reddit.com/search.json":
+            _FakeResp(429, {"error": "rate limited"}),
+    })
+    p = RedditProvider(http_client=client)
+    r = await p.fetch(company="Acme")
+    assert r.success is False
+    assert "429" in (r.error or "")
+
+
+@pytest.mark.asyncio
+async def test_reddit_real_provider_empty_company_fails_fast():
+    p = RedditProvider()
+    r = await p.fetch(company="")
+    assert r.success is False
+    assert r.error == "empty company"
+
+
+@pytest.mark.asyncio
+async def test_reddit_real_provider_swallows_network_exceptions():
+    class _BoomClient:
+        async def get(self, url, **_kw):
+            raise RuntimeError("dns failure")
+
+        async def aclose(self):
+            pass
+
+    p = RedditProvider(http_client=_BoomClient())
+    r = await p.fetch(company="Acme")
+    assert r.success is False
+    assert "dns failure" in (r.error or "")
+
+
+def test_default_layer1_factory_swaps_reddit_to_real_when_env_set(monkeypatch):
+    monkeypatch.setenv("RECON_REDDIT_PROVIDER", "real")
+    providers = default_layer1_providers()
+    rd = next(p for p in providers
+              if p.name in {"reddit", "reddit_stub"})
+    assert rd.name == "reddit"
+    monkeypatch.setenv("RECON_REDDIT_PROVIDER", "stub")
+    providers2 = default_layer1_providers()
+    rd2 = next(p for p in providers2
+               if p.name in {"reddit", "reddit_stub"})
+    assert rd2.name == "reddit_stub"
