@@ -102,6 +102,7 @@ export function mapApplicationRow(row: any): ApplicationDoc {
     benchmarkDocuments: row.benchmark_documents ?? undefined,
     documentStrategy: row.document_strategy ?? undefined,
     companyIntel: row.company_intel ?? row.companyIntel ?? undefined,
+    meta: row.meta ?? undefined,
   };
 }
 
@@ -1047,6 +1048,12 @@ export async function generateApplicationModules(
         if (result.companyIntel) {
           (patch as any).company_intel = result.companyIntel;
         }
+        // NOTE: result.meta (carries `atlas_candidate_validation` from the
+        // SSE complete payload — backend Slice 4.2) is intentionally NOT
+        // persisted here yet. The `applications` table has no `meta` JSONB
+        // column. The IntelligencePanel reads `app.meta` for display —
+        // it'll be undefined post-reload until a future migration adds the
+        // column and this branch is enabled.
 
         const readyAt = Date.now();
         for (const mod of modules) {

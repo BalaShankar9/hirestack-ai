@@ -299,6 +299,18 @@ export interface ApplicationDoc {
   /** Company intelligence gathered during recon */
   companyIntel?: Record<string, any>;
 
+  /**
+   * Pipeline metadata surfaced by the SSE complete payload
+   * (`response.meta` in `backend/app/api/routes/generate/stream.py`).
+   * Currently carries the ATLAS candidate-side validation report
+   * (Slice 4.2) under `atlas_candidate_validation`. Kept loosely typed
+   * to avoid coupling — known shapes have dedicated typed accessors.
+   */
+  meta?: {
+    atlas_candidate_validation?: CandidateValidationReport;
+    [k: string]: unknown;
+  };
+
   /** Scores snapshot for list views */
   scores?: {
     match?: number;
