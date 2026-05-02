@@ -151,14 +151,29 @@ class AnalyticsService:
             limit=200,
         )
 
-        status_counts = {"draft": 0, "active": 0, "archived": 0}
+        # Initialize from canonical taxonomy so we never silently
+        # under-count when new statuses are added (e.g. responded,
+        # discarded, skip from migration 20260503000000).
+        from app.models.application_status import (
+            ANALYTICS_BUCKETS,
+            canonicalize_for_analytics,
+        )
+
+        status_counts: Dict[str, int] = {
+            bucket: 0 for bucket in set(ANALYTICS_BUCKETS.values())
+        }
         module_completion = {"benchmark": 0, "gaps": 0, "cv": 0, "coverLetter": 0, "personalStatement": 0, "portfolio": 0}
         total_with_modules = 0
 
         for app in applications:
-            st = app.get("status", "draft")
+            st = canonicalize_for_analytics(app.get("status")) or "draft"
             if st in status_counts:
                 status_counts[st] += 1
+            else:
+                # Defensive: out-of-vocab DB value — surface as "active"
+                # so it isn't lost to the report.
+                status_counts.setdefault("active", 0)
+                status_counts["active"] += 1
 
             modules = app.get("modules") or {}
             has_any = False
