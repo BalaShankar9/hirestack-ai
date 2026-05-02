@@ -78,6 +78,9 @@ _WS_COLLAPSE_RE = re.compile(r"\s+")
 _CACHE_MAX = 1024
 _CACHE_TTL_S = 24 * 3600
 _cache: dict[str, Tuple[dict, float]] = {}
+# Reverse index: url_hash → canonical URL, so GET /g/{hash} can fetch.
+# Same lifecycle as _cache; pruned together.
+_hash_index: dict[str, str] = {}
 _cache_lock = asyncio.Lock()
 
 
@@ -89,6 +92,10 @@ async def _cache_get(key: str) -> Optional[dict]:
         verdict, expires_at = entry
         if time.time() >= expires_at:
             _cache.pop(key, None)
+            # Also drop matching hash index entry, if any.
+            for h, c in list(_hash_index.items()):
+                if c == key:
+                    _hash_index.pop(h, None)
             return None
         return verdict
 
@@ -99,7 +106,14 @@ async def _cache_put(key: str, verdict: dict) -> None:
             # Cheap eviction: drop oldest by expires_at.
             oldest_key = min(_cache, key=lambda k: _cache[k][1])
             _cache.pop(oldest_key, None)
+            for h, c in list(_hash_index.items()):
+                if c == oldest_key:
+                    _hash_index.pop(h, None)
         _cache[key] = (verdict, time.time() + _CACHE_TTL_S)
+        # Mirror into hash index.
+        url_hash = verdict.get("url_hash")
+        if url_hash:
+            _hash_index[url_hash] = key
 
 
 # ── HTML helpers ─────────────────────────────────────────────────────────
@@ -214,6 +228,38 @@ async def ghost_check(request: Request, body: GhostCheckRequest) -> dict:
     payload["url_hash"] = _hash_url(canonical)
     await _cache_put(canonical, payload)
     return {**payload, "cached": False}
+
+
+@router.get("/ghost-check/{url_hash}")
+async def ghost_check_permalink(request: Request, url_hash: str) -> dict:
+    """Fetch a previously-computed verdict by its short hash.
+
+    Used by the public permalink page (/g/{hash} on the frontend) and
+    by social previews. Returns 404 if the verdict has expired or was
+    never computed; the frontend prompts the user to re-scan in that case.
+
+    Persistence is currently in-process; surviving a redeploy requires
+    the public_scans Supabase table (E1.c-v2 migration, follow-up slice).
+    """
+    if not url_hash or len(url_hash) != 16 or not all(
+        c in "0123456789abcdef" for c in url_hash.lower()
+    ):
+        raise HTTPException(status_code=400, detail="Invalid hash format")
+
+    async with _cache_lock:
+        canonical = _hash_index.get(url_hash)
+    if canonical is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Verdict not found or expired. Re-run the scan.",
+        )
+    cached = await _cache_get(canonical)
+    if cached is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Verdict not found or expired. Re-run the scan.",
+        )
+    return {**cached, "cached": True}
 
 
 __all__ = ["router", "extract_apply_controls", "extract_visible_text", "fetch_posting"]

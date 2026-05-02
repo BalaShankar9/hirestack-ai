@@ -91,8 +91,10 @@ class TestCache:
     @pytest.fixture(autouse=True)
     def clear_cache(self) -> None:
         gc._cache.clear()
+        gc._hash_index.clear()
         yield
         gc._cache.clear()
+        gc._hash_index.clear()
 
     @pytest.mark.asyncio
     async def test_get_returns_none_for_missing(self) -> None:
@@ -130,6 +132,7 @@ def _build_app() -> FastAPI:
 @pytest.fixture()
 def client(monkeypatch) -> TestClient:
     gc._cache.clear()
+    gc._hash_index.clear()
 
     async def fake_fetch(url: str) -> Tuple[int, str, str]:
         # Simulate a live Greenhouse posting.
@@ -200,6 +203,35 @@ class TestRoute:
         # Plus our wrapper additions:
         assert "cached" in data
         assert "url_hash" in data
+
+
+class TestPermalink:
+    def test_get_after_post_returns_verdict(self, client: TestClient) -> None:
+        url = "https://boards.greenhouse.io/acme/jobs/77"
+        post = client.post("/api/ghost-check", json={"url": url})
+        assert post.status_code == 200
+        url_hash = post.json()["url_hash"]
+
+        get = client.get(f"/api/ghost-check/{url_hash}")
+        assert get.status_code == 200
+        assert get.json()["tier"] == "legitimate"
+        assert get.json()["cached"] is True
+        assert get.json()["url_hash"] == url_hash
+
+    def test_unknown_hash_returns_404(self, client: TestClient) -> None:
+        resp = client.get("/api/ghost-check/0123456789abcdef")
+        assert resp.status_code == 404
+
+    @pytest.mark.parametrize(
+        "bad_hash",
+        ["too-short", "NOT_HEX_CHARACTERS!", "abc", "x" * 16],
+    )
+    def test_invalid_hash_returns_400_or_404(
+        self, client: TestClient, bad_hash: str
+    ) -> None:
+        resp = client.get(f"/api/ghost-check/{bad_hash}")
+        # 16-char-non-hex → 400; shorter/longer → 400 (our validator).
+        assert resp.status_code == 400
 
 
 class TestFetchOnTimeout:
