@@ -11,6 +11,7 @@ They make real outbound calls to:
   - https://hn.algolia.com (HN Algolia search API — free, no auth)
   - https://www.reddit.com (Reddit search.json — free, no auth)
   - https://api.stackexchange.com (Stack Exchange API — free, no auth)
+  - https://export.arxiv.org (arXiv API — free, no auth)
   - https://en.wikipedia.org (Wikipedia REST API — free, no auth)
 
 Each test is best-effort: a transient network/rate-limit failure logs
@@ -29,6 +30,7 @@ from ai_engine.agents.sub_agents.recon_swarm import (
     RedditProvider,
     SECEdgarProvider,
     StackExchangeProvider,
+    ArxivProvider,
     WikipediaProvider,
 )
 
@@ -125,3 +127,18 @@ async def test_stackexchange_live_react_search():
         assert "title" in it and it["title"]
         assert isinstance(it.get("score", 0), int)
         assert isinstance(it.get("tags", []), list)
+
+
+@pytest.mark.asyncio
+async def test_arxiv_live_transformer_search():
+    p = ArxivProvider(max_items=3)
+    r = await p.fetch(company="transformer")
+    if not r.success:
+        pytest.xfail(f"arXiv live call failed: {r.error}")
+    papers = r.raw.get("research_papers", [])
+    assert len(papers) >= 1
+    for it in papers:
+        assert it["source"] == "arXiv"
+        assert it["title"]
+        assert it["url"].startswith("http://arxiv.org/abs/")
+        assert isinstance(it.get("authors", []), list)

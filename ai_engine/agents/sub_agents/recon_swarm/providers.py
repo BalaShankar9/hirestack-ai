@@ -847,6 +847,140 @@ class StackExchangeProvider:
         return out
 
 
+# ─── arXiv (research papers) — free, no auth, Atom XML feed ───────
+
+class StubArxivProvider:
+    name = "arxiv_stub"
+    layer = 1
+
+    async def fetch(self, *, company: str, **ctx: Any) -> ProviderResult:
+        s = time.perf_counter()
+        items = [
+            {"title": f"Stub paper relevant to {company}",
+             "url": "http://arxiv.org/abs/0000.00000",
+             "date": "2026-04-01",
+             "source": "arXiv",
+             "authors": ["Stub Author"],
+             "category": "cs.LG"},
+        ]
+        return await _wrapped(self.name, self.layer, {
+            "research_papers": items,
+        }, s)
+
+
+_ARXIV_SEARCH_URL = (
+    "https://export.arxiv.org/api/query"
+    "?search_query=all:{q}&start=0&max_results={n}"
+    "&sortBy=submittedDate&sortOrder=descending"
+)
+_ARXIV_NS = {"a": "http://www.w3.org/2005/Atom"}
+
+
+class ArxivProvider:
+    """Real arXiv provider via the public Atom-XML API.
+
+    No authentication, no key. arXiv asks clients to sleep 3s between
+    bursts (we do single calls per fetch). Returns recent research
+    papers matching the company name — strong signal for AI/ML
+    companies. Failures degrade silently.
+    """
+    name = "arxiv"
+    layer = 1
+
+    def __init__(
+        self,
+        http_client: Optional[Any] = None,
+        max_items: int = 5,
+        timeout_s: float = 10.0,
+    ) -> None:
+        self._client = http_client
+        self._max = max(1, min(20, int(max_items)))
+        self._timeout = float(timeout_s)
+
+    async def fetch(self, *, company: str, **ctx: Any) -> ProviderResult:
+        started = time.perf_counter()
+        q = (company or "").strip()
+        if not q:
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=False,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                error="empty company",
+            )
+        url = _ARXIV_SEARCH_URL.format(q=q, n=self._max)
+        try:
+            import httpx
+            owns = self._client is None
+            client = self._client or httpx.AsyncClient(
+                timeout=self._timeout,
+                headers={"User-Agent": "HireStack-AI-Recon-Swarm/1.0"},
+            )
+            try:
+                resp = await client.get(url)
+            finally:
+                if owns:
+                    await client.aclose()
+            if resp.status_code != 200:
+                return ProviderResult(
+                    provider=self.name, layer=self.layer, success=False,
+                    latency_ms=int((time.perf_counter() - started) * 1000),
+                    error=f"http {resp.status_code}",
+                )
+            items = self._extract_items(resp.text or "")
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=True,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                raw={"research_papers": items},
+            )
+        except Exception as exc:  # pragma: no cover - network jitter
+            logger.info("arxiv provider failure: %s", exc)
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=False,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                error=str(exc)[:200],
+            )
+
+    def _extract_items(self, xml_text: str) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        if not xml_text:
+            return out
+        try:
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(xml_text)
+        except Exception as exc:
+            logger.info("arxiv xml parse failed: %s", exc)
+            return out
+        for entry in root.findall("a:entry", _ARXIV_NS)[: self._max]:
+            title_el = entry.find("a:title", _ARXIV_NS)
+            id_el = entry.find("a:id", _ARXIV_NS)
+            pub_el = entry.find("a:published", _ARXIV_NS)
+            title = (title_el.text or "").strip() if title_el is not None else ""
+            url = (id_el.text or "").strip() if id_el is not None else ""
+            if not title or not url:
+                continue
+            published = (pub_el.text or "").strip() if pub_el is not None else ""
+            date_iso = published[:10] if len(published) >= 10 else ""
+            authors: List[str] = []
+            for a in entry.findall("a:author", _ARXIV_NS):
+                name_el = a.find("a:name", _ARXIV_NS)
+                if name_el is not None and name_el.text:
+                    authors.append(name_el.text.strip())
+            category = ""
+            cat_el = entry.find(
+                "{http://arxiv.org/schemas/atom}primary_category"
+            )
+            if cat_el is not None:
+                category = cat_el.attrib.get("term", "")
+            out.append({
+                "title": title,
+                "url": url,
+                "date": date_iso,
+                "source": "arXiv",
+                "authors": authors,
+                "category": category,
+            })
+        return out
+
+
 # ─── Layer 2 — deep extraction stubs ──────────────────────────────
 
 class _SafeWebsiteFetcher:
@@ -1337,6 +1471,11 @@ def default_layer1_providers() -> List[SourceProvider]:
         se = StackExchangeProvider()
     else:
         se = StubStackExchangeProvider()
+    ax: SourceProvider
+    if (os.getenv("RECON_ARXIV_PROVIDER") or "stub").lower() == "real":
+        ax = ArxivProvider()
+    else:
+        ax = StubArxivProvider()
     providers: List[SourceProvider] = [
         StubCrunchbaseProvider(),
         StubLinkedInProvider(),
@@ -1346,6 +1485,7 @@ def default_layer1_providers() -> List[SourceProvider]:
         hn,
         rd,
         se,
+        ax,
     ]
     # Future:
     #   if os.getenv("CRUNCHBASE_API_KEY"):

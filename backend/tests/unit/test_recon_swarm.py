@@ -328,7 +328,7 @@ def test_build_recon_swarm_tools_registers_one_tool():
 # ─── factories ────────────────────────────────────────────────────
 
 def test_default_factories_return_expected_counts():
-    assert len(default_layer1_providers()) == 8
+    assert len(default_layer1_providers()) == 9
     assert len(default_layer2_providers()) == 6
 
 
@@ -341,6 +341,10 @@ class _FakeResp:
 
     def json(self) -> Any:
         return self._payload
+
+    @property
+    def text(self) -> str:
+        return self._payload if isinstance(self._payload, str) else ""
 
 
 class _FakeClient:
@@ -1161,3 +1165,137 @@ def test_default_layer1_factory_swaps_stackexchange_to_real_when_env_set(monkeyp
     se2 = next(p for p in providers2
                if p.name in {"stackexchange", "stackexchange_stub"})
     assert se2.name == "stackexchange_stub"
+
+
+# ─── arXiv real provider (httpx injected) ───────────────────────────
+
+from ai_engine.agents.sub_agents.recon_swarm import (  # noqa: E402
+    ArxivProvider,
+    StubArxivProvider,
+)
+
+
+_ARXIV_SAMPLE_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/2401.12345v1</id>
+    <title>Scaling laws for Acme &amp; Friends</title>
+    <published>2026-04-01T00:00:00Z</published>
+    <author><name>Alice Researcher</name></author>
+    <author><name>Bob Scientist</name></author>
+    <arxiv:primary_category xmlns:arxiv="http://arxiv.org/schemas/atom"
+                            term="cs.LG" />
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2401.99999v2</id>
+    <title>Second paper</title>
+    <published>2026-03-15T00:00:00Z</published>
+    <author><name>Charlie</name></author>
+  </entry>
+</feed>
+"""
+
+
+@pytest.mark.asyncio
+async def test_stub_arxiv_returns_research_papers():
+    p = StubArxivProvider()
+    r = await p.fetch(company="OpenAI")
+    assert r.success is True
+    items = r.raw.get("research_papers", [])
+    assert len(items) >= 1
+    assert items[0]["source"] == "arXiv"
+
+
+@pytest.mark.asyncio
+async def test_arxiv_real_provider_extracts_papers():
+    client = _FakeClient({
+        "https://export.arxiv.org/api/query":
+            _FakeResp(200, _ARXIV_SAMPLE_XML),
+    })
+    p = ArxivProvider(http_client=client, max_items=5)
+    r = await p.fetch(company="Acme")
+    assert r.success is True
+    papers = r.raw.get("research_papers", [])
+    assert len(papers) == 2
+    p0 = papers[0]
+    assert p0["title"] == "Scaling laws for Acme & Friends"
+    assert p0["url"] == "http://arxiv.org/abs/2401.12345v1"
+    assert p0["date"] == "2026-04-01"
+    assert p0["source"] == "arXiv"
+    assert p0["authors"] == ["Alice Researcher", "Bob Scientist"]
+    assert p0["category"] == "cs.LG"
+    assert papers[1]["category"] == ""
+
+
+@pytest.mark.asyncio
+async def test_arxiv_real_provider_respects_max_items():
+    client = _FakeClient({
+        "https://export.arxiv.org/api/query":
+            _FakeResp(200, _ARXIV_SAMPLE_XML),
+    })
+    p = ArxivProvider(http_client=client, max_items=1)
+    r = await p.fetch(company="Acme")
+    assert r.success is True
+    assert len(r.raw["research_papers"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_arxiv_real_provider_handles_non_200():
+    client = _FakeClient({
+        "https://export.arxiv.org/api/query":
+            _FakeResp(503, "service unavailable"),
+    })
+    p = ArxivProvider(http_client=client)
+    r = await p.fetch(company="Acme")
+    assert r.success is False
+    assert "503" in (r.error or "")
+
+
+@pytest.mark.asyncio
+async def test_arxiv_real_provider_empty_company_fails_fast():
+    client = _FakeClient({})
+    p = ArxivProvider(http_client=client)
+    r = await p.fetch(company="   ")
+    assert r.success is False
+    assert "empty" in (r.error or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_arxiv_real_provider_handles_malformed_xml():
+    client = _FakeClient({
+        "https://export.arxiv.org/api/query":
+            _FakeResp(200, "<<<not xml>>>"),
+    })
+    p = ArxivProvider(http_client=client)
+    r = await p.fetch(company="Acme")
+    # Bad XML returns success=True with empty list (degrades silently)
+    assert r.success is True
+    assert r.raw["research_papers"] == []
+
+
+@pytest.mark.asyncio
+async def test_arxiv_real_provider_swallows_network_exceptions():
+    class _BoomClient:
+        async def get(self, url, **_kw):
+            raise RuntimeError("dns failure")
+
+        async def aclose(self):
+            pass
+
+    p = ArxivProvider(http_client=_BoomClient())
+    r = await p.fetch(company="Acme")
+    assert r.success is False
+    assert "dns failure" in (r.error or "")
+
+
+def test_default_layer1_factory_swaps_arxiv_to_real_when_env_set(monkeypatch):
+    monkeypatch.setenv("RECON_ARXIV_PROVIDER", "real")
+    providers = default_layer1_providers()
+    ax = next(p for p in providers
+              if p.name in {"arxiv", "arxiv_stub"})
+    assert ax.name == "arxiv"
+    monkeypatch.setenv("RECON_ARXIV_PROVIDER", "stub")
+    providers2 = default_layer1_providers()
+    ax2 = next(p for p in providers2
+               if p.name in {"arxiv", "arxiv_stub"})
+    assert ax2.name == "arxiv_stub"
