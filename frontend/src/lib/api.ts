@@ -620,6 +620,19 @@ class APIClient {
       this.request(`/development/goals/${goalId}`, { method: "DELETE" }),
     getSummary: async () => this.request("/development/summary"),
   };
+
+  /* ── A2.api: Insights dashboard ────────────────────────────────── */
+
+  insights = {
+    /**
+     * GET /api/insights — pattern_insights + insights_blockers + recommendations
+     * in one round-trip. Each `patterns.*` section may be the sentinel
+     * `{ kind: "insufficient_data", have, need, reason }` if MIN_OUTCOMES
+     * (5) hasn't been met. The frontend should pattern-match on `kind`
+     * to render the empty state.
+     */
+    get: async () => this.request("/insights"),
+  };
 }
 
 export const api = new APIClient(API_URL);
