@@ -633,6 +633,40 @@ class APIClient {
      */
     get: async () => this.request("/insights"),
   };
+
+  /* ── B0: Batch generate (paste URLs → preview → score) ──────────── */
+
+  batchGenerate = {
+    /**
+     * POST /api/generate/batch/plan — instant pure-fn validation.
+     * Returns {accepted, rejected, summary, min_fit_score} so the
+     * paste UI can show "12 accepted / 3 rejected" before the user
+     * commits to the slow scoring step.
+     */
+    plan: async (urls: string[], min_fit_score?: number) =>
+      this.request("/generate/batch/plan", {
+        method: "POST",
+        body: JSON.stringify({
+          urls,
+          ...(min_fit_score !== undefined ? { min_fit_score } : {}),
+        }),
+      }),
+    /**
+     * POST /api/generate/batch/score — validate + score + rank in one
+     * call. Default backend scorer is currently a stub that returns
+     * `error: "scorer_not_configured"` per row; UI must render the
+     * `failed` bucket gracefully even when `ranked` is empty.
+     */
+    score: async (urls: string[], opts?: { min_fit_score?: number; concurrency?: number }) =>
+      this.request("/generate/batch/score", {
+        method: "POST",
+        body: JSON.stringify({
+          urls,
+          ...(opts?.min_fit_score !== undefined ? { min_fit_score: opts.min_fit_score } : {}),
+          ...(opts?.concurrency !== undefined ? { concurrency: opts.concurrency } : {}),
+        }),
+      }),
+  };
 }
 
 export const api = new APIClient(API_URL);
