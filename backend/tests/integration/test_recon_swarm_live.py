@@ -8,6 +8,8 @@ They make real outbound calls to:
   - https://www.sec.gov  (SEC EDGAR — public, free, ToS-permits)
   - https://api.github.com/orgs/openai (public REST API)
   - https://news.google.com/rss (public RSS)
+  - https://hn.algolia.com (HN Algolia search API — free, no auth)
+  - https://en.wikipedia.org (Wikipedia REST API — free, no auth)
 
 Each test is best-effort: a transient network/rate-limit failure logs
 and is marked xfail rather than blocking CI.
@@ -21,7 +23,9 @@ import pytest
 from ai_engine.agents.sub_agents.recon_swarm import (
     GitHubProvider,
     GoogleNewsProvider,
+    HackerNewsProvider,
     SECEdgarProvider,
+    WikipediaProvider,
 )
 
 
@@ -65,3 +69,28 @@ async def test_google_news_live_stripe_search():
     for it in items:
         assert "title" in it and it["title"]
         assert "source" in it
+
+
+@pytest.mark.asyncio
+async def test_hackernews_live_openai_search():
+    p = HackerNewsProvider(max_items=3)
+    r = await p.fetch(company="OpenAI")
+    if not r.success:
+        pytest.xfail(f"HN Algolia live call failed: {r.error}")
+    items = r.raw.get("recent_news", [])
+    for it in items:
+        assert it["source"] == "Hacker News"
+        assert "title" in it and it["title"]
+        assert isinstance(it.get("points", 0), int)
+
+
+@pytest.mark.asyncio
+async def test_wikipedia_live_apple_lookup():
+    p = WikipediaProvider()
+    r = await p.fetch(company="Apple Inc.")
+    if not r.success:
+        pytest.xfail(f"Wikipedia live call failed: {r.error}")
+    assert "Apple" in (r.raw.get("legal_name") or "")
+    # Description text should mention Apple or technology somewhere.
+    desc = (r.raw.get("description") or "").lower()
+    assert "apple" in desc or "technology" in desc

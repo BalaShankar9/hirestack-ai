@@ -821,6 +821,177 @@ class SECEdgarProvider:
         }
 
 
+# ─── Real provider: Wikipedia REST API (free, no key) ─────────────
+
+_WIKI_SUMMARY_URL = (
+    "https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
+)
+_WIKI_SEARCH_URL = (
+    "https://en.wikipedia.org/w/api.php?action=opensearch&search={q}"
+    "&limit=5&namespace=0&format=json"
+)
+
+
+class WikipediaProvider:
+    """Real Wikipedia REST API provider (Layer 2).
+
+    Free, no auth, public. Looks up the page summary for the company
+    and extracts description, founded_year (from extract first sentence),
+    headquarters, industry, and homepage. Pure-stdlib JSON parsing.
+    Falls back to OpenSearch when direct title lookup 404s.
+
+    Reference: https://en.wikipedia.org/api/rest_v1/
+
+    Activation: RECON_WIKIPEDIA_PROVIDER=real (default stub).
+    Gracefully degrades on any error \u2014 never raises.
+    """
+
+    name = "wikipedia"
+    layer = 2
+
+    def __init__(
+        self,
+        *,
+        http_client: Optional[Any] = None,
+        timeout_s: float = 8.0,
+    ) -> None:
+        self._client = http_client
+        self._timeout_s = timeout_s
+
+    async def fetch(self, *, company: str, **ctx: Any) -> ProviderResult:
+        s = time.perf_counter()
+        q = (company or "").strip()
+        if not q:
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=False,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                error="empty company",
+            )
+        client, owned = await self._get_client()
+        try:
+            summary = await self._lookup_summary(client, q)
+            if not summary:
+                return ProviderResult(
+                    provider=self.name, layer=self.layer, success=True,
+                    latency_ms=int((time.perf_counter() - s) * 1000),
+                    raw={},
+                )
+            payload = self._extract_payload(summary)
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=True,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                raw=payload,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.info("wikipedia fetch failed company=%s exc=%s",
+                        company, exc)
+            return ProviderResult(
+                provider=self.name, layer=self.layer, success=False,
+                latency_ms=int((time.perf_counter() - s) * 1000),
+                error=str(exc)[:200],
+            )
+        finally:
+            if owned:
+                try:
+                    await client.aclose()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    async def _get_client(self):
+        if self._client is not None:
+            return self._client, False
+        import httpx
+        return (
+            httpx.AsyncClient(
+                timeout=self._timeout_s,
+                headers={"User-Agent": "HireStack-AI-Recon-Swarm",
+                         "Accept": "application/json"},
+                follow_redirects=True,
+            ),
+            True,
+        )
+
+    async def _lookup_summary(
+        self, client: Any, q: str,
+    ) -> Optional[Dict[str, Any]]:
+        from urllib.parse import quote
+        # Try direct title lookup first.
+        url = _WIKI_SUMMARY_URL.format(title=quote(q.replace(" ", "_")))
+        resp = await client.get(url)
+        status = getattr(resp, "status_code", 0)
+        if status == 200:
+            data = resp.json() or {}
+            if data.get("type") != "disambiguation":
+                return data
+        # Fallback: OpenSearch \u2192 first hit \u2192 summary.
+        from urllib.parse import quote_plus
+        search_url = _WIKI_SEARCH_URL.format(q=quote_plus(q))
+        sresp = await client.get(search_url)
+        if getattr(sresp, "status_code", 0) != 200:
+            return None
+        sdata = sresp.json() or []
+        # OpenSearch returns: [query, [titles], [descs], [urls]]
+        titles = sdata[1] if isinstance(sdata, list) and len(sdata) >= 2 else []
+        if not titles:
+            return None
+        first_title = titles[0]
+        url2 = _WIKI_SUMMARY_URL.format(
+            title=quote(first_title.replace(" ", "_")),
+        )
+        resp2 = await client.get(url2)
+        if getattr(resp2, "status_code", 0) != 200:
+            return None
+        return resp2.json() or {}
+
+    @staticmethod
+    def _extract_payload(s: Dict[str, Any]) -> Dict[str, Any]:
+        title = s.get("title") or None
+        extract = s.get("extract") or ""
+        # Wikipedia "description" is a short 1-line tagline (e.g.
+        # "American multinational technology company").
+        short_desc = s.get("description") or None
+        out: Dict[str, Any] = {}
+        if title:
+            out["legal_name"] = title
+        if extract:
+            # Trim to first two sentences for description.
+            parts = extract.split(". ")
+            out["description"] = ". ".join(parts[:2]).strip()
+            if out["description"] and not out["description"].endswith("."):
+                out["description"] += "."
+            year = WikipediaProvider._extract_founded_year(extract)
+            if year:
+                out["founded_year"] = year
+        if short_desc:
+            out["industry"] = short_desc
+        # content_urls.desktop.page is the canonical URL.
+        urls = s.get("content_urls") or {}
+        homepage = (urls.get("desktop") or {}).get("page")
+        if homepage:
+            out["wikipedia_url"] = homepage
+        return out
+
+    @staticmethod
+    def _extract_founded_year(text: str) -> Optional[int]:
+        import re
+        # Look for "founded in 1976" / "established in 1998" /
+        # "(founded 1903)" / "incorporated on June 4, 2007".
+        # Allow up to 40 chars (including digits in dates) between the
+        # keyword and a 4-digit year, then validate range.
+        m = re.search(
+            r"(?:founded|established|incorporated).{0,40}?(\d{4})",
+            text, re.IGNORECASE,
+        )
+        if m:
+            try:
+                y = int(m.group(1))
+                if 1700 <= y <= 2100:
+                    return y
+            except ValueError:
+                return None
+        return None
+
+
 # ─── Factories (env-aware) ────────────────────────────────────────
 
 def default_layer1_providers() -> List[SourceProvider]:
@@ -863,7 +1034,12 @@ def default_layer2_providers(
         sec = SECEdgarProvider(http_client=http_client)
     else:
         sec = StubSECProvider()
-    return [
+    wiki: SourceProvider
+    if (os.getenv("RECON_WIKIPEDIA_PROVIDER") or "off").lower() == "real":
+        wiki = WikipediaProvider(http_client=http_client)
+    else:
+        wiki = None  # type: ignore[assignment]
+    base: List[SourceProvider] = [
         StubWebsiteCrawlerProvider(http_client=http_client),
         sec,
         StubPatentProvider(),
@@ -871,3 +1047,6 @@ def default_layer2_providers(
         StubGlassdoorProvider(),
         StubTwitterProvider(),
     ]
+    if wiki is not None:
+        base.append(wiki)
+    return base

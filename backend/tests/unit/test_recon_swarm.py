@@ -757,3 +757,147 @@ def test_default_layer1_factory_swaps_hackernews_to_real_when_env_set(monkeypatc
     hn2 = next(p for p in providers2
                if p.name in {"hacker_news", "hacker_news_stub"})
     assert hn2.name == "hacker_news_stub"
+
+
+# ─── Wikipedia real provider (Layer 2, opt-in) ────────────────────
+
+from ai_engine.agents.sub_agents.recon_swarm import WikipediaProvider  # noqa: E402
+
+
+_WIKI_APPLE_SUMMARY = {
+    "type": "standard",
+    "title": "Apple Inc.",
+    "description": "American multinational technology company",
+    "extract": (
+        "Apple Inc. is an American multinational technology company "
+        "headquartered in Cupertino, California. Apple was founded in "
+        "1976 by Steve Jobs, Steve Wozniak, and Ronald Wayne. The "
+        "company designs consumer electronics."
+    ),
+    "content_urls": {
+        "desktop": {"page": "https://en.wikipedia.org/wiki/Apple_Inc."},
+    },
+}
+
+
+@pytest.mark.asyncio
+async def test_wikipedia_real_provider_extracts_payload():
+    client = _FakeClient({
+        "https://en.wikipedia.org/api/rest_v1/page/summary/Apple_Inc":
+            _FakeResp(200, _WIKI_APPLE_SUMMARY),
+        # Wider key for any Apple variant.
+        "https://en.wikipedia.org/api/rest_v1/page/summary/Apple":
+            _FakeResp(200, _WIKI_APPLE_SUMMARY),
+    })
+    p = WikipediaProvider(http_client=client)
+    r = await p.fetch(company="Apple")
+    assert r.success is True
+    assert r.layer == 2
+    assert r.raw["legal_name"] == "Apple Inc."
+    assert r.raw["industry"].startswith("American multinational")
+    assert r.raw["founded_year"] == 1976
+    assert "Cupertino" in r.raw["description"]
+    assert r.raw["wikipedia_url"].endswith("Apple_Inc.")
+
+
+@pytest.mark.asyncio
+async def test_wikipedia_real_provider_falls_back_to_opensearch():
+    # Direct lookup 404s, opensearch returns first hit, then summary 200.
+    summary_payload = {
+        "type": "standard",
+        "title": "OpenAI",
+        "description": "AI research and deployment company",
+        "extract": "OpenAI is an American AI research lab founded in 2015.",
+        "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/OpenAI"}},
+    }
+
+    class _Routed:
+        async def get(self, url, **_kw):
+            if url.startswith("https://en.wikipedia.org/api/rest_v1/page/summary/OpenAI_Co"):
+                return _FakeResp(404, {"detail": "not found"})
+            if url.startswith("https://en.wikipedia.org/w/api.php"):
+                # Opensearch shape: [query, [titles], [descs], [urls]]
+                return _FakeResp(200, ["OpenAI Co", ["OpenAI"], [""], [""]])
+            if url.startswith("https://en.wikipedia.org/api/rest_v1/page/summary/OpenAI"):
+                return _FakeResp(200, summary_payload)
+            return _FakeResp(404, {})
+
+        async def aclose(self):
+            pass
+
+    p = WikipediaProvider(http_client=_Routed())
+    r = await p.fetch(company="OpenAI Co")
+    assert r.success is True
+    assert r.raw["legal_name"] == "OpenAI"
+    assert r.raw["founded_year"] == 2015
+
+
+@pytest.mark.asyncio
+async def test_wikipedia_real_provider_skips_disambiguation_then_searches():
+    disambig = {"type": "disambiguation", "title": "Acme",
+                "extract": "Acme may refer to:"}
+
+    class _Routed:
+        async def get(self, url, **_kw):
+            if url.startswith("https://en.wikipedia.org/api/rest_v1/page/summary/Acme"):
+                # Direct title hits, but disambiguation \u2192 should fall through.
+                return _FakeResp(200, disambig)
+            if url.startswith("https://en.wikipedia.org/w/api.php"):
+                return _FakeResp(200, ["Acme", [], [], []])
+            return _FakeResp(404, {})
+
+        async def aclose(self):
+            pass
+
+    p = WikipediaProvider(http_client=_Routed())
+    r = await p.fetch(company="Acme")
+    # Disambiguation \u2192 falls through to opensearch \u2192 empty titles
+    # \u2192 success with empty raw.
+    assert r.success is True
+    assert r.raw == {} or r.raw.get("legal_name") is None
+
+
+@pytest.mark.asyncio
+async def test_wikipedia_real_provider_empty_company_fails_fast():
+    p = WikipediaProvider()
+    r = await p.fetch(company="")
+    assert r.success is False
+    assert r.error == "empty company"
+
+
+@pytest.mark.asyncio
+async def test_wikipedia_real_provider_swallows_exceptions():
+    class _Boom:
+        async def get(self, url, **_kw):
+            raise RuntimeError("dns fail")
+
+        async def aclose(self):
+            pass
+
+    p = WikipediaProvider(http_client=_Boom())
+    r = await p.fetch(company="Acme")
+    assert r.success is False
+    assert "dns fail" in (r.error or "")
+
+
+def test_wikipedia_extract_founded_year_parser():
+    assert WikipediaProvider._extract_founded_year(
+        "founded in 1998 by Larry Page") == 1998
+    assert WikipediaProvider._extract_founded_year(
+        "established in 1903 in Detroit") == 1903
+    assert WikipediaProvider._extract_founded_year(
+        "incorporated on June 4, 2007") == 2007
+    assert WikipediaProvider._extract_founded_year("no year here") is None
+    # Invalid year range \u2192 None.
+    assert WikipediaProvider._extract_founded_year("founded 1500 BC") is None
+
+
+def test_default_layer2_factory_appends_wikipedia_when_env_set(monkeypatch):
+    monkeypatch.delenv("RECON_WIKIPEDIA_PROVIDER", raising=False)
+    base = default_layer2_providers()
+    assert all(p.name != "wikipedia" for p in base)
+    assert len(base) == 6
+    monkeypatch.setenv("RECON_WIKIPEDIA_PROVIDER", "real")
+    grown = default_layer2_providers()
+    assert any(p.name == "wikipedia" for p in grown)
+    assert len(grown) == 7
