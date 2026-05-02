@@ -1565,3 +1565,26 @@ def test_wikidata_provider_off_by_default():
     # default env: should NOT include WikidataProvider
     provs = default_layer2_providers()
     assert not any(isinstance(p, WikidataProvider) for p in provs)
+
+
+def test_mapper_uses_github_orgs_in_cover_letter():
+    intel = _intel_with(github_orgs=["acmecorp", "acme-labs"])
+    kit = ApplicationMapper().map(intel)
+    assert any(
+        "acmecorp" in h and "acme-labs" in h and "PR" in h
+        for h in kit.cover_letter_hooks
+    )
+
+
+def test_mapper_uses_patents_count_in_interview_question():
+    intel = _intel_with(patents_count=42)
+    kit = ApplicationMapper().map(intel, role_target="Principal Engineer")
+    assert any(
+        "42 granted patents" in q and "R&D" in q for q in kit.interview_questions
+    )
+
+
+def test_mapper_skips_zero_patents_count():
+    intel = _intel_with(patents_count=0)
+    kit = ApplicationMapper().map(intel)
+    assert not any("granted patents" in q for q in kit.interview_questions)

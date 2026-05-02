@@ -88,6 +88,14 @@ class ApplicationMapper:
                     " if you've followed their thesis — signals informed"
                     " interest beyond the company itself."
                 )
+        if intel.github_orgs.value:
+            orgs = [str(o) for o in intel.github_orgs.value if o][:2]
+            if orgs:
+                cover_hooks.append(
+                    f"Cite a specific PR, issue, or design discussion you've"
+                    f" engaged in across {company}'s open-source orgs"
+                    f" ({', '.join(orgs)}) — most candidates only namedrop."
+                )
         if not cover_hooks:
             cover_hooks.append(
                 f"Lead with one sentence on why {company} (specifically) and"
@@ -172,6 +180,14 @@ class ApplicationMapper:
                 "Which leader's portfolio would this role most directly"
                 " contribute to over the first two quarters?"
             )
+        if intel.patents_count.value:
+            pc = intel.patents_count.value
+            if isinstance(pc, int) and pc > 0:
+                questions.append(
+                    f"With {pc} granted patents on file, where is the team"
+                    f" investing R&D next — and how does {role} plug into"
+                    " that pipeline?"
+                )
         if not questions:
             questions.append(
                 f"What does success in {role} look like at the 90-day mark?"
