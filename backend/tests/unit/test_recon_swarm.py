@@ -1317,3 +1317,30 @@ async def test_fusion_merges_research_papers_from_arxiv():
     assert isinstance(papers, list)
     titles = {p.get("title") for p in papers if isinstance(p, dict)}
     assert {"Paper A", "Paper B"} <= titles
+
+
+def test_mapper_uses_research_papers_when_available():
+    intel = _intel_with(
+        research_papers=[
+            {"title": "Scaling Acme to 1B QPS",
+             "url": "http://arxiv.org/abs/123",
+             "source": "arXiv"},
+            {"title": "Acme Optimizer v2",
+             "url": "http://arxiv.org/abs/456"},
+        ],
+    )
+    kit = ApplicationMapper().map(intel, role_target="ML Engineer")
+    # interview question references the paper
+    assert any("Scaling Acme to 1B QPS" in q for q in kit.interview_questions)
+    # talking point references the paper
+    assert any("Scaling Acme to 1B QPS" in t for t in kit.talking_points)
+    # differentiation angle mentions research
+    assert any("research" in d.lower() or "arxiv" in d.lower()
+               for d in kit.differentiation_angles)
+
+
+def test_mapper_skips_research_papers_when_empty():
+    intel = _intel_with(tech_stack=["Python"])
+    kit = ApplicationMapper().map(intel)
+    # No research papers → no arXiv mentions
+    assert not any("arxiv" in q.lower() for q in kit.interview_questions)

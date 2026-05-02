@@ -121,6 +121,14 @@ class ApplicationMapper:
                 f"What does the recent \"{intel.recent_news.value[0].get('title')}\""
                 f" change about hiring priorities for {role}?"
             )
+        if intel.research_papers.value:
+            paper = intel.research_papers.value[0]
+            if isinstance(paper, dict) and paper.get("title"):
+                questions.append(
+                    f"I read your team's paper \"{paper['title']}\" on arXiv"
+                    f" — how does that research feed into the"
+                    f" product roadmap, and where can {role} contribute?"
+                )
         if intel.leadership.value:
             questions.append(
                 "Which leader's portfolio would this role most directly"
@@ -148,6 +156,17 @@ class ApplicationMapper:
                 talking_points.append(
                     f"Bring a concrete story illustrating \"{v}\"."
                 )
+        if intel.research_papers.value:
+            for paper in intel.research_papers.value[:2]:
+                if not isinstance(paper, dict):
+                    continue
+                title = paper.get("title")
+                if not title:
+                    continue
+                talking_points.append(
+                    f"Reference the team's paper \"{title}\" — shows you"
+                    " engaged with their published research."
+                )
 
         # Differentiation angles
         diff_angles: List[str] = []
@@ -166,6 +185,11 @@ class ApplicationMapper:
             diff_angles.append(
                 "Lead with quantified outcomes and the operating decisions"
                 " behind them (most candidates lead with activities)."
+            )
+        if intel.research_papers.value:
+            diff_angles.append(
+                "Engage substantively with the team's published research"
+                " — most applicants will not have read their arXiv work."
             )
 
         # Red flags
