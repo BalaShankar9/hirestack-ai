@@ -81,11 +81,32 @@ def merge_swarm_into_intel(
         ("founded_year", "founded_year"),
         ("company_stage", "stage"),
         ("headcount", "headcount"),
+        ("eng_headcount", "eng_headcount"),
         ("ticker", "ticker"),
+        ("is_public", "is_public"),
+        ("wikipedia_url", "wikipedia_url"),
+        ("work_style", "work_style"),
     ]:
         v = _intel_value(swarm_intel.get(src_key))
-        if v and not co.get(dst_key):
+        if v is not None and v != "" and v != [] and not co.get(dst_key):
             co[dst_key] = v
+    # sub_industries is a list — append-unique
+    sub_industries = _intel_value(swarm_intel.get("sub_industries")) or []
+    if isinstance(sub_industries, list) and sub_industries:
+        existing_subs = co.setdefault("sub_industries", [])
+        if isinstance(existing_subs, list):
+            _append_unique(existing_subs, sub_industries, cap=10)
+    # culture lists live under company_overview as well
+    values = _intel_value(swarm_intel.get("values")) or []
+    if isinstance(values, list) and values:
+        existing_vals = co.setdefault("values", [])
+        if isinstance(existing_vals, list):
+            _append_unique(existing_vals, values, cap=15)
+    benefits = _intel_value(swarm_intel.get("benefits")) or []
+    if isinstance(benefits, list) and benefits:
+        existing_ben = co.setdefault("benefits", [])
+        if isinstance(existing_ben, list):
+            _append_unique(existing_ben, benefits, cap=20)
 
     # ─── tech_and_engineering ───────────────────────────────────────
     te = intel["tech_and_engineering"]
@@ -102,6 +123,14 @@ def merge_swarm_into_intel(
         existing_lang = te.setdefault("languages", [])
         if isinstance(existing_lang, list):
             _append_unique(existing_lang, languages, cap=15)
+    github_orgs = _intel_value(swarm_intel.get("github_orgs")) or []
+    if isinstance(github_orgs, list) and github_orgs:
+        existing_orgs = te.setdefault("github_orgs", [])
+        if isinstance(existing_orgs, list):
+            _append_unique(existing_orgs, github_orgs, cap=10)
+    patents = _intel_value(swarm_intel.get("patents_count"))
+    if patents is not None and not te.get("patents_count"):
+        te["patents_count"] = patents
 
     # ─── market_position ────────────────────────────────────────────
     mp = intel["market_position"]
@@ -119,6 +148,39 @@ def merge_swarm_into_intel(
     last_round = _intel_value(swarm_intel.get("last_round"))
     if last_round and not mp.get("last_round"):
         mp["last_round"] = last_round
+    last_round_date = _intel_value(swarm_intel.get("last_round_date"))
+    if last_round_date and not mp.get("last_round_date"):
+        mp["last_round_date"] = last_round_date
+    investors = _intel_value(swarm_intel.get("investors")) or []
+    if isinstance(investors, list) and investors:
+        existing_inv = mp.setdefault("investors", [])
+        if isinstance(existing_inv, list):
+            _append_unique(existing_inv, investors, cap=15)
+    # products + product_launches live under market_position
+    products = _intel_value(swarm_intel.get("products")) or []
+    if isinstance(products, list) and products:
+        existing_prod = mp.setdefault("products", [])
+        if isinstance(existing_prod, list):
+            _append_unique(existing_prod, products, cap=15)
+    launches = _intel_value(swarm_intel.get("product_launches")) or []
+    if isinstance(launches, list) and launches:
+        existing_l = mp.setdefault("product_launches", [])
+        if isinstance(existing_l, list):
+            # launches are dicts; dedup by name when present
+            seen_names = {
+                (n.get("name") or "").strip().lower()
+                for n in existing_l if isinstance(n, dict)
+            }
+            for item in launches:
+                if not isinstance(item, dict):
+                    continue
+                name = (item.get("name") or "").strip().lower()
+                if not name or name in seen_names:
+                    continue
+                seen_names.add(name)
+                existing_l.append(item)
+                if len(existing_l) >= 15:
+                    break
 
     # ─── recent_developments ────────────────────────────────────────
     rd = intel["recent_developments"]
@@ -147,6 +209,47 @@ def merge_swarm_into_intel(
     open_roles = _intel_value(swarm_intel.get("open_roles_count"))
     if open_roles and not hi.get("estimated_open_roles"):
         hi["estimated_open_roles"] = open_roles
+    leadership = _intel_value(swarm_intel.get("leadership")) or []
+    if isinstance(leadership, list) and leadership:
+        existing_lead = hi.setdefault("leadership", [])
+        if isinstance(existing_lead, list):
+            seen_names = {
+                (n.get("name") or "").strip().lower()
+                for n in existing_lead if isinstance(n, dict)
+            }
+            for item in leadership:
+                if not isinstance(item, dict):
+                    continue
+                nm = (item.get("name") or "").strip().lower()
+                if not nm or nm in seen_names:
+                    continue
+                seen_names.add(nm)
+                existing_lead.append(item)
+                if len(existing_lead) >= 10:
+                    break
+    hiring_managers = _intel_value(swarm_intel.get("hiring_managers")) or []
+    if isinstance(hiring_managers, list) and hiring_managers:
+        existing_hm = hi.setdefault("hiring_managers", [])
+        if isinstance(existing_hm, list):
+            _append_unique(existing_hm, hiring_managers, cap=10)
+
+    # ─── reputation (new block) ─────────────────────────────────────
+    intel.setdefault("reputation", {})
+    rep = intel["reputation"]
+    glassdoor_rating = _intel_value(swarm_intel.get("glassdoor_rating"))
+    if glassdoor_rating is not None and not rep.get("glassdoor_rating"):
+        rep["glassdoor_rating"] = glassdoor_rating
+    glassdoor_themes = _intel_value(swarm_intel.get("glassdoor_themes")) or []
+    if isinstance(glassdoor_themes, list) and glassdoor_themes:
+        existing_themes = rep.setdefault("glassdoor_themes", [])
+        if isinstance(existing_themes, list):
+            _append_unique(existing_themes, glassdoor_themes, cap=15)
+    twitter_handle = _intel_value(swarm_intel.get("twitter_handle"))
+    if twitter_handle and not rep.get("twitter_handle"):
+        rep["twitter_handle"] = twitter_handle
+    twitter_sentiment = _intel_value(swarm_intel.get("twitter_sentiment"))
+    if twitter_sentiment and not rep.get("twitter_sentiment"):
+        rep["twitter_sentiment"] = twitter_sentiment
 
     # ─── application_strategy ← ApplicationKit ──────────────────────
     s = intel["application_strategy"]

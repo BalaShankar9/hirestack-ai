@@ -206,3 +206,180 @@ async def test_augment_failure_returns_original_intel(monkeypatch):
         intel, company="", job_title="Eng", ai_client=None,
     )
     assert out is intel
+
+
+# ─── Extended field mappings (Wikipedia/leadership/reputation) ─────
+
+def _make_extended_swarm_report() -> dict:
+    """Swarm report with the long-tail fields the bridge now wires."""
+    return {
+        "company": "Acme",
+        "intel": {
+            "company": "Acme",
+            "legal_name": {"value": "Acme Inc.", "confidence": "high",
+                           "sources": ["wikipedia"]},
+            "is_public": {"value": True, "confidence": "high",
+                          "sources": ["sec"]},
+            "wikipedia_url": {
+                "value": "https://en.wikipedia.org/wiki/Acme_Inc.",
+                "confidence": "medium", "sources": ["wikipedia"],
+            },
+            "eng_headcount": {"value": 320, "confidence": "medium",
+                              "sources": ["linkedin_stub"]},
+            "work_style": {"value": "hybrid", "confidence": "medium",
+                           "sources": ["careers_stub"]},
+            "sub_industries": {"value": ["FinTech", "Payments"],
+                               "confidence": "medium",
+                               "sources": ["wikipedia"]},
+            "values": {"value": ["customer obsession", "ownership"],
+                       "confidence": "medium",
+                       "sources": ["website_crawl_stub"]},
+            "benefits": {"value": ["unlimited PTO", "remote-first"],
+                         "confidence": "medium",
+                         "sources": ["website_crawl_stub"]},
+            "investors": {"value": ["Sequoia", "a16z"],
+                          "confidence": "high",
+                          "sources": ["crunchbase_stub"]},
+            "last_round_date": {"value": "2025-09-01",
+                                "confidence": "medium",
+                                "sources": ["crunchbase_stub"]},
+            "products": {"value": ["Acme API", "Acme Pay"],
+                         "confidence": "medium",
+                         "sources": ["website_crawl_stub"]},
+            "product_launches": {
+                "value": [{"name": "Acme v3", "date": "2026-04-15"}],
+                "confidence": "medium",
+                "sources": ["product_hunt_stub"],
+            },
+            "github_orgs": {"value": ["acme", "acme-labs"],
+                            "confidence": "high",
+                            "sources": ["github"]},
+            "patents_count": {"value": 14, "confidence": "medium",
+                              "sources": ["patent_stub"]},
+            "leadership": {
+                "value": [
+                    {"name": "Jane Doe", "title": "CEO"},
+                    {"name": "Sam Park", "title": "CTO"},
+                ],
+                "confidence": "medium",
+                "sources": ["linkedin_stub"],
+            },
+            "hiring_managers": {"value": ["Alex Lee"],
+                                "confidence": "low",
+                                "sources": ["careers_stub"]},
+            "glassdoor_rating": {"value": 4.2, "confidence": "medium",
+                                 "sources": ["glassdoor_stub"]},
+            "glassdoor_themes": {"value": ["fast-paced", "smart team"],
+                                 "confidence": "medium",
+                                 "sources": ["glassdoor_stub"]},
+            "twitter_handle": {"value": "@acme",
+                               "confidence": "high",
+                               "sources": ["twitter_stub"]},
+            "twitter_sentiment": {"value": "positive",
+                                  "confidence": "low",
+                                  "sources": ["twitter_stub"]},
+            "field_count": 20,
+            "high_confidence_count": 5,
+            "profile_completeness": 0.55,
+        },
+        "application_kit": {
+            "cover_letter_hooks": [],
+            "interview_questions": [],
+            "tech_stack_matches": [],
+            "talking_points": [],
+            "red_flags": [],
+            "differentiation_angles": [],
+            "resume_bullet_hooks": [],
+        },
+        "provider_results": [],
+        "layers_completed": [1, 2, 3, 4, 5],
+        "cache_hit": False,
+        "total_latency_ms": 1234,
+        "budget_seconds": 60,
+    }
+
+
+def test_merge_swarm_wires_wikipedia_and_overview_extras():
+    intel = {}
+    merged = merge_swarm_into_intel(intel, _make_extended_swarm_report())
+    co = merged["company_overview"]
+    assert co["legal_name"] == "Acme Inc."
+    assert co["is_public"] is True
+    assert co["wikipedia_url"].endswith("Acme_Inc.")
+    assert co["eng_headcount"] == 320
+    assert co["work_style"] == "hybrid"
+    assert "FinTech" in co["sub_industries"]
+    assert "customer obsession" in co["values"]
+    assert "unlimited PTO" in co["benefits"]
+
+
+def test_merge_swarm_wires_market_position_extras():
+    merged = merge_swarm_into_intel({}, _make_extended_swarm_report())
+    mp = merged["market_position"]
+    assert "Sequoia" in mp["investors"]
+    assert "a16z" in mp["investors"]
+    assert mp["last_round_date"] == "2025-09-01"
+    assert "Acme API" in mp["products"]
+    assert any(p.get("name") == "Acme v3"
+               for p in mp["product_launches"])
+
+
+def test_merge_swarm_wires_tech_extras():
+    merged = merge_swarm_into_intel({}, _make_extended_swarm_report())
+    te = merged["tech_and_engineering"]
+    assert "acme" in te["github_orgs"]
+    assert "acme-labs" in te["github_orgs"]
+    assert te["patents_count"] == 14
+
+
+def test_merge_swarm_wires_hiring_leadership():
+    merged = merge_swarm_into_intel({}, _make_extended_swarm_report())
+    hi = merged["hiring_intelligence"]
+    names = {p["name"] for p in hi["leadership"]}
+    assert names == {"Jane Doe", "Sam Park"}
+    assert "Alex Lee" in hi["hiring_managers"]
+
+
+def test_merge_swarm_wires_reputation_block():
+    merged = merge_swarm_into_intel({}, _make_extended_swarm_report())
+    rep = merged["reputation"]
+    assert rep["glassdoor_rating"] == 4.2
+    assert "fast-paced" in rep["glassdoor_themes"]
+    assert rep["twitter_handle"] == "@acme"
+    assert rep["twitter_sentiment"] == "positive"
+
+
+def test_merge_swarm_existing_reputation_scalars_win():
+    intel = {"reputation": {"glassdoor_rating": 4.9,
+                            "twitter_handle": "@acme_official"}}
+    merged = merge_swarm_into_intel(intel, _make_extended_swarm_report())
+    assert merged["reputation"]["glassdoor_rating"] == 4.9
+    assert merged["reputation"]["twitter_handle"] == "@acme_official"
+    # twitter_sentiment was unset → swarm value fills it
+    assert merged["reputation"]["twitter_sentiment"] == "positive"
+
+
+def test_merge_swarm_leadership_dedupes_by_name():
+    intel = {"hiring_intelligence": {"leadership": [
+        {"name": "Jane Doe", "title": "Co-Founder"},
+    ]}}
+    merged = merge_swarm_into_intel(intel, _make_extended_swarm_report())
+    leadership = merged["hiring_intelligence"]["leadership"]
+    names = [p["name"] for p in leadership]
+    assert names.count("Jane Doe") == 1
+    # Existing entry should win → title stays "Co-Founder"
+    jane = next(p for p in leadership if p["name"] == "Jane Doe")
+    assert jane["title"] == "Co-Founder"
+    # Sam Park appended fresh
+    assert any(p["name"] == "Sam Park" for p in leadership)
+
+
+def test_merge_swarm_product_launches_dedupes_by_name():
+    intel = {"market_position": {"product_launches": [
+        {"name": "Acme v3", "date": "2025-12-01"},
+    ]}}
+    merged = merge_swarm_into_intel(intel, _make_extended_swarm_report())
+    launches = merged["market_position"]["product_launches"]
+    assert len(launches) == 1
+    # existing entry wins
+    assert launches[0]["date"] == "2025-12-01"
