@@ -1388,3 +1388,21 @@ def test_mapper_no_work_style_red_flag_when_aligned():
         candidate_values=["remote"],
     )
     assert not any("work-style" in r.lower() for r in kit.red_flags)
+
+
+def test_mapper_uses_investors_in_cover_letter():
+    intel = _intel_with(investors=["Sequoia", "a16z", "Founders Fund"])
+    kit = ApplicationMapper().map(intel)
+    assert any("Sequoia" in h and "a16z" in h for h in kit.cover_letter_hooks)
+
+
+def test_mapper_uses_valuation_in_interview_question():
+    intel = _intel_with(valuation_usd=2_500_000_000)
+    kit = ApplicationMapper().map(intel, role_target="VP Eng")
+    assert any("$2.5B" in q for q in kit.interview_questions)
+
+
+def test_mapper_handles_small_valuation():
+    intel = _intel_with(valuation_usd=85_000_000)
+    kit = ApplicationMapper().map(intel)
+    assert any("$85M" in q for q in kit.interview_questions)

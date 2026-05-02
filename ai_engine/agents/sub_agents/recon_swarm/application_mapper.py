@@ -80,6 +80,14 @@ class ApplicationMapper:
                 f"Mirror {company}'s stated values ({vals}) with one"
                 " concrete example from your work."
             )
+        if intel.investors.value:
+            investors = [str(i) for i in intel.investors.value if i][:2]
+            if investors:
+                cover_hooks.append(
+                    f"Reference {company}'s investor base ({', '.join(investors)})"
+                    " if you've followed their thesis — signals informed"
+                    " interest beyond the company itself."
+                )
         if not cover_hooks:
             cover_hooks.append(
                 f"Lead with one sentence on why {company} (specifically) and"
@@ -145,6 +153,19 @@ class ApplicationMapper:
                     f"What did the {launch['name']} launch teach the team"
                     f" — and how is {role} positioned to apply those"
                     " lessons?"
+                )
+        if intel.valuation_usd.value:
+            val = intel.valuation_usd.value
+            if isinstance(val, (int, float)) and val > 0:
+                # Format as $X.XB or $XM
+                if val >= 1_000_000_000:
+                    val_str = f"${val/1_000_000_000:.1f}B"
+                else:
+                    val_str = f"${val/1_000_000:.0f}M"
+                questions.append(
+                    f"At {val_str} valuation, what's the implied 18-month"
+                    f" milestone the team is underwriting — and how does"
+                    f" {role} feed that?"
                 )
         if intel.leadership.value:
             questions.append(
