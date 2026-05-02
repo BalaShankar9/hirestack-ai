@@ -3,10 +3,20 @@ Role Profiler Chain
 World-class resume parser — extracts structured profile data from resumes
 with high accuracy across formats, languages, and career levels.
 """
+import logging
+import os
 import re
 from typing import Dict, Any, List, Optional
 
 from ai_engine.client import AIClient
+
+logger = logging.getLogger(__name__)
+
+
+def _atlas_validation_enabled() -> bool:
+    """True iff ATLAS_VALIDATION_SWARM_ENABLED env flag is truthy."""
+    raw = os.environ.get("ATLAS_VALIDATION_SWARM_ENABLED", "")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 RESUME_PARSER_SYSTEM = """You are an elite resume parser with 20 years of experience in HR tech and ATS systems. You extract structured data from resumes with exceptional accuracy.
@@ -304,7 +314,68 @@ class RoleProfilerChain:
         )
 
         # Validate, clean, and enrich the result
-        return self._validate_result(result)
+        validated = self._validate_result(result)
+
+        # Optional Atlas v2 validation swarm — strictly opt-in via env
+        # flag. Adds a `validation_report` dict to the parsed result;
+        # default-off behavior preserves all existing callers verbatim.
+        if _atlas_validation_enabled():
+            try:
+                report = await self._run_validation_swarm(validated)
+                if report is not None:
+                    validated["validation_report"] = report
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("RoleProfiler validation swarm failed: %s", exc)
+
+        return validated
+
+    async def _run_validation_swarm(self, parsed: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Run ATLAS ValidationSwarm against parsed resume dict.
+
+        Lazy-imports so default-off path stays cheap. Builds a minimal
+        ``CandidateProfile`` from the parsed resume fields the swarm
+        knows how to consume (skills, experience). Returns the
+        report's ``model_dump()`` dict (additive — never mutates the
+        original parsed result on failure).
+        """
+        # Lazy imports — only paid for when flag is on.
+        from ai_engine.agents.artifact_contracts import (
+            CandidateProfile,
+            CandidateSkill,
+            SkillProvenance,
+        )
+        from ai_engine.agents.sub_agents.atlas.validation_swarm import (
+            ValidationSwarm,
+        )
+
+        skills_in = parsed.get("skills") or []
+        # Resume is the implicit source for everything the parser
+        # extracted. The swarm's GitHub validator will simply skip
+        # skills without a `github_user` provenance source — which is
+        # all of them at this stage. The date validator and (if any
+        # companies) the wikidata validator do the real work here.
+        c_skills = []
+        for s in skills_in:
+            if not isinstance(s, dict) or not s.get("name"):
+                continue
+            c_skills.append(CandidateSkill(
+                name=str(s["name"]),
+                provenance=[SkillProvenance(source="resume")],
+            ))
+
+        c_experience = [e for e in (parsed.get("experience") or []) if isinstance(e, dict)]
+
+        profile = CandidateProfile(
+            candidate_name=str(parsed.get("name") or ""),
+            skills=c_skills,
+            experience=c_experience,
+            sources_used=["resume"],
+            created_by_agent="atlas.role_profiler",
+        )
+
+        swarm = ValidationSwarm()
+        report = await swarm.validate(profile)
+        return report.model_dump()
 
     def _clean_resume_text(self, text: str) -> str:
         """Pre-process resume text to improve parsing accuracy."""
