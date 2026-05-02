@@ -24,6 +24,11 @@ from ai_engine.agents.sub_agents.critic_specialists import (
     ToneMatchCriticSubAgent,
     CompletenessCriticSubAgent,
 )
+from ai_engine.agents.voice_guard import (
+    DEFAULT_VOICE,
+    scan_for_banned_phrases,
+    tone_penalty,
+)
 from ai_engine.client import AIClient
 
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "critic_system.md"
@@ -158,6 +163,36 @@ class CriticAgent(BaseAgent):
             if not isinstance(raw, (int, float)):
                 raw = 0
             quality_scores[dim] = max(0, min(100, round(float(raw))))
+
+        # Wave 0 / V1 — deterministic banned-phrase scan (voice tone reversal).
+        # Always runs; no LLM cost. Voice preset comes from user prefs in
+        # context (e.g. agent_memory.preferences.voice) or falls back to
+        # the platform default ('confident_selective').
+        voice_pref = DEFAULT_VOICE
+        extra_banned = None
+        if isinstance(context, dict):
+            prefs = (context.get("user_preferences") or {})
+            if isinstance(prefs, dict):
+                voice_pref = prefs.get("voice") or voice_pref
+                extra_banned = prefs.get("banned_phrases")
+        voice_hits = scan_for_banned_phrases(
+            draft_content, voice=voice_pref, extra_banned=extra_banned,
+        )
+        if voice_hits:
+            penalty = tone_penalty(voice_hits)
+            quality_scores["tone_match"] = max(
+                0, quality_scores["tone_match"] - penalty,
+            )
+            voice_issues = [h.as_issue() for h in voice_hits]
+            crit = feedback.setdefault("critical_issues", [])
+            if isinstance(crit, list):
+                crit.extend(voice_issues)
+            feedback["voice_violations"] = [
+                {"phrase": h.phrase, "count": h.count} for h in voice_hits
+            ]
+            result["voice_preset"] = voice_pref
+        else:
+            result["voice_preset"] = voice_pref
 
         # Deterministic revision decision with pipeline-calibrated thresholds
         rev_thresh, pass_thresh = _PIPELINE_THRESHOLDS.get(pipeline_name, _DEFAULT_THRESHOLDS)

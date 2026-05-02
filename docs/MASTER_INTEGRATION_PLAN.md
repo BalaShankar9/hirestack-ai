@@ -496,3 +496,171 @@ These are inviolable. Every PR is checked against them.
 | `MASTER_INTEGRATION_PLAN.md` ← *this* | Single executable roadmap with schemas, gates, anti-list | Day-to-day execution |
 
 **This doc supersedes the ship-order sections of the other three.** They remain useful as context/reference but execution follows this plan.
+
+---
+
+## 13. Revision v2 (2026-05-02) — Mission Mode + Wave 0 brand-shapers
+
+This section AMENDS §1, §2, §3, §6, §7 without renumbering any existing
+item. New work is added under **Tier V (Voice & Style)** and **Tier M
+(Mission Mode)**, plus a Wave-0 amendment to ship-order. Existing
+Tier F (F4–F7 = CLI/MCP/Custom GPT/Zapier) is untouched.
+
+### 13.1 What changes (TL;DR)
+
+1. **New Tier V (Voice & Style)** — V1 voice tone reversal (cheap, ~2h);
+   V2 writing-style calibration UX (reuses existing
+   `style_signal_deriver.py`).
+2. **New Tier M (Mission Mode)** — M1–M4: an orchestrating wrapper
+   surface that composes B1 + E1 + F2 + A1 + B0 batch into one product
+   loop. Not new agents; just glue.
+3. **New B0** under Tier B — batch URL evaluator (paste 10+ URLs →
+   parallel scoring, only deep-dive top scorers). Pro-tier upsell that
+   makes Mission Mode mechanically possible.
+4. **Wave 0 amendment to §6** — V1 + V2 ship FIRST (1–2 days) because
+   they are the highest-brand-lift-per-token changes on the roadmap.
+5. **Anti-list grows by one** (rule #12) — Mission Mode never
+   auto-submits, never sends emails on the user's behalf without
+   per-message review.
+6. **Status-already-shipped** — F1 (8ec960e), F3 (48fc010), E1.a (59189c9),
+   E1.b (c1c9416), E1.c (2661d01) recorded in §13.7.
+
+### 13.2 Tier V — Voice & Style (NEW)
+
+| # | Item | Effort | Notes |
+|---|------|--------|-------|
+| V1 | **Voice tone reversal** — `ai_engine/agents/voice_guard.py` deterministic banned-phrase scanner wired into critic; "Confident-Selective" voice directive added to drafter & critic prompts; user toggle (`confident_selective` default / `warm_eager` / `formal_traditional`) persisted in `agent_memory.preferences.voice` | 0.5d | Ship FIRST. ~30 banned phrases per voice. Tone_match score deducted 5pt per distinct hit (+2 per repeat), capped at 40. |
+| V2 | **Writing-style calibration UX** — Career Nexus panel: paste 1-3 past pieces → call existing `ai_engine/agents/style_signal_deriver.py` → cache derived signals on `user_profile.writing_style` JSONB | 2d | No new engine code; just UX surface + persistence. |
+
+### 13.3 Tier M — Mission Mode (NEW)
+
+| # | Item | Effort | Notes |
+|---|------|--------|-------|
+| M1 | `missions` + `mission_drafts` schema + CRUD; per-Mission `min_fit_score` slider (default 4.0) realizes the steal-list ethical-filter idea | 2d | See §13.6 schema |
+| M2 | `MissionOrchestrator` (Celery hourly cron) — composes B1 scanner → E1 legitimacy → F2 archetype → B0 batch scorer → auto-prep top-N → A1 cadence for in-flight → A3 morning brief | 3d | Pure orchestration; no new agents |
+| M3 | Mission inbox UI (`/dashboard/missions/{id}`) — three columns: Surfaced overnight \| Drafted, awaiting your review \| In flight. Each row's Send button is `mailto:` or copy-to-clipboard + "Open ATS" — never a programmatic submit | 2d | Hard-coded "Stop at Submit" |
+| M4 | Mission setup wizard (`/dashboard/missions/new`) — 5-screen flow: roles → comp/locations → must/dealbreaker → voice preset (V1) → review. Default Mission auto-created on signup | 1d | |
+
+### 13.4 New B0 (under existing Tier B)
+
+| # | Item | Effort | Notes |
+|---|------|--------|-------|
+| B0 | **Batch evaluator** — `POST /api/generate/batch` takes ≤25 URLs, runs scoring-only pipeline in parallel, returns ranked table. New page `/dashboard/new/batch`. Each row persists as `applications.status='evaluated'` (additive enum value — needs §3.1 amendment below). Free tier 3 batches/month; Pro unlimited. | 3d | Mechanically powers Mission Mode. |
+
+### 13.5 §1 Tier addendum (no renumbering)
+
+Add at the end of the §1 table block:
+
+```
+Tier V — Voice & Style       (NEW, 2 items, ~2.5d)
+Tier M — Mission Mode        (NEW, 4 items, ~8d)
+Tier B — +B0 batch evaluator (NEW item under existing tier, +3d)
+```
+
+Total scope updated: ~75d → **~88d**. Realistic 9–11 weeks calendar.
+
+### 13.6 §3 Schema deltas added by this revision
+
+**§3.9 — Mission tables (powers M1, M2, M3, M4):**
+
+```sql
+CREATE TABLE IF NOT EXISTS public.missions (
+  id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id                 uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name                    text NOT NULL,
+  status                  text NOT NULL DEFAULT 'active'
+                            CHECK (status IN ('active','paused','archived')),
+  role_titles             text[] NOT NULL DEFAULT '{}',
+  locations               text[] NOT NULL DEFAULT '{}',
+  comp_band_min           int NULL,
+  comp_band_max           int NULL,
+  must_haves              text[] NOT NULL DEFAULT '{}',
+  deal_breakers           text[] NOT NULL DEFAULT '{}',
+  min_fit_score           numeric(3,1) NOT NULL DEFAULT 4.0
+                            CHECK (min_fit_score BETWEEN 0 AND 5),
+  target_volume_per_week  int NOT NULL DEFAULT 5,
+  voice_preset            text NOT NULL DEFAULT 'confident_selective'
+                            CHECK (voice_preset IN ('confident_selective','warm_eager','formal_traditional')),
+  created_at              timestamptz NOT NULL DEFAULT now(),
+  paused_at               timestamptz NULL
+);
+ALTER TABLE public.missions ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS public.mission_drafts (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  mission_id      uuid NOT NULL REFERENCES public.missions(id) ON DELETE CASCADE,
+  application_id  uuid NULL REFERENCES public.applications(id) ON DELETE SET NULL,
+  surfaced_at     timestamptz NOT NULL DEFAULT now(),
+  prepared_at     timestamptz NULL,
+  sent_at         timestamptz NULL,
+  status          text NOT NULL DEFAULT 'surfaced'
+                    CHECK (status IN ('surfaced','prepared','ready_for_user','sent','skipped','expired')),
+  fit_score       numeric(3,1) NULL,
+  UNIQUE (mission_id, application_id)
+);
+ALTER TABLE public.mission_drafts ENABLE ROW LEVEL SECURITY;
+```
+
+**§3.1 amendment** — add `'evaluated'` to the
+`applications_status_check` constraint (additive, same migration pattern
+as F1):
+
+```
+'draft','active','submitted','interview','offer','rejected','withdrawn',
+'archived','responded','discarded','skip','evaluated'   -- NEW (B0)
+```
+
+**§3.10 — Voice & writing-style preferences (powers V1, V2):**
+
+```sql
+ALTER TABLE public.user_profile
+  ADD COLUMN IF NOT EXISTS writing_style jsonb DEFAULT '{}'::jsonb;
+-- V1 voice preset lives under agent_memory.preferences.voice (already JSONB)
+-- so no schema change needed there.
+```
+
+### 13.7 §6 Ship-order amendment — insert Wave 0 BEFORE Week 1
+
+| Day | Ship | Gate |
+|---|---|---|
+| **Wave 0** | **V1 voice tone reversal** — `voice_guard.py` + critic wiring + drafter/critic prompt updates + 30 unit tests | Banned phrases deduct from `tone_match`; critic surfaces them as critical issues; full backend gate green |
+| **Wave 0** | **V2 writing-style calibration UX** — `user_profile.writing_style` migration + endpoint that calls `style_signal_deriver.py` and persists; Career Nexus FE panel | Sample upload → derived signals cached → next chain run uses them |
+
+Then Week 1 / Week 2 / etc. continue as already specified.
+
+### 13.8 §7 Hard rules — append rule 12
+
+12. **Mission Mode never auto-submits.** The hourly cron writes to
+    `mission_drafts.status='ready_for_user'`; the user opens the inbox
+    and clicks Send themselves. No headless-browser submit, no API
+    submit to ATS endpoints, no email sending on the user's behalf
+    without per-message review.
+
+### 13.9 Currently shipped (do not redo)
+
+| Slice | Commit | Tests |
+|---|---|---|
+| F1 status taxonomy + ApplicationStatus enum + analytics fix | `8ec960e` | 58 |
+| F3 liveness_classifier (multilingual, 7 langs) | `48fc010` | 59 |
+| E1.a posting_legitimacy service | `59189c9` | 20 |
+| E1.b POST /api/ghost-check route | `c1c9416` | 25 |
+| E1.c GET /api/ghost-check/{hash} permalink | `2661d01` | 6 |
+| **V1 voice tone reversal** (this revision) | _pending commit_ | 30 |
+
+### 13.10 Out of scope (this revision, forever)
+
+- Auto-submit. Forever.
+- Sending emails on the user's behalf without per-message review
+  (cadence A1 generates DRAFTS only; user must press Send).
+- Server-side LinkedIn job page scraping.
+- Headless browser ATS submission.
+
+### 13.11 Ship order (overall, post-revision)
+
+Wave 0 (V1 → V2) → Week 1 (F1✅ → F3✅ → E1.a✅ → E1.b✅ → E1.c✅) →
+Week 2 (F2 → A1 → A3 → A4) → Week 3 (A2 + STAR+R + Posting Legitimacy panel) →
+Week 4 (B2 + B1 + B3 + B5) → Week 4.5 (**B0 batch**) → Week 5 (C2 + C3 + D1 + D2) →
+Week 6 (D2-D4 + LinkedIn overlay) → Week 7 (E2/E3/E4 + F4/F5) →
+Week 7.5 (**M1 → M2 → M3 → M4**) →
+Week 8 (G1 + E5 + C4-C6 + i18n start) → Weeks 9+ (i18n + B4 + Tier H).
+
