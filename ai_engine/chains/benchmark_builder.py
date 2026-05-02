@@ -2,9 +2,21 @@
 Benchmark Builder Chain
 Creates ideal candidate profiles and benchmark application packages
 """
+import asyncio
+import logging
+import os
 from typing import Dict, Any, List
 
 from ai_engine.client import AIClient
+
+_logger = logging.getLogger(__name__)
+
+
+def _atlas_archetypes_enabled() -> bool:
+    """Env-flag gated rollout for the ATLAS dynamic archetype generator."""
+    return os.environ.get("ATLAS_ARCHETYPES_ENABLED", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
 
 
 BENCHMARK_SYSTEM = """You are an elite career strategist and talent acquisition expert with deep knowledge of:
@@ -423,10 +435,44 @@ class BenchmarkBuilderChain:
         company_info: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """Build a complete benchmark package for a job."""
-        # Step 1: Create ideal profile
+        # Step 1: Create ideal profile (and, when enabled, dynamic
+        # archetypes in parallel — additive, no behavior change unless
+        # ATLAS_ARCHETYPES_ENABLED is truthy).
+        archetypes_task = None
+        if _atlas_archetypes_enabled():
+            try:
+                from ai_engine.agents.sub_agents.atlas.dynamic_archetypes import (
+                    ArchetypeGenerator,
+                )
+
+                company_industry = ""
+                if isinstance(company_info, dict):
+                    company_industry = str(company_info.get("industry") or "")
+
+                archetypes_task = asyncio.create_task(
+                    ArchetypeGenerator(self.ai_client).generate(
+                        job_description=job_description,
+                        role_target=job_title,
+                        company_industry=company_industry,
+                        company_name=company,
+                    )
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                _logger.warning("atlas archetype task spawn failed: %s", exc)
+                archetypes_task = None
+
         ideal_profile = await self.create_ideal_profile(
             job_title, company, job_description
         )
+
+        archetypes_payload: List[Dict[str, Any]] = []
+        if archetypes_task is not None:
+            try:
+                archetypes = await archetypes_task
+                archetypes_payload = [a.model_dump() for a in archetypes]
+            except Exception as exc:  # pragma: no cover - defensive
+                _logger.warning("atlas archetype generation failed: %s", exc)
+                archetypes_payload = []
 
         # Step 2: Generate all benchmark documents
         ideal_cv = await self.create_ideal_cv(
@@ -462,7 +508,8 @@ class BenchmarkBuilderChain:
             "ideal_cover_letter": ideal_cover_letter,
             "ideal_portfolio": ideal_portfolio.get("projects", []),
             "ideal_case_studies": ideal_case_studies.get("case_studies", []),
-            "ideal_action_plan": ideal_action_plan.get("action_plan", {})
+            "ideal_action_plan": ideal_action_plan.get("action_plan", {}),
+            "atlas_archetypes": archetypes_payload,
         }
 
     async def create_ideal_profile(
