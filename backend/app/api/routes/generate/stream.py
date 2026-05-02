@@ -629,6 +629,20 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
             "workflow_state": cv_result.workflow_state if cv_result else None,
         }
 
+        # ATLAS v2 (additive, env-flag gated upstream): surface the
+        # candidate-side ValidationSwarm report when
+        # ATLAS_VALIDATION_SWARM_ENABLED is on at parse time. The
+        # report is attached by RoleProfilerChain.parse_resume —
+        # see Slice 3.2 in /memories/repo/. Default-off path: the
+        # key is absent and FE falls back to existing behavior.
+        _atlas_validation = (
+            user_profile.get("validation_report")
+            if isinstance(user_profile, dict)
+            else None
+        )
+        if isinstance(_atlas_validation, dict):
+            response["meta"]["atlas_candidate_validation"] = _atlas_validation
+
         # Catalog-driven doc pack plan + company intel
         if doc_pack_plan_stream:
             response["docPackPlan"] = doc_pack_plan_stream.to_dict()

@@ -85,7 +85,34 @@ export interface BenchmarkModule {
   };
   /** Ideal candidate skills */
   idealSkills?: string[];
+  /**
+   * ATLAS v2 — Dynamic role archetypes (3 alternative target
+   * profiles for the role). Present only when
+   * ATLAS_DYNAMIC_ARCHETYPES_ENABLED is on at generation time;
+   * undefined otherwise.
+   */
+  archetypes?: Archetype[];
   createdAt?: number;
+}
+
+/**
+ * ATLAS v2 — A dynamically-generated archetype representing one
+ * canonical target profile for a role. Three of these are emitted
+ * per benchmark when archetype generation is enabled. See
+ * `ai_engine/agents/sub_agents/atlas/dynamic_archetypes.py`.
+ */
+export interface Archetype {
+  name: string;
+  must_have_skills: string[];
+  nice_to_have_skills: string[];
+  years_range: [number, number];
+  /**
+   * Per-archetype salary band ({p25, p50, p75}). Empty object when
+   * salary enrichment was disabled (default) or when the
+   * LevelsFYIProvider returned no data for the company+role.
+   */
+  salary_band: Record<string, number>;
+  cultural_signals: string[];
 }
 
 export interface BenchmarkDimension {
