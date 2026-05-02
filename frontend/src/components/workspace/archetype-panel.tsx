@@ -60,9 +60,12 @@ export function ArchetypePanel({
 }
 
 function ArchetypeCard({ archetype }: { archetype: Archetype }) {
-  const [yearsLo, yearsHi] = Array.isArray(archetype.years_range)
-    ? archetype.years_range
-    : [undefined, undefined];
+  const yearsLo =
+    typeof archetype.years_min === "number" ? archetype.years_min : undefined;
+  const yearsHi =
+    typeof archetype.years_max === "number" ? archetype.years_max : undefined;
+  const showYears =
+    yearsLo !== undefined && yearsHi !== undefined && (yearsLo > 0 || yearsHi > 0);
 
   const salary = archetype.salary_band ?? {};
   const hasSalary = Object.keys(salary).length > 0;
@@ -78,7 +81,7 @@ function ArchetypeCard({ archetype }: { archetype: Archetype }) {
     >
       <header className="flex items-start justify-between gap-2">
         <h4 className="text-sm font-semibold leading-tight">{archetype.name}</h4>
-        {(yearsLo !== undefined && yearsHi !== undefined) && (
+        {showYears && (
           <Badge
             variant="secondary"
             className="text-[10px] shrink-0 bg-blue-500/10 text-blue-700 border-blue-200 border"
@@ -146,12 +149,22 @@ function ArchetypeCard({ archetype }: { archetype: Archetype }) {
           {cultural.slice(0, 4).join(" · ")}
         </div>
       )}
+
+      {archetype.rationale && (
+        <div
+          data-testid="atlas-archetype-rationale"
+          className="text-[11px] text-muted-foreground border-t pt-2"
+        >
+          {archetype.rationale}
+        </div>
+      )}
     </article>
   );
 }
 
-function formatMoney(v: number | undefined): string {
-  if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) return "—";
-  if (v >= 1000) return `$${Math.round(v / 1000)}k`;
-  return `$${v}`;
+function formatMoney(v: number | string | undefined): string {
+  const n = typeof v === "string" ? Number(v) : v;
+  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return "—";
+  if (n >= 1000) return `$${Math.round(n / 1000)}k`;
+  return `$${n}`;
 }

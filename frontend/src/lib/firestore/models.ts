@@ -97,22 +97,28 @@ export interface BenchmarkModule {
 
 /**
  * ATLAS v2 — A dynamically-generated archetype representing one
- * canonical target profile for a role. Three of these are emitted
- * per benchmark when archetype generation is enabled. See
- * `ai_engine/agents/sub_agents/atlas/dynamic_archetypes.py`.
+ * canonical target profile for a role. Up to three of these are
+ * emitted per benchmark when archetype generation is enabled. See
+ * `ai_engine/agents/sub_agents/atlas/dynamic_archetypes.py` and the
+ * Pydantic model in `ai_engine/agents/artifact_contracts.py`.
+ *
+ * Wire format mirrors `Archetype.model_dump()`.
  */
 export interface Archetype {
   name: string;
   must_have_skills: string[];
   nice_to_have_skills: string[];
-  years_range: [number, number];
+  years_min: number;
+  years_max: number;
   /**
-   * Per-archetype salary band ({p25, p50, p75}). Empty object when
-   * salary enrichment was disabled (default) or when the
-   * LevelsFYIProvider returned no data for the company+role.
+   * Per-archetype salary band — typically `{p25, p50, p75, currency?}`.
+   * Empty object when salary enrichment was disabled (default) or when
+   * the LevelsFYIProvider returned no data for the company+role.
    */
-  salary_band: Record<string, number>;
+  salary_band: Record<string, number | string>;
   cultural_signals: string[];
+  /** Optional one-line rationale produced by the LLM. */
+  rationale?: string;
 }
 
 export interface BenchmarkDimension {
