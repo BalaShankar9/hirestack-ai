@@ -229,6 +229,14 @@ class ApplicationMapper:
                     f"Bring a hands-on observation about {product} — most"
                     " candidates will not have actually used the product."
                 )
+        if intel.recent_news.value:
+            news = intel.recent_news.value[0]
+            if isinstance(news, dict) and news.get("title"):
+                talking_points.append(
+                    f"Open with a take on the recent \"{news['title']}\""
+                    " announcement — demonstrates active tracking, not"
+                    " surface-level prep."
+                )
 
         # Differentiation angles
         diff_angles: List[str] = []
@@ -253,6 +261,14 @@ class ApplicationMapper:
                 "Engage substantively with the team's published research"
                 " — most applicants will not have read their arXiv work."
             )
+        if intel.competitors.value:
+            comp = intel.competitors.value[0]
+            if comp:
+                diff_angles.append(
+                    f"Articulate why {company} (specifically) over {comp} —"
+                    " most candidates default to generic praise that"
+                    " applies to either."
+                )
 
         # Red flags
         red_flags: List[str] = []

@@ -1588,3 +1588,22 @@ def test_mapper_skips_zero_patents_count():
     intel = _intel_with(patents_count=0)
     kit = ApplicationMapper().map(intel)
     assert not any("granted patents" in q for q in kit.interview_questions)
+
+
+def test_mapper_adds_competitor_diff_angle():
+    intel = _intel_with(competitors=["Stripe", "Adyen"])
+    kit = ApplicationMapper().map(intel)
+    assert any(
+        "Stripe" in d and "specifically" in d for d in kit.differentiation_angles
+    )
+
+
+def test_mapper_adds_recent_news_talking_point():
+    intel = _intel_with(recent_news=[
+        {"title": "Acme launches B2B Studio", "url": "x", "date": "2026-04-01"}
+    ])
+    kit = ApplicationMapper().map(intel)
+    assert any(
+        "Acme launches B2B Studio" in t and "active tracking" in t
+        for t in kit.talking_points
+    )
