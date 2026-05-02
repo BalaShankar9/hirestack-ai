@@ -1048,12 +1048,13 @@ export async function generateApplicationModules(
         if (result.companyIntel) {
           (patch as any).company_intel = result.companyIntel;
         }
-        // NOTE: result.meta (carries `atlas_candidate_validation` from the
-        // SSE complete payload — backend Slice 4.2) is intentionally NOT
-        // persisted here yet. The `applications` table has no `meta` JSONB
-        // column. The IntelligencePanel reads `app.meta` for display —
-        // it'll be undefined post-reload until a future migration adds the
-        // column and this branch is enabled.
+        // result.meta carries pipeline-emitted metadata (e.g.
+        // `atlas_candidate_validation` from ValidationSwarm — backend
+        // Slice 4.2). Persisted into the `meta` JSONB column added by
+        // 20260502010000_applications_add_meta_column.sql.
+        if (result.meta && typeof result.meta === "object") {
+          (patch as any).meta = result.meta;
+        }
 
         const readyAt = Date.now();
         for (const mod of modules) {
