@@ -1276,6 +1276,37 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
             user_id=user_id,
         )
 
+        # P2-12: Completeness check — warn if none of the requested modules
+        # produced content.  This surfaces "empty generation" as a warning
+        # in the job status rather than silently marking it complete.
+        _content_checks: Dict[str, bool] = {
+            "cv":                bool((result.get("cvHtml") or "").strip()),
+            "resume":            bool((result.get("resumeHtml") or "").strip()),
+            "coverLetter":       bool((result.get("coverLetterHtml") or "").strip()),
+            "personalStatement": bool((result.get("personalStatementHtml") or "").strip()),
+            "portfolio":         bool((result.get("portfolioHtml") or "").strip()),
+            "benchmark":         bool(result.get("benchmark")),
+            "gaps":              bool(result.get("gaps")),
+            "learningPlan":      bool((result.get("learningPlan") or {}).get("focus")
+                                      or (result.get("learningPlan") or {}).get("plan")),
+            "scorecard":         bool(result.get("scorecard") or result.get("scores")),
+        }
+        requested_set = set(requested_modules)
+        _ready_count = sum(
+            1 for mod in requested_set if _content_checks.get(mod, True)
+        )
+        if requested_set and _ready_count == 0:
+            logger.warning(
+                "job_runner.no_content_produced",
+                job_id=job_id,
+                requested_modules=requested_modules,
+            )
+            # Stamp the result with a completeness_warning so the finalize
+            # helper can choose succeeded_with_warnings status.
+            result.setdefault("meta", {})["completeness_warning"] = (
+                "Generation completed but no module produced content. "
+                "Try regenerating individual modules."
+            )
         # P1-08: Run 4-dimension quality scoring (non-blocking)
         output_scores = {}
         try:
@@ -1327,6 +1358,15 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         set_chain_agent,
     )
     _emitter_token = set_event_emitter(emit)
+
+    # P2-14: Audit trail — record generation start
+    from app.services.generation_audit import make_audit_logger as _make_audit
+    _audit = _make_audit(user_id, job_id, app_id)
+    _audit.log_started(
+        modules=requested_modules,
+        jd_len=len(jd_text_val),
+        resume_provided=bool(resume_text_val.strip()),
+    )
 
     try:
         await _persist_generation_job_update(
@@ -1475,6 +1515,29 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         # Falls back to direct chain on import / runtime failure so this
         # branch is safe even when AGENT_PIPELINES is disabled.
         async def _build_benchmark(profile_for_pipeline: Dict[str, Any]) -> Dict[str, Any]:
+            # P3-04: Benchmark caching — same JD+job_title = same benchmark,
+            # TTL 24h.  The benchmark profile is JD-specific (not user-specific)
+            # so it can be shared across all users applying to the same posting.
+            # Cache key = sha256(jd_text[:8000] + job_title) — see JDAnalysisCache.hash_jd.
+            from ai_engine.cache import get_jd_cache
+            _jd_cache = get_jd_cache()
+            _bench_cache_key = _jd_cache.hash_jd(jd_text_val, job_title)
+            _cached_benchmark = _jd_cache.get(_bench_cache_key)
+            if _cached_benchmark is not None:
+                logger.info(
+                    "job_runner.benchmark_cache_hit",
+                    job_id=job_id,
+                    cache_key=_bench_cache_key,
+                )
+                await emit_detail(
+                    "atlas",
+                    "Benchmark loaded from cache (24h TTL) — skipping redundant AI call.",
+                    "info",
+                    "benchmark_cache",
+                    metadata={"cache_key": _bench_cache_key},
+                )
+                return _cached_benchmark
+
             if _AGENT_PIPELINES_AVAILABLE:
                 try:
                     from ai_engine.agents.pipelines import benchmark_pipeline
@@ -1493,15 +1556,19 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
                         "user_profile": profile_for_pipeline,
                     })
                     if bench_result and isinstance(bench_result.content, dict):
-                        return bench_result.content
+                        _bench_data = bench_result.content
+                        _jd_cache.put(_bench_cache_key, _bench_data, ttl=86400.0)  # 24h
+                        return _bench_data
                 except Exception as _bench_err:
                     logger.warning(
                         "benchmark.pipeline_failed_fallback",
                         error=str(_bench_err)[:200],
                     )
-            return await benchmark_chain.create_ideal_profile(
+            _bench_data = await benchmark_chain.create_ideal_profile(
                 job_title, company_str, jd_text_val
             )
+            _jd_cache.put(_bench_cache_key, _bench_data, ttl=86400.0)  # 24h
+            return _bench_data
 
         if resume_text_val.strip():
             # Parse resume + build benchmark in parallel.  The benchmark
@@ -2142,6 +2209,18 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         await emit_detail("nova", "Final application bundle ready.", "completed", "formatting")
         await emit_complete(response)
         logger.info("job_runner.complete", job_id=job_id, overall_score=response["scores"]["overall"])
+        # P2-14: Audit trail — record generation completion with quality scores
+        try:
+            _output_quality = {
+                k: v.get("composite", v.get("overall", 0)) if isinstance(v, dict) else v
+                for k, v in (response.get("meta", {}).get("output_scores") or {}).items()
+            }
+            _audit.log_completed(
+                model_used="gemini-2.5-pro",
+                output_quality=_output_quality or None,
+            )
+        except Exception as _audit_err:
+            logger.debug("audit.log_completed_failed", error=str(_audit_err)[:100])
     except Exception as e:
         classified = _classify_ai_error(e)
         if classified:
@@ -2153,6 +2232,11 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:  # noqa:
         else:
             logger.error("job_runner.error", job_id=job_id, error=str(e), traceback=traceback.format_exc())
             await emit_error("AI generation failed due to an unexpected error. Please try again.", 500)
+        # P2-14: Audit trail — record generation failure
+        try:
+            _audit.log_failed(error_message=str(e)[:300])
+        except Exception:
+            pass
     finally:
         # Always release the agent-events emitter so downstream tasks
         # don't accidentally publish into this job's stream.

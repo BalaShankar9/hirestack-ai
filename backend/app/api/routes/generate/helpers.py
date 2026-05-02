@@ -1129,6 +1129,8 @@ def finalize_job_status_payload(
     - When ``result["validation"]["passed"]`` is False the persisted
       status is ``"succeeded_with_warnings"`` and the human-readable
       message surfaces the error / warning counts.
+    - When ``result["meta"]["completeness_warning"]`` is set (P2-12) the
+      status is also ``"succeeded_with_warnings"``.
     - When validation is missing or passed the status is ``"succeeded"``.
     - Caller may pass ``extra_fields`` to merge in path-specific keys
       (e.g. ``generation_plan``); these never override the critical
@@ -1137,20 +1139,27 @@ def finalize_job_status_payload(
     The helper is pure: no I/O, no logging, no raising. It exists so
     every finalisation site has the same lying-state-prevention logic.
     """
-    validation_meta = (result or {}).get("validation") or {}
+    result = result or {}
+    validation_meta = result.get("validation") or {}
     validation_passed = validation_meta.get("passed", True)
     error_count = int(validation_meta.get("error_count", 0) or 0)
     warning_count = int(validation_meta.get("warning_count", 0) or 0)
 
-    final_status = "succeeded" if validation_passed else "succeeded_with_warnings"
-    final_message = (
-        "Generation complete."
-        if validation_passed
-        else (
+    # P2-12: check completeness warning (set when no module produced content)
+    completeness_warning = (result.get("meta") or {}).get("completeness_warning")
+
+    if not validation_passed:
+        final_status = "succeeded_with_warnings"
+        final_message = (
             f"Generation complete with validation warnings "
             f"({error_count} errors, {warning_count} warnings)."
         )
-    )
+    elif completeness_warning:
+        final_status = "succeeded_with_warnings"
+        final_message = completeness_warning
+    else:
+        final_status = "succeeded"
+        final_message = "Generation complete."
 
     payload: Dict[str, Any] = {
         "status": final_status,

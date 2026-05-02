@@ -721,6 +721,43 @@ async def prometheus_metrics():
         pass
 
     from starlette.responses import Response
+
+    # P3-05: Model routing / cost optimizer metrics
+    try:
+        from ai_engine.model_router import get_model_health, get_cost_optimizer_stats
+        _model_health_data = get_model_health()
+        if _model_health_data:
+            lines.append("# HELP hirestack_model_health_failures Consecutive failures per model (>= 3 = unhealthy)")
+            lines.append("# TYPE hirestack_model_health_failures gauge")
+            lines.append("# HELP hirestack_model_health_is_healthy 1 if model is healthy, 0 if degraded")
+            lines.append("# TYPE hirestack_model_health_is_healthy gauge")
+            for model_name, mh in _model_health_data.items():
+                safe_m = model_name.replace("-", "_").replace(".", "_")
+                lines.append(f'hirestack_model_health_failures{{model="{safe_m}"}} {int(mh.get("failures", 0))}')
+                lines.append(f'hirestack_model_health_is_healthy{{model="{safe_m}"}} {1 if mh.get("healthy", True) else 0}')
+
+        _cost_stats = get_cost_optimizer_stats()
+        if _cost_stats:
+            lines.append("# HELP hirestack_cost_optimizer_avg_quality Avg quality score per (task_type, model)")
+            lines.append("# TYPE hirestack_cost_optimizer_avg_quality gauge")
+            lines.append("# HELP hirestack_cost_optimizer_observations Observation count per (task_type, model)")
+            lines.append("# TYPE hirestack_cost_optimizer_observations gauge")
+            for stat_key, stat_val in _cost_stats.items():
+                # stat_key is "task_type:model"
+                parts = stat_key.split(":", 1)
+                safe_tt = parts[0].replace("-", "_")
+                safe_m = (parts[1] if len(parts) > 1 else "unknown").replace("-", "_").replace(".", "_")
+                lines.append(
+                    f'hirestack_cost_optimizer_avg_quality{{task_type="{safe_tt}",model="{safe_m}"}} '
+                    f'{float(stat_val.get("avg_quality", 0))}'
+                )
+                lines.append(
+                    f'hirestack_cost_optimizer_observations{{task_type="{safe_tt}",model="{safe_m}"}} '
+                    f'{int(stat_val.get("observations", 0))}'
+                )
+    except Exception:
+        pass
+
     return Response(
         content="\n".join(lines) + "\n",
         media_type="text/plain; version=0.0.4; charset=utf-8",
