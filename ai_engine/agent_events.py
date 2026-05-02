@@ -332,6 +332,39 @@ def emit_policy_decision(
     _fire("policy_decision", payload)
 
 
+def emit_phase(
+    phase: str,
+    status: str,
+    *,
+    agent: Optional[str] = None,
+    stage: Optional[str] = None,
+    message: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    latency_ms: Optional[int] = None,
+) -> None:
+    """A multi-step phase boundary (start / progress / complete / failed).
+
+    Used by coordinators (e.g. recon swarm) to emit layer-level lifecycle
+    events that the SSE bridge can render as live dashboard tiles
+    independent of any single tool call. Status is a free-form string —
+    common values: ``running``, ``completed``, ``failed``, ``skipped``.
+    """
+    agent = agent or _current_chain_agent.get() or "pipeline"
+    stage = stage or _current_chain_stage.get()
+    payload: Dict[str, Any] = {
+        "agent": agent,
+        "stage": stage,
+        "phase": phase,
+        "status": status,
+        "message": _truncate(message or f"{phase}: {status}", 240),
+    }
+    if metadata:
+        payload["metadata"] = _summarize(metadata, limit=12)
+    if latency_ms is not None:
+        payload["latency_ms"] = int(latency_ms)
+    _fire("phase", payload)
+
+
 # ─── Helpers for callers that want to time their own tool calls ────
 
 

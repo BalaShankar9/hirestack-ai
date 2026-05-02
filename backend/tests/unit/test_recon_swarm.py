@@ -1660,3 +1660,135 @@ def test_bridge_wires_wikidata_url_into_company_overview():
     assert co["wikipedia_url"] == "https://en.wikipedia.org/wiki/X"
     assert co["wikidata_qid"] == "Q42"
     assert co["wikidata_url"] == "https://www.wikidata.org/wiki/Q42"
+
+
+# ─── streaming events (Phase A — coordinator emits via agent_events) ──
+
+@pytest.mark.asyncio
+async def test_coordinator_emits_swarm_layer_and_provider_events():
+    """Coordinator emits a structured event stream: swarm.start → layer1
+    start/complete → layer2 start/complete → fusion start/complete →
+    mapper start/complete → swarm.complete, plus tool_call/tool_result
+    per provider."""
+    from ai_engine.agent_events import event_emitter_scope
+
+    captured: list[tuple[str, dict]] = []
+
+    async def _capture(event_name: str, payload: dict) -> None:
+        captured.append((event_name, payload))
+
+    coord = ReconSwarmCoordinator(cache=_MemoryCache())
+    req = ReconSwarmRequest(company="Acme", budget_seconds=15)
+
+    with event_emitter_scope(_capture):
+        await coord.run(req)
+        # event firing is fire-and-forget via loop.create_task — drain
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    names = [n for n, _ in captured]
+    # Swarm bookends
+    assert "phase" in names
+    phases = [
+        (p["phase"], p["status"])
+        for n, p in captured
+        if n == "phase"
+    ]
+    assert ("swarm", "running") in phases
+    assert ("swarm", "completed") in phases
+    assert ("layer1", "running") in phases
+    assert ("layer1", "completed") in phases
+    assert ("layer2", "running") in phases
+    assert ("layer2", "completed") in phases
+    assert ("fusion", "running") in phases
+    assert ("fusion", "completed") in phases
+    assert ("mapper", "running") in phases
+    assert ("mapper", "completed") in phases
+
+    # Per-provider tool events: every default stub provider should emit
+    # a tool_call followed by a tool_result.
+    tool_calls = [p["tool"] for n, p in captured if n == "tool_call"]
+    tool_results = [p["tool"] for n, p in captured if n == "tool_result"]
+    # Default stubs include crunchbase + linkedin + glassdoor etc.
+    assert "crunchbase_stub" in tool_calls
+    assert "crunchbase_stub" in tool_results
+    # All tool calls produced a matching result
+    assert len(tool_results) == len(tool_calls)
+
+
+@pytest.mark.asyncio
+async def test_coordinator_emits_failed_tool_result_when_provider_raises():
+    from ai_engine.agent_events import event_emitter_scope
+
+    class _Broken:
+        name = "broken_test"
+        layer = 1
+
+        async def fetch(self, **_):
+            raise RuntimeError("boom")
+
+    captured: list[tuple[str, dict]] = []
+
+    async def _capture(event_name: str, payload: dict) -> None:
+        captured.append((event_name, payload))
+
+    coord = ReconSwarmCoordinator(
+        layer1=[_Broken()], layer2=[], cache=_MemoryCache(),
+    )
+    with event_emitter_scope(_capture):
+        await coord.run(ReconSwarmRequest(company="Acme", budget_seconds=10))
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    broken_results = [
+        p for n, p in captured
+        if n == "tool_result" and p.get("tool") == "broken_test"
+    ]
+    assert broken_results, "expected a tool_result event for failing provider"
+    assert broken_results[-1]["status"] == "failed"
+    assert "boom" in (broken_results[-1].get("error") or "")
+
+
+@pytest.mark.asyncio
+async def test_coordinator_emits_cache_hit_event_on_warm_cache():
+    from ai_engine.agent_events import event_emitter_scope
+
+    cache = _MemoryCache()
+    coord = ReconSwarmCoordinator(cache=cache)
+    req = ReconSwarmRequest(company="Acme", budget_seconds=10)
+
+    # Warm
+    await coord.run(req)
+
+    captured: list[tuple[str, dict]] = []
+
+    async def _capture(event_name: str, payload: dict) -> None:
+        captured.append((event_name, payload))
+
+    with event_emitter_scope(_capture):
+        report = await coord.run(req)
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    assert report.cache_hit is True
+    assert any(n == "cache_hit" for n, _ in captured)
+    # On cache hit we should NOT emit layer1/layer2 phases.
+    layer_phases = [
+        (p["phase"], p["status"]) for n, p in captured
+        if n == "phase" and p["phase"] in {"layer1", "layer2", "fusion", "mapper"}
+    ]
+    assert layer_phases == []
+    # But swarm.completed should still be emitted.
+    swarm_phases = [
+        (p["phase"], p["status"]) for n, p in captured
+        if n == "phase" and p["phase"] == "swarm"
+    ]
+    assert ("swarm", "running") in swarm_phases
+    assert ("swarm", "completed") in swarm_phases
+
+
+def test_emit_phase_helper_is_noop_without_emitter():
+    """emit_phase must be safe to call when no SSE bridge is bound."""
+    from ai_engine.agent_events import emit_phase
+    # Should not raise.
+    emit_phase("swarm", "running", agent="recon_swarm", message="x")
