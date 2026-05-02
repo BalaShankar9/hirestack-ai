@@ -28,10 +28,12 @@ Pure synchronous; no I/O. Safe to import unconditionally.
 from __future__ import annotations
 
 import logging
+import time as _time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
+from ai_engine.agent_events import emit_phase
 from ai_engine.agents.artifact_contracts import (
     CandidateProfile,
     CandidateSkill,
@@ -260,6 +262,12 @@ class CandidateFusion:
 
         Never raises; missing inputs default to empty.
         """
+        _t0 = _time.perf_counter()
+        emit_phase(
+            "candidate_fusion", "running",
+            agent="atlas.candidate_fusion",
+            message="Fusing multi-source candidate signals",
+        )
         buckets: Dict[str, _SkillBucket] = {}
         evidence_map = {
             _normalize(k): v
@@ -308,7 +316,7 @@ class CandidateFusion:
         if not summary and isinstance(linkedin, dict):
             summary = str(linkedin.get("description") or "").strip()[:500]
 
-        return CandidateProfile(
+        profile = CandidateProfile(
             candidate_name=candidate_name,
             headline=headline,
             summary=summary,
@@ -319,3 +327,15 @@ class CandidateFusion:
             impact_signals=list(impact_signals or []),
             sources_used=sources_used,
         )
+        emit_phase(
+            "candidate_fusion", "completed",
+            agent="atlas.candidate_fusion",
+            latency_ms=int((_time.perf_counter() - _t0) * 1000),
+            metadata={
+                "skills": len(profile.skills),
+                "sources": list(profile.sources_used),
+                "impact_signals": len(profile.impact_signals),
+            },
+            message=f"Fused {len(profile.skills)} skills from {len(profile.sources_used)} source(s)",
+        )
+        return profile

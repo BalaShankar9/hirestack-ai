@@ -28,6 +28,8 @@ import json
 import logging
 import os
 import time
+
+from ai_engine.agent_events import emit_phase
 from typing import Any, Dict, List, Optional
 
 from ai_engine.agents.artifact_contracts import Archetype
@@ -258,6 +260,14 @@ class ArchetypeGenerator:
         if not job_description or not job_description.strip():
             return []
 
+        _t0 = time.perf_counter()
+        emit_phase(
+            "archetypes", "running",
+            agent="atlas.archetypes",
+            message="Generating role archetypes",
+            metadata={"role": role_target, "company": company_name},
+        )
+
         # Cache key uses a stable digest of the JD so identical postings
         # collapse onto one cache entry.
         jd_sig = hashlib.sha256(
@@ -269,7 +279,15 @@ class ArchetypeGenerator:
             cached = _cache_get(key)
             if cached is not None:
                 try:
-                    return [_dict_to_archetype(d) for d in cached]
+                    archetypes_cached = [_dict_to_archetype(d) for d in cached]
+                    emit_phase(
+                        "archetypes", "completed",
+                        agent="atlas.archetypes",
+                        latency_ms=int((time.perf_counter() - _t0) * 1000),
+                        metadata={"count": len(archetypes_cached), "cache_hit": True},
+                        message=f"Cache hit: {len(archetypes_cached)} archetype(s)",
+                    )
+                    return archetypes_cached
                 except Exception as exc:  # pragma: no cover - defensive
                     logger.warning(
                         "ArchetypeGenerator cache deserialize failed: %s", exc
@@ -292,6 +310,12 @@ class ArchetypeGenerator:
             )
         except Exception as exc:
             logger.warning("ArchetypeGenerator LLM call failed: %s", exc)
+            emit_phase(
+                "archetypes", "failed",
+                agent="atlas.archetypes",
+                latency_ms=int((time.perf_counter() - _t0) * 1000),
+                message=f"Archetype LLM call failed: {exc}",
+            )
             return []
 
         archetypes = _parse_archetypes(payload)
@@ -305,6 +329,13 @@ class ArchetypeGenerator:
             await self._maybe_apply_salary_band(
                 archetypes, company_name=company_name, role_target=role_target,
             )
+            emit_phase(
+                "archetypes", "completed",
+                agent="atlas.archetypes",
+                latency_ms=int((time.perf_counter() - _t0) * 1000),
+                metadata={"count": len(archetypes), "partial": True},
+                message=f"Generated {len(archetypes)} archetype(s) (partial)",
+            )
             return archetypes  # caller may still consume a partial list
 
         await self._maybe_apply_salary_band(
@@ -317,6 +348,13 @@ class ArchetypeGenerator:
             except Exception as exc:  # pragma: no cover
                 logger.warning("ArchetypeGenerator cache write failed: %s", exc)
 
+        emit_phase(
+            "archetypes", "completed",
+            agent="atlas.archetypes",
+            latency_ms=int((time.perf_counter() - _t0) * 1000),
+            metadata={"count": len(archetypes), "cache_hit": False},
+            message=f"Generated {len(archetypes)} archetype(s)",
+        )
         return archetypes
 
     async def _maybe_apply_salary_band(

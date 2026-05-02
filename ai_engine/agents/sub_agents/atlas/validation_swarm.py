@@ -43,6 +43,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from ai_engine.agent_events import emit_phase
 from ai_engine.agents.artifact_contracts import (
     CandidateProfile,
     CandidateValidationClaim,
@@ -448,6 +449,12 @@ class ValidationSwarm:
                 conflicted_count=0,
             )
 
+        emit_phase(
+            "validation", "running",
+            agent="atlas.validation_swarm",
+            message="Running candidate validation swarm",
+        )
+
         t0 = time.perf_counter()
         results = await asyncio.gather(
             self._safe(self._github.validate(profile), self._github.name),
@@ -468,13 +475,25 @@ class ValidationSwarm:
             len(claims), verified, conflicted, time.perf_counter() - t0,
         )
 
-        return CandidateValidationReport(
+        report = CandidateValidationReport(
             created_by_agent="atlas.validation_swarm",
             parent_artifact_ids=[],
             claims=claims,
             verified_count=verified,
             conflicted_count=conflicted,
         )
+        emit_phase(
+            "validation", "completed",
+            agent="atlas.validation_swarm",
+            latency_ms=int((time.perf_counter() - t0) * 1000),
+            metadata={
+                "claims": len(claims),
+                "verified": verified,
+                "conflicted": conflicted,
+            },
+            message=f"Validation: {verified} verified / {conflicted} conflicted ({len(claims)} total)",
+        )
+        return report
 
     @staticmethod
     async def _safe(coro, name: str) -> List[CandidateValidationClaim]:
