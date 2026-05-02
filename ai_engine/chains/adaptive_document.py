@@ -212,7 +212,9 @@ and why they are the right choice. Tone: formal, direct, confident. Return clean
 for competitive roles. You create private interview preparation guides (NOT submitted to employer).
 Using the job description and company intel, generate:
 - 10 likely interview questions (behavioral, technical, situational) based on the JD and company
-- Suggested answer frameworks for each question using STAR method where appropriate
+- Suggested answer frameworks for each question using the STAR+R method (Situation, Task, Action,
+  Result, Reflection — the candidate's takeaway and what they would do differently next time;
+  the Reflection signals seniority and self-awareness, which interviewers consistently rate higher)
 - 3-5 smart questions to ask the interviewer using company intel (founder background, recent news, strategy)
 - Key themes to weave through all answers
 - Red flags to watch for from review intel

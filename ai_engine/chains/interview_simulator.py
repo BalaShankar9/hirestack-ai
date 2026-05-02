@@ -13,7 +13,7 @@ for real interviews at top companies.
 
 Generate questions that test:
 - Technical depth and breadth
-- Behavioral competencies (STAR method)
+- Behavioral competencies (STAR+R: Situation, Task, Action, Result, Reflection)
 - Cultural fit and motivation
 - Problem-solving approach
 - Communication and leadership
@@ -70,9 +70,11 @@ Rules:
   that the candidate can act on immediately. Mirror it into
   `overall_feedback` for backwards compatibility.
 - When QUESTION CATEGORY is "behavioral" (or the answer is clearly a
-  STAR-style story), populate `star_scores` with integer 0–25 scores for
-  Situation, Task, Action, and Result. Skip `star_scores` for purely
-  technical / case / coding answers where STAR does not apply.
+  STAR-style story), populate `star_scores` with integer 0–20 scores for
+  Situation, Task, Action, Result, AND Reflection (the candidate's
+  takeaway / what they would do differently — a seniority signal).
+  Skip `star_scores` for purely technical / case / coding answers where
+  STAR+R does not apply.
 - `model_answer` must be a single tight paragraph the candidate could
   realistically deliver in 60–90 seconds.
 
@@ -96,6 +98,7 @@ EVALUATE_SCHEMA: Dict[str, Any] = {
                 "task": {"type": "INTEGER"},
                 "action": {"type": "INTEGER"},
                 "result": {"type": "INTEGER"},
+                "reflection": {"type": "INTEGER"},
             },
         },
     },
