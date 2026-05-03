@@ -738,6 +738,23 @@ class APIClient {
     delete: async (id: string) =>
       this.request(`/tracked-companies/${id}`, { method: "DELETE" }),
   };
+
+  /* ── E3: Public JD anti-pattern check ─────────────────────────── */
+
+  jdCheck = {
+    /**
+     * POST /api/jd-check — anonymous public scan of a JD blob.
+     * Returns { findings, by_category, severity_counts, total_count }.
+     * Server caps text at 200KB and rate-limits 10/min per IP.
+     * No auth header is sent (route is anonymous); request() still
+     * tolerates a token if one is set.
+     */
+    scan: async (text: string) =>
+      this.request("/jd-check", {
+        method: "POST",
+        body: JSON.stringify({ text }),
+      }),
+  };
 }
 
 export const api = new APIClient(API_URL);
