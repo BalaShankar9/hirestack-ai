@@ -461,3 +461,167 @@ class TestLiveScorerEndToEnd:
         assert result.fit_score == pytest.approx(4.0)
         assert result.error is None
         assert result.canonical_url == entry.canonical_url
+
+
+# ── Commit route (B0.persist.route) ──────────────────────────────────
+
+
+from app.api.routes.batch_generate import get_db_dep  # noqa: E402
+
+
+class _RouteRecordingDB:
+    def __init__(self) -> None:
+        self.calls = []
+
+    async def create(self, table, data, doc_id=None):
+        self.calls.append((table, dict(data)))
+        return f"app-{len(self.calls):03d}"
+
+
+def _build_commit_app(*, scorer=None, db=None):
+    app = FastAPI()
+    app.state.limiter = batch_route.limiter
+    app.include_router(batch_route.router, prefix="/api")
+    app.dependency_overrides[api_deps.get_current_user] = lambda: _FAKE_USER
+    if scorer is not None:
+        app.dependency_overrides[get_scorer] = lambda: scorer
+    if db is not None:
+        app.dependency_overrides[get_db_dep] = lambda: db
+    return app
+
+
+@pytest.fixture()
+def commit_client_factory():
+    def _factory(*, scorer=None, db=None) -> TestClient:
+        try:
+            batch_route.limiter.reset()
+        except Exception:
+            pass
+        return TestClient(_build_commit_app(scorer=scorer, db=db))
+    return _factory
+
+
+class TestCommitBatchRoute:
+    def test_empty_payload_returns_zero_inserted(self, commit_client_factory) -> None:
+        db = _RouteRecordingDB()
+        client = commit_client_factory(db=db)
+        resp = client.post("/api/generate/batch/commit", json={"urls": []})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["persisted"]["inserted_count"] == 0
+        assert body["persisted"]["inserted"] == []
+        assert db.calls == []
+
+    def test_response_has_batch_id(self, commit_client_factory) -> None:
+        db = _RouteRecordingDB()
+        client = commit_client_factory(db=db)
+        resp = client.post("/api/generate/batch/commit", json={"urls": []})
+        body = resp.json()
+        # Even on empty path we still mint a batch_id (but inserted is empty).
+        bid = body["persisted"]["batch_id"]
+        assert isinstance(bid, str)
+        assert len(bid) == 32
+
+    def test_default_stub_scorer_routes_all_to_failed_no_inserts(
+        self, commit_client_factory,
+    ) -> None:
+        # Default scorer is the stub → every entry has error=scorer_not_configured
+        # → ranked.ranked is empty → no DB inserts.
+        db = _RouteRecordingDB()
+        client = commit_client_factory(db=db)
+        resp = client.post("/api/generate/batch/commit", json={
+            "urls": [
+                "https://boards.greenhouse.io/acme/jobs/101",
+                "https://jobs.lever.co/foo/abc-123",
+            ],
+        })
+        assert resp.status_code == 200
+        body = resp.json()
+        # Both URLs landed in failed (scorer_not_configured).
+        assert body["scored"]["summary"]["failed_count"] == 2
+        assert body["persisted"]["inserted_count"] == 0
+        assert db.calls == []
+
+    def test_ok_scorer_inserts_above_threshold(self, commit_client_factory) -> None:
+        # Custom scorer scores both URLs at 4.5.  Threshold default 0.0
+        # so both rank → both persist.
+        db = _RouteRecordingDB()
+        urls = [
+            "https://boards.greenhouse.io/acme/jobs/101",
+            "https://jobs.lever.co/foo/abc-123",
+        ]
+        # Scorer needs canonical_url keys (same as raw here).
+        scorer = _ok_scorer_factory({u: 4.5 for u in urls})
+        client = commit_client_factory(scorer=scorer, db=db)
+        resp = client.post("/api/generate/batch/commit", json={"urls": urls})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["persisted"]["inserted_count"] == 2
+        assert len(db.calls) == 2
+        # All rows hit the applications table.
+        assert all(t == "applications" for t, _ in db.calls)
+        # Returned pairs preserve canonical_url order.
+        urls_returned = [row["canonical_url"] for row in body["persisted"]["inserted"]]
+        assert set(urls_returned) == set(urls)
+
+    def test_ok_scorer_min_fit_filters_below_threshold(
+        self, commit_client_factory,
+    ) -> None:
+        db = _RouteRecordingDB()
+        urls = [
+            "https://boards.greenhouse.io/acme/jobs/101",
+            "https://jobs.lever.co/foo/abc-123",
+        ]
+        # First scores 4.5 (passes), second scores 2.0 (below 4.0 threshold).
+        scorer = _ok_scorer_factory({urls[0]: 4.5, urls[1]: 2.0})
+        client = commit_client_factory(scorer=scorer, db=db)
+        resp = client.post("/api/generate/batch/commit", json={
+            "urls": urls,
+            "min_fit_score": 4.0,
+        })
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["persisted"]["inserted_count"] == 1
+        assert len(db.calls) == 1
+        # The persisted one is the canonical_url that scored 4.5.
+        assert body["persisted"]["inserted"][0]["canonical_url"] == urls[0]
+
+    def test_invalid_concurrency_returns_422(self, commit_client_factory) -> None:
+        client = commit_client_factory()
+        resp = client.post("/api/generate/batch/commit", json={
+            "urls": [],
+            "concurrency": 99,  # > MAX_CONCURRENCY
+        })
+        assert resp.status_code == 422
+
+    def test_invalid_min_fit_returns_422(self, commit_client_factory) -> None:
+        client = commit_client_factory()
+        resp = client.post("/api/generate/batch/commit", json={
+            "urls": [],
+            "min_fit_score": MIN_FIT_SCORE_CEIL + 1,
+        })
+        assert resp.status_code == 422
+
+    def test_persisted_rows_have_user_id_and_batch_id(
+        self, commit_client_factory,
+    ) -> None:
+        db = _RouteRecordingDB()
+        url = "https://boards.greenhouse.io/acme/jobs/101"
+        scorer = _ok_scorer_factory({url: 4.5})
+        client = commit_client_factory(scorer=scorer, db=db)
+        resp = client.post("/api/generate/batch/commit", json={"urls": [url]})
+        body = resp.json()
+        bid = body["persisted"]["batch_id"]
+        row = db.calls[0][1]
+        assert row["user_id"] == _FAKE_USER["id"]
+        assert row["confirmed_facts"]["batch_id"] == bid
+        assert row["status"] == "draft"
+
+    def test_response_is_json_serializable(self, commit_client_factory) -> None:
+        import json
+        db = _RouteRecordingDB()
+        url = "https://boards.greenhouse.io/acme/jobs/101"
+        scorer = _ok_scorer_factory({url: 4.5})
+        client = commit_client_factory(scorer=scorer, db=db)
+        resp = client.post("/api/generate/batch/commit", json={"urls": [url]})
+        json.dumps(resp.json())

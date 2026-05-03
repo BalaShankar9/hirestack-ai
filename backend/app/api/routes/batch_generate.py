@@ -52,6 +52,7 @@ from app.services.batch_evaluator import (
     rank_batch,
 )
 from app.services.batch_jd_fetcher import JDLoader, make_jd_loader
+from app.services.batch_persister import make_batch_id, persist_ranked_batch
 from app.services.batch_scorer_glue import make_llm_scorer
 from app.services.batch_scorer_worker import (
     DEFAULT_CONCURRENCY,
@@ -374,9 +375,131 @@ async def score_batch_route(
     }
 
 
+# ── Commit route (B0.persist.route) ──────────────────────────────────
+
+
+class BatchCommitRequest(BaseModel):
+    """Payload for ``POST /api/generate/batch/commit``.
+
+    Same knobs as ``BatchScoreRequest`` — the commit endpoint runs
+    the full pipeline (plan → score → rank → persist) so the client
+    only needs one round-trip from "paste" to "saved".  Frontend
+    can still call ``/score`` first to preview before committing.
+    """
+    urls: List[str] = Field(default_factory=list)
+    min_fit_score: float = Field(
+        default=MIN_FIT_SCORE_FLOOR,
+        ge=MIN_FIT_SCORE_FLOOR,
+        le=MIN_FIT_SCORE_CEIL,
+    )
+    concurrency: int = Field(
+        default=DEFAULT_CONCURRENCY,
+        ge=1,
+        le=MAX_CONCURRENCY,
+    )
+
+
+async def get_db_dep() -> Any:
+    """FastAPI dependency that returns the shared Database client.
+
+    Wrapped in a function so tests can override via
+    ``app.dependency_overrides[get_db_dep] = lambda: fake_db``.
+    Lazy import keeps the supabase client out of any test that
+    overrides the dep entirely.
+    """
+    from app.core.database import get_db
+    return get_db()
+
+
+@router.post("/generate/batch/commit")
+@limiter.limit("5/minute")
+async def commit_batch_route(
+    request: Request,
+    payload: BatchCommitRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    scorer: Scorer = Depends(get_scorer),
+    db: Any = Depends(get_db_dep),
+) -> Dict[str, Any]:
+    """Plan → score → rank → persist a batch in one call.
+
+    Returns the same plan + scored bodies as ``/score`` plus a
+    ``persisted`` block with the new ``batch_id`` and per-row
+    ``application_id``.  Below-threshold and failed entries are
+    NEVER persisted (enforced in ``batch_persister_core``).
+
+    Response shape::
+
+        {
+          "plan":      <same as /plan>,
+          "scored":    <same as /score>,
+          "persisted": {
+              "batch_id": str,
+              "inserted": [{"canonical_url": str,
+                            "application_id": str}],
+              "inserted_count": int
+          },
+          "min_fit_score": float
+        }
+
+    Rate-limited at 5/min — same as ``/score`` since this is a
+    superset.  Auth required (current_user.id is the row owner).
+
+    Idempotency: a stable ``dedup_key`` lives in
+    ``confirmed_facts.dedup_key`` (sha256 of ``user_id\\x1fcanonical_url``).
+    A future migration will add a partial unique index; until then
+    repeat pastes produce duplicate rows.  See B0.persist.idempotency.
+    """
+    user_id = current_user.get("id") if isinstance(current_user, dict) else None
+    if not user_id:
+        # Defensive — get_current_user should always provide id.
+        logger.error("batch_commit missing user id")
+        return {
+            "plan": _serialize_plan(plan_batch([])),
+            "scored": _serialize_ranked(rank_batch([])),
+            "persisted": {
+                "batch_id": "",
+                "inserted": [],
+                "inserted_count": 0,
+            },
+            "min_fit_score": payload.min_fit_score,
+        }
+
+    plan = plan_batch(payload.urls)
+    scored = await score_plan(
+        plan.accepted,
+        scorer=scorer,
+        concurrency=payload.concurrency,
+    )
+    ranked = rank_batch(scored, min_fit_score=payload.min_fit_score)
+
+    batch_id = make_batch_id()
+    inserted = await persist_ranked_batch(
+        db=db,
+        ranked=ranked,
+        user_id=str(user_id),
+        batch_id=batch_id,
+    )
+
+    return {
+        "plan": _serialize_plan(plan),
+        "scored": _serialize_ranked(ranked),
+        "persisted": {
+            "batch_id": batch_id,
+            "inserted": [
+                {"canonical_url": url, "application_id": aid}
+                for url, aid in inserted
+            ],
+            "inserted_count": len(inserted),
+        },
+        "min_fit_score": payload.min_fit_score,
+    }
+
+
 __all__ = [
     "router",
     "BatchPlanRequest",
     "BatchScoreRequest",
+    "BatchCommitRequest",
     "get_scorer",
+    "get_db_dep",
 ]
