@@ -23,6 +23,7 @@ test.describe("Auth Redirect Enforcement", () => {
     "/dashboard/career-analytics",
     "/dashboard/evidence",
     "/dashboard/batch",
+    "/dashboard/tracked-companies",
   ];
 
   for (const route of PROTECTED_ROUTES) {

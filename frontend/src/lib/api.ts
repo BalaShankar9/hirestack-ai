@@ -688,6 +688,56 @@ class APIClient {
         }),
       }),
   };
+
+  /* ── B2: Tracked companies (watchlist for portal_scanner) ──────── */
+
+  trackedCompanies = {
+    /**
+     * GET /api/tracked-companies — user-scoped list, newest first.
+     * Returns { items: TrackedCompanyRow[], count }.
+     */
+    list: async () => this.request("/tracked-companies"),
+    /**
+     * POST /api/tracked-companies — create a row.
+     * 422 carries `{ field, reason }` so the UI can render inline
+     * errors without string-parsing the message.
+     * 409 on duplicate (same user_id + provider + company_slug).
+     */
+    create: async (data: {
+      provider: string;
+      company_slug: string;
+      display_name: string;
+      workday_tenant?: string | null;
+      careers_url?: string | null;
+    }) =>
+      this.request("/tracked-companies", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    /**
+     * PATCH /api/tracked-companies/{id} — editable subset only.
+     * provider + company_slug are immutable (delete-and-recreate).
+     */
+    update: async (
+      id: string,
+      data: {
+        display_name?: string;
+        careers_url?: string | null;
+        workday_tenant?: string | null;
+        enabled?: boolean;
+      },
+    ) =>
+      this.request(`/tracked-companies/${id}`, {
+        method: "PATCH" as any,
+        body: JSON.stringify(data),
+      }),
+    /**
+     * DELETE /api/tracked-companies/{id} — hard delete; cross-user
+     * access returns 404 (never leaks existence).
+     */
+    delete: async (id: string) =>
+      this.request(`/tracked-companies/${id}`, { method: "DELETE" }),
+  };
 }
 
 export const api = new APIClient(API_URL);
