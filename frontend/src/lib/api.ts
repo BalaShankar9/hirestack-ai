@@ -666,6 +666,27 @@ class APIClient {
           ...(opts?.concurrency !== undefined ? { concurrency: opts.concurrency } : {}),
         }),
       }),
+    /**
+     * POST /api/generate/batch/commit — plan + score + rank + persist.
+     * Returns the same `plan` and `scored` shapes as /score, plus a
+     * `persisted` block:
+     *   { batch_id, inserted: [{canonical_url, application_id}],
+     *     inserted_count, skipped: [{canonical_url, application_id}],
+     *     skipped_count }
+     * `skipped` carries existing application_ids for URLs the user
+     * already had in their Drafts (idempotent re-paste). Below-threshold
+     * and failed entries are NEVER persisted — they show only in
+     * `scored.below_threshold` / `scored.failed`.
+     */
+    commit: async (urls: string[], opts?: { min_fit_score?: number; concurrency?: number }) =>
+      this.request("/generate/batch/commit", {
+        method: "POST",
+        body: JSON.stringify({
+          urls,
+          ...(opts?.min_fit_score !== undefined ? { min_fit_score: opts.min_fit_score } : {}),
+          ...(opts?.concurrency !== undefined ? { concurrency: opts.concurrency } : {}),
+        }),
+      }),
   };
 }
 

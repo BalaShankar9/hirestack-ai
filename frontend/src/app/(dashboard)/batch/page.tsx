@@ -29,7 +29,7 @@ import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  AlertTriangle, CheckCircle2, ListChecks, Loader2, Sparkles,
+  AlertTriangle, CheckCircle2, ListChecks, Loader2, Save, Sparkles,
   TrendingDown, XCircle,
 } from "lucide-react";
 
@@ -82,6 +82,18 @@ type ScoreResponse = {
   min_fit_score: number;
 };
 
+type PersistedRow = { canonical_url: string; application_id: string };
+
+type CommitResponse = ScoreResponse & {
+  persisted: {
+    batch_id: string;
+    inserted: PersistedRow[];
+    inserted_count: number;
+    skipped: PersistedRow[];
+    skipped_count: number;
+  };
+};
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 const REASON_COPY: Record<BatchReject["reason"], string> = {
@@ -131,8 +143,10 @@ export default function BatchGeneratePage() {
   const [minFitScore, setMinFitScore] = useState(3.0);
   const [plan, setPlan] = useState<PlanResponse | null>(null);
   const [scored, setScored] = useState<ScoreResponse | null>(null);
+  const [committed, setCommitted] = useState<CommitResponse["persisted"] | null>(null);
   const [planning, setPlanning] = useState(false);
   const [scoring, setScoring] = useState(false);
+  const [committing, setCommitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const urls = useMemo(() => splitUrls(raw), [raw]);
@@ -144,6 +158,7 @@ export default function BatchGeneratePage() {
   async function handlePreview() {
     setErr(null);
     setScored(null);
+    setCommitted(null);
     if (urls.length === 0) {
       setPlan(null);
       return;
@@ -163,6 +178,7 @@ export default function BatchGeneratePage() {
   async function handleScore() {
     if (!plan || plan.summary.is_empty) return;
     setErr(null);
+    setCommitted(null);
     setScoring(true);
     try {
       setToken();
@@ -177,10 +193,40 @@ export default function BatchGeneratePage() {
     }
   }
 
+  /**
+   * Save-to-Drafts: re-runs plan + score + persist in one call.
+   * We pass the same `urls` (NOT scored.scored.ranked URLs) so the
+   * server applies its own min_fit_score filter — keeps the source of
+   * truth on the backend and lets the user adjust the slider after
+   * scoring without forcing a re-score round-trip just to re-rank.
+   * Idempotent: backend pre-queries dedup_keys and surfaces existing
+   * Drafts in `persisted.skipped` instead of inserting duplicates.
+   */
+  async function handleCommit() {
+    if (!scored || scored.scored.ranked.length === 0) return;
+    setErr(null);
+    setCommitting(true);
+    try {
+      setToken();
+      const res = (await api.batchGenerate.commit(urls, {
+        min_fit_score: minFitScore,
+      })) as CommitResponse;
+      setCommitted(res.persisted);
+      // Refresh the scored bucket too — server-side ranking is the
+      // source of truth and the min_fit_score may have changed.
+      setScored({ plan: res.plan, scored: res.scored, min_fit_score: res.min_fit_score });
+    } catch (e: any) {
+      setErr(e?.message ?? "Failed to save drafts");
+    } finally {
+      setCommitting(false);
+    }
+  }
+
   function handleClear() {
     setRaw("");
     setPlan(null);
     setScored(null);
+    setCommitted(null);
     setErr(null);
   }
 
@@ -391,6 +437,46 @@ export default function BatchGeneratePage() {
             tone="rose"
             showError
           />
+
+          {/* Save-to-Drafts: only meaningful when there's at least one
+              ranked URL (below_threshold + failed never persist). */}
+          {scored.scored.ranked.length > 0 && (
+            <div className="flex items-center justify-end gap-3">
+              {committed && (
+                <span
+                  data-testid="batch-commit-toast"
+                  className="text-sm text-slate-600"
+                >
+                  Saved {committed.inserted_count} draft
+                  {committed.inserted_count === 1 ? "" : "s"}
+                  {committed.skipped_count > 0 ? (
+                    <>
+                      {" · "}
+                      <span className="text-amber-700">
+                        {committed.skipped_count} already in your Drafts
+                      </span>
+                    </>
+                  ) : null}
+                </span>
+              )}
+              <Button
+                onClick={handleCommit}
+                disabled={committing || scoring}
+                data-testid="batch-commit-button"
+              >
+                {committing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Save {scored.scored.ranked.length} to Drafts
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </section>
       )}
     </div>
