@@ -239,6 +239,8 @@ TABLES = {
     "agent_artifacts": "agent_artifacts",
     # Stripe webhook idempotency ledger (prod-readiness 2026-04-20)
     "processed_webhook_events": "processed_webhook_events",
+    # B2 portal-scanner: companies the user is watching
+    "tracked_companies": "tracked_companies",
 }
 
 
