@@ -120,6 +120,8 @@ class SlideComposer:
             await self._render_chart_slide(slide, spec, accent=accent, title_c=title_c, body_c=body_c)
         elif kind in (SlideKind.image, SlideKind.image_text):
             await self._render_image_slide(slide, spec, accent=accent, title_c=title_c, body_c=body_c)
+        elif kind == SlideKind.table:
+            self._render_table(slide, spec, accent=accent, title_c=title_c, body_c=body_c)
         elif kind == SlideKind.closing:
             self._render_closing(slide, spec, accent=accent, title_c=title_c, body_c=body_c)
         else:  # content (default)
@@ -250,6 +252,77 @@ class SlideComposer:
                            width=Inches(10.9), height=Inches(0.6),
                            text=f"— {spec.attribution}", size=18, color=body_c)
 
+    def _render_table(self, slide, spec: SlideSpec, *, accent, title_c, body_c) -> None:
+        """Render a table slide."""
+        self._add_accent_bar(slide, accent, top=Inches(0.55))
+        self._add_text(slide, left=Inches(0.7), top=Inches(0.75),
+                       width=Inches(11.9), height=Inches(0.9),
+                       text=spec.title or "", size=28, bold=True, color=title_c)
+
+        table_spec = spec.table
+        if table_spec is None:
+            self._draw_placeholder(slide, accent, label="Table",
+                                   left=Inches(1.0), top=Inches(1.9),
+                                   width=Inches(11.3), height=Inches(4.6))
+            return
+
+        # Table dimensions
+        rows = len(table_spec.rows) + 1  # +1 for header
+        cols = len(table_spec.headers) if table_spec.headers else (len(table_spec.rows[0]) if table_spec.rows else 2)
+        if cols == 0:
+            cols = 2
+
+        # Position table below title
+        table_left = Inches(0.7)
+        table_top = Inches(1.8)
+        table_width = Inches(11.9)
+        table_height = Inches(5.0)
+
+        try:
+            table = slide.shapes.add_table(
+                rows, cols,
+                table_left, table_top, table_width, table_height,
+            ).table
+
+            # Style based on spec
+            style_map = {
+                "light": 1,  # Table Style Light 1
+                "medium": 2,  # Table Style Medium 2
+                "dark": 3,  # Table Style Dark 1
+            }
+            table_style = style_map.get(table_spec.style, 2)
+
+            # Fill headers
+            if table_spec.headers:
+                for col_idx, header in enumerate(table_spec.headers[:cols]):
+                    cell = table.cell(0, col_idx)
+                    cell.text = header
+                    # Header styling
+                    for para in cell.text_frame.paragraphs:
+                        para.font.bold = True
+                        para.font.size = Pt(12)
+                        para.font.name = DEFAULT_FONT
+                        para.font.color.rgb = _hex_to_rgb(title_c)
+                    cell.fill.solid()
+                    cell.fill.fore_color.rgb = _hex_to_rgb(accent)
+                    cell.font.color.rgb = _hex_to_rgb("FFFFFF")
+
+            # Fill data rows
+            for row_idx, row_data in enumerate(table_spec.rows[:rows-1]):
+                for col_idx, cell_text in enumerate(row_data[:cols]):
+                    cell = table.cell(row_idx + 1, col_idx)
+                    cell.text = str(cell_text)
+                    for para in cell.text_frame.paragraphs:
+                        para.font.size = Pt(11)
+                        para.font.name = DEFAULT_FONT
+                        para.font.color.rgb = _hex_to_rgb(body_c)
+
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("table_render_failed: %s", str(exc)[:200])
+            self._draw_placeholder(slide, accent, label="Table",
+                                   left=Inches(1.0), top=Inches(1.9),
+                                   width=Inches(11.3), height=Inches(4.6))
+
     async def _render_chart_slide(
         self, slide, spec: SlideSpec, *, accent, title_c, body_c,
     ) -> None:
@@ -257,9 +330,28 @@ class SlideComposer:
         self._add_text(slide, left=Inches(0.7), top=Inches(0.75),
                        width=Inches(11.9), height=Inches(0.9),
                        text=spec.title or "", size=28, bold=True, color=title_c)
-        # Try renderer hook first; otherwise draw a placeholder card.
+
+        # PRIORITY 1: Try native editable chart (users can right-click → Edit Data)
         rendered = False
-        if self.chart_renderer is not None and spec.chart is not None:
+        if spec.chart is not None:
+            try:
+                from ai_engine.agents.ppt.native_chart_renderer import NativeChartRenderer
+                native_renderer = NativeChartRenderer()
+                if native_renderer.can_render(spec.chart):
+                    chart = native_renderer.render_to_slide(
+                        slide, spec.chart,
+                        accent_hex=accent,
+                        left=Inches(1.0), top=Inches(1.9),
+                        width=Inches(11.3), height=Inches(4.6),
+                    )
+                    if chart is not None:
+                        rendered = True
+                        logger.debug("ppt_native_chart_rendered: %s", spec.chart.kind)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("ppt_native_chart_failed: %s — falling back", str(exc)[:150])
+
+        # PRIORITY 2: Fall back to matplotlib PNG (static image)
+        if not rendered and self.chart_renderer is not None and spec.chart is not None:
             try:
                 png = await self.chart_renderer.render(spec.chart, accent_hex=accent)  # type: ignore[attr-defined]
                 if png:
@@ -270,6 +362,8 @@ class SlideComposer:
                     rendered = True
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ppt_chart_render_failed: %s", str(exc)[:200])
+
+        # PRIORITY 3: Placeholder if all renderers fail
         if not rendered:
             self._draw_placeholder(slide, accent, label="Chart",
                                    left=Inches(1.0), top=Inches(1.9),

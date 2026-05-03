@@ -80,6 +80,25 @@ from ai_engine.agents.pipelines import (
     CREATIVE_TONE,
 )
 
+# v4: World-Class Agentic Streaming
+from ai_engine.agents.streaming_protocol import (
+    EventType,
+    StreamPriority,
+    StreamingConfig,
+    AgentContext,
+    StageContext,
+    EventMetadata,
+    EventSink,
+    StageTimer,
+    dumps_event,
+    is_valid_event_type,
+)
+from ai_engine.agents.agentic_event_emitter import (
+    AgenticEventEmitter,
+    SSEEventSink,
+)
+from ai_engine.agents.streaming_llm_client import StreamingAIClient
+
 __all__ = [
     "BaseAgent",
     "AgentResult",
@@ -149,4 +168,18 @@ __all__ = [
     "WorkflowCancelled",
     "WorkflowStageTimeout",
     "WorkflowStageFailed",
+    # v4: World-Class Agentic Streaming
+    "EventType",
+    "StreamPriority",
+    "StreamingConfig",
+    "AgentContext",
+    "StageContext",
+    "EventMetadata",
+    "EventSink",
+    "StageTimer",
+    "dumps_event",
+    "is_valid_event_type",
+    "AgenticEventEmitter",
+    "SSEEventSink",
+    "StreamingAIClient",
 ]

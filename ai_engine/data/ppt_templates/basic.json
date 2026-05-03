@@ -1,0 +1,8 @@
+{
+  "name": "Basic Template",
+  "slides": [
+    {"title": "Title Slide", "layout": "title"},
+    {"title": "Content", "layout": "title_content"},
+    {"title": "Chart", "layout": "chart", "chart_type": "bar"}
+  ]
+}

@@ -139,36 +139,42 @@ async def generate_and_store_pptx(
     tone: Optional[str] = None,
     theme: str = "modern",
     extra_context: Optional[str] = None,
+    # Elite features (Phase 3-12)
+    enable_data_research: bool = False,
+    enable_content_enhancement: bool = False,
+    enable_ai_images: bool = False,
+    enable_interactive_elements: bool = False,
+    target_language: str = "en",
+    # Storage
     storage_client: Optional[Any] = None,
     storage_bucket: str = "ppt-exports",
     storage_path: Optional[str] = None,
     inline_b64: bool = False,
 ) -> Dict[str, Any]:
     """
-    Run the PPTOrchestrator and optionally upload the bytes.
-
-    Returns a dict shaped:
-        {
-            "ok": bool,
-            "topic": str,
-            "slide_count": int,
-            "size_bytes": int,
-            "latency_ms": int,
-            "url": Optional[str],          # set when storage_client uploads succeed
-            "bytes_b64": Optional[str],    # set when inline_b64=True or upload fails
-            "error": Optional[str],
-        }
+    Run the PresentationOrchestrator with optional elite features and upload.
     """
     try:
-        from ai_engine.agents.ppt import PPTOrchestrator
+        from ai_engine.agents.ppt import PresentationOrchestrator
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": f"ppt_engine_unavailable: {exc}"}
 
     try:
-        orch = PPTOrchestrator()
+        # Use factory method for configured pipeline
+        orch = PresentationOrchestrator.create_with_defaults(
+            enable_data_research=enable_data_research,
+            enable_content_enhancement=enable_content_enhancement,
+            enable_ai_images=enable_ai_images,
+            enable_interactive=enable_interactive_elements,
+            target_language=target_language,
+        )
         result = await orch.generate(
-            topic=topic, audience=audience, slide_count=slide_count,
-            tone=tone, theme=theme, extra_context=extra_context,
+            topic=topic,
+            audience=audience,
+            slide_count=slide_count,
+            tone=tone,
+            theme=theme,
+            extra_context=extra_context,
         )
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
@@ -182,6 +188,8 @@ async def generate_and_store_pptx(
         "slide_count": result.slide_count,
         "size_bytes": result.size_bytes,
         "latency_ms": result.latency_ms,
+        "quality_score": result.quality_score,
+        "generation_metadata": result.metadata,
         "url": None,
         "bytes_b64": None,
         "error": None,
@@ -263,6 +271,9 @@ async def _generate_ppt_tool_fn(**kwargs: Any) -> dict:
         tone=kwargs.get("tone"),
         theme=kwargs.get("theme") or "modern",
         extra_context=kwargs.get("extra_context"),
+        enable_data_research=bool(kwargs.get("enable_data_research", False)),
+        enable_content_enhancement=bool(kwargs.get("enable_content_enhancement", False)),
+        enable_ai_images=bool(kwargs.get("enable_ai_images", False)),
         storage_client=kwargs.get("storage_client"),
         storage_bucket=kwargs.get("storage_bucket", "ppt-exports"),
         storage_path=kwargs.get("storage_path"),
@@ -278,7 +289,8 @@ def build_ppt_tools() -> ToolRegistry:
         description=(
             "Generate a polished PowerPoint deck about a topic. "
             "Returns metadata plus a URL (when storage configured) or "
-            "base64-encoded .pptx bytes."
+            "base64-encoded .pptx bytes. "
+            "Elite features: enable_data_research, enable_content_enhancement, enable_ai_images."
         ),
         parameters={
             "type": "object",
@@ -289,6 +301,9 @@ def build_ppt_tools() -> ToolRegistry:
                 "tone": {"type": "string", "description": "Optional tone hint"},
                 "theme": {"type": "string", "description": "modern|midnight|warm|minimal|vibrant|corporate", "default": "modern"},
                 "extra_context": {"type": "string", "description": "Optional facts/details to include"},
+                "enable_data_research": {"type": "boolean", "description": "Enrich charts with real data", "default": False},
+                "enable_content_enhancement": {"type": "boolean", "description": "AI-optimize titles and bullets", "default": False},
+                "enable_ai_images": {"type": "boolean", "description": "Generate custom AI visuals", "default": False},
             },
             "required": ["topic"],
         },

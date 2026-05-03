@@ -1,0 +1,8 @@
+{
+  "name": "Investor Deck",
+  "slides": [
+    {"title": "Problem", "type": "title_content"},
+    {"title": "Solution", "type": "two_column"},
+    {"title": "Market Size", "type": "chart", "chart_type": "pie"},
+    {"title": "Traction", "type": "metrics"},
+    {"title": "Business Model

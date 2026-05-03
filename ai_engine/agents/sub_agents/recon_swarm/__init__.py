@@ -22,8 +22,28 @@ slot in when env keys are configured (HEYGEN-style pattern from S17-P4).
 from __future__ import annotations
 
 from .application_mapper import ApplicationMapper
-from .cache import IntelCache, get_default_cache
+from .cache import IntelCache, ProviderCache, get_default_cache
 from .coordinator_v2 import ReconSwarmCoordinator, run_recon_swarm
+from .free_mode import FreeModeRecon, run_free_recon
+from .streaming import (
+    ReconPhase,
+    ReconProgress,
+    StreamingReconCoordinator,
+    StreamingReconResult,
+)
+from .free_providers import (
+    FREE_PROVIDERS,
+    ArxivFree,
+    FreeProvider,
+    FreeResult,
+    GitHubFree,
+    HNFree,
+    RedditFree,
+    SECFree,
+    StackFree,
+    WikiFree,
+    fetch_all_free,
+)
 from .intel_fusion import IntelFusion
 from .integration import build_recon_swarm_tools, detect_recon_swarm_intent
 from .providers import (
@@ -54,6 +74,19 @@ from .providers import (
     default_layer1_providers,
     default_layer2_providers,
 )
+from .health import ProviderHealth, ProviderHealthTracker
+from .metrics import ProviderMetrics, ReconMetrics
+from .quality import QualityScore, QualityScorer
+from .resilience import (
+    CircuitBreaker,
+    CircuitBreakerOpen,
+    ProviderResilienceConfig,
+    RateLimiter,
+    ResilientProvider,
+    create_default_circuit_breaker,
+    create_rate_limiter_for_provider,
+    create_resilience_config,
+)
 from .schemas import (
     ApplicationKit,
     CompanyIntelV2,
@@ -67,8 +100,23 @@ __all__ = [
     "ApplicationKit",
     "ApplicationMapper",
     "CompanyIntelV2",
+    "CircuitBreaker",
+    "CircuitBreakerOpen",
     "IntelCache",
     "IntelField",
+    "ProviderCache",
+    "ProviderHealth",
+    "ProviderHealthTracker",
+    "ProviderMetrics",
+    "ProviderResilienceConfig",
+    "QualityScore",
+    "QualityScorer",
+    "RateLimiter",
+    "ReconMetrics",
+    "ResilientProvider",
+    "create_default_circuit_breaker",
+    "create_rate_limiter_for_provider",
+    "create_resilience_config",
     "IntelFusion",
     "ProviderResult",
     "ReconSwarmCoordinator",
@@ -104,4 +152,23 @@ __all__ = [
     "detect_recon_swarm_intent",
     "get_default_cache",
     "run_recon_swarm",
+    # Free providers (no API keys)
+    "FREE_PROVIDERS",
+    "ArxivFree",
+    "FreeModeRecon",
+    "FreeProvider",
+    "FreeResult",
+    "GitHubFree",
+    "HNFree",
+    "RedditFree",
+    "SECFree",
+    "StackFree",
+    "WikiFree",
+    "fetch_all_free",
+    "run_free_recon",
+    # Streaming
+    "ReconPhase",
+    "ReconProgress",
+    "StreamingReconCoordinator",
+    "StreamingReconResult",
 ]

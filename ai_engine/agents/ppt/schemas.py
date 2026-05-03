@@ -31,6 +31,7 @@ class SlideKind(str, Enum):
     chart = "chart"            # title + chart (optional caption)
     image = "image"            # title + full-bleed image (optional caption)
     image_text = "image_text"  # half image / half bullets
+    table = "table"            # title + data table
     closing = "closing"        # thank-you / CTA / contact
 
 
@@ -73,6 +74,19 @@ class ChartSpec(BaseModel):
     annotations: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+class TableSpec(BaseModel):
+    """Table data for a slide."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    headers: List[str] = Field(default_factory=list, description="Column headers")
+    rows: List[List[str]] = Field(default_factory=list, description="Table rows (each is list of cells)")
+    title: Optional[str] = Field(None, description="Optional table title (if different from slide title)")
+    style: str = Field("medium", description="Table style: light, medium, dark")
+    # Column width hints (fractions, should sum to ~1.0)
+    col_widths: Optional[List[float]] = Field(None, description="Relative column widths")
+
+
 class ImageSpec(BaseModel):
     """Image source for a slide. Composer resolves URL → bytes if needed."""
 
@@ -101,6 +115,7 @@ class SlideSpec(BaseModel):
     notes: Optional[str] = None       # speaker notes
     chart: Optional[ChartSpec] = None
     image: Optional[ImageSpec] = None
+    table: Optional[TableSpec] = None  # used by table kind
     caption: Optional[str] = None     # caption under chart/image
 
 
