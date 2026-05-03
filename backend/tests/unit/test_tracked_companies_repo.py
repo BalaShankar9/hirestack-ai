@@ -14,7 +14,9 @@ import pytest
 from app.core.database import TABLES
 from app.services.portal_scanner import PROVIDERS, TrackedCompany
 from app.services.tracked_companies_repo import (
+    WatchlistEntry,
     load_enabled_for_user,
+    load_watchlist_for_user,
     mark_scanned,
 )
 
@@ -208,6 +210,63 @@ class TestStalestFirstOrdering:
         # is implementation-defined but both must precede any scanned).
         assert set(slugs[:2]) == {"a_never", "c_never_too"}
         assert slugs[2:] == ["b_scanned_old", "d_scanned_new"]
+
+
+# ── load_watchlist_for_user (sister fn returning ids + companies) ────
+
+
+class TestLoadWatchlist:
+    @pytest.mark.asyncio
+    async def test_returns_watchlist_entries_with_ids(self):
+        db = _FakeDB([_row(id="r1", company_slug="acme")])
+        result = await load_watchlist_for_user("u1", db)
+        assert len(result) == 1
+        assert isinstance(result[0], WatchlistEntry)
+        assert result[0].id == "r1"
+        assert isinstance(result[0].company, TrackedCompany)
+        assert result[0].company.company_slug == "acme"
+
+    @pytest.mark.asyncio
+    async def test_empty_user_returns_empty(self):
+        db = _FakeDB([])
+        result = await load_watchlist_for_user("u1", db)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_disabled_excluded(self):
+        db = _FakeDB([
+            _row(id="r1", company_slug="on", enabled=True),
+            _row(id="r2", company_slug="off", enabled=False),
+        ])
+        result = await load_watchlist_for_user("u1", db)
+        assert [(e.id, e.company.company_slug) for e in result] == [("r1", "on")]
+
+    @pytest.mark.asyncio
+    async def test_stalest_first_ordering_preserved(self):
+        db = _FakeDB([
+            _row(id="r1", company_slug="scanned", last_scanned_at="2026-04-01T00:00:00+00:00"),
+            _row(id="r2", company_slug="never", last_scanned_at=None),
+        ])
+        result = await load_watchlist_for_user("u1", db)
+        assert [e.id for e in result] == ["r2", "r1"]
+
+    @pytest.mark.asyncio
+    async def test_unknown_provider_dropped(self):
+        db = _FakeDB([
+            _row(id="r1", provider="future_ats", company_slug="x"),
+            _row(id="r2", provider="lever", company_slug="ok"),
+        ])
+        result = await load_watchlist_for_user("u1", db)
+        assert [e.id for e in result] == ["r2"]
+
+    @pytest.mark.asyncio
+    async def test_cross_user_isolation(self):
+        db = _FakeDB([
+            _row(id="r1", user_id="u1"),
+            _row(id="r2", user_id="u2"),
+        ])
+        result = await load_watchlist_for_user("u1", db)
+        assert [e.id for e in result] == ["r1"]
 
 
 # ── mark_scanned ─────────────────────────────────────────────────────

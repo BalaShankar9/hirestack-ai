@@ -43,11 +43,27 @@ that come with a service class (when to instantiate, when to share).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Iterable, List, Mapping, Protocol, Sequence
 
 from app.core.database import TABLES
 from app.services.portal_scanner import PROVIDERS, TrackedCompany
+
+
+@dataclass(frozen=True)
+class WatchlistEntry:
+    """A tracked-companies row paired with its DB row id.
+
+    The scheduler tick (B1.next.cron) needs both: ``company`` to
+    drive ``portal_scanner_worker.run_scan``, and ``id`` to feed
+    back into ``mark_scanned`` when the scan completes.  We keep
+    them in one frozen object so the two never get out of sync
+    in the orchestrator.
+    """
+
+    id: str
+    company: TrackedCompany
 
 
 # ── DB Protocol (only the methods we actually use) ───────────────────
@@ -154,6 +170,49 @@ async def load_enabled_for_user(
     return out
 
 
+# ── load_watchlist_for_user ──────────────────────────────────────────
+
+
+async def load_watchlist_for_user(
+    user_id: str,
+    db: _RepoDB,
+) -> List[WatchlistEntry]:
+    """Same query+ordering as ``load_enabled_for_user`` but keeps row ids.
+
+    The scheduler tick uses this — it needs the ``id`` to call
+    ``mark_scanned`` after the scan completes.  The pure-fn worker
+    only takes ``TrackedCompany``, so we pair them in
+    ``WatchlistEntry`` to keep the two in lockstep through the tick.
+
+    Why a sister function instead of replacing ``load_enabled_for_user``?
+    The simpler signature is cleaner for non-scheduler callers (e.g.
+    a future "preview my watchlist" endpoint that doesn't need ids).
+    Both walk the same ``db.query`` path — the cost difference is
+    nil; the API surface gain is real.
+    """
+    rows = await db.query(
+        TABLES["tracked_companies"],
+        filters=[
+            ("user_id", "==", user_id),
+            ("enabled", "==", True),
+        ],
+        order_by=None,
+    )
+
+    out: List[WatchlistEntry] = []
+    for row in sorted(rows, key=_stalest_first_key):
+        provider = row.get("provider")
+        if provider not in PROVIDERS:
+            continue
+        out.append(
+            WatchlistEntry(
+                id=row["id"],
+                company=_row_to_tracked_company(row),
+            )
+        )
+    return out
+
+
 # ── mark_scanned ─────────────────────────────────────────────────────
 
 
@@ -209,6 +268,8 @@ def _to_iso(ts: datetime) -> str:
 
 
 __all__ = [
+    "WatchlistEntry",
     "load_enabled_for_user",
+    "load_watchlist_for_user",
     "mark_scanned",
 ]
