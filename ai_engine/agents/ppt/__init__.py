@@ -14,6 +14,10 @@ Optional engines (P2/P3 layers):
 Everything is import-safe even when optional API keys (Unsplash/Pexels) are
 missing — the package degrades gracefully to text-only or icon-only slides.
 """
+import logging
+
+logger = logging.getLogger(__name__)
+
 from ai_engine.agents.ppt.schemas import (
     DeckSpec,
     SlideSpec,

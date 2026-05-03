@@ -31,6 +31,7 @@ import {
   Moon,
   Sun,
   Monitor,
+  Presentation,
 } from "lucide-react";
 import React, { type ReactNode, useState, useEffect, useMemo } from "react";
 import { useTheme } from "next-themes";
@@ -90,6 +91,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/career-analytics", label: "Career Analytics", icon: TrendingUp, description: "Track your progress" },
       { href: "/learning", label: "Daily Learn", icon: BookOpen, description: "Sharpen your skills" },
       { href: "/gaps", label: "Gap Report", icon: Target, description: "Skill gap analysis" },
+      { href: "/ppt", label: "PPT Generator", icon: Presentation, description: "AI-generated presentations" },
     ],
   },
   {
@@ -525,6 +527,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               "/settings": "Settings",
               "/candidates": "Pipeline",
               "/ats-scanner": "ATS Scanner",
+              "/ppt": "PPT Generator",
               "/interview": "Interview Prep",
               "/salary": "Salary Coach",
               "/career": "Career Improvement",

@@ -133,6 +133,15 @@ class EventType(str, Enum):
     EVENT_DROPPED_WARNING = "event_dropped_warning"
     STREAM_GRACEFUL_SHUTDOWN = "stream_graceful_shutdown"
 
+    # ── Legacy Pipeline Compatibility (for interop with existing taxonomy) ──
+    PROGRESS = "progress"
+    DETAIL = "detail"
+    COMPLETE = "complete"
+    ERROR = "error"
+    WARNING = "warning"
+    VALIDATION_PASSED = "validation_passed"
+    VALIDATION_FAILED = "validation_failed"
+
 
 ALL_EVENT_TYPES: Set[str] = {e.value for e in EventType}
 

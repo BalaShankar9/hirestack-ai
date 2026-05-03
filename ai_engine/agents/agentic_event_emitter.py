@@ -76,7 +76,7 @@ class AgenticEventEmitter:
             StreamPriority.CRITICAL: asyncio.Queue(maxsize=config.max_event_queue_size),
             StreamPriority.HIGH: asyncio.Queue(maxsize=config.max_event_queue_size),
             StreamPriority.NORMAL: asyncio.Queue(maxsize=config.max_event_queue_size),
-            StreamPriority.LOW: asyncio.Queue(maxsize=config.max_queue_size),  # type: ignore[attr-defined]
+            StreamPriority.LOW: asyncio.Queue(maxsize=config.max_event_queue_size),
         }
 
         # Flush control
