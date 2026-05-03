@@ -28,9 +28,13 @@ Hard rules:
 """
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import asdict, is_dataclass
-from typing import Any, Dict, List
+from functools import lru_cache
+from typing import Any, Dict, List, Optional
 
+import httpx
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
@@ -47,6 +51,8 @@ from app.services.batch_evaluator import (
     plan_batch,
     rank_batch,
 )
+from app.services.batch_jd_fetcher import JDLoader, make_jd_loader
+from app.services.batch_scorer_glue import make_llm_scorer
 from app.services.batch_scorer_worker import (
     DEFAULT_CONCURRENCY,
     MAX_CONCURRENCY,
@@ -54,18 +60,38 @@ from app.services.batch_scorer_worker import (
     score_plan,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ── Scorer dependency ────────────────────────────────────────────────
+# ── Scorer dependency (B0.scorer.wire) ────────────────────────────────
 #
-# The real scorer (LLM chain hitting the AI router) is not yet wired —
-# that is its own slice (B0.scorer) so that the route + contract +
-# rate limit can ship now and tests stay AI-free.  The default scorer
-# returns a typed failure so a misconfigured prod deploy doesn't
-# silently return zeros; the route still 200s with a fully populated
-# `failed` bucket so the UI can render "scoring backend unavailable"
-# per row instead of choking on an exception.
+# Two paths share one Depends() entry:
+#
+#   * Stub (default) — returns ScoringResult(error="scorer_not_configured")
+#     for every entry. Safe for prod until we flip the flag and lets
+#     the UI render a typed failure per row instead of throwing.
+#
+#   * Live — make_llm_scorer composed from real ProfileService +
+#     httpx-backed Fetcher → make_jd_loader + ai_engine.client. Each
+#     request gets a fresh Scorer bound to the caller's user_id; the
+#     underlying singletons (httpx client, AIClient, ProfileService)
+#     are cached process-wide so we don't pay re-init cost per call.
+#
+# Selection is via env flag ``BATCH_SCORER_LIVE`` (defaults off).
+# Tests keep working as-is because they override ``get_scorer`` with
+# ``lambda: my_scorer`` — that bypasses the user_id dep entirely.
+
+_LIVE_FLAG_ENV = "BATCH_SCORER_LIVE"
+_LIVE_FETCH_TIMEOUT_S = 12.0
+_LIVE_USER_AGENT = (
+    "HireStack/1.0 BatchScorer (+https://hirestack.ai)"
+)
+
+
+def _is_live_enabled() -> bool:
+    val = os.getenv(_LIVE_FLAG_ENV, "").strip().lower()
+    return val in ("1", "true", "yes", "on")
 
 
 async def _stub_scorer(entry: BatchEntry) -> ScoringResult:
@@ -76,9 +102,83 @@ async def _stub_scorer(entry: BatchEntry) -> ScoringResult:
     )
 
 
-def get_scorer() -> Scorer:
-    """FastAPI dependency — override in tests via app.dependency_overrides."""
-    return _stub_scorer
+# ── Live wiring (only constructed when BATCH_SCORER_LIVE is on) ──────
+
+
+async def _live_httpx_fetcher(url: str) -> str:
+    """HTTP GET → response body text. Used as the Fetcher seam."""
+    headers = {
+        "User-Agent": _LIVE_USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml",
+    }
+    async with httpx.AsyncClient(
+        timeout=_LIVE_FETCH_TIMEOUT_S,
+        follow_redirects=True,
+        max_redirects=3,
+        headers=headers,
+    ) as client:
+        resp = await client.get(url)
+        return resp.text or ""
+
+
+@lru_cache(maxsize=1)
+def _shared_jd_loader() -> JDLoader:
+    return make_jd_loader(fetcher=_live_httpx_fetcher)
+
+
+@lru_cache(maxsize=1)
+def _shared_ai_client() -> Any:
+    # Imported lazily so unit tests that never enable the live flag
+    # don't pay the ai_engine.client import cost.
+    from ai_engine.client import get_ai_client
+
+    return get_ai_client()
+
+
+@lru_cache(maxsize=1)
+def _shared_profile_service() -> Any:
+    from app.services.profile import ProfileService
+
+    return ProfileService()
+
+
+async def _live_profile_loader(user_id: str) -> Optional[Dict[str, Any]]:
+    svc = _shared_profile_service()
+    return await svc.get_primary_profile(user_id)
+
+
+def _build_live_scorer(user_id: str) -> Scorer:
+    return make_llm_scorer(
+        user_id=user_id,
+        profile_loader=_live_profile_loader,
+        jd_loader=_shared_jd_loader(),
+        ai_client=_shared_ai_client(),
+    )
+
+
+async def get_scorer(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Scorer:
+    """FastAPI dependency — the score route's Scorer.
+
+    Returns the stub by default; returns a fully wired
+    ``make_llm_scorer`` (per-request, bound to ``current_user["id"]``)
+    when ``BATCH_SCORER_LIVE`` is truthy.
+
+    Tests override this via ``app.dependency_overrides[get_scorer] =
+    lambda: my_scorer`` — that bypasses the ``current_user`` dep
+    entirely so test factories don't need to thread a user.
+    """
+    if not _is_live_enabled():
+        return _stub_scorer
+    user_id = current_user.get("id") if isinstance(current_user, dict) else None
+    if not user_id:
+        # Defensive: if auth somehow yields no id, fall back to stub
+        # rather than ScoringResult-failing every entry with a confusing
+        # profile_load_error.  Should never trigger in prod.
+        logger.warning("batch_scorer live flag on but current_user missing id")
+        return _stub_scorer
+    return _build_live_scorer(user_id)
 
 
 # ── Request / Response models ────────────────────────────────────────

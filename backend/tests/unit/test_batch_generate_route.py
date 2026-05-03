@@ -346,3 +346,118 @@ class TestScoreBatchRoute:
         assert "plan" in body
         assert body["plan"]["summary"]["accepted_count"] == 1
         assert body["plan"]["summary"]["rejected_count"] == 1
+
+
+# ── B0.scorer.wire — env-flag selection of stub vs live ──────────────
+
+
+import asyncio  # noqa: E402
+
+from app.api.routes.batch_generate import (  # noqa: E402
+    _LIVE_FLAG_ENV,
+    _is_live_enabled,
+    _stub_scorer,
+    get_scorer,
+)
+from app.services.batch_evaluator import BatchEntry as _BatchEntry  # noqa: E402
+
+
+class TestLiveFlagDetection:
+    def test_unset_is_off(self, monkeypatch) -> None:
+        monkeypatch.delenv(_LIVE_FLAG_ENV, raising=False)
+        assert _is_live_enabled() is False
+
+    def test_empty_is_off(self, monkeypatch) -> None:
+        monkeypatch.setenv(_LIVE_FLAG_ENV, "")
+        assert _is_live_enabled() is False
+
+    def test_false_is_off(self, monkeypatch) -> None:
+        monkeypatch.setenv(_LIVE_FLAG_ENV, "false")
+        assert _is_live_enabled() is False
+
+    @pytest.mark.parametrize("val", ["1", "true", "TRUE", "yes", "ON", " on "])
+    def test_truthy_values(self, monkeypatch, val: str) -> None:
+        monkeypatch.setenv(_LIVE_FLAG_ENV, val)
+        assert _is_live_enabled() is True
+
+
+class TestGetScorerDependency:
+    def test_returns_stub_when_flag_off(self, monkeypatch) -> None:
+        monkeypatch.delenv(_LIVE_FLAG_ENV, raising=False)
+        scorer = asyncio.run(get_scorer(current_user=_FAKE_USER))
+        assert scorer is _stub_scorer
+
+    def test_stub_returns_typed_failure(self) -> None:
+        entry = _BatchEntry(
+            raw_url="https://x.example.com/a",
+            canonical_url="https://x.example.com/a",
+            ats_key=None,
+        )
+        result = asyncio.run(_stub_scorer(entry))
+        assert result.error == "scorer_not_configured"
+        assert result.fit_score is None
+        assert result.canonical_url == entry.canonical_url
+
+    def test_returns_live_scorer_when_flag_on(self, monkeypatch) -> None:
+        monkeypatch.setenv(_LIVE_FLAG_ENV, "true")
+        scorer = asyncio.run(get_scorer(current_user=_FAKE_USER))
+        # Live path returns the per-request closure built by
+        # make_llm_scorer — NOT the module-level stub.
+        assert scorer is not _stub_scorer
+        assert callable(scorer)
+
+    def test_falls_back_to_stub_on_missing_user_id(self, monkeypatch) -> None:
+        monkeypatch.setenv(_LIVE_FLAG_ENV, "true")
+        # current_user with no id (defensive path)
+        scorer = asyncio.run(get_scorer(current_user={"email": "x@y.z"}))
+        assert scorer is _stub_scorer
+
+    def test_falls_back_to_stub_on_non_dict_user(self, monkeypatch) -> None:
+        monkeypatch.setenv(_LIVE_FLAG_ENV, "true")
+        scorer = asyncio.run(get_scorer(current_user=None))  # type: ignore[arg-type]
+        assert scorer is _stub_scorer
+
+
+class TestLiveScorerEndToEnd:
+    """Verify the live wiring composes correctly without hitting network."""
+
+    def test_live_scorer_uses_injected_loaders_and_ai(self, monkeypatch) -> None:
+        from app.api.routes import batch_generate as br
+
+        # Stub out the three live components so we can assert the
+        # composition without any I/O.
+        captured: Dict[str, Any] = {}
+
+        async def fake_profile_loader(user_id: str):
+            captured["profile_user_id"] = user_id
+            return {"summary": "Senior engineer"}
+
+        async def fake_jd_loader(entry):
+            captured["jd_entry_url"] = entry.canonical_url
+            return "We need a senior engineer with python."
+
+        class FakeAIClient:
+            async def complete_json(self, *, prompt, system=None, max_tokens=1024):
+                captured["ai_called"] = True
+                return {"match_score": 80, "title": "Senior Eng", "company": "Acme"}
+
+        monkeypatch.setattr(br, "_live_profile_loader", fake_profile_loader)
+        monkeypatch.setattr(br, "_shared_jd_loader", lambda: fake_jd_loader)
+        monkeypatch.setattr(br, "_shared_ai_client", lambda: FakeAIClient())
+        monkeypatch.setenv(_LIVE_FLAG_ENV, "true")
+
+        scorer = asyncio.run(get_scorer(current_user={"id": "user-xyz"}))
+        entry = _BatchEntry(
+            raw_url="https://boards.greenhouse.io/acme/jobs/777",
+            canonical_url="https://boards.greenhouse.io/acme/jobs/777",
+            ats_key=("greenhouse", "acme", "777"),
+        )
+        result = asyncio.run(scorer(entry))
+
+        assert captured["profile_user_id"] == "user-xyz"
+        assert captured["jd_entry_url"] == entry.canonical_url
+        assert captured["ai_called"] is True
+        # parse_score_response rescales 80/100 → 4.0/5.0
+        assert result.fit_score == pytest.approx(4.0)
+        assert result.error is None
+        assert result.canonical_url == entry.canonical_url
