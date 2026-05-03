@@ -460,6 +460,8 @@ async def commit_batch_route(
                 "batch_id": "",
                 "inserted": [],
                 "inserted_count": 0,
+                "skipped": [],
+                "skipped_count": 0,
             },
             "min_fit_score": payload.min_fit_score,
         }
@@ -473,7 +475,7 @@ async def commit_batch_route(
     ranked = rank_batch(scored, min_fit_score=payload.min_fit_score)
 
     batch_id = make_batch_id()
-    inserted = await persist_ranked_batch(
+    result = await persist_ranked_batch(
         db=db,
         ranked=ranked,
         user_id=str(user_id),
@@ -487,9 +489,14 @@ async def commit_batch_route(
             "batch_id": batch_id,
             "inserted": [
                 {"canonical_url": url, "application_id": aid}
-                for url, aid in inserted
+                for url, aid in result.inserted
             ],
-            "inserted_count": len(inserted),
+            "inserted_count": result.inserted_count,
+            "skipped": [
+                {"canonical_url": url, "application_id": aid}
+                for url, aid in result.skipped
+            ],
+            "skipped_count": result.skipped_count,
         },
         "min_fit_score": payload.min_fit_score,
     }

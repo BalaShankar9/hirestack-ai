@@ -477,6 +477,12 @@ class _RouteRecordingDB:
         self.calls.append((table, dict(data)))
         return f"app-{len(self.calls):03d}"
 
+    async def query(self, table, filters=None, order_by=None,
+                    order_direction="DESCENDING", limit=None, offset=None):
+        # No pre-existing rows in route tests — idempotency is exercised
+        # in test_batch_persister.py with seeded existing_rows.
+        return []
+
 
 def _build_commit_app(*, scorer=None, db=None):
     app = FastAPI()
