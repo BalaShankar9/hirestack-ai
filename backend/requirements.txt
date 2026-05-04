@@ -3,7 +3,7 @@
 # python-multipart 0.0.26+ closes CVE-2026-40347.
 fastapi>=0.115,<0.130
 uvicorn[standard]>=0.27,<0.36
-python-multipart>=0.0.26,<0.1
+python-multipart>=0.0.27,<0.1
 
 # Supabase
 supabase>=2.0,<2.20
