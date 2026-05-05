@@ -26,7 +26,7 @@ import subprocess
 import tempfile
 from typing import Any, List, Optional
 
-from ai_engine.agents.ppt.schemas import DeckSpec
+from ai_engine.agents.ppt.schemas import DeckSpec, SlideSpec
 
 logger = logging.getLogger(__name__)
 

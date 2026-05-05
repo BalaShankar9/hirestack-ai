@@ -11,6 +11,11 @@ import {
   resetTokenStream,
   type TokenDeltaPayload,
 } from "@/lib/streams/token-stream-bus";
+import {
+  SeenEventSet,
+  eventDedupKey,
+  isSchemaAccepted,
+} from "@/lib/streams/schema-gate";
 import { TABLES } from "./paths";
 import type {
   ApplicationDoc,
@@ -831,6 +836,8 @@ export async function generateApplicationModules(
       let buffer = "";
       let result: any = null;
       let streamError: string | null = null;
+      // S15-A1: schema gate + dedup state lives per-stream (cleared with the reader).
+      const seenEvents = new SeenEventSet();
 
       // Inactivity timeout: if no bytes arrive for a while, something is stuck
       let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
@@ -882,6 +889,18 @@ export async function generateApplicationModules(
               const dataStr = line.slice(6);
               try {
                 const data = JSON.parse(dataStr);
+
+                // S15-A1: drop events from a future contract major or replays
+                // we have already delivered. Schema-rejected events count as
+                // "seen" so we don't repeatedly log them either.
+                if (!isSchemaAccepted(data)) {
+                  currentEvent = "";
+                  continue;
+                }
+                if (!seenEvents.add(eventDedupKey(currentEvent, data))) {
+                  currentEvent = "";
+                  continue;
+                }
 
                 if (currentEvent === "progress") {
                   onProgress?.(data as PipelineProgress);

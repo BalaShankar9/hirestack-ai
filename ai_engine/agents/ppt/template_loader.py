@@ -79,6 +79,7 @@ class TemplateLoader:
         """
         try:
             from pptx import Presentation
+            from pptx.util import Inches
         except ImportError as exc:
             raise RuntimeError("python-pptx required for templates") from exc
 

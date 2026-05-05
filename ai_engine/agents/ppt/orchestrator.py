@@ -32,7 +32,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Protocol, runtime_checkable, Set
+from typing import Any, Callable, Dict, List, Optional, Protocol, runtime_checkable, Set, Tuple
 
 from ai_engine.agents.ppt.outline_planner import OutlinePlanner
 from ai_engine.agents.ppt.schemas import DeckSpec
@@ -582,6 +582,16 @@ class PresentationOrchestrator:
         self._semaphore = asyncio.Semaphore(max_concurrent_generations)
         self._progress_callback = progress_callback
         self._circuit_breakers: Dict[str, CircuitBreaker] = {}
+
+    @property
+    def composer(self) -> Optional[SlideComposer]:
+        """Convenience accessor for the SlideComposer wired by the default
+        composition phase. Returns ``None`` when a custom composition phase
+        was injected that doesn't expose `_composer` (the orchestrator's
+        public surface is the phase pipeline; this accessor exists for
+        legacy tests + tooling that introspect the chart/image wiring)."""
+        comp = getattr(self, "_composition", None)
+        return getattr(comp, "_composer", None) if comp is not None else None
 
     def _get_cache_key(self, **kwargs: Any) -> str:
         """Generate cache key from generation parameters."""

@@ -19,7 +19,7 @@ if (typeof window !== "undefined" && !process.env.NEXT_PUBLIC_API_URL && process
 }
 
 interface RequestOptions {
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: any;
   headers?: Record<string, string>;
   token?: string;
@@ -754,6 +754,146 @@ class APIClient {
         method: "POST",
         body: JSON.stringify({ text }),
       }),
+  };
+
+  /* ── AIM: Assignment Intelligence Module ──────────────────────── */
+
+  aim = {
+    listAssignments: async () =>
+      this.request<any[]>(`/aim/assignments`),
+
+    getAssignment: async (id: string) =>
+      this.request<any>(`/aim/assignments/${id}`),
+
+    createAssignment: async (payload: {
+      title: string;
+      course?: string;
+      academic_level?: string;
+      referencing_style?: string;
+      deadline?: string;
+      word_count?: number;
+    }) =>
+      this.request<any>(`/aim/assignments`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
+    deleteAssignment: async (id: string) =>
+      this.request<void>(`/aim/assignments/${id}`, { method: "DELETE" }),
+
+    attachDocumentText: async (
+      assignmentId: string,
+      payload: { type: "brief" | "rubric" | "notes" | "reference"; raw_text: string; file_name?: string },
+    ) =>
+      this.request<any>(`/aim/assignments/${assignmentId}/documents`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
+    listDocuments: async (assignmentId: string) =>
+      this.request<any[]>(`/aim/assignments/${assignmentId}/documents`),
+
+    analyze: async (assignmentId: string) =>
+      this.request<any>(`/aim/assignments/${assignmentId}/analyze`, {
+        method: "POST",
+      }),
+
+    getAnalysis: async (assignmentId: string) =>
+      this.request<any>(`/aim/assignments/${assignmentId}/analysis`),
+
+    listSections: async (assignmentId: string) =>
+      this.request<any[]>(`/aim/assignments/${assignmentId}/sections`),
+
+    generateSection: async (sectionId: string) =>
+      this.request<any>(`/aim/sections/${sectionId}/generate`, { method: "POST" }),
+
+    listSectionOutputs: async (sectionId: string) =>
+      this.request<any[]>(`/aim/sections/${sectionId}/outputs`),
+
+    fixSection: async (sectionId: string, draft: string) =>
+      this.request<any>(`/aim/sections/${sectionId}/fix`, {
+        method: "POST",
+        body: JSON.stringify({ draft }),
+      }),
+
+    applyManualDraft: async (
+      sectionId: string,
+      content: string,
+      qualityScore?: number,
+    ) =>
+      this.request<any>(`/aim/sections/${sectionId}/outputs/manual`, {
+        method: "POST",
+        body: JSON.stringify({ content, quality_score: qualityScore }),
+      }),
+
+    predictGrade: async (assignmentId: string) =>
+      this.request<any>(`/aim/assignments/${assignmentId}/predict-grade`, {
+        method: "POST",
+      }),
+
+    listEvaluations: async (assignmentId: string) =>
+      this.request<any[]>(`/aim/assignments/${assignmentId}/evaluations`),
+
+    getUsage: async () => this.request<any>(`/aim/usage`),
+
+    /** Multipart file upload for an assignment document. */
+    uploadDocument: async (
+      assignmentId: string,
+      file: File,
+      type: "brief" | "rubric" | "notes" | "reference" = "brief",
+    ) => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("type", type);
+      const res = await fetch(`${this.baseUrl}/api/aim/assignments/${assignmentId}/documents/upload`, {
+        method: "POST",
+        headers: this.token ? { Authorization: `Bearer ${this.token}` } : {},
+        body: form,
+      });
+      if (!res.ok) throw new Error(`upload failed: ${res.status} ${await res.text()}`);
+      return res.json();
+    },
+
+    /* Deadline Mode */
+    listTasks: async (assignmentId: string) =>
+      this.request<any[]>(`/aim/assignments/${assignmentId}/tasks`),
+
+    replanTasks: async (assignmentId: string, deadline: string) =>
+      this.request<any[]>(`/aim/assignments/${assignmentId}/tasks/replan`, {
+        method: "POST",
+        body: JSON.stringify({ deadline }),
+      }),
+
+    updateTaskStatus: async (taskId: string, status: "pending" | "in_progress" | "done" | "skipped") =>
+      this.request<any>(`/aim/tasks/${taskId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      }),
+
+    /** SSE endpoint URL — feed into useAIMStream */
+    streamUrl: (sectionId: string) =>
+      `${API_URL}/api/aim/sections/${sectionId}/generate-stream`,
+
+    /** Resume-on-reconnect: fetch persisted events with sequence > since. */
+    listSectionEvents: async (sectionId: string, since: number = 0) =>
+      this.request<{
+        section_id: string;
+        since: number;
+        count: number;
+        last_sequence: number;
+        events: Array<{
+          event_id: string;
+          section_id: string;
+          sequence: number;
+          event_type: string;
+          agent: string;
+          status: string;
+          message: string;
+          progress: number;
+          latency_ms: number;
+          data: Record<string, any>;
+        }>;
+      }>(`/aim/sections/${sectionId}/events?since=${since}`),
   };
 }
 

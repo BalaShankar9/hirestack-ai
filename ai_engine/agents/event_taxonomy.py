@@ -76,13 +76,22 @@ def is_canonical(event_type: str) -> bool:
 
 
 # ─── S14-F3: token streaming kill switch ──────────────────────────────
-# Setting STREAMING_TOKENS_ENABLED=1 (or true/yes/on) flips drafter +
-# optimizer onto the `stream_completion` path so the workspace can paint
-# tokens live. Defaults OFF until the frontend hook + skeleton ship.
+# STREAMING_TOKENS_ENABLED routes drafter + optimizer onto the
+# `stream_completion` path so the workspace can paint tokens live.
+# Default flipped ON in S15 once the frontend hook + skeleton shipped;
+# operators can still kill switch by setting the env var to
+# 0/false/no/off/disabled.
 import os as _os
+
+_FALSE_VALUES = {"0", "false", "no", "off", "disabled"}
+_TRUE_VALUES = {"1", "true", "yes", "on", "enabled"}
 
 
 def streaming_tokens_enabled() -> bool:
-    return _os.environ.get("STREAMING_TOKENS_ENABLED", "").strip().lower() in {
-        "1", "true", "yes", "on",
-    }
+    raw = _os.environ.get("STREAMING_TOKENS_ENABLED", "").strip().lower()
+    if raw in _FALSE_VALUES:
+        return False
+    if raw in _TRUE_VALUES:
+        return True
+    # Unset / empty / unrecognized → default ON.
+    return True

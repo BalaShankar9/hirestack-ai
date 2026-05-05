@@ -15,7 +15,7 @@ frontend's user-curated history snapshots; they are NOT used here.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -80,7 +80,7 @@ async def _lock_variant_generic(
             detail=f"Variant '{variant_key}' has empty content; cannot lock",
         )
 
-    locked_at = datetime.utcnow().isoformat() + "Z"
+    locked_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     new_variants: List[Dict[str, Any]] = []
     for v in variants_raw:
         if not isinstance(v, dict):

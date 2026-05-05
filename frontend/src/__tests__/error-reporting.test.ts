@@ -194,7 +194,6 @@ describe("installGlobalErrorHandler", () => {
       // Must not throw and must not register anything.
       expect(() => installGlobalErrorHandler()).not.toThrow();
     } finally {
-      // @ts-expect-error — restoring.
       globalThis.window = original;
     }
   });

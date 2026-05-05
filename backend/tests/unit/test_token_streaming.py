@@ -38,13 +38,16 @@ def test_token_delta_in_canonical_taxonomy():
 
 
 def test_streaming_tokens_env_switch(monkeypatch):
+    # S15: default flipped ON. Unset → True; explicit truthy → True;
+    # explicit falsy → False (kill switch).
     monkeypatch.delenv("STREAMING_TOKENS_ENABLED", raising=False)
-    assert streaming_tokens_enabled() is False
-    for v in ("1", "true", "yes", "on", "TRUE"):
+    assert streaming_tokens_enabled() is True
+    for v in ("1", "true", "yes", "on", "TRUE", "enabled"):
         monkeypatch.setenv("STREAMING_TOKENS_ENABLED", v)
         assert streaming_tokens_enabled() is True, v
-    monkeypatch.setenv("STREAMING_TOKENS_ENABLED", "0")
-    assert streaming_tokens_enabled() is False
+    for v in ("0", "false", "no", "off", "disabled"):
+        monkeypatch.setenv("STREAMING_TOKENS_ENABLED", v)
+        assert streaming_tokens_enabled() is False, v
 
 
 # ─── EventSink.emit_token_delta ────────────────────────────────────────
@@ -273,7 +276,8 @@ async def test_complete_json_fallback_when_env_disabled(monkeypatch):
     from ai_engine.client import AIClient
     from ai_engine import cache as cache_mod
 
-    monkeypatch.delenv("STREAMING_TOKENS_ENABLED", raising=False)
+    # S15: default is now ON; explicitly disable for this scenario.
+    monkeypatch.setenv("STREAMING_TOKENS_ENABLED", "0")
     fake_cache = MagicMock()
     fake_cache.get = MagicMock(return_value=None)
     fake_cache.put = MagicMock()

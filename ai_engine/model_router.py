@@ -47,6 +47,14 @@ _DEFAULT_ROUTES = {
     "fast_doc":           "gemini-2.0-flash",    # quick previews / drafts
     "summarization":      "gemini-2.0-flash",    # text summarization
     "formatting":         "gemini-2.0-flash",    # HTML formatting, cleanup
+
+    # ── AIM (Assignment Intelligence Module) ──────────────────────────
+    "aim_parser":         "gemini-2.5-flash",    # structured directive/rubric extraction
+    "aim_recon":          "gemini-2.5-pro",      # deep brief analysis
+    "aim_writer":         "gemini-2.5-pro",      # academic section drafting
+    "aim_reviewer":       "gemini-2.5-flash",    # cheap default; escalates via cascade
+    "aim_grade_predictor":"gemini-2.5-flash",    # rubric scoring
+    "aim_fix":            "gemini-2.5-pro",      # diagnostic + targeted rewrite
 }
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -78,6 +86,14 @@ _DEFAULT_CASCADE = {
     "fast_doc":           ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
     "summarization":      ["gemini-2.0-flash", "gemini-2.5-flash"],
     "formatting":         ["gemini-2.0-flash", "gemini-2.5-flash"],
+
+    # ── AIM cascades ──────────────────────────────────────────────────
+    "aim_parser":         ["gemini-2.5-flash", "gemini-2.5-pro"],
+    "aim_recon":          ["gemini-2.5-pro", "gemini-2.5-flash"],
+    "aim_writer":         ["gemini-2.5-pro", "gemini-2.5-flash"],
+    "aim_reviewer":       ["gemini-2.5-flash", "gemini-2.5-pro"],
+    "aim_grade_predictor":["gemini-2.5-flash", "gemini-2.5-pro"],
+    "aim_fix":            ["gemini-2.5-pro", "gemini-2.5-flash"],
 }
 
 # ═══════════════════════════════════════════════════════════════════════

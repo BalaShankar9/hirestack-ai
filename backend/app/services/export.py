@@ -3,7 +3,7 @@ Export Service
 Handles document export to PDF/DOCX formats with Supabase
 """
 from typing import List, Optional, Dict, Any, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 import io
 import base64
 import structlog
@@ -97,7 +97,7 @@ class ExportService:
             raise ValueError("No documents to export")
 
         if not filename:
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             filename = f"hirestack_export_{timestamp}.{fmt}"
 
         # Generate file content

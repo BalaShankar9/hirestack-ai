@@ -228,6 +228,17 @@ TABLES = {
     "document_evolution": "document_evolution",
     # Model quality observations (cost optimizer persistence)
     "quality_observations": "quality_observations",
+    # AIM (Assignment Intelligence Module)
+    "aim_assignments": "aim_assignments",
+    "aim_assignment_documents": "aim_assignment_documents",
+    "aim_assignment_analysis": "aim_assignment_analysis",
+    "aim_sections": "aim_sections",
+    "aim_section_outputs": "aim_section_outputs",
+    "aim_section_events": "aim_section_events",
+    "aim_evaluations": "aim_evaluations",
+    "aim_tasks": "aim_tasks",
+    "aim_jobs": "aim_jobs",
+    "aim_usage": "aim_usage",
     # Knowledge library & global skills
     "knowledge_resources": "knowledge_resources",
     "user_knowledge_progress": "user_knowledge_progress",

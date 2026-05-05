@@ -251,7 +251,6 @@ describe("sanitizeHtml — server path (no window)", () => {
 
   afterEach(() => {
     if (originalWindow !== undefined) {
-      // @ts-expect-error — restoring after test.
       globalThis.window = originalWindow;
     }
   });

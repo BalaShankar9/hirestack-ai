@@ -40,7 +40,6 @@ describe("validateEnv", () => {
       const mod = await loadFresh();
       expect(mod.validateEnv()).toEqual({ valid: true, errors: [], warnings: [] });
     } finally {
-      // @ts-expect-error — restoring.
       globalThis.window = original;
     }
   });
@@ -206,7 +205,6 @@ describe("checkEnvOnce", () => {
       mod.checkEnvOnce();
       expect(consoleErrorSpy).not.toHaveBeenCalled();
     } finally {
-      // @ts-expect-error — restoring.
       globalThis.window = original;
     }
   });

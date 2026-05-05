@@ -44,6 +44,9 @@ ALLOWED_SET_NULL_FOR_APPLICATIONS: set[str] = {
     "evidence_mappings",    # Mapping records preserved as audit trail
     "review_sessions",      # Review history is user-scoped
     "tasks",                # Tasks survive application removal
+    "story_bank",           # STAR/CAR stories are user-owned reusable assets;
+                            # surviving the source application lets the user
+                            # keep mining them for future roles.
 }
 
 # KNOWN HISTORICAL DRIFT — frozen at the time of v4 hardening, then

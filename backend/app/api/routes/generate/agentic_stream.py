@@ -27,7 +27,13 @@ from app.api.deps import get_current_user
 from app.core.security import limiter
 from app.core.database import get_supabase, TABLES
 
-from ai_engine.agents.streaming_protocol import StreamingConfig
+from ai_engine.agents.streaming_protocol import (
+    AgentContext,
+    EventType,
+    StageContext,
+    StreamingConfig,
+    StreamPriority,
+)
 from ai_engine.agents.agentic_event_emitter import AgenticEventEmitter, SSEEventSink
 from ai_engine.agents.streaming_llm_client import StreamingAIClient
 
