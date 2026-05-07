@@ -14,6 +14,7 @@ from .dispatcher import (
     ToolNotFound,
     ToolTimeout,
 )
+from .supabase_store import SupabaseToolStore, supabase_invocation_sink
 from .tools import ToolRecord, ToolStore
 
 __all__ = [
@@ -22,9 +23,11 @@ __all__ = [
     "InvalidInput",
     "InvalidOutput",
     "RegistryDisabled",
+    "SupabaseToolStore",
     "ToolInvocation",
     "ToolNotFound",
     "ToolStore",
     "ToolRecord",
     "ToolTimeout",
+    "supabase_invocation_sink",
 ]
