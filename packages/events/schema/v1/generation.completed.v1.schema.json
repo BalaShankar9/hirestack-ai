@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hirestack.ai/events/v1/generation.completed.v1.schema.json",
+  "title": "GenerationCompletedV1",
+  "description": "Emitted when the generation pipeline reaches a terminal state (success or failure).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_type", "event_version", "payload"],
+  "properties": {
+    "event_type": { "const": "generation.completed" },
+    "event_version": { "const": 1 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job_id", "application_id", "user_id", "status"],
+      "properties": {
+        "job_id":         { "type": "string", "format": "uuid" },
+        "application_id": { "type": "string", "format": "uuid" },
+        "user_id":        { "type": "string", "format": "uuid" },
+        "status":         { "type": "string", "enum": ["succeeded", "failed", "cancelled"] },
+        "duration_ms":    { "type": ["integer", "null"], "minimum": 0 },
+        "error_class":    { "type": ["string", "null"] }
+      }
+    }
+  }
+}

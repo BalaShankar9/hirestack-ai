@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hirestack.ai/events/v1/aim.assignment.created.v1.schema.json",
+  "title": "AimAssignmentCreatedV1",
+  "description": "Emitted when a learner picks up an AIM assignment.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_type", "event_version", "payload"],
+  "properties": {
+    "event_type": { "const": "aim.assignment.created" },
+    "event_version": { "const": 1 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assignment_id", "module_id", "user_id"],
+      "properties": {
+        "assignment_id": { "type": "string", "format": "uuid" },
+        "module_id":     { "type": "string" },
+        "user_id":       { "type": "string", "format": "uuid" },
+        "due_at":        { "type": ["string", "null"], "format": "date-time" }
+      }
+    }
+  }
+}
