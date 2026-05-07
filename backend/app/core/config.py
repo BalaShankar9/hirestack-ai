@@ -144,6 +144,12 @@ class Settings(BaseSettings):
     # wired (PR-9b) and the events_outbox table is being populated.
     ff_outbox_relay: bool = False
 
+    # PR m3-pr10: event consumer scaffold. Default off — `event_consumer`
+    # Procfile entries exit cleanly when False. Flip ON once a real
+    # consumer (e.g. billing_usage) has its downstream side-effect wired
+    # and the producers are publishing onto the matching streams.
+    ff_event_consumer: bool = False
+
     @field_validator("supabase_http_retries")
     @classmethod
     def _clamp_retries(cls, v: int) -> int:
