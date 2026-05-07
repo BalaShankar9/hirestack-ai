@@ -954,7 +954,19 @@ class AIClient:
             stream_model = self._resolve_model(task_type, model) or self.model
             stream_breaker = _get_model_breaker(stream_model)
             try:
-                async with stream_breaker:
+                # PR m6-pr23: trace the streaming path through Langfuse.
+                from ai_engine.observability import trace_llm as _trace_llm
+                async with stream_breaker, _trace_llm(
+                    model=stream_model,
+                    name=tool_label,
+                    metadata={
+                        "task_type": task_type,
+                        "temperature": temperature,
+                        "streamed": True,
+                        "max_tokens": max_tokens,
+                    },
+                    input={"system": system or "", "prompt": prompt[:4000]},
+                ) as _lf_span:
                     streamed = await self._provider.complete_json_streaming(
                         prompt=prompt, system=system, max_tokens=max_tokens,
                         temperature=temperature, schema=schema, model=stream_model,
@@ -970,6 +982,13 @@ class AIClient:
                         schema=schema, temperature=temperature, max_tokens=max_tokens,
                         response=streamed,
                     )
+                    if _lf_span is not None:
+                        try:
+                            _lf_span.update(output={
+                                "keys": list(streamed.keys()) if isinstance(streamed, dict) else None,
+                            })
+                        except Exception:
+                            pass
                     emit_tool_result(
                         tool_label,
                         {"model": stream_model, "streamed": True,
@@ -997,7 +1016,20 @@ class AIClient:
         for i, candidate_model in enumerate(models):
             breaker = _get_model_breaker(candidate_model)
             try:
-                async with breaker:
+                # PR m6-pr23: trace each cascade attempt through Langfuse.
+                from ai_engine.observability import trace_llm as _trace_llm
+                async with breaker, _trace_llm(
+                    model=candidate_model,
+                    name=tool_label,
+                    metadata={
+                        "task_type": task_type,
+                        "temperature": temperature,
+                        "attempt": i + 1,
+                        "max_attempts": len(models),
+                        "max_tokens": max_tokens,
+                    },
+                    input={"system": system or "", "prompt": prompt[:4000]},
+                ) as _lf_span:
                     result = await self._provider.complete_json(
                         prompt=prompt, system=system, max_tokens=max_tokens,
                         temperature=temperature, schema=schema, model=candidate_model,
@@ -1015,6 +1047,13 @@ class AIClient:
                         schema=schema, temperature=temperature, max_tokens=max_tokens,
                         response=result,
                     )
+                    if _lf_span is not None:
+                        try:
+                            _lf_span.update(output={
+                                "keys": list(result.keys()) if isinstance(result, dict) else None,
+                            })
+                        except Exception:
+                            pass
                     emit_tool_result(
                         tool_label,
                         {

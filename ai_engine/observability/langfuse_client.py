@@ -1,6 +1,7 @@
 """Langfuse client wrapper.
 
 PR m4-pr12: thin singleton + ``trace_llm`` async context manager.
+PR m6-pr23: trace_id contextvar + structured input/output capture.
 
 The wrapper is intentionally degraded — if the env vars are missing OR the
 ``langfuse`` package is not installed, ``trace_llm`` becomes a no-op so the
@@ -16,12 +17,26 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from typing import Any, AsyncIterator, Optional
 
 logger = logging.getLogger(__name__)
 
 _client: Optional[Any] = None
 _init_attempted = False
+
+# PR m6-pr23: in-flight LLM trace id, set by ``trace_llm`` while a
+# tracked call is active. Downstream code (orchestrator → AgentResult,
+# pipeline → SSE event metadata) can read this to correlate user-facing
+# events with the Langfuse trace dashboard.
+_current_trace_id: ContextVar[Optional[str]] = ContextVar(
+    "hirestack_langfuse_trace_id", default=None,
+)
+
+
+def get_current_trace_id() -> Optional[str]:
+    """Return the Langfuse trace id of the in-flight LLM call, or None."""
+    return _current_trace_id.get()
 
 
 def is_enabled() -> bool:
@@ -60,11 +75,16 @@ async def trace_llm(
     model: str,
     name: str = "gemini.generate_content",
     metadata: Optional[dict] = None,
+    input: Any = None,
 ) -> AsyncIterator[Optional[Any]]:
     """Wrap an LLM call so Langfuse records latency, model, and outcome.
 
     Yields the underlying span (or ``None`` if disabled). Always re-raises
     exceptions so caller error handling is unchanged.
+
+    PR m6-pr23: also accepts an ``input`` payload (truncated by Langfuse
+    on the server) and publishes the span's trace id to the
+    ``_current_trace_id`` contextvar for downstream correlation.
     """
     client = get_langfuse()
     if client is None:
@@ -72,11 +92,25 @@ async def trace_llm(
         return
     span = None
     try:
-        span = client.span(name=name, metadata={"model": model, **(metadata or {})})
+        span_kwargs: dict[str, Any] = {
+            "name": name,
+            "metadata": {"model": model, **(metadata or {})},
+        }
+        if input is not None:
+            span_kwargs["input"] = input
+        span = client.span(**span_kwargs)
     except Exception as exc:  # pragma: no cover
         logger.debug("langfuse span() failed: %s", exc)
         yield None
         return
+    # Publish trace id so callers can stamp it onto AgentResult / SSE.
+    trace_token = None
+    try:
+        trace_id = getattr(span, "trace_id", None) or getattr(span, "id", None)
+        if trace_id:
+            trace_token = _current_trace_id.set(str(trace_id))
+    except Exception:  # pragma: no cover
+        trace_token = None
     try:
         yield span
         try:
@@ -91,3 +125,9 @@ async def trace_llm(
         except Exception:  # pragma: no cover
             pass
         raise
+    finally:
+        if trace_token is not None:
+            try:
+                _current_trace_id.reset(trace_token)
+            except Exception:  # pragma: no cover
+                pass
