@@ -3,3 +3,4 @@ worker: cd /app/backend && PYTHONPATH=/app python -m app.worker
 scheduler: cd /app/backend && PYTHONPATH=/app python -m app.scheduler.main
 outbox_relay: cd /app/backend && PYTHONPATH=/app python -m app.workers.outbox_relay
 billing_usage_consumer: cd /app/backend && PYTHONPATH=/app python -m app.workers.consumers.billing_usage
+temporal_worker: cd /app/backend && PYTHONPATH=/app python -m app.temporal.worker
