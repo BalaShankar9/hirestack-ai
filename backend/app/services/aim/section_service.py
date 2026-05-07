@@ -68,6 +68,7 @@ class AIMSectionService:
         section = await self.get_section(user_id, section_id)
         if not section:
             raise ValueError("section not found")
+        assignment = await self.db.get(TABLES["aim_assignments"], section["assignment_id"]) or {}
         # load parsed + recon for the assignment
         analysis_rows = await self.db.query(
             TABLES["aim_assignment_analysis"],
@@ -77,14 +78,41 @@ class AIMSectionService:
         if not analysis_rows:
             raise ValueError("assignment has not been analyzed yet")
         analysis = analysis_rows[0]
+        expectations = analysis.get("expectations") or {}
         parsed = {
             "directive": analysis.get("directive"),
             "rubric_breakdown": analysis.get("rubric_breakdown") or [],
-            "academic_level": (analysis.get("expectations") or {}).get("academic_level"),
-            "referencing_style": (analysis.get("expectations") or {}).get("referencing_style"),
+            "academic_level": expectations.get("academic_level") or assignment.get("academic_level"),
+            "referencing_style": expectations.get("referencing_style") or assignment.get("referencing_style"),
         }
         # Recover from recon_report blob (richer)
         recon = analysis.get("recon_report") or {}
+
+        # PR m6-pr21: opt-in pgvector RAG context for the reviewer.
+        # Construct retriever only when the flag is on AND the call has
+        # an assignment_id; pure additive — `generate_section`
+        # tolerates `source_retriever=None`.
+        source_retriever = None
+        rag_assignment_id: Optional[str] = None
+        try:
+            from app.core.config import settings as _settings  # local import
+
+            if getattr(_settings, "ff_aim_rag", False) and section.get("assignment_id"):
+                from ai_engine.rag.source_retriever import SourceRetriever
+                from app.services.aim.embedder_factory import (
+                    build_openai_embedder,
+                )
+
+                supabase_client = getattr(self.db, "client", None)
+                if supabase_client is not None:
+                    embedder = build_openai_embedder()
+                    source_retriever = SourceRetriever(
+                        supabase=supabase_client, embedder=embedder
+                    )
+                    rag_assignment_id = section["assignment_id"]
+        except Exception:  # pragma: no cover - never break generation
+            source_retriever = None
+            rag_assignment_id = None
 
         result = await generate_section(
             section=section,
@@ -93,6 +121,8 @@ class AIMSectionService:
             section_id=section_id,
             max_attempts=max_attempts,
             emit=emit,
+            source_retriever=source_retriever,
+            assignment_id=rag_assignment_id,
         )
         # persist all attempts; mark final as current
         await self._persist_attempts(user_id, section_id, result)
@@ -204,6 +234,7 @@ class AIMSectionService:
         sections = await self.list_sections(assignment_id)
         if not sections:
             raise ValueError("no sections to evaluate")
+        assignment = await self.db.get(TABLES["aim_assignments"], assignment_id) or {}
         section_reviews: list[dict[str, Any]] = []
         for s in sections:
             current = await self.get_current_output(s["id"])
@@ -222,10 +253,11 @@ class AIMSectionService:
             limit=1,
         )
         analysis = analysis_rows[0] if analysis_rows else {}
+        expectations = analysis.get("expectations") or {}
         parsed = {
             "directive": analysis.get("directive"),
             "rubric_breakdown": analysis.get("rubric_breakdown") or [],
-            "academic_level": (analysis.get("expectations") or {}).get("academic_level"),
+            "academic_level": expectations.get("academic_level") or assignment.get("academic_level"),
         }
         prediction = await predict_grade(parsed, section_reviews)
         # persist evaluation

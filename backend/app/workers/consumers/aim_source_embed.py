@@ -53,18 +53,10 @@ async def handle_source_event(event: dict[str, Any]) -> None:
 
 
 async def _build_embedder():  # pragma: no cover - thin provider seam
-    from openai import AsyncOpenAI  # type: ignore[import-not-found]
+    # PR m6-pr21: shared factory so consumer + section_service stay in lock-step.
+    from app.services.aim.embedder_factory import build_openai_embedder
 
-    client = AsyncOpenAI()
-
-    async def _embed(text: str) -> list[float]:
-        resp = await client.embeddings.create(
-            model="text-embedding-3-small",
-            input=text,
-        )
-        return list(resp.data[0].embedding)
-
-    return _embed
+    return build_openai_embedder()
 
 
 async def _amain() -> int:
