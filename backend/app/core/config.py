@@ -125,6 +125,10 @@ class Settings(BaseSettings):
     worker_name: str = "worker-1"
     worker_concurrency: int = 3
 
+    # PR m1-pr3: Idempotency-Key middleware. Default off for safe rollout;
+    # flip on per-environment after migration ships.
+    idempotency_enabled: bool = False
+
     @field_validator("supabase_http_retries")
     @classmethod
     def _clamp_retries(cls, v: int) -> int:

@@ -323,6 +323,14 @@ app.add_middleware(MaxBodySizeMiddleware)
 app.add_middleware(TimeoutMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
+# PR m1-pr3: Idempotency-Key dedupe for POST/PATCH/DELETE.
+# Disabled by default; enable per-env via IDEMPOTENCY_ENABLED=true once the
+# `idempotency_keys` table migration has been applied.
+if settings.idempotency_enabled:
+    from app.core.idempotency import IdempotencyMiddleware  # noqa: E402
+    app.add_middleware(IdempotencyMiddleware)
+    logger.info("Idempotency middleware enabled")
+
 
 # Exception handlers
 @app.exception_handler(RequestValidationError)
