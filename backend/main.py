@@ -735,6 +735,9 @@ async def collect_frontend_errors(request: Request, batch: _FEErrorBatch) -> Non
 
 # Include API routes
 app.include_router(api_router, prefix="/api")
+# PR m4-pr13: dual-mount under /api/v1 for the new typed SDK. Legacy /api stays
+# live for one release for rollback safety; remove after PR-13 + 1 release.
+app.include_router(api_router, prefix="/api/v1")
 
 
 if __name__ == "__main__":
