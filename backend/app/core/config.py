@@ -138,6 +138,12 @@ class Settings(BaseSettings):
     # LEGACY_INPROC_SCHEDULER=true in the environment.
     legacy_inproc_scheduler: bool = True
 
+    # PR m3-pr9: outbox relay. Default off — when False, the
+    # `outbox_relay` Procfile process exits cleanly so the entry can be
+    # deployed before the flag is flipped. Flip ON once producers are
+    # wired (PR-9b) and the events_outbox table is being populated.
+    ff_outbox_relay: bool = False
+
     @field_validator("supabase_http_retries")
     @classmethod
     def _clamp_retries(cls, v: int) -> int:
