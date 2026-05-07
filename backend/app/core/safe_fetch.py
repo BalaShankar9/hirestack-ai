@@ -174,11 +174,87 @@ async def safe_request(
         return await one_shot.request(method, url, **kwargs)
 
 
+@dataclass(frozen=True)
+class SafeFetchResult:
+    """Outcome of a :func:`safe_follow_get` call."""
+
+    status_code: int
+    final_url: str
+    body: str
+    redirect_chain: tuple[str, ...]
+
+
+async def safe_follow_get(
+    url: str,
+    *,
+    config: Optional[GuardConfig] = None,
+    timeout: float = 10.0,
+    max_bytes: int = 256 * 1024,
+    max_redirects: int = 3,
+    headers: Optional[dict[str, str]] = None,
+) -> SafeFetchResult:
+    """GET ``url`` with manual redirect handling and per-hop SSRF revalidation.
+
+    httpx's built-in ``follow_redirects=True`` is unsafe — a public host
+    can return a 30x pointing at ``http://169.254.169.254/`` and httpx
+    will happily fetch it. We disable httpx redirects and re-run
+    :func:`assert_safe_url` against every ``Location`` before following.
+
+    The body is read in chunks and truncated at ``max_bytes`` so a
+    pathological 5 GB response can't exhaust memory. UTF-8 with replace
+    fallback — these are best-effort scrapes, not protocol parsers.
+
+    Always returns; non-2xx is reported via ``status_code``. Transport
+    errors raise :class:`httpx.HTTPError`. Blocked URLs raise
+    :class:`UnsafeURLError` when enforcement is on.
+    """
+    cfg = config or GuardConfig()
+    chain: list[str] = []
+    current = url
+    async with httpx.AsyncClient(
+        timeout=timeout,
+        follow_redirects=False,
+        headers=headers or {},
+    ) as client:
+        for _hop in range(max_redirects + 1):
+            try:
+                assert_safe_url(current, config=cfg)
+            except UnsafeURLError:
+                if is_enforced():
+                    raise
+            chain.append(current)
+            async with client.stream("GET", current) as resp:
+                if 300 <= resp.status_code < 400 and "location" in resp.headers:
+                    next_url = str(resp.headers["location"])
+                    if next_url.startswith("/"):
+                        # Relative redirect — resolve against current.
+                        parsed = urlparse(current)
+                        next_url = f"{parsed.scheme}://{parsed.netloc}{next_url}"
+                    current = next_url
+                    continue
+                buf = bytearray()
+                async for chunk in resp.aiter_bytes():
+                    if len(buf) + len(chunk) > max_bytes:
+                        buf.extend(chunk[: max_bytes - len(buf)])
+                        break
+                    buf.extend(chunk)
+                body_text = buf.decode("utf-8", errors="replace")
+                return SafeFetchResult(
+                    status_code=resp.status_code,
+                    final_url=str(resp.url),
+                    body=body_text,
+                    redirect_chain=tuple(chain),
+                )
+    raise UnsafeURLError(f"too_many_redirects: >{max_redirects} for {url}")
+
+
 __all__ = [
     "GuardConfig",
+    "SafeFetchResult",
     "UnsafeURLError",
     "assert_safe_url",
     "is_enforced",
+    "safe_follow_get",
     "safe_get",
     "safe_request",
 ]

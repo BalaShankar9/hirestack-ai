@@ -161,48 +161,32 @@ class SocialConnector:
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
 
-        # SSRF protection: block requests to private/internal networks
-        from urllib.parse import urlparse as _urlparse
-        import socket
-        from ipaddress import ip_address, ip_network
-
-        _BLOCKED_NETWORKS = [
-            ip_network("127.0.0.0/8"),
-            ip_network("10.0.0.0/8"),
-            ip_network("172.16.0.0/12"),
-            ip_network("192.168.0.0/16"),
-            ip_network("169.254.0.0/16"),  # AWS metadata
-            ip_network("::1/128"),
-            ip_network("fc00::/7"),
-        ]
-
-        parsed = _urlparse(url)
-        hostname = parsed.hostname or ""
-        if not hostname:
-            raise ValueError("Invalid URL")
+        # SSRF protection: route through the central guard so DNS
+        # resolution, redirect re-validation, and metadata-host
+        # blocking stay in one audited place.
+        from app.core.safe_fetch import (
+            UnsafeURLError,
+            safe_follow_get,
+        )
 
         try:
-            # Resolve hostname to check the actual IP
-            addr_info = socket.getaddrinfo(hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
-            for family, _type, proto, canonname, sockaddr in addr_info:
-                ip = ip_address(sockaddr[0])
-                for network in _BLOCKED_NETWORKS:
-                    if ip in network:
-                        raise ValueError("URL resolves to a private/internal network address")
-        except socket.gaierror:
-            raise ValueError("Could not resolve hostname")
-
-        try:
-            async with httpx.AsyncClient(timeout=CONNECT_TIMEOUT, follow_redirects=True) as client:
-                resp = await client.get(url, headers={
-                    "User-Agent": "HireStack-AI/1.0 (Career Profile Connector)",
-                })
-                resp.raise_for_status()
-                html = resp.text[:10000]  # Limit to first 10KB
-        except httpx.HTTPStatusError as e:
-            raise ValueError(f"Website returned {e.response.status_code}")
+            result = await safe_follow_get(
+                url,
+                timeout=CONNECT_TIMEOUT,
+                max_bytes=10 * 1024,
+                max_redirects=3,
+                headers={"User-Agent": "HireStack-AI/1.0 (Career Profile Connector)"},
+            )
+        except UnsafeURLError as exc:
+            raise ValueError(f"URL blocked by SSRF guard: {exc}")
         except (httpx.ConnectError, httpx.TimeoutException):
             raise ValueError("Could not connect to website. Check the URL and try again.")
+        except httpx.HTTPError as exc:
+            raise ValueError(f"Website fetch failed: {exc}")
+
+        if result.status_code >= 400:
+            raise ValueError(f"Website returned {result.status_code}")
+        html = result.body
 
         # Extract metadata from HTML
         title = self._extract_html_tag(html, "title") or ""
