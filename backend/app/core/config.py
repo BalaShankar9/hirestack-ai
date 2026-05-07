@@ -129,6 +129,15 @@ class Settings(BaseSettings):
     # flip on per-environment after migration ships.
     idempotency_enabled: bool = False
 
+    # PR m2-pr6: scheduler extraction. While True (default), the web
+    # process keeps running periodic sweeps + JobWatchdog inline — same
+    # behaviour as before the split. Flip to False once the dedicated
+    # `scheduler` process (app.scheduler.main) is deployed and verified
+    # holding the leader lock; the web process will then skip the loops
+    # and the scheduler is the sole runner. Rollback by setting
+    # LEGACY_INPROC_SCHEDULER=true in the environment.
+    legacy_inproc_scheduler: bool = True
+
     @field_validator("supabase_http_retries")
     @classmethod
     def _clamp_retries(cls, v: int) -> int:

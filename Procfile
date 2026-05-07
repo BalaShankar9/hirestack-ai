@@ -1,2 +1,3 @@
 web: cd /app/backend && PYTHONPATH=/app python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
 worker: cd /app/backend && PYTHONPATH=/app python -m app.worker
+scheduler: cd /app/backend && PYTHONPATH=/app python -m app.scheduler.main
