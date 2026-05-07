@@ -6,7 +6,7 @@ from typing import Dict, Any, List, Optional
 import structlog
 
 from app.core.database import get_db, TABLES, SupabaseDB
-from ai_engine.client import AIClient
+from ai_engine.api import AIClient
 from ai_engine.chains.ats_scanner import ATSScannerChain
 
 logger = structlog.get_logger()

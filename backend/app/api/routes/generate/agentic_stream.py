@@ -170,7 +170,7 @@ async def _stream_pipeline(
 
     try:
         # Import AI client
-        from ai_engine.client import AIClient
+        from ai_engine.api import AIClient
 
         ai = AIClient()
         streaming_ai = StreamingAIClient(ai, emitter)

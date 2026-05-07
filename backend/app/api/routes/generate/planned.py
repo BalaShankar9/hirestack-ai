@@ -69,7 +69,7 @@ async def generate_planned_pipeline(
 
 async def _run_planned_pipeline(req: PlannedPipelineRequest, current_user: Dict[str, Any]) -> dict:
     """Execute PlannerAgent → multi-pipeline executor."""
-    from ai_engine.client import AIClient
+    from ai_engine.api import AIClient
     from ai_engine.agents.planner import PlannerAgent
     from ai_engine.agents.multi_pipeline import execute_plan
     from app.core.database import get_supabase, TABLES

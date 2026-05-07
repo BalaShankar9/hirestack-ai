@@ -69,7 +69,7 @@ async def _run_and_cache(
     try:
         from ai_engine.cache import get_jd_cache
         from ai_engine.chains.company_intel import CompanyIntelChain
-        from ai_engine.client import AIClient
+        from ai_engine.api import AIClient
 
         client = AIClient()
         chain = CompanyIntelChain(client)

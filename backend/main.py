@@ -4,11 +4,11 @@ Main entry point for the backend API
 """
 import asyncio
 import json
-import sys
-from pathlib import Path
 
-# Add parent directory to path for ai_engine imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# PR m4-pr11: ai_engine is now an installed editable package (see
+# backend/requirements.txt → `-e ../ai_engine`). The legacy
+# `sys.path.insert` hack used to live here; deleting it forces all
+# downstream imports to go through the proper package surface.
 
 import structlog
 from contextlib import asynccontextmanager
@@ -138,7 +138,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Hydrate cost optimizer quality observations from DB
     try:
-        from ai_engine.model_router import hydrate_quality_observations
+        from ai_engine.api import hydrate_quality_observations
         loaded = hydrate_quality_observations()
         if loaded:
             logger.info("Quality observations hydrated", count=loaded)
@@ -637,7 +637,7 @@ async def prometheus_metrics(request: Request):
 
     # ── W3 Observability: daily cost (USD cents) from _DailyUsageTracker ──
     try:
-        from ai_engine.client import _daily_tracker  # type: ignore
+        from ai_engine.api import _daily_tracker  # type: ignore
         s = _daily_tracker.stats
         lines.append("# HELP hirestack_ai_daily_cost_cents Estimated AI cost today (USD cents)")
         lines.append("# TYPE hirestack_ai_daily_cost_cents gauge")

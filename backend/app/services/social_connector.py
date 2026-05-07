@@ -136,7 +136,7 @@ class SocialConnector:
         # Always attempt AI analysis when profile data is available
         if profile_data:
             try:
-                from ai_engine.client import AIClient
+                from ai_engine.api import AIClient
                 from ai_engine.chains.linkedin_advisor import LinkedInAdvisorChain
 
                 client = AIClient()

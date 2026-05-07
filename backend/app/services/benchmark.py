@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any
 import structlog
 
 from app.core.database import get_firestore_db, COLLECTIONS, FirestoreDB
-from ai_engine.client import AIClient
+from ai_engine.api import AIClient
 from ai_engine.chains.benchmark_builder import BenchmarkBuilderChain
 
 logger = structlog.get_logger()

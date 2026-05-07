@@ -52,7 +52,7 @@ _JOB_TOTAL_STEPS = 7
 def _get_model_health_summary() -> Dict[str, Any]:
     """Best-effort model health for job status responses."""
     try:
-        from ai_engine.model_router import get_model_health
+        from ai_engine.api import get_model_health
         return get_model_health()
     except Exception:
         return {}
@@ -1116,7 +1116,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:
         requested_modules,
     )
 
-    from ai_engine.client import AIClient
+    from ai_engine.api import AIClient
     from ai_engine.chains.company_intel import CompanyIntelChain
     from ai_engine.chains.role_profiler import RoleProfilerChain
     from ai_engine.chains.benchmark_builder import BenchmarkBuilderChain
@@ -1323,7 +1323,7 @@ async def _run_generation_job_inner_runtime(job_id: str, user_id: str) -> None:
     # runtime path emits only PipelineEvent rows (progress / detail) and
     # all tool_call / tool_result / cache_hit / evidence_added /
     # policy_decision events fired inside chains go to /dev/null.
-    from ai_engine.agent_events import set_event_emitter, reset_event_emitter
+    from ai_engine.api import set_event_emitter, reset_event_emitter
 
     _runtime_event_seq = {"n": 0}
 

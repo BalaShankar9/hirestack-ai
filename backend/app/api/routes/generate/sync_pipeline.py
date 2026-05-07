@@ -100,7 +100,7 @@ async def generate_pipeline(request: Request, req: PipelineRequest, current_user
 
 async def _run_sync_pipeline(req: PipelineRequest, current_user: Dict[str, Any]) -> dict:
     """Inner pipeline logic extracted for timeout wrapping."""
-    from ai_engine.client import AIClient
+    from ai_engine.api import AIClient
     from ai_engine.chains.role_profiler import RoleProfilerChain
     from ai_engine.chains.benchmark_builder import BenchmarkBuilderChain
     from ai_engine.chains.gap_analyzer import GapAnalyzerChain
