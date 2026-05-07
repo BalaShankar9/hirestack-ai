@@ -7,3 +7,11 @@ healthcheckPath = "/health"
 healthcheckTimeout = 120
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
+# Multi-replica API. Safe because:
+#   - PR-3 idempotency middleware deduplicates retried POST/PATCH/DELETE.
+#   - PR-6 + PR-6.5 moved scheduler/JobWatchdog to a dedicated `scheduler`
+#     process behind a Redis leader lock; API replicas no longer race on them
+#     once `LEGACY_INPROC_SCHEDULER=false` is set.
+#   - PR-7 k6 scenario `duplicate-detection.js` proves dedupe holds under
+#     concurrent multi-replica load.
+numReplicas = 2
