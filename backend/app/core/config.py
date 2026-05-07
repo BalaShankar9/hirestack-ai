@@ -165,6 +165,15 @@ class Settings(BaseSettings):
     # 100% → 2 weeks → delete legacy path.
     ff_temporal_generation: bool = False
 
+    # PR m6-pr19: AIM RAG over pgvector source embeddings. Default off
+    # — when False the AIM reviewer runs without retrieved-source
+    # context and the `aim_source_embed` consumer exits cleanly. When
+    # True (and ff_event_consumer is also True) new aim_sources rows
+    # are embedded asynchronously and the reviewer pulls top-k matches
+    # via the `aim_sources_match` RPC. Backfill of existing rows is a
+    # follow-up wave once the consumer is steady-state.
+    ff_aim_rag: bool = False
+
     @field_validator("supabase_http_retries")
     @classmethod
     def _clamp_retries(cls, v: int) -> int:
