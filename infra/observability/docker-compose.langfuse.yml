@@ -1,0 +1,50 @@
+version: "3.9"
+
+# PR m4-pr12: self-hosted Langfuse for local LLM tracing.
+# Bring up: `docker compose -f infra/observability/docker-compose.langfuse.yml up -d`
+# Then visit http://localhost:3000, create an org/project, and copy the keys
+# into backend/.env as LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY.
+
+services:
+  langfuse-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  langfuse-web:
+    image: langfuse/langfuse:2
+    restart: unless-stopped
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: change-me-in-production
+      SALT: change-me-in-production
+      NEXTAUTH_URL: http://localhost:3000
+      TELEMETRY_ENABLED: "false"
+
+  # Optional: OTLP collector (forwards backend traces to Jaeger/Tempo/etc.)
+  # Uncomment and set OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces
+  # otel-collector:
+  #   image: otel/opentelemetry-collector-contrib:latest
+  #   ports:
+  #     - "4318:4318"   # OTLP HTTP
+  #   command: ["--config=/etc/otel-collector.yaml"]
+  #   volumes:
+  #     - ./otel-collector.yaml:/etc/otel-collector.yaml:ro
+
+volumes:
+  langfuse_db:

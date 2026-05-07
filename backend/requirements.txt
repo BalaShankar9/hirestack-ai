@@ -57,3 +57,12 @@ markdown>=3.8.1,<4.0
 slowapi>=0.1.9,<0.2
 nh3>=0.2,<0.4
 selectolax>=0.3,<0.4
+
+# PR m4-pr12: observability (optional, lazy-imported).
+# Rollback = unset OTEL_EXPORTER_OTLP_ENDPOINT and LANGFUSE_PUBLIC_KEY.
+opentelemetry-api>=1.25,<2.0
+opentelemetry-sdk>=1.25,<2.0
+opentelemetry-exporter-otlp-proto-http>=1.25,<2.0
+opentelemetry-instrumentation-fastapi>=0.46b0,<1.0
+opentelemetry-instrumentation-httpx>=0.46b0,<1.0
+langfuse>=2.40,<3.0

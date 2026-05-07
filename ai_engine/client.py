@@ -256,6 +256,18 @@ class _GeminiProvider:
         self, *, contents: Any, config: Any, model: Optional[str] = None,
     ):
         effective_model = model or self.model_name
+        # PR m4-pr12: wrap the entire throttled call in a Langfuse span.
+        # No-op when LANGFUSE_* env vars are unset, so this is free in CI/dev.
+        from ai_engine.observability import trace_llm
+        async with trace_llm(model=effective_model):
+            return await self._generate_content_throttled_inner(
+                contents=contents, config=config, model=model,
+            )
+
+    async def _generate_content_throttled_inner(
+        self, *, contents: Any, config: Any, model: Optional[str] = None,
+    ):
+        effective_model = model or self.model_name
         if self._throttle_lock is None:
             # Create lock inside the running loop (py3.9 asyncio primitives can be loop-bound).
             self._throttle_lock = asyncio.Lock()

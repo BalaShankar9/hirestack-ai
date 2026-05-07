@@ -344,6 +344,12 @@ if settings.idempotency_enabled:
     app.add_middleware(IdempotencyMiddleware)
     logger.info("Idempotency middleware enabled")
 
+# PR m4-pr12: optional OpenTelemetry (OTLP HTTP) instrumentation.
+# No-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set; rollback = unset that env.
+from app.core.telemetry import setup_telemetry  # noqa: E402
+
+setup_telemetry(app)
+
 
 # Exception handlers
 @app.exception_handler(RequestValidationError)
