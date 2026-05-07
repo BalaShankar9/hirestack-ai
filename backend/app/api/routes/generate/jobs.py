@@ -1463,6 +1463,57 @@ def _start_generation_job(job_id: str, user_id: str) -> None:
     if job_id in _ACTIVE_GENERATION_TASKS:
         return
 
+    # PR m6-pr18 strangler: when ff_temporal_generation is on AND
+    # Temporal is configured, dispatch the workflow instead of the
+    # legacy Redis/in-process path. Any failure (config missing,
+    # client error) falls through to the legacy path so a Temporal
+    # outage cannot wedge the generation pipeline.
+    try:
+        from app.core.config import settings as _settings
+
+        if getattr(_settings, "ff_temporal_generation", False):
+            from app.temporal.config import load_settings as _load_temporal
+
+            _temporal_cfg = _load_temporal()
+            if _temporal_cfg.enabled:
+                async def _try_temporal() -> None:
+                    try:
+                        from app.temporal.dispatch import (
+                            dispatch_generation_workflow,
+                        )
+
+                        await dispatch_generation_workflow(
+                            job_id=job_id,
+                            user_id=user_id,
+                            application_id="",
+                            requested_modules=[],
+                            settings=_temporal_cfg,
+                        )
+                        logger.info(
+                            "generation_job_temporal_dispatched", job_id=job_id
+                        )
+                    except Exception as t_err:  # pragma: no cover - defensive
+                        logger.warning(
+                            "generation_job_temporal_failed_falling_back",
+                            job_id=job_id,
+                            error=str(t_err)[:200],
+                        )
+                        _start_generation_job_legacy(job_id, user_id)
+
+                asyncio.create_task(_try_temporal())
+                return
+    except Exception:  # pragma: no cover - defensive
+        # If anything in the strangler path fails (import, config), fall
+        # through to legacy. Logged via the legacy path's own telemetry.
+        pass
+
+    _start_generation_job_legacy(job_id, user_id)
+
+
+def _start_generation_job_legacy(job_id: str, user_id: str) -> None:
+    if job_id in _ACTIVE_GENERATION_TASKS:
+        return
+
     # Try to enqueue to Redis Streams for the dedicated worker process.
     # Falls back to in-process asyncio.create_task when Redis is unavailable.
     try:

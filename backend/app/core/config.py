@@ -125,6 +125,11 @@ class Settings(BaseSettings):
     worker_name: str = "worker-1"
     worker_concurrency: int = 3
 
+    # Background career monitor
+    career_monitor_background_enabled: bool = True
+    career_monitor_interval_seconds: int = 900
+    career_monitor_user_batch_size: int = 20
+
     # PR m1-pr3: Idempotency-Key middleware. Default off for safe rollout;
     # flip on per-environment after migration ships.
     idempotency_enabled: bool = False
@@ -150,6 +155,16 @@ class Settings(BaseSettings):
     # and the producers are publishing onto the matching streams.
     ff_event_consumer: bool = False
 
+    # PR m6-pr18: Temporal generation strangler. Default off — when
+    # False, /generate/jobs uses the legacy Redis-stream + in-process
+    # fallback path. When True AND TEMPORAL_HOST is set, the route
+    # dispatches `GenerationWorkflow` to the configured task queue. The
+    # check is belt-and-braces: missing Temporal config causes graceful
+    # fallback to legacy so a misconfigured deploy can never wedge the
+    # generation pipeline. Rollout: dev → internal orgs → 5% → 50% →
+    # 100% → 2 weeks → delete legacy path.
+    ff_temporal_generation: bool = False
+
     @field_validator("supabase_http_retries")
     @classmethod
     def _clamp_retries(cls, v: int) -> int:
@@ -163,6 +178,16 @@ class Settings(BaseSettings):
     @field_validator("worker_concurrency")
     @classmethod
     def _clamp_worker_concurrency(cls, v: int) -> int:
+        return max(1, int(v))
+
+    @field_validator("career_monitor_interval_seconds")
+    @classmethod
+    def _clamp_career_monitor_interval(cls, v: int) -> int:
+        return max(60, int(v))
+
+    @field_validator("career_monitor_user_batch_size")
+    @classmethod
+    def _clamp_career_monitor_user_batch_size(cls, v: int) -> int:
         return max(1, int(v))
 
     @field_validator("supabase_url", "supabase_service_role_key", "supabase_anon_key")
