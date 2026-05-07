@@ -82,6 +82,20 @@ jobs:
           ENVIRONMENT: test
         run: python -m pytest tests/ -v --tb=short -q
 
+      - name: Tenancy isolation
+        # PR m1-pr4 — fail-closed regression gate.  Walks every
+        # authenticated GET /:id route and asserts an authenticated user
+        # for org A cannot read a foreign UUID.  A 200 OK fails the build.
+        working-directory: backend
+        env:
+          SUPABASE_URL: https://placeholder.supabase.co
+          SUPABASE_ANON_KEY: placeholder-key-for-ci
+          SUPABASE_SERVICE_ROLE_KEY: placeholder-key-for-ci
+          SUPABASE_JWT_SECRET: placeholder-secret-for-ci
+          DEBUG: "false"
+          ENVIRONMENT: test
+        run: python -m pytest tests/security/ -v --tb=short
+
       - name: Agent eval gate (gold corpus)
         # Deterministic eval — no API keys required. Fails the build if
         # any gold case regresses, so prompt/tool/contract changes can't
