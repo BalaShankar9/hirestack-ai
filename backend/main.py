@@ -178,20 +178,32 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     except Exception:
         pass
 
-    # Start periodic stale job cleanup (every 10 minutes)
-    _stale_cleanup_task = asyncio.create_task(_periodic_stale_job_cleanup())
-
-    # Start the v4 JobWatchdog — flips stalled `running` jobs to `failed`
-    # so the UI never spins forever after a worker crash.
+    # Scheduler tasks: run in-process only when the legacy flag is on.
+    # When `legacy_inproc_scheduler=False`, these are owned by `app.scheduler.main`
+    # (a dedicated process holding a Redis leader lock). Default remains True so
+    # this PR is a pure no-op until operators flip the flag after deploying the
+    # scheduler process. Rollback: set env LEGACY_INPROC_SCHEDULER=true.
+    _stale_cleanup_task = None
     _watchdog = None
-    try:
-        from app.services.job_watchdog import JobWatchdog
-        from app.core.database import TABLES
-        _watchdog = JobWatchdog(get_supabase(), TABLES)
-        _watchdog.start()
-        app.state._job_watchdog = _watchdog
-    except Exception as wd_err:
-        logger.warning("Failed to start JobWatchdog", error=str(wd_err)[:200])
+    if settings.legacy_inproc_scheduler:
+        # Start periodic stale job cleanup (every 10 minutes)
+        _stale_cleanup_task = asyncio.create_task(_periodic_stale_job_cleanup())
+
+        # Start the v4 JobWatchdog — flips stalled `running` jobs to `failed`
+        # so the UI never spins forever after a worker crash.
+        try:
+            from app.services.job_watchdog import JobWatchdog
+            from app.core.database import TABLES
+            _watchdog = JobWatchdog(get_supabase(), TABLES)
+            _watchdog.start()
+            app.state._job_watchdog = _watchdog
+        except Exception as wd_err:
+            logger.warning("Failed to start JobWatchdog", error=str(wd_err)[:200])
+    else:
+        logger.info(
+            "In-process scheduler disabled (legacy_inproc_scheduler=False); "
+            "expecting dedicated `app.scheduler.main` process to hold leader lock"
+        )
 
     # Register SIGTERM handler for graceful shutdown (Railway sends SIGTERM)
     import signal
@@ -231,11 +243,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     except Exception as e:
         logger.warning("Generation task drain failed", error=str(e))
 
-    _stale_cleanup_task.cancel()
-    try:
-        await _stale_cleanup_task
-    except asyncio.CancelledError:
-        pass
+    if _stale_cleanup_task is not None:
+        _stale_cleanup_task.cancel()
+        try:
+            await _stale_cleanup_task
+        except asyncio.CancelledError:
+            pass
     # Stop the v4 JobWatchdog
     if _watchdog is not None:
         try:
