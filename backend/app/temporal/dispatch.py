@@ -61,27 +61,66 @@ async def dispatch_generation_workflow(
     application_id: str,
     requested_modules: list[str],
     settings: Optional[TemporalSettings] = None,
+    org_id: str = "",
 ) -> str:
     """Start GenerationWorkflow on Temporal. Returns the workflow id.
 
     Errors are logged and re-raised so the caller can fall back to the
     legacy path (Redis Stream or in-process) if Temporal is unreachable.
+
+    PR m6-pr24: callers MAY pass empty ``application_id`` /
+    ``requested_modules`` and we will fetch them from the
+    ``generation_jobs`` row so the workflow input mirrors the real
+    request payload. Failure to hydrate is non-fatal — we still
+    dispatch with whatever the caller provided so a DB outage cannot
+    block the workflow.
     """
     cfg = settings or load_settings()
     # Lazy imports — same rationale as get_client.
     from app.temporal.activities import GenerationInput
     from app.temporal.workflows import GenerationWorkflow
 
+    hydrated_app_id = application_id
+    hydrated_modules = list(requested_modules)
+    hydrated_org_id = org_id
+    if not hydrated_app_id or not hydrated_modules:
+        try:
+            import asyncio
+
+            from app.core.database import TABLES, get_supabase
+
+            sb = get_supabase()
+            resp = await asyncio.to_thread(
+                lambda: sb.table(TABLES["generation_jobs"])
+                .select("application_id,requested_modules,org_id")
+                .eq("id", job_id)
+                .limit(1)
+                .execute()
+            )
+            if resp.data:
+                row = resp.data[0]
+                if not hydrated_app_id:
+                    hydrated_app_id = row.get("application_id") or ""
+                if not hydrated_modules:
+                    hydrated_modules = list(row.get("requested_modules") or [])
+                if not hydrated_org_id:
+                    hydrated_org_id = row.get("org_id") or ""
+        except Exception as hyd_err:  # pragma: no cover - defensive
+            logger.warning(
+                "temporal_dispatch.hydrate_failed",
+                extra={"job_id": job_id, "error": str(hyd_err)[:200]},
+            )
+
     client = await get_client(cfg)
     workflow_id = _workflow_id(job_id)
     payload = GenerationInput(
         job_id=job_id,
-        org_id="",
+        org_id=hydrated_org_id,
         user_id=user_id,
         document_type="application_bundle",
         payload={
-            "application_id": application_id,
-            "requested_modules": list(requested_modules),
+            "application_id": hydrated_app_id,
+            "requested_modules": list(hydrated_modules),
         },
     )
     handle = await client.start_workflow(

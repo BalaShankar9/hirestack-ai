@@ -11,6 +11,7 @@ import sys
 from typing import Optional
 
 from app.temporal.activities import ActivityHooks, build_activities
+from app.temporal.activities.production import build_production_hooks
 from app.temporal.config import TemporalSettings, load_settings
 from app.temporal.workflows import GenerationWorkflow
 
@@ -41,11 +42,14 @@ async def run_worker(
         return
 
     client = await _connect(cfg)
+    # PR m6-pr24: default to production hooks that bridge the workflow
+    # to the legacy generation runtime. Tests override via ``hooks=``.
+    active_hooks = hooks if hooks is not None else build_production_hooks()
     worker = Worker(
         client,
         task_queue=cfg.task_queue,
         workflows=[GenerationWorkflow],
-        activities=build_activities(hooks),
+        activities=build_activities(active_hooks),
     )
     logger.info("temporal_worker_starting host=%s queue=%s", cfg.host, cfg.task_queue)
     await worker.run()

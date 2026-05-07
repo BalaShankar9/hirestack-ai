@@ -9,8 +9,9 @@ patching globals.
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional, Union
 
 from temporalio import activity
 
@@ -89,25 +90,30 @@ def build_activities(hooks: Optional[ActivityHooks] = None) -> list[Callable[...
     """
     h = hooks or ActivityHooks()
 
+    async def _await_if_needed(value: Any) -> Any:
+        if inspect.isawaitable(value):
+            return await value
+        return value
+
     @activity.defn(name="plan")
     async def plan(inp: GenerationInput) -> GenerationPlan:
-        return h.plan(inp)
+        return await _await_if_needed(h.plan(inp))
 
     @activity.defn(name="execute_step")
     async def execute_step(inp: GenerationInput, step: GenerationStep) -> StepResult:
-        return h.execute(inp, step)
+        return await _await_if_needed(h.execute(inp, step))
 
     @activity.defn(name="critique")
     async def critique(inp: GenerationInput, result: StepResult) -> CritiqueResult:
-        return h.critique(inp, result)
+        return await _await_if_needed(h.critique(inp, result))
 
     @activity.defn(name="persist")
     async def persist(inp: GenerationInput, results: list[StepResult]) -> str:
-        return h.persist(inp, results)
+        return await _await_if_needed(h.persist(inp, results))
 
     @activity.defn(name="emit_event")
     async def emit_event(outcome: GenerationOutcome) -> None:
-        h.emit_event(outcome)
+        await _await_if_needed(h.emit_event(outcome))
 
     return [plan, execute_step, critique, persist, emit_event]
 
