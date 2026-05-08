@@ -215,7 +215,7 @@ PRs: `m7-pr28` (multi-provider), `m7-pr29` (capability tokens + sandbox), `m7-pr
 
 ### M9 — Workflow durability
 
-PR: `m8-pr32` — per-stage Temporal activities.
+PR: `m8-pr32` — per-stage Temporal activities. ✅ **SHIPPED 2026-05-08** (scaffolding tier).
 
 | Field | Value |
 |---|---|
@@ -228,6 +228,16 @@ PR: `m8-pr32` — per-stage Temporal activities.
 | **Tests** | Resume-after-crash integration test in `tests/temporal/test_resume.py`. |
 | **ADR** | ADR-0036. |
 | **Success criteria** | Worker pod kill mid-pipeline → next worker resumes without re-running completed stages → user-visible cost unchanged. Verified via load + chaos test. |
+
+#### M9 — `m8-pr32` SHIPPED notes
+
+| Field | Value |
+|---|---|
+| **What landed** | (1) Per-stage workflow plan: `_build_per_stage_plan` returns 7 stages in canonical pipeline order (`recon, atlas, cipher, quill, forge, sentinel, nova`) — phase names locked to runtime `PHASE_SLO_MS` keys. (2) `pipeline_checkpoints` table + RLS (service-role write, owner-only read). (3) `CheckpointStore` repo (best-effort writes, never raise; 4KB output_summary cap with truncation marker). (4) `_execute_with_checkpoint` hook — reads checkpoint, returns cached result on `status='complete'` (resume contract), else marks running → executes → marks complete or failed. (5) Production hooks builder is now flag-aware: `ff_temporal_per_stage=ON` binds per-stage plan + checkpoint execute; OFF preserves legacy single-step plan (zero behaviour change). (6) ADR-0036 (Accepted). (7) 28 new tests (12 checkpoint repo + 16 per-stage / resume) + 12 existing production-hooks tests still green. |
+| **What did NOT land (deferred)** | Runtime decomposition into per-phase entrypoints (`_run_recon`, `_run_atlas`, …). Today, only the FIRST stage drives the runtime end-to-end; downstream stages mark complete without re-invoking the runtime. **The resume primitive is real and tested**, but cost-not-re-burned at the per-phase level lands when `m8-pr32b` ships per-phase callables. Chaos test (worker-kill drill) ships in `m8-pr32c` after the runtime split. |
+| **Rollout** | Flag default OFF. Migration deployable today (zero behaviour change at OFF). Flip in dev/staging after `m8-pr32b`; canary at week 4; prod at week 5. Sunset 2026-12-01. |
+| **Open follow-ups** | `m8-pr32b` (runtime per-phase entrypoints), `m8-pr32c` (chaos test), per-stage Prometheus SLO metrics, retention policy for `pipeline_checkpoints` (when table > 1M rows). |
+| **Files** | `docs/adrs/0036-per-stage-temporal-activities.md` (NEW), `supabase/migrations/20260508040000_pipeline_checkpoints.sql` (NEW), `backend/app/temporal/checkpoints.py` (NEW), `backend/app/temporal/activities/production.py` (extended; flag-aware hooks builder), `backend/app/core/config.py` (added `ff_temporal_per_stage`), `config/feature_flags.yaml` (already had `ff_temporal_per_stage` reserved entry — no edit needed), `backend/tests/temporal/test_checkpoints_repo.py` (NEW), `backend/tests/temporal/test_per_stage_resume.py` (NEW), `docs/adrs/README.md` (added 0036 row), this file (M9 SHIPPED block). |
 
 ---
 

@@ -252,6 +252,14 @@ class Settings(BaseSettings):
     # without blocking the insert. Sunset 2026-09-01.
     ff_strict_event_validation: bool = False
 
+    # --- Per-stage Temporal activities (ADR-0036, m8-pr32) ---
+    # When ON, ``build_production_hooks()`` returns the 7-stage plan +
+    # checkpoint-aware execute hook so a worker crash mid-pipeline resumes
+    # from the last completed stage via ``pipeline_checkpoints``. When OFF
+    # (default), the legacy single-step ``run_pipeline`` plan is used (zero
+    # behaviour change from m6-pr24). Sunset 2026-12-01.
+    ff_temporal_per_stage: bool = False
+
     @field_validator("supabase_http_retries")
     @classmethod
     def _clamp_retries(cls, v: int) -> int:
