@@ -339,6 +339,15 @@ PRs: `m11-pr37` through `m11-pr45`. Pulls in every M7/M9-deferred item plus the 
 | **Rollout** | Pure additive observability. Increment functions short-circuit silently if the module fails to import. /metrics gracefully no-ops on snapshot errors. Safe to deploy hot. |
 | **Files** | NEW: `backend/app/core/queue_metrics.py`, `backend/tests/test_queue_metrics.py` (10 tests). MODIFIED: `backend/app/core/queue.py`, `backend/app/core/events/consumer.py`, `backend/app/api/routes/generate/jobs.py`, `backend/main.py` (six new metric blocks in `prometheus_metrics`), `docs/architecture/IMPLEMENTATION_MILESTONES.md` (this entry). |
 
+#### m11-pr42 — Feature-flag sunset enforcement **(SHIPPED)**
+
+| | |
+|---|---|
+| **What landed** | Tightened `scripts/governance/check_feature_flags.py`: ANY past-sunset flag now fails the audit (the previous 14-day grace is gone). The only escape is the new `--allow-expired-baseline=<flag>` CLI arg (repeatable; comma-separated lists also accepted). Stale allowlist entries that don't match a registered flag are themselves a build failure — no silent rot. The architecture CI job already invokes the script, so enforcement is live without a workflow change. |
+| **Did NOT land** | No new flag deletions or sunset extensions in `config/feature_flags.yaml` (the registry is currently clean — 14 registered, 14 referenced, 0 expired). No issue-template requirement for the allowlist (kept as PR-description discipline). |
+| **Rollout** | Pure CI tightening. Safe to land — current registry has zero expired flags. First future expiry will hard-fail CI; owner must either remove the flag or pass `--allow-expired-baseline=<name>` with a tracking issue link in the PR description. |
+| **Files** | NEW: `scripts/governance/test_check_feature_flags.py` (11 tests). MODIFIED: `scripts/governance/check_feature_flags.py` (argparse, `_display_path` helper, allowlist enforcement, governance-test-file exclude), `docs/architecture/IMPLEMENTATION_MILESTONES.md` (this entry). |
+
 ---
 
 ## Stage A trailing items (M11+, no PR numbers yet)
