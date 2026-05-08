@@ -545,6 +545,85 @@ async def prometheus_metrics(request: Request):
     except Exception:
         pass
 
+    # ── m11-pr38: queue + dispatch + bootstrap counters ────────────
+    # Six families landed in m11-pr38 as M7/M9-deferred observability:
+    #   queue_ack_total, queue_dlq_total, queue_pending_redeliveries,
+    #   generation_dispatch_fallback_total, bootstrap_tasks_inflight,
+    #   bootstrap_task_failures_total.
+    try:
+        from app.core import queue_metrics as _qm
+
+        # Refresh bootstrap inflight gauge from the live registry.
+        try:
+            from app.api.routes.generate.jobs import _BOOTSTRAP_TASKS as _bt
+            _qm.set_bootstrap_inflight(len(_bt))
+        except Exception:
+            pass
+
+        # Refresh queue_pending_redeliveries from XPENDING summary.
+        try:
+            from app.core.database import get_redis as _gr
+            from app.core.queue import STREAM_KEY as _sk, GROUP_NAME as _gn
+            r = _gr()
+            if r is not None:
+                summary = r.xpending(_sk, _gn)
+                pending = 0
+                if isinstance(summary, dict):
+                    pending = int(summary.get("pending", 0) or 0)
+                elif isinstance(summary, (list, tuple)) and summary:
+                    # redis-py returns [count, min_id, max_id, [(consumer, count), ...]]
+                    pending = int(summary[0] or 0)
+                _qm.set_queue_pending(_gn, pending)
+        except Exception:
+            pass
+
+        snap = _qm.snapshot()
+
+        lines.append("# HELP hirestack_queue_ack_total Successful XACKs per consumer")
+        lines.append("# TYPE hirestack_queue_ack_total counter")
+        for consumer, n in snap["queue_ack_total"].items():
+            safe = consumer.replace('"', '\\"')
+            lines.append(f'hirestack_queue_ack_total{{consumer="{safe}"}} {int(n)}')
+
+        lines.append("# HELP hirestack_queue_dlq_total Messages routed to events:dlq per consumer and reason bucket")
+        lines.append("# TYPE hirestack_queue_dlq_total counter")
+        for (consumer, reason), n in snap["queue_dlq_total"].items():
+            sc = consumer.replace('"', '\\"')
+            sr = reason.replace('"', '\\"')
+            lines.append(
+                f'hirestack_queue_dlq_total{{consumer="{sc}",reason="{sr}"}} {int(n)}'
+            )
+
+        lines.append("# HELP hirestack_queue_pending_redeliveries In-flight (PEL) messages awaiting ACK or reclaim")
+        lines.append("# TYPE hirestack_queue_pending_redeliveries gauge")
+        for consumer, n in snap["queue_pending_redeliveries"].items():
+            safe = consumer.replace('"', '\\"')
+            lines.append(
+                f'hirestack_queue_pending_redeliveries{{consumer="{safe}"}} {int(n)}'
+            )
+
+        lines.append("# HELP hirestack_generation_dispatch_fallback_total Times generation dispatch left its primary route")
+        lines.append("# TYPE hirestack_generation_dispatch_fallback_total counter")
+        for kind, n in snap["generation_dispatch_fallback_total"].items():
+            safe = kind.replace('"', '\\"')
+            lines.append(
+                f'hirestack_generation_dispatch_fallback_total{{kind="{safe}"}} {int(n)}'
+            )
+
+        lines.append("# HELP hirestack_bootstrap_tasks_inflight Currently-tracked fire-and-forget bootstrap coroutines")
+        lines.append("# TYPE hirestack_bootstrap_tasks_inflight gauge")
+        lines.append(f"hirestack_bootstrap_tasks_inflight {int(snap['bootstrap_tasks_inflight'])}")
+
+        lines.append("# HELP hirestack_bootstrap_task_failures_total Bootstrap coroutines that raised before completion")
+        lines.append("# TYPE hirestack_bootstrap_task_failures_total counter")
+        for task, n in snap["bootstrap_task_failures_total"].items():
+            safe = task.replace('"', '\\"')
+            lines.append(
+                f'hirestack_bootstrap_task_failures_total{{task="{safe}"}} {int(n)}'
+            )
+    except Exception:
+        pass
+
     # AI cache hit rates (response cache, JD analysis cache, pipeline cache)
     try:
         from ai_engine.cache import get_all_cache_stats

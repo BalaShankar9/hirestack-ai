@@ -67,6 +67,8 @@ def _track_bootstrap(coro, *, name: str) -> asyncio.Task:
             return
         exc = t.exception()
         if exc is not None:
+            from app.core import queue_metrics as _qm
+            _qm.inc_bootstrap_failure(name)
             logger.warning(
                 "generation_bootstrap_task_failed",
                 task=name,
@@ -1521,6 +1523,8 @@ def _start_generation_job(job_id: str, user_id: str) -> None:
                             "generation_job_temporal_dispatched", job_id=job_id
                         )
                     except Exception as t_err:  # pragma: no cover - defensive
+                        from app.core import queue_metrics as _qm
+                        _qm.inc_dispatch_fallback("temporal_failed")
                         logger.warning(
                             "generation_job_temporal_failed_falling_back",
                             job_id=job_id,
@@ -1584,6 +1588,8 @@ async def _handle_redis_unavailable(job_id: str, user_id: str) -> None:
         flag_on = False
 
     if not flag_on:
+        from app.core import queue_metrics as _qm
+        _qm.inc_dispatch_fallback("redis_unavailable_dropped")
         logger.error(
             "generation_dispatch_failed_redis_unavailable",
             job_id=job_id,
@@ -1600,6 +1606,8 @@ async def _handle_redis_unavailable(job_id: str, user_id: str) -> None:
         return
 
     # Flag ON — dev/single-process path. Still bounded.
+    from app.core import queue_metrics as _qm
+    _qm.inc_dispatch_fallback("inprocess_fallback")
     _start_generation_job_inprocess(job_id, user_id)
 
 

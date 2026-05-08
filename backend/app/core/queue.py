@@ -16,6 +16,8 @@ import os
 import time
 from typing import Any, Callable, Coroutine, Dict
 
+from app.core import queue_metrics as _qm
+
 logger = logging.getLogger("hirestack.queue")
 
 STREAM_KEY = "hirestack:generation_jobs"
@@ -226,6 +228,7 @@ class QueueConsumer:
         if not job_id or not user_id:
             # Malformed message — ACK and discard
             await asyncio.to_thread(r.xack, STREAM_KEY, GROUP_NAME, msg_id)
+            _qm.inc_queue_ack(GROUP_NAME)
             return
 
         from app.core.config import settings as _settings
@@ -245,6 +248,7 @@ class QueueConsumer:
                     finally:
                         try:
                             await asyncio.to_thread(r.xack, STREAM_KEY, GROUP_NAME, msg_id)
+                            _qm.inc_queue_ack(GROUP_NAME)
                         except Exception:
                             pass
 
@@ -310,6 +314,7 @@ class QueueConsumer:
 
                 try:
                     await asyncio.to_thread(r.xack, STREAM_KEY, GROUP_NAME, msg_id)
+                    _qm.inc_queue_ack(GROUP_NAME)
                 except Exception:
                     logger.exception("queue.ack_failed_after_success")
 
@@ -406,8 +411,10 @@ class QueueConsumer:
             )
         except Exception:
             logger.exception("queue.dlq_xadd_failed")
+        _qm.inc_queue_dlq(GROUP_NAME, reason)
         try:
             await asyncio.to_thread(r.xack, STREAM_KEY, GROUP_NAME, msg_id)
+            _qm.inc_queue_ack(GROUP_NAME)
         except Exception:
             logger.exception("queue.dlq_ack_failed")
 

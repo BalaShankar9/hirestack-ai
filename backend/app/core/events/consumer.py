@@ -146,6 +146,8 @@ class StreamConsumer:
                 extra={"consumer": self._config.name, "msg_id": msg_id},
             )
             await self._redis.xack(stream, self._config.group_name, msg_id)
+            from app.core import queue_metrics as _qm
+            _qm.inc_queue_ack(self._config.name)
             return
 
         if delivery_attempt > self._config.max_deliveries:
@@ -174,6 +176,8 @@ class StreamConsumer:
             pass
 
         await self._redis.xack(stream, self._config.group_name, msg_id)
+        from app.core import queue_metrics as _qm
+        _qm.inc_queue_ack(self._config.name)
 
     async def _dead_letter(
         self, stream: str, msg_id: str, event: dict[str, Any], *, reason: str
@@ -197,7 +201,10 @@ class StreamConsumer:
                 "event": json.dumps(event, default=str),
             },
         )
+        from app.core import queue_metrics as _qm
+        _qm.inc_queue_dlq(self._config.name, reason)
         await self._redis.xack(stream, self._config.group_name, msg_id)
+        _qm.inc_queue_ack(self._config.name)
 
     def _record_consumed(self, event_id: str) -> None:
         try:

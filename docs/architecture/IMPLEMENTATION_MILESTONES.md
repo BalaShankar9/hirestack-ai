@@ -330,6 +330,15 @@ PRs: `m11-pr37` through `m11-pr45`. Pulls in every M7/M9-deferred item plus the 
 | **Rollout** | Pure constant bump + new constant export. Backwards-compatible: callers that imported `redact_event_dict`/`sentry_before_send` still work. Safe to deploy hot. |
 | **Files** | MODIFIED: `backend/app/core/observability.py` (`MAX_SCRUB_DEPTH` constant, depth check), `backend/tests/test_observability_redaction.py` (3 new tests + import), `docs/architecture/IMPLEMENTATION_MILESTONES.md` (this entry). |
 
+#### m11-pr38 — Queue / dispatch / bootstrap counters **(SHIPPED)**
+
+| | |
+|---|---|
+| **What landed** | New module `backend/app/core/queue_metrics.py` exposes six families used by Prometheus alerting: `queue_ack_total{consumer}`, `queue_dlq_total{consumer,reason}`, `queue_pending_redeliveries{consumer}`, `generation_dispatch_fallback_total{kind}`, `bootstrap_tasks_inflight`, `bootstrap_task_failures_total{task}`. Increment hooks wired at every XACK and DLQ site in `backend/app/core/queue.py` (4 ack + 1 dlq) and `backend/app/core/events/consumer.py` (3 ack + 1 dlq). Dispatch fallback hooks wired in `backend/app/api/routes/generate/jobs.py` for the three observed kinds (`redis_unavailable_dropped`, `inprocess_fallback`, `temporal_failed`). Bootstrap counters wired into `_track_bootstrap`'s done-callback and into the /metrics scrape (`set_bootstrap_inflight(len(_BOOTSTRAP_TASKS))`). `queue_pending_redeliveries` is sampled at scrape time via `XPENDING <stream> <group>`. Reasons bucketed (`max_deliveries_exceeded` vs `handler_error`); bootstrap task names stripped of `:<job_id>` suffix to bound cardinality. All increments are exception-safe — observability never breaks a request path. |
+| **Did NOT land** | Migration to `prometheus_client` (still hand-rolled exposition text — that swap is `m11-pr41`). No histogram families (only counters/gauges). No grafana dashboards / alert rules — those land alongside dashboards-as-code. |
+| **Rollout** | Pure additive observability. Increment functions short-circuit silently if the module fails to import. /metrics gracefully no-ops on snapshot errors. Safe to deploy hot. |
+| **Files** | NEW: `backend/app/core/queue_metrics.py`, `backend/tests/test_queue_metrics.py` (10 tests). MODIFIED: `backend/app/core/queue.py`, `backend/app/core/events/consumer.py`, `backend/app/api/routes/generate/jobs.py`, `backend/main.py` (six new metric blocks in `prometheus_metrics`), `docs/architecture/IMPLEMENTATION_MILESTONES.md` (this entry). |
+
 ---
 
 ## Stage A trailing items (M11+, no PR numbers yet)
