@@ -321,6 +321,15 @@ PRs: `m11-pr37` through `m11-pr45`. Pulls in every M7/M9-deferred item plus the 
 | **Rollout** | CLI is read-only by default. Operators run from a pod/laptop with `REDIS_URL` set. No service code paths changed; safe to deploy without restart. |
 | **Files** | NEW: `scripts/ops/dlq_replay.py`, `backend/tests/ops/test_dlq_replay.py`, `docs/runbooks/dlq-replay.md`. MODIFIED: `docs/architecture/IMPLEMENTATION_MILESTONES.md` (this entry + M11 scope). |
 
+#### m11-pr40 — Sentry redaction depth 8 → 16 **(SHIPPED)**
+
+| | |
+|---|---|
+| **What landed** | Pulled the scrubber depth limit out of `_scrub` into a named constant `MAX_SCRUB_DEPTH = 16` (was an inline `8`). Real-world Sentry payloads regularly nest deeper than 8 (request → context → breadcrumb → http → data → headers → nested envelope → ...) and the silent stop-at-depth meant some `auth_*` keys survived into Sentry. 16 covers every observed shape and still bounds work on cyclic structures. Three new tests pin it: `test_max_scrub_depth_pinned_to_16`, `test_redact_scrubs_at_depth_15` (positive), `test_redact_stops_past_max_depth` (cap is enforced — value at depth>cap survives untouched). |
+| **Did NOT land** | No new sensitive-key markers added (out of scope; tracked separately). No change to the Sentry init wiring in `main.py`. |
+| **Rollout** | Pure constant bump + new constant export. Backwards-compatible: callers that imported `redact_event_dict`/`sentry_before_send` still work. Safe to deploy hot. |
+| **Files** | MODIFIED: `backend/app/core/observability.py` (`MAX_SCRUB_DEPTH` constant, depth check), `backend/tests/test_observability_redaction.py` (3 new tests + import), `docs/architecture/IMPLEMENTATION_MILESTONES.md` (this entry). |
+
 ---
 
 ## Stage A trailing items (M11+, no PR numbers yet)
