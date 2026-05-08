@@ -80,6 +80,27 @@ PRs: `m7-pr27` (split into 27a, 27b, 27c if ≥500 lines each).
 
 **M7 dependencies:** none. M7-A, B, C may ship in parallel branches but **must merge in order A→B→C** because B's 503 logic relies on C's metrics for canary decisioning.
 
+#### M7-D — Bootstrap task registry (`m7-pr27d`) — ✅ **SHIPPED 2026-05-08**
+
+| Field | Value |
+|---|---|
+| **What changed** | Introduced `_BOOTSTRAP_TASKS: set[asyncio.Task]` and `_track_bootstrap(coro, *, name)` helper in `backend/app/api/routes/generate/jobs.py`. Replaced the four raw `asyncio.create_task(...)` calls in the `_start_generation_job*` family (Temporal handoff, Redis enqueue, Redis-unavailable fallback, saturation finaliser) with the tracked variant. Extended `backend/main.py` lifespan handler to drain the registry with a 5s bounded `asyncio.wait_for` after draining `_ACTIVE_GENERATION_TASKS`. |
+| **Why now** | P0-4: raw `create_task` for fire-and-forget dispatch coroutines was both a weak-reference GC footgun (per Python asyncio docs) and a SIGTERM orphan vector (jobs accepted just before deploy could vanish in the `queued` state with no enqueue). **Closed.** |
+| **Risks introduced** | A bootstrap coroutine that exceeds the 5s drain budget is cancelled, but the cancellation is now logged. No new flag — pure-improvement change with no behavioural difference outside SIGTERM windows. |
+| **Blast radius** | Generation dispatch path only. Other modules (`JobWatchdog`, `_periodic_stale_job_cleanup`) keep their own task management. |
+| **Rollback** | Revert the slice. No data migration involved. |
+| **Observability** | New WARN log line `generation_bootstrap_task_failed` (task name + error). Drain telemetry: existing `Draining bootstrap dispatch tasks` / `Bootstrap dispatch tasks drained` / `Bootstrap dispatch drain timed out; cancelling` log lines. |
+| **Tests** | `backend/tests/unit/test_bootstrap_task_registry.py` — 5 unit tests covering successful registration, failing coroutine surfacing, cancellation, concurrent registrations, and the lifespan-style bounded drain. Plus regression: `test_queue_ack_on_success.py` (7 tests still green). |
+| **Deploy order** | Single PR. No migration. |
+| **ADR** | ADR-0041 (Accepted 2026-05-08). |
+| **Success criteria** | (✅) All four bootstrap call sites use `_track_bootstrap`. (✅) Lifespan drain wired and bounded. (pending — 30d post-deploy) zero `queued`-with-no-stream-entry incidents observed. |
+| **Owner DRI** | @BalaShankar9 |
+
+**Out of scope (deferred — written down so they don't get lost):**
+- Generic `app.core.task_registry` module that other modules could adopt — M11.
+- Prometheus gauges `bootstrap_tasks_inflight`, `bootstrap_task_failures_total` — M11.
+- Mid-flight Temporal-failure-during-cancellation fallback to legacy — deferred until Temporal is at 100% rollout.
+
 **M7 exit gate:** All three success criteria met for ≥7 consecutive days.
 
 ---

@@ -243,6 +243,33 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     except Exception as e:
         logger.warning("Generation task drain failed", error=str(e))
 
+    # ADR-0041 (P0-4): drain in-flight bootstrap dispatch coroutines.
+    # These are short-lived (Temporal handoff / Redis enqueue / fallback
+    # decision); we give them a bounded grace period to finish so a job
+    # accepted right before SIGTERM is never orphaned in `queued`.
+    try:
+        from app.api.routes.generate import _BOOTSTRAP_TASKS
+        if _BOOTSTRAP_TASKS:
+            logger.info(
+                "Draining bootstrap dispatch tasks",
+                count=len(_BOOTSTRAP_TASKS),
+            )
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*list(_BOOTSTRAP_TASKS), return_exceptions=True),
+                    timeout=5.0,
+                )
+                logger.info("Bootstrap dispatch tasks drained")
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Bootstrap dispatch drain timed out; cancelling",
+                    remaining=len(_BOOTSTRAP_TASKS),
+                )
+                for t in list(_BOOTSTRAP_TASKS):
+                    t.cancel()
+    except Exception as e:
+        logger.warning("Bootstrap task drain failed", error=str(e))
+
     if _stale_cleanup_task is not None:
         _stale_cleanup_task.cancel()
         try:

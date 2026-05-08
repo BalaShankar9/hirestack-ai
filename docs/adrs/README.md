@@ -48,6 +48,7 @@ These are reserved numbers. The corresponding implementation PR cannot merge unt
 | 0038 | Eliminate in-process job fallback (P0-2) | Accepted 2026-05-08 | `m7-pr27b` ✅ |
 | 0039 | Forbid native `EventSource`; mandate `@microsoft/fetch-event-source` (P0-7) | Proposed | `m7-pr27` |
 | 0040 | ACK-on-success queue semantics + DLQ (P0-3) | Accepted 2026-05-08 | m7-pr27c ✅ |
+| 0041 | Bootstrap task registry for generation dispatch (P0-4) | Accepted 2026-05-08 | m7-pr27d ✅ |
 
 ## Authoring rules
 

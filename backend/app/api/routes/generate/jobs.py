@@ -48,6 +48,34 @@ router = APIRouter()
 _ACTIVE_GENERATION_TASKS: Dict[str, asyncio.Task] = {}
 _JOB_TOTAL_STEPS = 7
 
+# ADR-0041 (P0-4): managed registry for short-lived bootstrap coroutines
+# fired by `_start_generation_job*`. Holds strong references so they are
+# not GC'd mid-flight, surfaces exceptions via done-callback, and is
+# drained by the FastAPI lifespan handler on SIGTERM so a job is never
+# orphaned between request acceptance and dispatch.
+_BOOTSTRAP_TASKS: "set[asyncio.Task]" = set()
+
+
+def _track_bootstrap(coro, *, name: str) -> asyncio.Task:
+    """Create + register a fire-and-forget bootstrap task. See ADR-0041."""
+    task = asyncio.create_task(coro, name=name)
+    _BOOTSTRAP_TASKS.add(task)
+
+    def _done(t: asyncio.Task) -> None:
+        _BOOTSTRAP_TASKS.discard(t)
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc is not None:
+            logger.warning(
+                "generation_bootstrap_task_failed",
+                task=name,
+                error=str(exc)[:300],
+            )
+
+    task.add_done_callback(_done)
+    return task
+
 
 def _get_model_health_summary() -> Dict[str, Any]:
     """Best-effort model health for job status responses."""
@@ -1500,7 +1528,7 @@ def _start_generation_job(job_id: str, user_id: str) -> None:
                         )
                         _start_generation_job_legacy(job_id, user_id)
 
-                asyncio.create_task(_try_temporal())
+                _track_bootstrap(_try_temporal(), name=f"gen-bootstrap-temporal:{job_id}")
                 return
     except Exception:  # pragma: no cover - defensive
         # If anything in the strangler path fails (import, config), fall
@@ -1532,7 +1560,7 @@ def _start_generation_job_legacy(job_id: str, user_id: str) -> None:
                 return
             await _handle_redis_unavailable(job_id, user_id)
 
-        asyncio.create_task(_try_enqueue())
+        _track_bootstrap(_try_enqueue(), name=f"gen-bootstrap-enqueue:{job_id}")
     except Exception as exc:
         # Import failure or other unexpected error — treat as Redis unavailable.
         logger.warning(
@@ -1541,7 +1569,10 @@ def _start_generation_job_legacy(job_id: str, user_id: str) -> None:
             error=str(exc)[:200],
         )
         # Schedule the async handler since we're in a sync function.
-        asyncio.create_task(_handle_redis_unavailable(job_id, user_id))
+        _track_bootstrap(
+            _handle_redis_unavailable(job_id, user_id),
+            name=f"gen-bootstrap-redis-unavailable:{job_id}",
+        )
 
 
 async def _handle_redis_unavailable(job_id: str, user_id: str) -> None:
@@ -1599,7 +1630,7 @@ def _start_generation_job_inprocess(job_id: str, user_id: str) -> None:
             cap=cap,
         )
         # Schedule a finalisation since this is a sync function.
-        asyncio.create_task(
+        _track_bootstrap(
             _finalize_orphaned_job(
                 job_id,
                 status="failed",
@@ -1607,7 +1638,8 @@ def _start_generation_job_inprocess(job_id: str, user_id: str) -> None:
                     "Generation workers are saturated. "
                     "Please retry in a moment."
                 ),
-            )
+            ),
+            name=f"gen-bootstrap-saturation-finalize:{job_id}",
         )
         return
 
