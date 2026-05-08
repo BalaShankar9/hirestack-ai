@@ -244,6 +244,14 @@ class Settings(BaseSettings):
     # Sunset 2026-09-01.
     ff_ai_invocations_recorder: bool = False
 
+    # --- Strict event-payload validation at OutboxWriter (ADR-0035, m7-pr31) ---
+    # When ON, ``OutboxWriter.append`` rejects any envelope whose payload
+    # does not conform to its JSON Schema in ``packages/events/schema/v1/``
+    # (raises ``EventValidationError`` and writes no row). When OFF (default),
+    # validation runs in shadow mode and logs ``event_validation_failed_shadow``
+    # without blocking the insert. Sunset 2026-09-01.
+    ff_strict_event_validation: bool = False
+
     @field_validator("supabase_http_retries")
     @classmethod
     def _clamp_retries(cls, v: int) -> int:

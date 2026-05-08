@@ -112,3 +112,10 @@ flags:
     sunset: 2026-09-01
     default: false
     purpose: Enable the ``AIInvocationsRecorder`` flight recorder that writes one row per terminal LLM call (success OR failure) into ``public.ai_invocations`` (ADR-0034, m7-pr30). Best-effort writer; recorder failures never break the LLM call path. Ships OFF; flip after smoke.
+
+  ff_strict_event_validation:
+    owner: BalaShankar9
+    created: 2026-05-08
+    sunset: 2026-09-01
+    default: false
+    purpose: Promote ``OutboxWriter.append`` payload validation against ``packages/events/schema/v1/`` from shadow-log to hard reject (ADR-0035, m7-pr31). When OFF, validation failures log ``event_validation_failed_shadow`` and the insert proceeds; when ON, ``EventValidationError`` is raised and no row is written. Ships OFF; flip per-environment after the shadow-log signal goes quiet for 7 consecutive days.

@@ -14,6 +14,11 @@ import logging
 from typing import Any, Protocol
 
 from .envelope import EventEnvelope
+from .schema_registry import (
+    EventValidationError,
+    MissingEventSchema,
+    validate_event,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +35,99 @@ class _SupabaseClientLike(Protocol):
     def table(self, name: str) -> _SupabaseTableLike: ...
 
 
+def _strict_flag_enabled() -> bool:
+    """Read ``ff_strict_event_validation`` lazily (per ADR-0035)."""
+    try:
+        from app.core.config import get_settings  # type: ignore
+    except Exception:  # noqa: BLE001 — config import optional at module load
+        return False
+    try:
+        return bool(getattr(get_settings(), "ff_strict_event_validation", False))
+    except Exception:  # noqa: BLE001 — defensive: never fail OutboxWriter on config read
+        return False
+
+
 class OutboxWriter:
     """Append envelopes to ``events_outbox`` idempotently."""
 
-    def __init__(self, supabase: _SupabaseClientLike, *, table: str = OUTBOX_TABLE) -> None:
+    def __init__(
+        self,
+        supabase: _SupabaseClientLike,
+        *,
+        table: str = OUTBOX_TABLE,
+        strict: bool | None = None,
+    ) -> None:
         self._supabase = supabase
         self._table = table
+        # ``None`` ⇒ read the live flag at append time.
+        # ``True``/``False`` ⇒ explicit override (used by tests).
+        self._strict_override = strict
+
+    def _is_strict(self) -> bool:
+        if self._strict_override is not None:
+            return self._strict_override
+        return _strict_flag_enabled()
+
+    def _validate_or_raise(self, envelope: EventEnvelope) -> None:
+        """Validate envelope against its JSON Schema (ADR-0035).
+
+        Behaviour:
+          * Validation passes → return.
+          * Validation fails AND ``strict=False`` → log
+            ``event_validation_failed_shadow`` and return (insert proceeds).
+          * Validation fails AND ``strict=True`` → raise
+            :class:`EventValidationError`.
+          * Schema missing AND ``strict=False`` → log
+            ``event_schema_missing_shadow`` and return.
+          * Schema missing AND ``strict=True`` → raise
+            :class:`MissingEventSchema`.
+        """
+        strict = self._is_strict()
+        try:
+            errors = validate_event(envelope)
+        except MissingEventSchema as exc:
+            if strict:
+                raise
+            logger.warning(
+                "event_schema_missing_shadow",
+                extra={
+                    "event_type": exc.event_type,
+                    "event_version": exc.event_version,
+                },
+            )
+            return
+        except Exception as exc:  # noqa: BLE001 — never let validator quirks block writes
+            logger.warning(
+                "event_validator_internal_error",
+                extra={
+                    "event_type": envelope.event_type,
+                    "event_version": envelope.event_version,
+                    "error": repr(exc),
+                },
+            )
+            return
+
+        if not errors:
+            return
+
+        if strict:
+            raise EventValidationError(
+                envelope.event_type, envelope.event_version, errors
+            )
+
+        logger.warning(
+            "event_validation_failed_shadow",
+            extra={
+                "event_type": envelope.event_type,
+                "event_version": envelope.event_version,
+                "error_count": len(errors),
+                "errors": errors[:5],  # cap log size
+            },
+        )
 
     def append(self, envelope: EventEnvelope) -> dict[str, Any]:
         """Insert ``envelope``; return inserted-or-existing row."""
+        self._validate_or_raise(envelope)
         row = envelope.to_outbox_row()
         try:
             response = self._supabase.table(self._table).insert(row).execute()

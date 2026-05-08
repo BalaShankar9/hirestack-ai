@@ -2,6 +2,12 @@
 
 from .envelope import EventEnvelope
 from .outbox import OUTBOX_TABLE, OutboxWriter
+from .schema_registry import (
+    EventValidationError,
+    MissingEventSchema,
+    reset_registry_for_tests,
+    validate_event,
+)
 from .types import (
     AIM_ASSIGNMENT_CREATED,
     AIM_SOURCE_CREATED,
@@ -19,9 +25,13 @@ __all__ = [
     "OutboxWriter",
     "OUTBOX_TABLE",
     "EventType",
+    "EventValidationError",
+    "MissingEventSchema",
     "REGISTERED_EVENT_TYPES",
     "current_version",
     "is_registered",
+    "reset_registry_for_tests",
+    "validate_event",
     "AIM_ASSIGNMENT_CREATED",
     "AIM_SOURCE_CREATED",
     "GENERATION_REQUESTED",
