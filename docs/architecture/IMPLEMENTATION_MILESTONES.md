@@ -127,13 +127,37 @@ PRs: `m7-pr27` (split into 27a, 27b, 27c if ≥500 lines each).
 
 ---
 
+#### M8-A — Multi-provider AI dispatch (`m7-pr28`) — ✅ **SHIPPED 2026-05-08**
+
+| Field | Value |
+|---|---|
+| **What changed** | New `_AnthropicProvider` co-located with `_GeminiProvider` in `ai_engine/client.py` (lazy SDK import, retry-decorated `complete`/`complete_json`/`chat`/`stream_completion`/`complete_json_streaming` with shared `_RETRY_KWARGS`, per-model circuit breaker, Langfuse span, asyncio.Queue producer/consumer for the SDK's blocking `messages.stream`). New `AIClient._select_provider(model_name)` helper dispatches by prefix — `claude-*` → Anthropic, anything else → Gemini default. The cascade loops in `complete()`, `complete_json()` non-streaming path, `stream_completion()`, `chat()` and the streaming-JSON fast-path now route through the helper per candidate model. `model_router._DEFAULT_CASCADE` appends `claude-3-5-sonnet-20241022` as the tier-1 cascade tail for `reasoning`, `fact_checking`, `quality_doc`, `aim_recon`, `aim_writer`, `aim_fix`. New flag `ff_anthropic_provider` (default OFF, sunset 2026-09-01) gates BOTH cascade exposure (resolver strips `claude-*` when OFF) AND dispatch (helper still routes correctly if a caller passes a `claude-*` model directly). New settings: `anthropic_api_key`, `anthropic_default_model`, `anthropic_max_tokens`. `anthropic>=0.40,<1.0` added to `backend/requirements.txt`. |
+| **Why now** | P1-4: Gemini is currently the only generation backend. A regional outage or sustained quota exhaustion brings the entire generation pipeline down. Anthropic at the cascade tail closes the single-vendor risk while keeping cost neutral at default (the flag is OFF in ship state). |
+| **Risks introduced** | None at default state (flag OFF → resolver strips `claude-*` → no Anthropic call possible even if a route is mis-configured). With flag ON: extra cascade attempts add latency on Gemini-wide failure scenarios (acceptable: failover path is the whole point). Schema is intentionally NOT forwarded to Anthropic — JSON is parsed by the shared `_parse_json` post-processor, identical to the Gemini path. |
+| **Blast radius** | `ai_engine/` only. Streaming JSON fast-path remains Gemini-only by design (per ADR-0031): when the primary candidate is Gemini, the streaming path stays on Gemini; if a `claude-*` candidate ever reaches the fast-path it will use the Anthropic streaming bridge (covered by `test_complete_json_streaming_calls_token_sink_per_chunk`). |
+| **Rollback** | Set `ff_anthropic_provider=false`. No DB changes. Sunset 2026-09-01. |
+| **Observability** | New log line `provider_selected: model=... provider=anthropic` (INFO, once per AIClient on first claude dispatch). New token-sink failure log `token_sink_emit_failed_anthropic`. Per-model circuit breaker key `ai_model_claude-3-5-sonnet-20241022` registered automatically via `_get_model_breaker`. Existing `model_cascade_failover` log + `MetricsCollector.record_model_failover` already cover Gemini→Anthropic transitions. |
+| **Tests** | `backend/tests/unit/test_anthropic_provider.py` — 7 tests (round-trip, JSON markdown stripping, JSON-only system instruction, chat passthrough, missing-key raises at lazy-init seam, stream deltas, token sink per chunk). `backend/tests/unit/test_model_routing.py` extended — 3 provider-selection tests (claude/gemini/None dispatch), 2 cascade flag-gating tests (strip when OFF, keep when ON), 1 chaos test (Gemini quota-exhausted on every cascade SKU → Anthropic completes). **25/25 m7-pr28 tests green; 51/51 m7-pr29 registry tests still green.** Governance: `check_feature_flags.py` clean (12 flags), `check_architecture.py` clean. |
+| **Deploy order** | (1) deploy code with flag OFF (resolver strips claude entries → no behavioural change). (2) seed `ANTHROPIC_API_KEY` in target env. (3) flip `FF_ANTHROPIC_PROVIDER=true` in canary. (4) chaos-drill verification: artificially fail Gemini, confirm cascade reaches Anthropic. (5) roll to prod. |
+| **ADR** | ADR-0031 (Accepted 2026-05-08). |
+| **Success criteria** | (✅) Provider helper dispatches by name prefix. (✅) Resolver flag-gating verified by unit test. (✅) Chaos test: full Gemini cascade exhaustion → Anthropic returns successfully. (pending — production canary) Drill against staged "Gemini outage" completes a real generation end-to-end. |
+| **Owner DRI** | @BalaShankar9 |
+
+**Out of scope (deferred — written down so they don't get lost):**
+- Streaming JSON fast-path reuse for claude-primary routes (today fast-path stays Gemini-only per ADR §6 status-quo).
+- Cost telemetry per-provider (waits on `m7-pr30` `ai_invocations` table).
+- Tool-use schema forwarding to Anthropic (intentional: cascade contract is "best-effort JSON text").
+- Adding Anthropic to non-tier-1 task cascades (`drafting`, `summarization`, etc. remain Flash-only by cost design).
+
+---
+
 ### M8 — AI runtime safety
 
 PRs: `m7-pr28` (multi-provider), `m7-pr29` (capability tokens + sandbox), `m7-pr30` (flight recorder), `m7-pr31` (strict event validation).
 
 | PR | Closes | Brief | Depends on |
 |---|---|---|---|
-| `m7-pr28` | P1-4 | Add Anthropic provider behind `model_router`; cascade Gemini→Anthropic on 5xx/429/circuit-open; chaos test "Gemini quota exhausted" leaves SLO intact. | M7 complete (need DLQ in place before adding new failure modes) |
+| `m7-pr28` ✅ | P1-4 | **SHIPPED 2026-05-08 (M8-A below).** Add Anthropic provider behind `model_router`; cascade Gemini→Anthropic on 5xx/429/circuit-open; chaos test "Gemini quota exhausted" leaves SLO intact. | M7 complete (need DLQ in place before adding new failure modes) |
 | `m7-pr29` ✅ | P0-5 | **SHIPPED 2026-05-08 (M7-E above).** Capability tokens minted per-job; tool registry verifies token before exec; classify each tool L0/L1/L2 (per blueprint §6.4). | ADR-0032, ADR-0033 |
 | `m7-pr30` | (foundation) | `ai_invocations` table (one row per LLM call): tenant, prompt hash, model, tokens, cost, latency, outcome, retries. Backfill from logs is **not** done (forward-only). | ADR-0034 |
 | `m7-pr31` | P1-2 | OutboxWriter rejects events not registered in `packages/events/schema/v1/`. Migrate ~25 currently-unregistered emitters in subsequent PRs over 2 weeks. | ADR-0035 |

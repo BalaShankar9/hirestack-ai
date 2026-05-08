@@ -224,6 +224,18 @@ class Settings(BaseSettings):
     # host-blocking lands in m7-pr29b). Sunset 2026-09-01.
     ff_tool_sandbox_tier_routing: bool = False
 
+    # PR m7-pr28 (ADR-0031): Anthropic as the cascade-tail provider so
+    # tier-1 generations can survive a Gemini-wide outage. Default OFF.
+    # When True, ``model_router.resolve_cascade`` exposes ``claude-*``
+    # entries and ``AIClient._select_provider`` dispatches them through
+    # ``_AnthropicProvider``. Anthropic is NEVER a primary route — it
+    # only gets traffic when every Gemini SKU in the cascade has failed.
+    # Sunset 2026-09-01.
+    ff_anthropic_provider: bool = False
+    anthropic_api_key: str = ""
+    anthropic_default_model: str = "claude-3-5-sonnet-20241022"
+    anthropic_max_tokens: int = 8192
+
     @field_validator("supabase_http_retries")
     @classmethod
     def _clamp_retries(cls, v: int) -> int:

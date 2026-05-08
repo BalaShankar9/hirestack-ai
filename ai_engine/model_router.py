@@ -63,10 +63,13 @@ _DEFAULT_ROUTES = {
 # ═══════════════════════════════════════════════════════════════════════
 
 _DEFAULT_CASCADE = {
-    # Tier 1: Pro → Flash failover
-    "reasoning":          ["gemini-2.5-pro", "gemini-2.5-flash"],
-    "fact_checking":      ["gemini-2.5-pro", "gemini-2.5-flash"],
-    "quality_doc":        ["gemini-2.5-pro", "gemini-2.5-flash"],
+    # Tier 1: Pro → Flash → Anthropic Sonnet failover
+    # Anthropic is the cascade tail per ADR-0031 (PR m7-pr28); it is
+    # filtered out at resolve time when ``ff_anthropic_provider`` is OFF
+    # so the ship-state behaviour matches Gemini-only.
+    "reasoning":          ["gemini-2.5-pro", "gemini-2.5-flash", "claude-3-5-sonnet-20241022"],
+    "fact_checking":      ["gemini-2.5-pro", "gemini-2.5-flash", "claude-3-5-sonnet-20241022"],
+    "quality_doc":        ["gemini-2.5-pro", "gemini-2.5-flash", "claude-3-5-sonnet-20241022"],
 
     # Tier 2: Flash → Pro failover (prefer cheaper, fall back to stronger)
     "research":           ["gemini-2.5-flash", "gemini-2.5-pro"],
@@ -89,11 +92,11 @@ _DEFAULT_CASCADE = {
 
     # ── AIM cascades ──────────────────────────────────────────────────
     "aim_parser":         ["gemini-2.5-flash", "gemini-2.5-pro"],
-    "aim_recon":          ["gemini-2.5-pro", "gemini-2.5-flash"],
-    "aim_writer":         ["gemini-2.5-pro", "gemini-2.5-flash"],
+    "aim_recon":          ["gemini-2.5-pro", "gemini-2.5-flash", "claude-3-5-sonnet-20241022"],
+    "aim_writer":         ["gemini-2.5-pro", "gemini-2.5-flash", "claude-3-5-sonnet-20241022"],
     "aim_reviewer":       ["gemini-2.5-flash", "gemini-2.5-pro"],
     "aim_grade_predictor":["gemini-2.5-flash", "gemini-2.5-pro"],
-    "aim_fix":            ["gemini-2.5-pro", "gemini-2.5-flash"],
+    "aim_fix":            ["gemini-2.5-pro", "gemini-2.5-flash", "claude-3-5-sonnet-20241022"],
 }
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -205,6 +208,15 @@ def resolve_cascade(task_type: Optional[str], default: str) -> List[str]:
     if default not in models:
         models.append(default)
 
+    # PR m7-pr28 (ADR-0031): strip Anthropic entries when the multi-
+    # provider flag is OFF. This keeps the ship-state cascade Gemini-
+    # only even though the static map declares ``claude-*`` as the tail.
+    if not _anthropic_enabled():
+        models = [m for m in models if not m.startswith("claude-")]
+        # Defensive: never return an empty list — fall back to default.
+        if not models:
+            models = [default]
+
     # Prefer healthy models first
     healthy = [m for m in models if _model_health.is_healthy(m)]
     if healthy:
@@ -215,6 +227,20 @@ def resolve_cascade(task_type: Optional[str], default: str) -> List[str]:
         task_type, models,
     )
     return models
+
+
+def _anthropic_enabled() -> bool:
+    """Read the Anthropic flag at call time (no import-time caching).
+
+    Source of truth is ``settings.ff_anthropic_provider``; falls back to
+    the ``FF_ANTHROPIC_PROVIDER`` env var when settings cannot be
+    imported (e.g. ai_engine evals running outside the backend process).
+    """
+    try:
+        from app.core.config import settings  # type: ignore
+        return bool(getattr(settings, "ff_anthropic_provider", False))
+    except Exception:  # noqa: BLE001
+        return os.getenv("FF_ANTHROPIC_PROVIDER", "").strip().lower() in ("1", "true", "yes")
 
 
 def record_model_success(model: str) -> None:

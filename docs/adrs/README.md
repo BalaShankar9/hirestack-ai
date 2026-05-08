@@ -38,7 +38,7 @@ These are reserved numbers. The corresponding implementation PR cannot merge unt
 | # | Title | Status | Blocks PR |
 |---|---|---|---|
 | 0030 | Cell protocol skeleton (`cell_id` JWT claim + router) | Proposed | Stage-B trigger |
-| 0031 | Multi-provider AI dispatch (P1-4) | Proposed | `m7-pr28` |
+| 0031 | Multi-provider AI dispatch (P1-4) | Accepted 2026-05-08 | `m7-pr28` |
 | 0032 | Capability tokens for tools (P0-5) | Accepted 2026-05-08 | `m7-pr29` |
 | 0033 | Tool sandbox tier classifier (L0/L1/L2) | Accepted 2026-05-08 | `m7-pr29` |
 | 0034 | `ai_invocations` flight recorder schema | Proposed | `m7-pr30` |

@@ -98,3 +98,10 @@ flags:
     sunset: 2026-09-01
     default: false
     purpose: Route tool dispatch through the L0/L1/L2 sandbox classifier instead of always L0 (ADR-0033, P0-5 / m7-pr29). L1 enforcement deferred to m7-pr29b.
+
+  ff_anthropic_provider:
+    owner: BalaShankar9
+    created: 2026-05-08
+    sunset: 2026-09-01
+    default: false
+    purpose: Allow ``model_router`` to expose ``claude-*`` cascade entries and dispatch them through ``_AnthropicProvider`` (ADR-0031, P1-4 / m7-pr28). Anthropic only ever runs as the cascade tail after every Gemini SKU has failed.
