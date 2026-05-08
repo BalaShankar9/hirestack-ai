@@ -9,6 +9,9 @@
 --
 -- Retention: unbounded for now (matches consumed_events policy);
 -- pruning sweeper planned in M7-D (Stage-A trailing).
+--
+-- Mirror of database/migrations/20260508_processed_queue_events.sql,
+-- consolidated under m9-pr33 (single migration root).
 
 BEGIN;
 

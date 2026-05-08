@@ -28,24 +28,17 @@ import pytest
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 _REPO_ROOT = Path(__file__).parents[3]  # …/HireStack AI
-_COMBINED_MIGRATION = _REPO_ROOT / "database" / "combined_migration.sql"
-_WAVE23_MIGRATION = _REPO_ROOT / "database" / "apply_production_wave23.sql"
-_ALL_MIGRATIONS_DIR = _REPO_ROOT / "database" / "migrations"
-
-
-def _read_sql(*paths: Path) -> str:
-    """Concatenate SQL files that exist; skip missing ones."""
-    parts: list[str] = []
-    for p in paths:
-        if p.exists():
-            parts.append(p.read_text())
-    return "\n".join(parts)
+_SUPABASE_MIGRATIONS_DIR = _REPO_ROOT / "supabase" / "migrations"
 
 
 def _migration_sql() -> str:
-    """Return the full canonical schema SQL for static analysis."""
-    extra_migrations = sorted(_ALL_MIGRATIONS_DIR.glob("*.sql"))
-    return _read_sql(_COMBINED_MIGRATION, _WAVE23_MIGRATION, *extra_migrations)
+    """Return the full canonical schema SQL for static analysis.
+
+    Reads from `supabase/migrations/` only. As of m9-pr33 (M10), this is
+    the sole migration root in the repository.
+    """
+    files = sorted(_SUPABASE_MIGRATIONS_DIR.glob("*.sql"))
+    return "\n".join(p.read_text() for p in files)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -113,9 +106,9 @@ def _has_unique_constraint(sql: str, table: str, *columns: str) -> bool:
 
 @pytest.fixture(scope="module")
 def schema_sql() -> str:
-    assert _COMBINED_MIGRATION.exists(), (
-        f"Combined migration not found at {_COMBINED_MIGRATION}. "
-        "Run `make migrations` or check the database/ directory."
+    assert _SUPABASE_MIGRATIONS_DIR.exists(), (
+        f"Supabase migrations dir not found at {_SUPABASE_MIGRATIONS_DIR}. "
+        "This is the sole migration root as of m9-pr33 (M10)."
     )
     return _migration_sql()
 
@@ -326,11 +319,14 @@ class TestSchemaConsistency:
             f"{unexpected}. If intentional, add to known_aliases in this test."
         )
 
-    def test_migration_file_exists_and_nonempty(self):
-        assert _COMBINED_MIGRATION.exists(), "combined_migration.sql must exist"
-        assert _COMBINED_MIGRATION.stat().st_size > 1000, (
-            "combined_migration.sql appears empty or truncated"
+    def test_migration_dir_exists_and_nonempty(self):
+        assert _SUPABASE_MIGRATIONS_DIR.exists(), (
+            "supabase/migrations/ must exist (sole migration root post-m9-pr33)."
         )
+        files = list(_SUPABASE_MIGRATIONS_DIR.glob("*.sql"))
+        assert files, "supabase/migrations/ contains no SQL files"
+        total = sum(p.stat().st_size for p in files)
+        assert total > 1000, "supabase/migrations/ appears empty or truncated"
 
     def test_applications_modules_column_default_contains_all_module_keys(self, schema_sql: str):
         """The modules JSONB default in applications must include all 8 known module keys."""

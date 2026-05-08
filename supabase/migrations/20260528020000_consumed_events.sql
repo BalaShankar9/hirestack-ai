@@ -8,6 +8,9 @@
 --
 -- Cheap to write (UUID + short string), cheap to query (PK lookup).
 -- Retention: prune via scheduler later (PR-13+); for now, unbounded.
+--
+-- Mirror of database/migrations/20260528_consumed_events.sql,
+-- consolidated under m9-pr33 (single migration root).
 
 BEGIN;
 

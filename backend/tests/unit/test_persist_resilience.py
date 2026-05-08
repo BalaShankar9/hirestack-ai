@@ -1,7 +1,7 @@
 """Regression tests for _persist_application_patch resilience to PGRST204.
 
 Production bug 2026-04-21: a resume_html column was added to the data
-model but the matching migration only landed in database/migrations/,
+model but the matching migration was missing from supabase/migrations/,
 not supabase/migrations/.  Production never got the column, so every
 generation job's persistence step blew up with PGRST204 and the user
 saw a raw {'code': 'PGRST204', ...} dict in the UI — losing the entire
