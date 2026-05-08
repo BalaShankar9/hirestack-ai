@@ -131,7 +131,7 @@ def _shared_jd_loader() -> JDLoader:
 def _shared_ai_client() -> Any:
     # Imported lazily so unit tests that never enable the live flag
     # don't pay the ai_engine.client import cost.
-    from ai_engine.client import get_ai_client
+    from ai_engine.api import get_ai_client
 
     return get_ai_client()
 

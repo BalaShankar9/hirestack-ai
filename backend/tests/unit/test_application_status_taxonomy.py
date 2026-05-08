@@ -26,9 +26,11 @@ from app.models.application_status import (
 )
 
 
-# Mirrors migration 20260503000000_application_status_taxonomy.sql.
+# Mirrors the current applications.status CHECK after the taxonomy +
+# additive evaluated-status migrations.
 DB_CHECK_VALUES: frozenset[str] = frozenset({
     "draft",
+    "evaluated",
     "active",
     "submitted",
     "interview",
@@ -65,8 +67,7 @@ class TestNormalize:
             ("aplicada", "submitted"),
             ("sent", "submitted"),
             ("respondido", "responded"),
-            ("evaluated", "active"),
-            ("evaluada", "active"),
+            ("evaluada", "evaluated"),
             ("descartado", "discarded"),
             ("rechazado", "rejected"),
             ("rechazada", "rejected"),
@@ -91,7 +92,7 @@ class TestIsValid:
     def test_canonical_valid(self, v: str) -> None:
         assert is_valid_status(v) is True
 
-    @pytest.mark.parametrize("v", ["applied", "sent", "respondido"])
+    @pytest.mark.parametrize("v", ["applied", "sent", "respondido", "evaluada"])
     def test_aliases_valid(self, v: str) -> None:
         assert is_valid_status(v) is True
 
@@ -113,7 +114,8 @@ class TestAnalyticsBucketing:
 
     def test_aliases_canonicalize(self) -> None:
         assert canonicalize_for_analytics("aplicado") == "applied"
-        assert canonicalize_for_analytics("evaluated") == "active"
+        assert canonicalize_for_analytics("evaluada") == "evaluated"
+        assert canonicalize_for_analytics("evaluated") == "evaluated"
 
     def test_none_returns_none(self) -> None:
         assert canonicalize_for_analytics(None) is None
@@ -128,7 +130,7 @@ class TestPartitions:
         assert OPEN_STATUSES.isdisjoint(TERMINAL_STATUSES)
 
     def test_every_canonical_status_classified(self) -> None:
-        # draft + active are open-but-not-engaged. Everything else
+        # draft + evaluated + active are open-but-not-engaged. Everything else
         # must be in one of the three sets.
         classified = OPEN_STATUSES | TERMINAL_STATUSES
         assert ALLOWED_STATUSES == classified, (

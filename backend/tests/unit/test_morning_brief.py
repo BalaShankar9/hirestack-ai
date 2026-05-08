@@ -22,6 +22,7 @@ from app.services.morning_brief import (
     JobItem,
     MorningBrief,
     MorningBriefInputs,
+    ReadyItem,
     StaleItem,
     WinItem,
     compose_morning_brief,
@@ -38,6 +39,7 @@ def _inputs(**overrides) -> MorningBriefInputs:
     base = dict(
         user_first_name="Sam",
         brief_date=_TODAY,
+        ready_to_apply=(),
         beats_today=(),
         new_jobs=(),
         stale_applications=(),
@@ -50,6 +52,10 @@ def _inputs(**overrides) -> MorningBriefInputs:
 def _beat(company="Acme", role="Senior Engineer", template="first", aid="a1") -> BeatItem:
     return BeatItem(company_name=company, role_title=role,
                     template_key=template, application_id=aid)
+
+
+def _ready(company="Acme", role="Senior Engineer", aid="a-ready") -> ReadyItem:
+    return ReadyItem(company_name=company, role_title=role, application_id=aid)
 
 
 def _job(company="Globex", role="Staff Eng", url="https://x/j/1", days=2) -> JobItem:
@@ -72,7 +78,7 @@ def _win(company="Hooli", role="Senior Eng", kind="response") -> WinItem:
 def test_empty_inputs_produces_is_empty_brief() -> None:
     brief = compose_morning_brief(_inputs())
     assert brief.is_empty() is True
-    assert brief.section_counts == {"beats": 0, "jobs": 0, "stale": 0, "wins": 0}
+    assert brief.section_counts == {"ready": 0, "beats": 0, "jobs": 0, "stale": 0, "wins": 0}
     assert brief.nudge is None
     # Greeting only — still safe to NOT send.
     assert "Morning, Sam." in brief.body_text
@@ -92,11 +98,12 @@ def test_brief_returns_dataclass_with_all_fields() -> None:
 
 def test_subject_uses_concrete_counts_when_populated() -> None:
     brief = compose_morning_brief(_inputs(
+        ready_to_apply=(_ready(),),
         beats_today=(_beat(), _beat()),
         new_jobs=(_job(),),
         wins_yesterday=(_win(),),
     ))
-    assert brief.subject == "2026-05-04: 2 follow-ups + 1 new + 1 win"
+    assert brief.subject == "2026-05-04: 1 ready + 2 follow-ups + 1 new + 1 win"
 
 
 def test_subject_singularises_when_count_is_one() -> None:
@@ -125,6 +132,7 @@ def test_subject_is_under_nine_words() -> None:
 def test_only_populated_sections_render_in_text() -> None:
     brief = compose_morning_brief(_inputs(beats_today=(_beat(),)))
     assert "Today's follow-ups" in brief.body_text
+    assert "Ready to apply" not in brief.body_text
     assert "New jobs" not in brief.body_text
     assert "Stale" not in brief.body_text
     assert "Wins yesterday" not in brief.body_text
@@ -138,10 +146,11 @@ def test_only_populated_sections_render_in_html() -> None:
 
 def test_all_sections_render_when_all_populated() -> None:
     brief = compose_morning_brief(_inputs(
+        ready_to_apply=(_ready(),),
         beats_today=(_beat(),), new_jobs=(_job(),),
         stale_applications=(_stale(),), wins_yesterday=(_win(),),
     ))
-    for label in ("Today's follow-ups", "New jobs", "Stale", "Wins yesterday"):
+    for label in ("Ready to apply", "Today's follow-ups", "New jobs", "Stale", "Wins yesterday"):
         assert label in brief.body_text
 
 
@@ -184,6 +193,7 @@ def test_exactly_five_items_no_overflow_line() -> None:
 
 def test_nudge_priority_beats_first() -> None:
     brief = compose_morning_brief(_inputs(
+        ready_to_apply=(_ready(),),
         beats_today=(_beat(),),
         stale_applications=(_stale(),),
         new_jobs=(_job(),),
@@ -191,6 +201,16 @@ def test_nudge_priority_beats_first() -> None:
     ))
     assert brief.nudge is not None
     assert "follow-up" in brief.nudge
+
+
+def test_nudge_priority_ready_when_no_beats() -> None:
+    brief = compose_morning_brief(_inputs(
+        ready_to_apply=(_ready(company="Acme", role="Platform Engineer"),),
+        new_jobs=(_job(),),
+        wins_yesterday=(_win(),),
+    ))
+    assert brief.nudge is not None
+    assert "ready drafts" in brief.nudge
 
 
 def test_nudge_priority_stale_when_no_beats() -> None:
@@ -321,6 +341,7 @@ def test_is_empty_true_when_no_sections_and_no_nudge() -> None:
 
 def test_is_empty_false_when_any_section_populated() -> None:
     for kwargs in (
+        {"ready_to_apply": (_ready(),)},
         {"beats_today": (_beat(),)},
         {"new_jobs": (_job(),)},
         {"stale_applications": (_stale(),)},

@@ -17,7 +17,7 @@ import { ProgressBar } from "@/components/ui/dynamic-style";
 import {
   Search, Loader2, Plus, ExternalLink, Star, ThumbsUp, ThumbsDown,
   Briefcase, MapPin, DollarSign, TrendingUp, Zap, ArrowRight,
-  Target, Clock, Building2, ChevronDown,
+  Target, Clock, Building2, ChevronDown, X,
 } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
@@ -26,6 +26,12 @@ const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
   applied: { color: "bg-violet-500/10 text-violet-500 border-violet-500/20", label: "Applied" },
   rejected: { color: "bg-rose-500/10 text-rose-500 border-rose-500/20", label: "Passed" },
   saved: { color: "bg-amber-500/10 text-amber-500 border-amber-500/20", label: "Saved" },
+};
+
+const RECOMMENDATION_CONFIG: Record<string, { color: string; label: string }> = {
+  apply: { color: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20", label: "Apply" },
+  consider: { color: "bg-amber-500/10 text-amber-600 border-amber-500/20", label: "Consider" },
+  skip: { color: "bg-rose-500/10 text-rose-600 border-rose-500/20", label: "Skip" },
 };
 
 function MatchGauge({ value }: { value: number }) {
@@ -82,7 +88,11 @@ export default function JobBoardPage() {
     if (!keywords.trim()) return;
     setCreating(true);
     try {
-      await api.jobSync.createAlert({ keywords: keywords.split(",").map((k) => k.trim()), location: alertLocation || undefined, min_salary: salaryMin ? parseInt(salaryMin) : undefined });
+      await api.jobSync.createAlert({
+        keywords: keywords.split(",").map((k) => k.trim()),
+        location: alertLocation || undefined,
+        salary_min: salaryMin ? parseInt(salaryMin, 10) : undefined,
+      });
       setShowForm(false); setKeywords(""); setAlertLocation(""); setSalaryMin("");
       loadData();
       toast({ title: "Alert created" });
@@ -96,6 +106,16 @@ export default function JobBoardPage() {
       setMatches((prev) => prev.map((m) => m.id === id ? { ...m, status: status as any } : m));
     } catch (e: any) {
       toast({ title: "Failed to update status", description: e.message, variant: "error" });
+    }
+  };
+
+  const deleteAlert = async (alertId: string) => {
+    try {
+      await api.jobSync.deleteAlert(alertId);
+      setAlerts((prev) => prev.filter((alert) => alert.id !== alertId));
+      toast({ title: "Alert removed" });
+    } catch (e: any) {
+      toast({ title: "Failed to delete alert", description: e.message, variant: "error" });
     }
   };
 
@@ -189,6 +209,15 @@ export default function JobBoardPage() {
               <span className="font-medium">{a.keywords?.join(", ")}</span>
               {a.location && <span className="text-muted-foreground flex items-center gap-0.5"><MapPin className="h-2.5 w-2.5" /> {a.location}</span>}
               <Badge variant="secondary" className="text-[9px]">Active</Badge>
+              <button
+                type="button"
+                onClick={() => deleteAlert(a.id)}
+                className="ml-1 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                aria-label={`Delete alert ${a.keywords?.join(", ") || a.id}`}
+                title="Delete alert"
+              >
+                <X className="h-3 w-3" />
+              </button>
             </div>
           ))}
         </div>
@@ -221,6 +250,7 @@ export default function JobBoardPage() {
         <div className="grid gap-3 md:grid-cols-2">
           {filtered.map((m) => {
             const sc = STATUS_CONFIG[m.status || "new"] || STATUS_CONFIG.new;
+            const rec = m.recommendation ? RECOMMENDATION_CONFIG[m.recommendation] : null;
             return (
               <div key={m.id} className="rounded-2xl border bg-card p-4 shadow-soft-sm hover:shadow-soft-md hover:border-primary/20 transition-all group">
                 <div className="flex items-start gap-3">
@@ -228,6 +258,11 @@ export default function JobBoardPage() {
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="font-semibold text-sm truncate group-hover:text-primary transition-colors">{m.title || "Untitled"}</h3>
                       <Badge variant="outline" className={cn("text-[9px] border shrink-0", sc.color)}>{sc.label}</Badge>
+                      {rec && (
+                        <Badge variant="outline" className={cn("text-[9px] border shrink-0", rec.color)}>
+                          {rec.label}
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 text-2xs text-muted-foreground">
                       {m.company && <span className="flex items-center gap-0.5"><Building2 className="h-2.5 w-2.5" /> {m.company}</span>}
@@ -240,6 +275,11 @@ export default function JobBoardPage() {
                           <span key={i} className="text-[9px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded">{r}</span>
                         ))}
                       </div>
+                    )}
+                    {m.missing_skills && m.missing_skills.length > 0 && (
+                      <p className="mt-2 text-[11px] text-muted-foreground">
+                        Missing: {m.missing_skills.slice(0, 3).join(", ")}
+                      </p>
                     )}
                   </div>
                   <MatchGauge value={m.match_score || 0} />

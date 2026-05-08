@@ -67,6 +67,25 @@ describe("api.trackedCompanies", () => {
     });
   });
 
+  describe(".listDiscoveries()", () => {
+    it("GETs /tracked-companies/discoveries with the limit query", async () => {
+      mockFetch.mockResolvedValueOnce(
+        okJson({
+          items: [{ id: "history-1", company_slug: "stripe", role_title: "Designer" }],
+          count: 1,
+        }),
+      );
+
+      const res = (await api.trackedCompanies.listDiscoveries(10)) as any;
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, config] = mockFetch.mock.calls[0];
+      expect(url).toContain("/api/tracked-companies/discoveries?limit=10");
+      expect(config.method ?? "GET").toBe("GET");
+      expect(res.items[0].role_title).toBe("Designer");
+    });
+  });
+
   describe(".create()", () => {
     it("POSTs the full payload (greenhouse, no workday tenant)", async () => {
       mockFetch.mockResolvedValueOnce(

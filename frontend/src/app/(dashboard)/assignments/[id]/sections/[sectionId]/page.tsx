@@ -189,46 +189,59 @@ export default function SectionWorkbench() {
           {fixBusy ? "Analysing…" : "Diagnose draft"}
         </button>
         {fixResult && !fixResult.error && (
-          <div className="mt-4 space-y-2 text-sm">
-            <p>
-              Score: <strong>{Number(fixResult.weighted_score || 0).toFixed(1)}</strong> · Gate:{" "}
-              {fixResult.passed_gate ? "✅ passed" : "⚠️ below 85"}
-            </p>
-            {fixResult.ranked_issues?.length > 0 && (
-              <ul className="list-disc pl-5 text-gray-700">
-                {fixResult.ranked_issues.slice(0, 8).map((iss: any, i: number) => (
-                  <li key={i}>
-                    <strong>[{iss.severity}]</strong> {iss.issue}
-                    {iss.suggested_fix && <em> — {iss.suggested_fix}</em>}
-                  </li>
-                ))}
-              </ul>
+          <div className="mt-4 space-y-4 text-sm">
+            {typeof fixResult.confidence === "number" && (
+              <p className="text-gray-600">
+                Diagnostic confidence: <strong>{Math.round(fixResult.confidence * 100)}%</strong>
+              </p>
             )}
-            {fixResult.revised_draft && (
-              <details>
-                <summary className="cursor-pointer text-gray-600">View revised draft</summary>
-                <div className="mt-2 whitespace-pre-wrap rounded bg-gray-50 p-3">
-                  {fixResult.revised_draft}
-                </div>
-                <button
-                  onClick={async () => {
-                    if (!confirm("Save revised draft as a new current version?")) return;
-                    try {
-                      await api.aim.applyManualDraft(
-                        sectionId,
-                        fixResult.revised_draft,
-                        fixResult.weighted_score,
-                      );
-                      await refresh();
-                    } catch (e: any) {
-                      setFixResult({ ...fixResult, error: e?.message || "Apply failed" });
-                    }
-                  }}
-                  className="mt-2 rounded bg-emerald-600 px-3 py-1 text-xs font-semibold text-white"
-                >
-                  Apply revised draft as new version
-                </button>
-              </details>
+            {fixResult.weak_arguments?.length > 0 && (
+              <div>
+                <h3 className="font-semibold">Weak arguments</h3>
+                <ul className="mt-1 space-y-2 text-gray-700">
+                  {fixResult.weak_arguments.map((issue: any, i: number) => (
+                    <li key={i} className="rounded bg-gray-50 p-3">
+                      <p><strong>Quote:</strong> {issue.quote}</p>
+                      <p><strong>Why weak:</strong> {issue.why_weak}</p>
+                      <p><strong>Strengthen by:</strong> {issue.how_to_strengthen}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {fixResult.missing_analysis?.length > 0 && (
+              <div>
+                <h3 className="font-semibold">Missing analysis</h3>
+                <ul className="mt-1 list-disc pl-5 text-gray-700">
+                  {fixResult.missing_analysis.map((item: string, i: number) => (
+                    <li key={i}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {fixResult.structural_issues?.length > 0 && (
+              <div>
+                <h3 className="font-semibold">Structural issues</h3>
+                <ul className="mt-1 list-disc pl-5 text-gray-700">
+                  {fixResult.structural_issues.map((item: string, i: number) => (
+                    <li key={i}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {fixResult.rewrite_suggestions?.length > 0 && (
+              <div>
+                <h3 className="font-semibold">Surgical rewrite suggestions</h3>
+                <ul className="mt-1 space-y-3 text-gray-700">
+                  {fixResult.rewrite_suggestions.map((suggestion: any, i: number) => (
+                    <li key={i} className="rounded border p-3">
+                      <p><strong>Before:</strong> {suggestion.before}</p>
+                      <p className="mt-1"><strong>After:</strong> {suggestion.after}</p>
+                      <p className="mt-1 text-xs text-gray-500">{suggestion.reason}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
         )}

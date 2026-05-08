@@ -49,6 +49,7 @@ describe("AppShell", () => {
     );
 
     expect(screen.getAllByText("Overview").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Missions").length).toBeGreaterThan(0);
     expect(screen.getAllByText("New Application").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Evidence").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Profile").length).toBeGreaterThan(0);

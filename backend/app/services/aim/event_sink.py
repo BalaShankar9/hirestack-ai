@@ -42,17 +42,24 @@ class AIMDatabaseSink(EventSink):
         self._sequence = 0
 
     async def emit(self, event: PipelineEvent) -> None:
-        self._sequence += 1
         # data is JSONB; ensure JSON-serialisable (drop non-serialisable values)
         try:
             data = json.loads(json.dumps(event.data or {}, default=str))
         except Exception:  # noqa: BLE001
             data = {}
+        raw_sequence = data.get("sequence")
+        if isinstance(raw_sequence, int):
+            sequence = raw_sequence
+            self._sequence = max(self._sequence, sequence)
+        else:
+            self._sequence += 1
+            sequence = self._sequence
+        event_id = str(data.get("event_id") or uuid.uuid4())
         row = {
-            "event_id": str(uuid.uuid4()),
+            "event_id": event_id,
             "section_id": self._section_id,
             "user_id": self._user_id,
-            "sequence": self._sequence,
+            "sequence": sequence,
             "event_type": event.event_type,
             "agent": event.stage or event.phase or "",
             "status": event.status or "",
@@ -69,7 +76,7 @@ class AIMDatabaseSink(EventSink):
                 "aim_section_event_persist_failed",
                 section_id=self._section_id,
                 event_type=event.event_type,
-                sequence=self._sequence,
+                sequence=sequence,
                 error=str(exc),
             )
 

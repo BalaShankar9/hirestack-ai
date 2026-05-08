@@ -85,6 +85,25 @@ async def get_alerts(
     return await service.get_alerts(current_user["id"])
 
 
+@router.delete("/alerts/{alert_id}")
+@limiter.limit("20/minute")
+async def delete_alert(
+    request: Request,
+    alert_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Delete one job alert owned by the current user."""
+    alert_id = _validate_uuid(alert_id, "alert_id")
+    service = get_job_sync_service()
+    success = await service.delete_alert(
+        alert_id=alert_id,
+        user_id=current_user["id"],
+    )
+    if not success:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return {"status": "deleted", "id": alert_id}
+
+
 @router.post("/match")
 @limiter.limit("10/minute")
 async def score_match(

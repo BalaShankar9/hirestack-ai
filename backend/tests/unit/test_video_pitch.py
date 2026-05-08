@@ -14,6 +14,7 @@ from ai_engine.agents.video_pitch import (
     detect_video_pitch_intent,
     get_provider,
 )
+from ai_engine.agents.orchestration import VIDEO_PITCH_PHASE_ORDER
 
 
 # ─── stub LLM ──────────────────────────────────────────────────────
@@ -201,6 +202,30 @@ async def test_orchestrator_returns_full_package_with_stub_provider():
     assert pkg.manifest.provider == "stub"
     assert pkg.audio_b64 is None
     assert pkg.latency_ms >= 0
+    assert pkg.workflow_id
+    assert tuple(pkg.phase_latencies.keys()) == VIDEO_PITCH_PHASE_ORDER[:2]
+    assert pkg.phase_statuses == {
+        "script_write": "completed",
+        "avatar_submit": "completed",
+    }
+
+
+class _StubTTS:
+    async def synthesize(self, text):
+        return b"a" * 256 if text else None
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_records_audio_phase_when_audio_requested():
+    pkg = await PitchOrchestrator(
+        provider=StubProvider(),
+        tts=_StubTTS(),
+    ).create(_sample_input(include_audio=True))
+
+    assert pkg.audio_b64 is not None
+    assert "tts_synthesize" in pkg.phase_latencies
+    assert tuple(pkg.phase_latencies.keys()) == VIDEO_PITCH_PHASE_ORDER
+    assert pkg.phase_statuses["tts_synthesize"] == "completed"
 
 
 @pytest.mark.asyncio

@@ -13,12 +13,19 @@ Alert types:
   - quality_regression: Pipeline quality scores dropped significantly
   - opportunity_match: New saved job closely matches user's strengthened profile
   - interview_prep_reminder: Upcoming interview detected, prep materials not generated
+    - tracked_company_discovery: Watchlist scan found new roles on tracked portals
+    - auto_prep_ready: Strong watchlist hits were converted into prepared workspaces
+        - mission_inbox_ready: Background mission sync surfaced reviewable workspaces
 """
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone, timedelta
 import structlog
 
 from app.core.database import get_db, TABLES, SupabaseDB
+from app.services.auto_prep import AutoPrepService
+from app.services.mission_control import MissionControlService
+from app.services.portal_scanner_http import make_httpx_fetcher
+from app.services.portal_scanner_scheduler import run_user_scan_tick
 
 logger = structlog.get_logger("hirestack.career_monitor")
 
@@ -36,6 +43,7 @@ class AutonomousCareerMonitor:
     DOCUMENT_OUTDATED_DAYS = 30
     QUALITY_REGRESSION_PCT = 15.0
     MAX_ACTIVE_ALERTS_PER_TYPE = 3
+    MAX_SCHEDULED_USERS_PER_TICK = 50
 
     def __init__(self, db: Optional[SupabaseDB] = None):
         self.db = db or get_db()
@@ -60,13 +68,24 @@ class AutonomousCareerMonitor:
             ("quality_regression", self._check_quality_regression),
             ("interview_prep", self._check_interview_prep),
             ("opportunity_match", self._check_opportunity_match),
+            ("tracked_company_discoveries", self._check_tracked_company_discoveries),
+            ("mission_inbox_sync", self._check_mission_inbox_sync),
         ]
 
         for check_name, check_fn in checks:
             try:
-                count = await check_fn(user_id)
-                results["checks"][check_name] = {"alerts": count, "status": "ok"}
-                results["alerts_created"] += count
+                check_result = await check_fn(user_id)
+                if isinstance(check_result, dict):
+                    alert_count = int(check_result.get("alerts", 0) or 0)
+                    results["checks"][check_name] = {
+                        "status": "ok",
+                        **check_result,
+                        "alerts": alert_count,
+                    }
+                else:
+                    alert_count = int(check_result or 0)
+                    results["checks"][check_name] = {"alerts": alert_count, "status": "ok"}
+                results["alerts_created"] += alert_count
             except Exception as e:
                 logger.warning(
                     "career_monitor.check_failed",
@@ -82,6 +101,73 @@ class AutonomousCareerMonitor:
             total_alerts=results["alerts_created"],
         )
         return results
+
+    async def list_candidate_user_ids(self, limit: int = MAX_SCHEDULED_USERS_PER_TICK) -> List[str]:
+        """Return users worth scanning in the background.
+
+        The scheduler only needs to touch users who currently have active mission
+        automation or enabled watchlist scanning. This keeps the in-process loop
+        bounded and makes the background tick align with the slices already shipped.
+        """
+        safe_limit = max(1, min(limit, self.MAX_SCHEDULED_USERS_PER_TICK))
+        active_missions = await self.db.query(
+            TABLES["missions"],
+            filters=[("status", "==", "active")],
+            order_by="created_at",
+            order_direction="DESCENDING",
+            limit=safe_limit,
+        )
+        enabled_watchlists = await self.db.query(
+            TABLES["tracked_companies"],
+            filters=[("enabled", "==", True)],
+            order_by="last_scanned_at",
+            order_direction="ASCENDING",
+            limit=safe_limit,
+        )
+
+        ordered = list(active_missions) + list(enabled_watchlists)
+        user_ids: List[str] = []
+        seen: set[str] = set()
+        for row in ordered:
+            user_id = str(row.get("user_id") or "").strip()
+            if not user_id or user_id in seen:
+                continue
+            seen.add(user_id)
+            user_ids.append(user_id)
+            if len(user_ids) >= safe_limit:
+                break
+        return user_ids
+
+    async def run_scheduled_scan_batch(self, limit: int = MAX_SCHEDULED_USERS_PER_TICK) -> Dict[str, Any]:
+        """Run one bounded background tick across candidate users."""
+        user_ids = await self.list_candidate_user_ids(limit=limit)
+        alerts_created = 0
+        scans_run = 0
+        failures = 0
+        processed_user_ids: List[str] = []
+
+        for user_id in user_ids:
+            try:
+                summary = await self.run_full_scan(user_id)
+                alerts_created += int(summary.get("alerts_created") or 0)
+                scans_run += 1
+                processed_user_ids.append(user_id)
+            except Exception as exc:
+                failures += 1
+                logger.warning(
+                    "career_monitor.scheduled_scan_failed",
+                    user_id=user_id,
+                    error=str(exc)[:200],
+                )
+
+        return {
+            "status": "ok",
+            "candidate_count": len(user_ids),
+            "scans_run": scans_run,
+            "failures": failures,
+            "alerts_created": alerts_created,
+            "user_ids": processed_user_ids,
+        }
 
     # ── Detection routines ────────────────────────────────────────────
 
@@ -326,6 +412,140 @@ class AutonomousCareerMonitor:
                 )
                 alerts_created += count
         return alerts_created
+
+    async def _check_tracked_company_discoveries(
+        self,
+        user_id: str,
+    ) -> Dict[str, Any]:
+        """Run the watchlist scanner and alert on newly found roles."""
+        scan_result = await run_user_scan_tick(
+            user_id,
+            db=self.db,
+            fetcher=make_httpx_fetcher(),
+        )
+
+        alerts_created = 0
+        auto_prep_result: Dict[str, Any] = {
+            "status": "ok",
+            "applications_created": 0,
+            "jobs_queued": 0,
+            "skipped_existing": 0,
+            "below_threshold": 0,
+            "score_failures": 0,
+            "enrichment_failures": 0,
+            "queue_failures": 0,
+        }
+        if scan_result.new_postings_count > 0:
+            role_word = "role" if scan_result.new_postings_count == 1 else "roles"
+            company_word = "company" if scan_result.scanned_count == 1 else "companies"
+            alerts_created = await self._create_alert_if_not_exists(
+                user_id=user_id,
+                alert_type="tracked_company_discovery",
+                severity="info",
+                title=f"{scan_result.new_postings_count} new tracked-company {role_word} found",
+                description=(
+                    f"We found {scan_result.new_postings_count} new {role_word} across "
+                    f"{scan_result.scanned_count} tracked {company_word}. Review the discoveries "
+                    "feed and prioritize the strongest opportunities."
+                ),
+                action_url="/tracked-companies",
+                metadata={
+                    "new_postings_count": scan_result.new_postings_count,
+                    "scanned_count": scan_result.scanned_count,
+                    "failure_count": scan_result.failure_count,
+                    "plans_attempted": scan_result.plans_attempted,
+                },
+                expires_hours=72,
+            )
+
+            auto_prep_result = await AutoPrepService(db=self.db).prepare_recent_discoveries(user_id)
+            if auto_prep_result.get("jobs_queued", 0) > 0:
+                prepared_word = "workspace" if auto_prep_result["jobs_queued"] == 1 else "workspaces"
+                alerts_created += await self._create_alert_if_not_exists(
+                    user_id=user_id,
+                    alert_type="auto_prep_ready",
+                    severity="info",
+                    title=f"{auto_prep_result['jobs_queued']} {prepared_word} auto-prepared",
+                    description=(
+                        "We converted the strongest new watchlist hits into prepared "
+                        "applications and started generation so you can review them immediately."
+                    ),
+                    action_url="/dashboard",
+                    metadata={
+                        "jobs_queued": auto_prep_result.get("jobs_queued", 0),
+                        "applications_created": auto_prep_result.get("applications_created", 0),
+                        "application_ids": auto_prep_result.get("application_ids", []),
+                        "job_ids": auto_prep_result.get("job_ids", []),
+                    },
+                    expires_hours=72,
+                )
+
+        return {
+            "alerts": alerts_created,
+            "new_postings": scan_result.new_postings_count,
+            "scanned_companies": scan_result.scanned_count,
+            "plans_attempted": scan_result.plans_attempted,
+            "failures": scan_result.failure_count,
+            "marked_scanned": scan_result.marked_scanned_count,
+            "auto_prep_status": auto_prep_result.get("status", "ok"),
+            "auto_prep_applications": auto_prep_result.get("applications_created", 0),
+            "auto_prep_jobs": auto_prep_result.get("jobs_queued", 0),
+            "auto_prep_skipped_existing": auto_prep_result.get("skipped_existing", 0),
+            "auto_prep_below_threshold": auto_prep_result.get("below_threshold", 0),
+            "auto_prep_score_failures": auto_prep_result.get("score_failures", 0),
+            "auto_prep_enrichment_failures": auto_prep_result.get("enrichment_failures", 0),
+            "auto_prep_queue_failures": auto_prep_result.get("queue_failures", 0),
+        }
+
+    async def _check_mission_inbox_sync(
+        self,
+        user_id: str,
+    ) -> Dict[str, Any]:
+        """Sync active missions into mission_drafts during periodic monitor runs.
+
+        This is the cron-facing path for Mission Mode. Page-load sync keeps the UI
+        responsive, but the monitor is what keeps mission inboxes warm even when
+        the user has not opened them yet.
+        """
+        summary = await MissionControlService(db=self.db).sync_user_missions(
+            user_id,
+            statuses=("active",),
+        )
+        alerts_created = 0
+        ready_promoted = int(summary.get("ready_for_user_promoted", 0) or 0)
+        if ready_promoted > 0:
+            workspace_word = "workspace" if ready_promoted == 1 else "workspaces"
+            alerts_created = await self._create_alert_if_not_exists(
+                user_id=user_id,
+                alert_type="mission_inbox_ready",
+                severity="info",
+                title=f"{ready_promoted} mission {workspace_word} ready for review",
+                description=(
+                    "Background mission sync surfaced new reviewable workspaces. "
+                    "Open Mission Mode and decide manually which ones to send."
+                ),
+                action_url="/missions",
+                metadata={
+                    "ready_for_user_promoted": ready_promoted,
+                    "ready_for_user_count": int(summary.get("ready_for_user_count", 0) or 0),
+                    "missions_synced": int(summary.get("missions_synced", 0) or 0),
+                    "draft_count": int(summary.get("draft_count", 0) or 0),
+                },
+                expires_hours=72,
+            )
+        return {
+            "alerts": alerts_created,
+            "status": summary.get("status", "ok"),
+            "missions_considered": summary.get("missions_considered", 0),
+            "missions_synced": summary.get("missions_synced", 0),
+            "scanned_applications": summary.get("scanned_applications", 0),
+            "matched_applications": summary.get("matched_applications", 0),
+            "drafts_created": summary.get("created", 0),
+            "drafts_updated": summary.get("updated", 0),
+            "draft_count": summary.get("draft_count", 0),
+            "ready_for_user_promoted": ready_promoted,
+            "ready_for_user_count": summary.get("ready_for_user_count", 0),
+        }
 
     # ── Alert CRUD helpers ────────────────────────────────────────────
 

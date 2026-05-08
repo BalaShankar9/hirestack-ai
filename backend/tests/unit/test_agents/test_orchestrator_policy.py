@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock
 from ai_engine.agents.base import AgentResult
+from ai_engine.agents.orchestration import ORCHESTRATION_PROGRESS_SCHEMA_VERSION
 from ai_engine.agents.orchestrator import (
     AgentPipeline,
     PipelinePolicy,
@@ -287,6 +288,10 @@ class TestPipelineExecution:
         stages = [e["stage"] for e in events]
         assert "drafter" in stages
         assert "validator" in stages
+        assert all(e["pipeline_name"] == "test_pipe" for e in events)
+        assert all(e["event_type"] == "agent_status" for e in events)
+        assert all(e["schema_version"] == ORCHESTRATION_PROGRESS_SCHEMA_VERSION for e in events)
+        assert all(e["phase"] == e["stage"] for e in events)
 
     @pytest.mark.asyncio
     async def test_memory_recall_wired(self):

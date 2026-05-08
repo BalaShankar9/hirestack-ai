@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
 from app.services.analytics import AnalyticsService
+from app.services.morning_brief_preview import MorningBriefPreviewService
 from app.api.deps import get_current_user
 
 router = APIRouter()
@@ -97,6 +98,13 @@ async def get_daily_briefing(
     db = get_db()
 
     try:
+        preview = await MorningBriefPreviewService(db=db).build_preview(
+            current_user["id"],
+            user_context=current_user,
+        )
+        if preview is not None:
+            return preview
+
         # Get profile
         profiles = await db.query(TABLES["profiles"], filters=[("user_id", "==", current_user["id"]), ("is_primary", "==", True)], limit=1)
         profile = profiles[0] if profiles else {}

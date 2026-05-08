@@ -34,6 +34,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Protocol, runtime_checkable, Set, Tuple
 
+from ai_engine.agents.orchestration import (
+    ORCHESTRATION_PROGRESS_SCHEMA_VERSION,
+    TimedWorkflow,
+    WorkflowPhaseStatus,
+    WorkflowProgressEvent,
+)
 from ai_engine.agents.ppt.outline_planner import OutlinePlanner
 from ai_engine.agents.ppt.schemas import DeckSpec
 from ai_engine.agents.ppt.slide_composer import SlideComposer
@@ -72,6 +78,7 @@ class GenerationResult:
     # Observability
     generation_id: str = ""
     phase_latencies: Dict[str, int] = field(default_factory=dict)
+    phase_statuses: Dict[str, str] = field(default_factory=dict)
     cache_hit: bool = False
 
     @property
@@ -86,12 +93,39 @@ class GenerationResult:
 @dataclass
 class GenerationProgress:
     """Progress update for long-running generations."""
+
     status: GenerationStatus
     percent: int  # 0-100
     message: str
     phase: Optional[str] = None
     slide_idx: Optional[int] = None
     latency_so_far_ms: int = 0
+    pipeline_name: str = "ppt_generation"
+    workflow_id: Optional[str] = None
+    event_type: str = "progress"
+    schema_version: str = ORCHESTRATION_PROGRESS_SCHEMA_VERSION
+
+    @property
+    def stage(self) -> str:
+        return self.phase or self.status.value
+
+    def to_progress_event(self) -> WorkflowProgressEvent:
+        return WorkflowProgressEvent(
+            pipeline_name=self.pipeline_name,
+            stage=self.stage,
+            phase=self.phase or self.stage,
+            status=self.status,
+            message=self.message,
+            latency_ms=self.latency_so_far_ms,
+            progress=self.percent,
+            workflow_id=self.workflow_id,
+            event_type=self.event_type,
+            slide_idx=self.slide_idx,
+            schema_version=self.schema_version,
+        )
+
+    def to_payload(self) -> Dict[str, Any]:
+        return self.to_progress_event().to_payload()
 
 
 @dataclass(frozen=True)
@@ -630,6 +664,7 @@ class PresentationOrchestrator:
         percent: int,
         message: str,
         latency_so_far_ms: int = 0,
+        phase: Optional[str] = None,
     ) -> None:
         """Report progress if callback is configured."""
         if self._progress_callback:
@@ -638,6 +673,7 @@ class PresentationOrchestrator:
                     status=status,
                     percent=percent,
                     message=message,
+                    phase=phase,
                     latency_so_far_ms=latency_so_far_ms,
                 ))
             except Exception as exc:
@@ -832,8 +868,7 @@ class PresentationOrchestrator:
         extra_context: Optional[str],
     ) -> GenerationResult:
         """Execute the actual generation pipeline."""
-        t0 = time.monotonic()
-        phase_latencies: Dict[str, int] = {}
+        workflow = TimedWorkflow("ppt_generation", workflow_id=generation_id)
 
         context = {
             "topic": topic,
@@ -847,33 +882,36 @@ class PresentationOrchestrator:
             status=GenerationStatus.PLANNING,
             percent=5,
             message="Generating outline...",
+            phase="outline",
         )
 
         # Phase 0: Outline Generation
-        phase_t0 = time.monotonic()
-        outline_result = await self._outline_phase.execute(
-            topic=topic,
-            audience=audience,
-            slide_count=slide_count,
-            tone=tone,
-            theme=theme,
-            extra_context=extra_context,
+        outline_result = await workflow.run_phase(
+            "outline",
+            lambda: self._outline_phase.execute(
+                topic=topic,
+                audience=audience,
+                slide_count=slide_count,
+                tone=tone,
+                theme=theme,
+                extra_context=extra_context,
+            ),
         )
-        phase_latencies["outline"] = int((time.monotonic() - phase_t0) * 1000)
 
         if not outline_result.success or outline_result.deck is None:
             await self._report_progress(
                 status=GenerationStatus.FAILED,
                 percent=0,
                 message=f"Outline generation failed: {outline_result.error}",
-                latency_so_far_ms=int((time.monotonic() - t0) * 1000),
+                latency_so_far_ms=workflow.latency_ms,
+                phase="outline",
             )
             raise RuntimeError(
                 f"Outline generation failed: {outline_result.error}"
             )
 
         deck = outline_result.deck
-        metadata["outline_latency_ms"] = phase_latencies["outline"]
+        metadata["outline_latency_ms"] = workflow.phase_latencies["outline"]
 
         # Pre-composition phases (Phase 3, 8-10, 12)
         percent_per_phase = 40 // max(len(self._pre_composition), 1)
@@ -894,11 +932,16 @@ class PresentationOrchestrator:
                 status=status,
                 percent=current_percent,
                 message=f"Executing {phase.__class__.__name__}...",
+                phase=phase_name,
             )
 
-            phase_t0 = time.monotonic()
-            result = await phase.execute(deck, context)
-            phase_latencies[phase_name] = int((time.monotonic() - phase_t0) * 1000)
+            result = await workflow.run_phase(
+                phase_name,
+                lambda phase=phase, current_deck=deck, current_context=context: phase.execute(
+                    current_deck,
+                    current_context,
+                ),
+            )
 
             if result.deck:
                 deck = result.deck
@@ -912,26 +955,29 @@ class PresentationOrchestrator:
             status=GenerationStatus.COMPOSING,
             percent=50,
             message="Composing presentation...",
+            phase="composition",
         )
 
         # Phase 1: Composition
-        phase_t0 = time.monotonic()
-        composition_result = await self._composition.execute(deck, context)
-        phase_latencies["composition"] = int((time.monotonic() - phase_t0) * 1000)
+        composition_result = await workflow.run_phase(
+            "composition",
+            lambda: self._composition.execute(deck, context),
+        )
 
         if not composition_result.success or composition_result.pptx_bytes is None:
             await self._report_progress(
                 status=GenerationStatus.FAILED,
                 percent=50,
                 message=f"Composition failed: {composition_result.error}",
-                latency_so_far_ms=int((time.monotonic() - t0) * 1000),
+                latency_so_far_ms=workflow.latency_ms,
+                phase="composition",
             )
             raise RuntimeError(
                 f"Composition failed: {composition_result.error}"
             )
 
         pptx_bytes = composition_result.pptx_bytes
-        metadata["composition_latency_ms"] = phase_latencies["composition"]
+        metadata["composition_latency_ms"] = workflow.phase_latencies["composition"]
 
         # Post-composition phases (Phase 7, 11)
         percent_per_phase = 45 // max(len(self._post_composition), 1)
@@ -948,23 +994,33 @@ class PresentationOrchestrator:
                 status=status,
                 percent=50 + (idx * percent_per_phase),
                 message=f"Executing {phase.__class__.__name__}...",
+                phase=phase_name,
             )
 
-            phase_t0 = time.monotonic()
-            result = await phase.execute(pptx_bytes, deck, context)
-            phase_latencies[phase_name] = int((time.monotonic() - phase_t0) * 1000)
+            result = await workflow.run_phase(
+                phase_name,
+                lambda phase=phase, current_bytes=pptx_bytes, current_deck=deck, current_context=context: phase.execute(
+                    current_bytes,
+                    current_deck,
+                    current_context,
+                ),
+            )
 
             if result.pptx_bytes:
                 pptx_bytes = result.pptx_bytes
             metadata.update(result.metadata)
 
-        total_latency_ms = int((time.monotonic() - t0) * 1000)
+        total_latency_ms = workflow.latency_ms
 
         await self._report_progress(
             status=GenerationStatus.COMPLETED,
             percent=100,
             message="Generation complete!",
             latency_so_far_ms=total_latency_ms,
+            phase=(
+                next(reversed(workflow.phase_statuses))
+                if workflow.phase_statuses else None
+            ),
         )
 
         # Structured logging
@@ -978,7 +1034,7 @@ class PresentationOrchestrator:
             len(pptx_bytes) // 1024,
             total_latency_ms,
             quality_score,
-            phase_latencies,
+            workflow.phase_latencies,
         )
 
         result = GenerationResult(
@@ -988,7 +1044,8 @@ class PresentationOrchestrator:
             quality_score=quality_score,
             metadata=metadata,
             generation_id=generation_id,
-            phase_latencies=phase_latencies,
+            phase_latencies=dict(workflow.phase_latencies),
+            phase_statuses=dict(workflow.phase_statuses),
         )
 
         # Cache result
@@ -998,20 +1055,30 @@ class PresentationOrchestrator:
 
     async def generate_from_deck(self, deck: DeckSpec) -> GenerationResult:
         """Render an already-planned deck through the pipeline (skips outline)."""
-        t0 = time.monotonic()
+        workflow = TimedWorkflow("ppt_generate_from_deck")
         context: Dict[str, Any] = {"theme": deck.theme}
-        metadata: Dict[str, Any] = {}
+        metadata: Dict[str, Any] = {"generation_id": workflow.workflow_id}
         quality_score = 0.0
 
         # Pre-composition phases
         for phase in self._pre_composition:
-            result = await phase.execute(deck, context)
+            phase_name = phase.__class__.__name__.replace("Phase", "").lower()
+            result = await workflow.run_phase(
+                phase_name,
+                lambda phase=phase, current_deck=deck, current_context=context: phase.execute(
+                    current_deck,
+                    current_context,
+                ),
+            )
             if result.deck:
                 deck = result.deck
             metadata.update(result.metadata)
 
         # Composition
-        composition_result = await self._composition.execute(deck, context)
+        composition_result = await workflow.run_phase(
+            "composition",
+            lambda: self._composition.execute(deck, context),
+        )
 
         if not composition_result.success or composition_result.pptx_bytes is None:
             raise RuntimeError(f"Composition failed: {composition_result.error}")
@@ -1020,19 +1087,28 @@ class PresentationOrchestrator:
 
         # Post-composition phases
         for phase in self._post_composition:
-            result = await phase.execute(pptx_bytes, deck, context)
+            phase_name = phase.__class__.__name__.replace("Phase", "").lower()
+            result = await workflow.run_phase(
+                phase_name,
+                lambda phase=phase, current_bytes=pptx_bytes, current_deck=deck, current_context=context: phase.execute(
+                    current_bytes,
+                    current_deck,
+                    current_context,
+                ),
+            )
             if result.pptx_bytes:
                 pptx_bytes = result.pptx_bytes
             metadata.update(result.metadata)
 
-        latency_ms = int((time.monotonic() - t0) * 1000)
-
         return GenerationResult(
             pptx_bytes=pptx_bytes,
             deck=deck,
-            latency_ms=latency_ms,
+            latency_ms=workflow.latency_ms,
             quality_score=quality_score,
             metadata=metadata,
+            generation_id=workflow.workflow_id,
+            phase_latencies=dict(workflow.phase_latencies),
+            phase_statuses=dict(workflow.phase_statuses),
         )
 
     def health_check(self) -> Dict[str, Any]:

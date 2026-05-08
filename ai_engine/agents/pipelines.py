@@ -16,12 +16,9 @@ from ai_engine.agents.fact_checker import FactCheckerAgent
 from ai_engine.agents.schema_validator import ValidatorAgent
 from ai_engine.agents.lock import PipelineLockManager
 from ai_engine.agents.memory import AgentMemory
-from ai_engine.agents.sub_agents import (
-    JDAnalystSubAgent,
-    CompanyIntelSubAgent,
-    ProfileMatchSubAgent,
-    MarketIntelSubAgent,
-    HistorySubAgent,
+from ai_engine.agents.sub_agents.live_registry import (
+    build_benchmark_research_sub_agents,
+    build_default_research_sub_agents,
 )
 from ai_engine.client import AIClient, get_ai_client
 
@@ -69,14 +66,11 @@ def create_pipeline(
         if custom_sub_agents is not None:
             researcher._sub_agents = custom_sub_agents
         elif research_depth in (ResearchDepth.THOROUGH, ResearchDepth.EXHAUSTIVE):
-            sub_agents = [
-                JDAnalystSubAgent(ai_client=client),
-                CompanyIntelSubAgent(ai_client=client),
-                ProfileMatchSubAgent(ai_client=client),
-                MarketIntelSubAgent(ai_client=client),
-                HistorySubAgent(db=db, user_id=user_id, ai_client=client),
-            ]
-            researcher._sub_agents = sub_agents
+            researcher._sub_agents = build_default_research_sub_agents(
+                ai_client=client,
+                db=db,
+                user_id=user_id,
+            )
 
     pipeline = AgentPipeline(
         name=name,
@@ -134,13 +128,11 @@ def benchmark_pipeline(
     client = ai_client or get_ai_client()
     from ai_engine.chains import BenchmarkBuilderChain
     chain = BenchmarkBuilderChain(client)
-    atlas_sub_agents: list[Any] = [
-        # Atlas benchmarking benefits from JD + optional history context.
-        JDAnalystSubAgent(ai_client=client),
-        ProfileMatchSubAgent(ai_client=client),
-    ]
-    if db is not None and user_id:
-        atlas_sub_agents.append(HistorySubAgent(db=db, user_id=user_id, ai_client=client))
+    atlas_sub_agents = build_benchmark_research_sub_agents(
+        ai_client=client,
+        db=db,
+        user_id=user_id,
+    )
     return create_pipeline(
         "benchmark", chain, "create_ideal_profile",
         ai_client=client, on_stage_update=on_stage_update,

@@ -73,6 +73,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Core",
     items: [
       { href: "/dashboard", label: "Overview", icon: Home, description: "Your command center" },
+      { href: "/missions", label: "Missions", icon: Zap, description: "Run focused search tracks" },
       { href: "/new", label: "New Application", icon: Plus, description: "Start a new application" },
       { href: "/evidence", label: "Evidence", icon: ShieldCheck, description: "Your proof library" },
       { href: "/nexus", label: "Profile", icon: User, description: "Your career identity" },

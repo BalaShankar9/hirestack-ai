@@ -95,6 +95,20 @@ type TrackedCompany = {
 
 type ListResponse = { items: TrackedCompany[]; count: number };
 
+type DiscoveryItem = {
+  id: string;
+  company_slug: string;
+  display_name: string;
+  role_title: string;
+  url: string | null;
+  first_seen: string | null;
+  last_seen: string | null;
+  times_seen: number;
+  is_repeat: boolean;
+};
+
+type DiscoveriesResponse = { items: DiscoveryItem[]; count: number };
+
 // ── Helpers ────────────────────────────────────────────────────────
 
 /**
@@ -127,13 +141,29 @@ function parseFieldError(
   return { raw };
 }
 
+function formatSeenAt(value: string | null): string {
+  if (!value) return "Unknown";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 // ── Page ───────────────────────────────────────────────────────────
 
 export default function TrackedCompaniesPage() {
   const { session } = useAuth();
   const [items, setItems] = useState<TrackedCompany[]>([]);
+  const [discoveries, setDiscoveries] = useState<DiscoveryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [discoveriesErr, setDiscoveriesErr] = useState<string | null>(null);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanSummary, setScanSummary] = useState<string | null>(null);
 
   // Add-form state
   const [provider, setProvider] = useState<Provider>("greenhouse");
@@ -155,14 +185,74 @@ export default function TrackedCompaniesPage() {
   async function refresh() {
     setLoading(true);
     setLoadErr(null);
+    setDiscoveriesErr(null);
     try {
       setToken();
-      const res = (await api.trackedCompanies.list()) as ListResponse;
-      setItems(Array.isArray(res?.items) ? res.items : []);
+      const [listRes, discoveriesRes] = await Promise.allSettled([
+        api.trackedCompanies.list(),
+        api.trackedCompanies.listDiscoveries(25),
+      ]);
+
+      if (listRes.status === "fulfilled") {
+        const res = listRes.value as ListResponse;
+        setItems(Array.isArray(res?.items) ? res.items : []);
+      } else {
+        throw listRes.reason;
+      }
+
+      if (discoveriesRes.status === "fulfilled") {
+        const res = discoveriesRes.value as DiscoveriesResponse;
+        setDiscoveries(Array.isArray(res?.items) ? res.items : []);
+      } else {
+        setDiscoveriesErr(
+          discoveriesRes.reason instanceof Error
+            ? discoveriesRes.reason.message
+            : "Failed to load discoveries",
+        );
+      }
     } catch (e: any) {
       setLoadErr(e?.message ?? "Failed to load tracked companies");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleScanNow() {
+    setScanBusy(true);
+    setLoadErr(null);
+    setDiscoveriesErr(null);
+    setScanSummary(null);
+    try {
+      setToken();
+      const result = (await api.career.triggerScan()) as {
+        checks?: {
+          tracked_company_discoveries?: {
+            new_postings?: number;
+            scanned_companies?: number;
+            failures?: number;
+          };
+        };
+      };
+
+      const discoveryCheck = result?.checks?.tracked_company_discoveries;
+      if (discoveryCheck) {
+        const newPostings = discoveryCheck.new_postings ?? 0;
+        const scannedCompanies = discoveryCheck.scanned_companies ?? 0;
+        const failures = discoveryCheck.failures ?? 0;
+        setScanSummary(
+          failures > 0
+            ? `Scan finished: ${newPostings} new discoveries across ${scannedCompanies} companies, ${failures} failures.`
+            : `Scan finished: ${newPostings} new discoveries across ${scannedCompanies} companies.`,
+        );
+      } else {
+        setScanSummary("Scan finished.");
+      }
+
+      await refresh();
+    } catch (e: any) {
+      setLoadErr(e?.message ?? "Failed to run scan");
+    } finally {
+      setScanBusy(false);
     }
   }
 
@@ -248,9 +338,15 @@ export default function TrackedCompaniesPage() {
         </h1>
         <p className="text-sm text-slate-600">
           Add companies you want to monitor on their ATS portals.
-          We'll surface new postings in your Drafts as they appear.
+          Recent discoveries appear below once the scanner starts finding roles.
         </p>
       </header>
+
+      {scanSummary && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          {scanSummary}
+        </div>
+      )}
 
       {/* Add form */}
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -384,18 +480,35 @@ export default function TrackedCompaniesPage() {
               ({enabledCount} active / {items.length} total)
             </span>
           </h2>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={refresh}
-            disabled={loading}
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              "Refresh"
-            )}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleScanNow}
+              disabled={scanBusy || loading || enabledCount === 0}
+            >
+              {scanBusy ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Scanning…
+                </>
+              ) : (
+                "Scan now"
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refresh}
+              disabled={loading || scanBusy}
+            >
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Refresh"
+              )}
+            </Button>
+          </div>
         </div>
 
         {loadErr && (
@@ -479,6 +592,75 @@ export default function TrackedCompaniesPage() {
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+          <div>
+            <h2 className="text-sm font-medium text-slate-700">Recent discoveries</h2>
+            <p className="text-xs text-slate-500">
+              Durable scanner history for the companies you are tracking.
+            </p>
+          </div>
+          <Badge variant="outline" className="text-[11px] text-slate-600">
+            {discoveries.length} visible
+          </Badge>
+        </div>
+
+        {discoveriesErr && (
+          <div
+            role="alert"
+            className="border-b border-rose-100 bg-rose-50 px-5 py-2 text-xs text-rose-800"
+          >
+            {discoveriesErr}
+          </div>
+        )}
+
+        {!loading && discoveries.length === 0 && !discoveriesErr && (
+          <div className="px-5 py-10 text-center text-sm text-slate-500">
+            <Building2 className="mx-auto mb-2 h-6 w-6 text-slate-300" />
+            No discoveries yet. They will appear here after the next successful scan tick.
+          </div>
+        )}
+
+        <ul className="divide-y divide-slate-100">
+          {discoveries.map((item) => (
+            <li
+              key={item.id}
+              className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-start sm:justify-between"
+            >
+              <div className="min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="truncate text-sm font-medium text-slate-900">
+                    {item.role_title}
+                  </span>
+                  {item.is_repeat && (
+                    <Badge className="border-amber-200 bg-amber-50 text-[11px] text-amber-700 hover:bg-amber-50">
+                      Seen {item.times_seen} times
+                    </Badge>
+                  )}
+                </div>
+                <div className="text-xs text-slate-600">
+                  {item.display_name} · {item.company_slug}
+                </div>
+                <div className="text-xs text-slate-500">
+                  First seen {formatSeenAt(item.first_seen)} · Last seen {formatSeenAt(item.last_seen)}
+                </div>
+              </div>
+
+              {item.url && (
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="shrink-0 text-sm font-medium text-slate-700 underline-offset-4 hover:text-slate-900 hover:underline"
+                >
+                  Open role
+                </a>
+              )}
             </li>
           ))}
         </ul>

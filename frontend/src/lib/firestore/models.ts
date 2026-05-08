@@ -54,10 +54,20 @@ export interface ResumeArtifact {
 
 export interface ConfirmedFacts {
   jobTitle: string;
+  job_title?: string;
   company?: string;
   jdText: string;
+  jd_text?: string;
   jdQuality: JDQuality;
   resume: ResumeArtifact;
+  source?: string;
+  auto_prep?: {
+    fit_score?: number;
+    batch_id?: string;
+    discovered_at?: string;
+    last_seen?: string;
+    company_slug?: string;
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -313,6 +323,7 @@ export interface ApplicationDoc {
 
   /** Scores snapshot for list views */
   scores?: {
+    fit?: number;
     match?: number;
     atsReadiness?: number;
     recruiterScan?: number;

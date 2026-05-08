@@ -12,12 +12,13 @@ from typing import Any, List, Mapping
 import pytest
 
 from app.core.database import TABLES
-from app.services.portal_scanner import PROVIDERS, TrackedCompany
+from app.services.portal_scanner import JobPosting, PROVIDERS, TrackedCompany
 from app.services.tracked_companies_repo import (
     WatchlistEntry,
     load_enabled_for_user,
     load_watchlist_for_user,
     mark_scanned,
+    persist_scan_postings,
 )
 
 
@@ -27,17 +28,34 @@ from app.services.tracked_companies_repo import (
 class _FakeDB:
     """Mimics the slice of SupabaseDB that tracked_companies_repo uses.
 
-    Only ``query()`` (with ``filters`` ==/in support) and ``update()``
-    are needed.  Rows are stored in a dict keyed by id so update can
-    do an in-place merge.
+    Stores tracked companies and scan-history rows separately so the
+    repo helpers can exercise both tables without a real Supabase.
     """
 
-    def __init__(self, rows: list[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        rows: list[dict[str, Any]] | None = None,
+        scan_history_rows: list[dict[str, Any]] | None = None,
+    ) -> None:
         self.rows: dict[str, dict[str, Any]] = {}
         for r in rows or []:
             self.rows[r["id"]] = dict(r)
+        self.scan_history_rows: dict[str, dict[str, Any]] = {}
+        for r in scan_history_rows or []:
+            self.scan_history_rows[r["id"]] = dict(r)
         self.update_calls: list[tuple[str, str, dict[str, Any]]] = []
+        self.create_calls: list[tuple[str, dict[str, Any]]] = []
         self.fail_update_for_id: str | None = None
+        self._history_counter = len(self.scan_history_rows)
+
+    async def create(self, table: str, data: dict[str, Any], doc_id=None) -> str:
+        assert table == TABLES["job_scan_history"]
+        self._history_counter += 1
+        new_id = doc_id or f"history-{self._history_counter}"
+        payload = {**data, "id": new_id}
+        self.scan_history_rows[new_id] = payload
+        self.create_calls.append((table, payload))
+        return new_id
 
     async def query(
         self,
@@ -48,8 +66,12 @@ class _FakeDB:
         limit: int | None = None,
         offset: int | None = None,
     ) -> List[Mapping[str, Any]]:
-        assert table == TABLES["tracked_companies"]
-        out = list(self.rows.values())
+        if table == TABLES["tracked_companies"]:
+            out = list(self.rows.values())
+        elif table == TABLES["job_scan_history"]:
+            out = list(self.scan_history_rows.values())
+        else:  # pragma: no cover - unsupported table in these tests
+            raise AssertionError(f"unexpected table {table!r}")
         for field, op, value in filters or []:
             if op == "==":
                 out = [r for r in out if r.get(field) == value]
@@ -61,14 +83,61 @@ class _FakeDB:
         return out
 
     async def update(self, table: str, doc_id: str, data: dict[str, Any]) -> bool:
-        assert table == TABLES["tracked_companies"]
         self.update_calls.append((table, doc_id, dict(data)))
         if doc_id == self.fail_update_for_id:
             raise RuntimeError("simulated update failure")
-        if doc_id not in self.rows:
-            return False
-        self.rows[doc_id].update(data)
-        return True
+        if table == TABLES["tracked_companies"]:
+            if doc_id not in self.rows:
+                return False
+            self.rows[doc_id].update(data)
+            return True
+        if table == TABLES["job_scan_history"]:
+            if doc_id not in self.scan_history_rows:
+                return False
+            self.scan_history_rows[doc_id].update(data)
+            return True
+        raise AssertionError(f"unexpected table {table!r}")
+
+
+def _posting(
+    *,
+    external_id: str = "job-1",
+    title: str = "Senior Engineer",
+    company_slug: str = "acme",
+    url: str = "https://boards.greenhouse.io/acme/jobs/1",
+) -> JobPosting:
+    return JobPosting(
+        provider="greenhouse",
+        company_slug=company_slug,
+        external_id=external_id,
+        title=title,
+        location="Remote",
+        url=url,
+        url_canonical=url,
+        posted_at=None,
+        department=None,
+    )
+
+
+def _history_row(
+    *,
+    id: str = "history-1",
+    url_canonical: str = "https://boards.greenhouse.io/acme/jobs/1",
+    company_slug: str = "acme",
+    role_title: str = "Senior Engineer",
+    first_seen: str = "2026-05-01T00:00:00+00:00",
+    last_seen: str = "2026-05-01T00:00:00+00:00",
+    times_seen: int = 1,
+) -> dict[str, Any]:
+    return {
+        "id": id,
+        "url_canonical": url_canonical,
+        "company_slug": company_slug,
+        "role_title": role_title,
+        "first_seen": first_seen,
+        "last_seen": last_seen,
+        "times_seen": times_seen,
+    }
 
 
 def _row(
@@ -258,6 +327,52 @@ class TestLoadWatchlist:
         ])
         result = await load_watchlist_for_user("u1", db)
         assert [e.id for e in result] == ["r2"]
+
+
+class TestPersistScanPostings:
+    @pytest.mark.asyncio
+    async def test_inserts_new_rows_and_returns_inserted_count(self):
+        db = _FakeDB()
+        inserted = await persist_scan_postings(
+            db,
+            [_posting()],
+            scanned_at=datetime(2026, 5, 3, 9, 0, 0, tzinfo=timezone.utc),
+        )
+
+        assert inserted == 1
+        assert len(db.create_calls) == 1
+        row = next(iter(db.scan_history_rows.values()))
+        assert row["company_slug"] == "acme"
+        assert row["role_title"] == "Senior Engineer"
+        assert row["times_seen"] == 1
+
+    @pytest.mark.asyncio
+    async def test_existing_rows_increment_last_seen_and_times_seen(self):
+        db = _FakeDB(
+            scan_history_rows=[_history_row(times_seen=2)],
+        )
+        inserted = await persist_scan_postings(
+            db,
+            [_posting()],
+            scanned_at=datetime(2026, 5, 3, 9, 0, 0, tzinfo=timezone.utc),
+        )
+
+        assert inserted == 0
+        row = db.scan_history_rows["history-1"]
+        assert row["times_seen"] == 3
+        assert row["last_seen"] == "2026-05-03T09:00:00+00:00"
+
+    @pytest.mark.asyncio
+    async def test_duplicate_canonicals_only_persist_once(self):
+        db = _FakeDB()
+        inserted = await persist_scan_postings(
+            db,
+            [_posting(), _posting(external_id="job-2")],
+            scanned_at=datetime(2026, 5, 3, 9, 0, 0, tzinfo=timezone.utc),
+        )
+
+        assert inserted == 1
+        assert len(db.scan_history_rows) == 1
 
     @pytest.mark.asyncio
     async def test_cross_user_isolation(self):

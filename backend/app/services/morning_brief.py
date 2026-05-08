@@ -7,15 +7,17 @@ transport, and user-timezone scheduling are separate slices that
 collect the inputs and call this composer.
 
 A morning brief is the user's daily reactivation channel.  It has
-five sections, all skipped when empty:
+six sections, all skipped when empty:
 
-  1. Today's beats           — pending follow-ups due today
+    1. Ready to apply          — drafted workspaces with review-ready docs
+                                                                waiting for the user's morning pass
+    2. Today's beats           — pending follow-ups due today
                                 (from cadence_engine / application_followups)
-  2. New jobs                — fresh hits from portal scanners
+    3. New jobs                — fresh hits from portal scanners
                                 (from portal_scanner / job_scan_history)
-  3. Stale applications      — applications silent ≥14 days, not closed
-  4. Wins yesterday          — responses received, interviews scheduled
-  5. One nudge               — single short prompt the user can act on
+    4. Stale applications      — applications silent ≥14 days, not closed
+    5. Wins yesterday          — responses received, interviews scheduled
+    6. One nudge               — single short prompt the user can act on
 
 Voice (V1 voice_guard ethos enforced by tests):
   * direct, concrete, ≤200 words total body
@@ -48,6 +50,15 @@ class BeatItem:
     company_name: str
     role_title: str
     template_key: str           # 'first' | 'linkedin' | 'second' | 'cold_reopen'
+    application_id: str
+
+
+@dataclass(frozen=True)
+class ReadyItem:
+    """A draft workspace that is ready for user review."""
+
+    company_name: str
+    role_title: str
     application_id: str
 
 
@@ -86,6 +97,7 @@ class MorningBriefInputs:
     """
     user_first_name: str
     brief_date: date
+    ready_to_apply: Sequence[ReadyItem] = field(default_factory=tuple)
     beats_today: Sequence[BeatItem] = field(default_factory=tuple)
     new_jobs: Sequence[JobItem] = field(default_factory=tuple)
     stale_applications: Sequence[StaleItem] = field(default_factory=tuple)
@@ -98,7 +110,7 @@ class MorningBrief:
     subject: str
     body_text: str
     body_html: str
-    section_counts: Mapping[str, int]   # {'beats':N,'jobs':N,'stale':N,'wins':N}
+    section_counts: Mapping[str, int]   # {'ready':N,'beats':N,'jobs':N,'stale':N,'wins':N}
     nudge: Optional[str]                # single one-liner or None
 
     def is_empty(self) -> bool:
@@ -119,11 +131,14 @@ _SUBJECT_WORD_CAP = 9
 
 def _build_subject(inputs: MorningBriefInputs, counts: Mapping[str, int]) -> str:
     """Concrete-count subject; never vibes-only."""
+    ready = counts["ready"]
     beats = counts["beats"]
     jobs = counts["jobs"]
     wins = counts["wins"]
 
     parts: list[str] = []
+    if ready:
+        parts.append(f"{ready} ready")
     if beats:
         parts.append(f"{beats} follow-up{'s' if beats != 1 else ''}")
     if jobs:
@@ -156,6 +171,17 @@ def _render_beats_text(items: Sequence[BeatItem]) -> str:
     for b in items[:_MAX_PER_SECTION]:
         label = _TEMPLATE_LABEL.get(b.template_key, b.template_key)
         lines.append(f"  - {b.company_name} — {b.role_title} ({label})")
+    if len(items) > _MAX_PER_SECTION:
+        lines.append(f"  - and {len(items) - _MAX_PER_SECTION} more")
+    return "\n".join(lines)
+
+
+def _render_ready_text(items: Sequence[ReadyItem]) -> str:
+    if not items:
+        return ""
+    lines = ["Ready to apply:"]
+    for item in items[:_MAX_PER_SECTION]:
+        lines.append(f"  - {item.company_name} — {item.role_title}")
     if len(items) > _MAX_PER_SECTION:
         lines.append(f"  - and {len(items) - _MAX_PER_SECTION} more")
     return "\n".join(lines)
@@ -224,6 +250,15 @@ def _beat_lines(items: Sequence[BeatItem]) -> list[str]:
     return out
 
 
+def _ready_lines(items: Sequence[ReadyItem]) -> list[str]:
+    out: list[str] = []
+    for item in items[:_MAX_PER_SECTION]:
+        out.append(f"{item.company_name} — {item.role_title}")
+    if len(items) > _MAX_PER_SECTION:
+        out.append(f"and {len(items) - _MAX_PER_SECTION} more")
+    return out
+
+
 def _job_lines(items: Sequence[JobItem]) -> list[str]:
     out: list[str] = []
     for j in items[:_MAX_PER_SECTION]:
@@ -259,6 +294,8 @@ def _pick_nudge(inputs: MorningBriefInputs, counts: Mapping[str, int]) -> Option
     """Pick at most ONE concrete nudge.  Highest-priority signal wins."""
     if counts["beats"]:
         return f"Send the first follow-up before lunch — it gets the highest reply rate."
+    if counts["ready"]:
+        return "Review the ready drafts before you open new tabs — they are already close to sendable."
     if counts["stale"]:
         oldest = max(inputs.stale_applications, key=lambda s: s.days_silent)
         return (
@@ -282,6 +319,7 @@ def compose_morning_brief(inputs: MorningBriefInputs) -> MorningBrief:
     Does not mutate ``inputs`` or any of its sequences.
     """
     counts = {
+        "ready": len(inputs.ready_to_apply),
         "beats": len(inputs.beats_today),
         "jobs":  len(inputs.new_jobs),
         "stale": len(inputs.stale_applications),
@@ -295,6 +333,7 @@ def compose_morning_brief(inputs: MorningBriefInputs) -> MorningBrief:
     greeting = f"Morning, {inputs.user_first_name}."
     text_sections.append(greeting)
     for renderer, items in (
+        (_render_ready_text, inputs.ready_to_apply),
         (_render_wins_text,  inputs.wins_yesterday),
         (_render_beats_text, inputs.beats_today),
         (_render_jobs_text,  inputs.new_jobs),
@@ -310,6 +349,7 @@ def compose_morning_brief(inputs: MorningBriefInputs) -> MorningBrief:
     # ── HTML body ──
     html_parts: list[str] = [f"<p>{_esc(greeting)}</p>"]
     for title, lines in (
+        ("Ready to apply",                      _ready_lines(inputs.ready_to_apply)),
         ("Wins yesterday",                       _win_lines(inputs.wins_yesterday)),
         ("Today's follow-ups",                   _beat_lines(inputs.beats_today)),
         ("New jobs",                             _job_lines(inputs.new_jobs)),
@@ -333,6 +373,7 @@ def compose_morning_brief(inputs: MorningBriefInputs) -> MorningBrief:
 
 __all__ = [
     "BeatItem",
+    "ReadyItem",
     "JobItem",
     "StaleItem",
     "WinItem",

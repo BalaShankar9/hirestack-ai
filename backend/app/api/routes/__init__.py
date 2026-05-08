@@ -48,6 +48,8 @@ from app.api.routes.jd_check import router as jd_check_router
 from app.api.routes.insights import router as insights_router
 from app.api.routes.batch_generate import router as batch_generate_router
 from app.api.routes.tracked_companies import router as tracked_companies_router
+from app.api.routes.cadence import router as cadence_router
+from app.api.routes.missions import router as missions_router
 from app.api.routes.aim import router as aim_router
 
 router = APIRouter()
@@ -99,4 +101,6 @@ router.include_router(jd_check_router, prefix="", tags=["JD Check (Public)"])
 router.include_router(insights_router, prefix="", tags=["Insights Dashboard"])
 router.include_router(batch_generate_router, prefix="", tags=["Batch Generate"])
 router.include_router(tracked_companies_router, prefix="", tags=["Tracked Companies"])
+router.include_router(cadence_router, prefix="/cadence", tags=["Cadence"])
+router.include_router(missions_router, prefix="", tags=["Missions"])
 router.include_router(aim_router, prefix="/aim", tags=["AIM — Assignment Intelligence"])

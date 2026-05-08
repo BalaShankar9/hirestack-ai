@@ -15,6 +15,7 @@ vi.mock("next/link", () => ({
 }));
 
 const mockUser = { uid: "u1", email: "test@example.com", displayName: "Test User" };
+const mockApplications: any[] = [];
 vi.mock("@/components/providers", () => ({
   useAuth: () => ({
     user: mockUser,
@@ -42,7 +43,7 @@ vi.mock("@supabase/supabase-js", () => ({
 }));
 
 vi.mock("@/lib/firestore", () => ({
-  useApplications: () => ({ data: [], loading: false }),
+  useApplications: () => ({ data: mockApplications, loading: false, removeItem: vi.fn() }),
   useEvidence: () => ({ data: [], loading: false }),
   useTasks: () => ({ data: [], loading: false }),
   computeEvidenceStrengthScore: () => 0,
@@ -79,6 +80,7 @@ import DashboardPage from "@/app/(dashboard)/dashboard/page";
 describe("DashboardPage", () => {
   beforeEach(() => {
     mockPush.mockReset();
+    mockApplications.length = 0;
   });
 
   it("renders without crashing", () => {
@@ -100,5 +102,32 @@ describe("DashboardPage", () => {
     const newAppLink = screen.queryByText(/new application/i);
     // Dashboard should have a way to start a new application
     expect(newAppLink || getStartedElements.length > 0 || screen.queryByRole("link")).toBeTruthy();
+  });
+
+  it("shows ready-to-apply inbox workspaces when present", () => {
+    mockApplications.push({
+      id: "app-1",
+      title: "Staff Engineer",
+      status: "draft",
+      updatedAt: Date.now(),
+      confirmedFacts: {
+        source: "tracked_company_auto_prep",
+        jobTitle: "Staff Engineer",
+        company: "Acme",
+        auto_prep: { fit_score: 4.7 },
+      },
+      scores: { fit: 4.7 },
+      gaps: { missingKeywords: [], strengths: [], recommendations: [] },
+      cvHtml: "<p>CV</p>",
+      coverLetterHtml: "<p>CL</p>",
+      modules: { cv: { state: "generating" } },
+    });
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText(/ready to apply/i)).toBeInTheDocument();
+    expect(screen.getByText(/draft workspaces that are already waiting for your morning review/i)).toBeInTheDocument();
+    expect(screen.getAllByText("Staff Engineer").length).toBeGreaterThan(0);
+    expect(screen.getByText(/1 ready now/i)).toBeInTheDocument();
   });
 });

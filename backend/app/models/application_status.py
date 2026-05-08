@@ -7,6 +7,7 @@ Single source of truth for the values allowed in
 
 Vocabulary:
     draft       — local/incomplete; not yet a real application
+    evaluated   — scored / prepared; not yet submitted anywhere
     active      — application in active workflow (legacy bucket;
                   prefer the more specific values below)
     submitted   — user submitted (legacy ≈ "applied")
@@ -35,6 +36,7 @@ class ApplicationStatus(str, Enum):
     """Canonical application status values."""
 
     DRAFT = "draft"
+    EVALUATED = "evaluated"
     ACTIVE = "active"
     SUBMITTED = "submitted"
     RESPONDED = "responded"
@@ -56,8 +58,7 @@ ALLOWED_STATUSES: frozenset[str] = frozenset(s.value for s in ApplicationStatus)
 # alias without a data migration.
 STATUS_ALIASES: Mapping[str, str] = {
     # Career-ops Spanish + English aliases:
-    "evaluada": ApplicationStatus.ACTIVE.value,
-    "evaluated": ApplicationStatus.ACTIVE.value,
+    "evaluada": ApplicationStatus.EVALUATED.value,
     "aplicado": ApplicationStatus.SUBMITTED.value,
     "aplicada": ApplicationStatus.SUBMITTED.value,
     "applied": ApplicationStatus.SUBMITTED.value,
@@ -79,6 +80,7 @@ STATUS_ALIASES: Mapping[str, str] = {
 # pattern insights / funnel computations don't double-count.
 ANALYTICS_BUCKETS: Mapping[str, str] = {
     ApplicationStatus.DRAFT.value: "draft",
+    ApplicationStatus.EVALUATED.value: "evaluated",
     ApplicationStatus.ACTIVE.value: "active",
     ApplicationStatus.SUBMITTED.value: "applied",
     ApplicationStatus.RESPONDED.value: "responded",
@@ -96,11 +98,19 @@ ANALYTICS_BUCKETS: Mapping[str, str] = {
 # Statuses that count as "open" in the user's pipeline (not closed-out).
 OPEN_STATUSES: frozenset[str] = frozenset({
     ApplicationStatus.DRAFT.value,
+    ApplicationStatus.EVALUATED.value,
     ApplicationStatus.ACTIVE.value,
     ApplicationStatus.SUBMITTED.value,
     ApplicationStatus.RESPONDED.value,
     ApplicationStatus.INTERVIEW.value,
     ApplicationStatus.OFFER.value,
+})
+
+
+# Statuses that mean "prepared / evaluated, but not actually applied yet".
+UNAPPLIED_STATUSES: frozenset[str] = frozenset({
+    ApplicationStatus.DRAFT.value,
+    ApplicationStatus.EVALUATED.value,
 })
 
 
@@ -158,6 +168,7 @@ __all__ = [
     "STATUS_ALIASES",
     "ANALYTICS_BUCKETS",
     "OPEN_STATUSES",
+    "UNAPPLIED_STATUSES",
     "ENGAGED_STATUSES",
     "TERMINAL_STATUSES",
     "normalize_status",

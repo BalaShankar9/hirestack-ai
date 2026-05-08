@@ -137,6 +137,29 @@ cd backend && pytest tests/ -v --ignore=tests/e2e
 - [ ] No `.env` files committed
 - [ ] No hardcoded API keys or secrets
 
+### Architecture Impact (REQUIRED for any PR touching `ai_engine/`, `backend/app/contexts/`, `backend/app/temporal/`, `backend/app/core/{events,queue,security}.py`, `packages/events/`, `supabase/migrations/`, or `docs/architecture/`)
+
+Copy this block into the PR description. Failing items block merge.
+
+```markdown
+## Architecture Impact
+
+- [ ] **Bounded context**: This change is contained within ___ context.
+- [ ] **Cross-context interactions**: List all imports/calls across context boundaries: ___
+- [ ] **Contract impact**: List any new/changed event types, API endpoints, DB tables, prompt versions: ___
+- [ ] **Schema versioning**: Backward-compatible? If breaking, ADR linked: ___
+- [ ] **Forbidden anti-patterns**: Confirmed none of `WORLD_CLASS_ARCHITECTURE_BLUEPRINT.md` §17 violated.
+- [ ] **Observability**: New code path emits metric/trace/log/event per blueprint §13.2.
+- [ ] **Cost impact**: New LLM calls projected and accounted in cost cap (blueprint §12).
+- [ ] **Security**: RLS + auth + capability checks where applicable (blueprint §11).
+- [ ] **Tests**: Unit + integration + (if applicable) contract + chaos.
+- [ ] **Blueprint update**: If this changes architecture, blueprint section ___ is updated in this PR.
+- [ ] **ADR**: If decision-class change, ADR ___ added/updated in this PR using `docs/architecture/ADR_TEMPLATE.md`.
+- [ ] **Runbook**: If new failure mode, `docs/runbooks/` updated.
+```
+
+See [`docs/architecture/WORLD_CLASS_ARCHITECTURE_BLUEPRINT.md`](docs/architecture/WORLD_CLASS_ARCHITECTURE_BLUEPRINT.md) §24 and [`docs/architecture/PRODUCTION_READINESS_CHECKLIST.md`](docs/architecture/PRODUCTION_READINESS_CHECKLIST.md) for the full release gate.
+
 ### PR Title Format
 ```
 feat: short description of feature
@@ -149,6 +172,9 @@ docs: documentation only
 ---
 
 ## Architecture Overview
+
+> **Canonical source:** [`docs/architecture/WORLD_CLASS_ARCHITECTURE_BLUEPRINT.md`](docs/architecture/WORLD_CLASS_ARCHITECTURE_BLUEPRINT.md).
+> The diagram below is a quick mental model only. The blueprint is the binding artifact for every architectural decision.
 
 ```
 ┌─────────────────┐     HTTPS      ┌──────────────────┐

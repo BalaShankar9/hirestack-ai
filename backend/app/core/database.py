@@ -187,6 +187,8 @@ TABLES = {
     "interview_sessions": "interview_sessions",
     "job_alerts": "job_alerts",
     "job_matches": "job_matches",
+    "job_scan_history": "job_scan_history",
+    "application_followups": "application_followups",
     "learning_challenges": "learning_challenges",
     "learning_streaks": "learning_streaks",
     "doc_variants": "doc_variants",
@@ -239,6 +241,9 @@ TABLES = {
     "aim_tasks": "aim_tasks",
     "aim_jobs": "aim_jobs",
     "aim_usage": "aim_usage",
+    "aim_sources": "aim_sources",
+    "aim_source_claims": "aim_source_claims",
+    "aim_citations": "aim_citations",
     # Knowledge library & global skills
     "knowledge_resources": "knowledge_resources",
     "user_knowledge_progress": "user_knowledge_progress",
@@ -252,6 +257,9 @@ TABLES = {
     "processed_webhook_events": "processed_webhook_events",
     # B2 portal-scanner: companies the user is watching
     "tracked_companies": "tracked_companies",
+    # M1 mission-mode foundation
+    "missions": "missions",
+    "mission_drafts": "mission_drafts",
 }
 
 

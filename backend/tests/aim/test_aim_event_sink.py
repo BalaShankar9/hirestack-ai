@@ -49,6 +49,22 @@ async def test_database_sink_persists_event_with_sequence_and_fields():
 
 
 @pytest.mark.asyncio
+async def test_database_sink_honours_preassigned_sequence_and_event_id():
+    db = FakeDB()
+    sink = AIMDatabaseSink(section_id="sec-1", user_id="u1", db=db)
+
+    await sink.emit(PipelineEvent(
+        event_type="attempt",
+        stage="reviewer",
+        data={"sequence": 8, "event_id": "evt-fixed", "weighted_score": 92},
+    ))
+
+    rows = db._store.get("aim_section_events", [])  # type: ignore[attr-defined]
+    assert rows[0]["sequence"] == 8
+    assert rows[0]["event_id"] == "evt-fixed"
+
+
+@pytest.mark.asyncio
 async def test_database_sink_swallows_db_errors():
     class ExplodingDB:
         async def create(self, *_a: Any, **_kw: Any) -> str:

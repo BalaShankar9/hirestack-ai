@@ -105,6 +105,20 @@ The platform doesn't just generate fixed documents — it analyzes the job type 
 
 ## Architecture
 
+> 🏛 **Engineering constitution:** [`docs/architecture/WORLD_CLASS_ARCHITECTURE_BLUEPRINT.md`](docs/architecture/WORLD_CLASS_ARCHITECTURE_BLUEPRINT.md)
+>
+> The blueprint is the **single source of truth** for every architectural decision in this repo.
+> Any PR that introduces, changes, or removes architectural surface (services, contracts, schemas,
+> workflows, tools, providers, security boundaries) **must update the blueprint in the same PR**.
+>
+> Companion docs:
+> - [`ENGINEERING_GUARDRAILS.md`](docs/architecture/ENGINEERING_GUARDRAILS.md) — enforced rules
+> - [`SCALING_PHASES.md`](docs/architecture/SCALING_PHASES.md) — staged evolution + anti-overengineering
+> - [`PRODUCTION_READINESS_CHECKLIST.md`](docs/architecture/PRODUCTION_READINESS_CHECKLIST.md) — release gates
+> - [`ADR_TEMPLATE.md`](docs/architecture/ADR_TEMPLATE.md) — decision-record template
+>
+> ADRs live in [`docs/adrs/`](docs/adrs/).
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                        FRONTEND (Next.js 14 + TypeScript)                │

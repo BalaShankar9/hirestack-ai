@@ -137,6 +137,8 @@ class AIMAssignmentService:
             "structure": recon.get("structure") or [],
             "rubric_breakdown": analysis.parsed.get("rubric_breakdown") or [],
             "expectations": {
+                "academic_level": analysis.parsed.get("academic_level"),
+                "referencing_style": analysis.parsed.get("referencing_style"),
                 "hidden_expectations": analysis.parsed.get("hidden_expectations") or [],
                 "distinction_strategy": recon.get("distinction_strategy"),
                 "mark_loss_patterns": recon.get("mark_loss_patterns") or [],
@@ -157,25 +159,70 @@ class AIMAssignmentService:
     async def _materialize_sections(
         self, user_id: str, assignment_id: str, recon: dict[str, Any]
     ) -> None:
-        """Create aim_sections rows from recon.structure if not already present."""
+        """Reconcile aim_sections rows from recon.structure.
+
+        Re-analysis must update the section plan rather than silently no-op.
+        Existing sections are updated in place by ``order_index``; new sections
+        are created; stale sections are deleted only when they have no outputs
+        or deadline tasks attached.
+        """
+        desired = sorted(
+            recon.get("structure") or [],
+            key=lambda sec: int(sec.get("order_index", 0)),
+        )
         existing = await self.db.query(
             TABLES["aim_sections"],
             filters=[("assignment_id", "==", assignment_id)],
+            order_by="order_index",
+            order_direction="ASCENDING",
         )
-        if existing:
-            return
-        for sec in recon.get("structure") or []:
+        existing_by_order = {
+            int(row.get("order_index", 0)): row
+            for row in existing
+        }
+        seen_orders: set[int] = set()
+
+        for sec in desired:
+            order_index = int(sec.get("order_index", 0))
+            seen_orders.add(order_index)
             row = {
                 "assignment_id": assignment_id,
                 "user_id": user_id,
                 "title": sec.get("title", "Section"),
-                "order_index": int(sec.get("order_index", 0)),
+                "order_index": order_index,
                 "word_limit": int(sec.get("word_limit") or 0) or None,
                 "purpose": sec.get("purpose"),
                 "key_argument": sec.get("key_argument"),
                 "rubric_links": sec.get("rubric_links") or [],
             }
-            await self.db.create(TABLES["aim_sections"], row)
+            current = existing_by_order.get(order_index)
+            if current:
+                await self.db.update(TABLES["aim_sections"], current["id"], row)
+            else:
+                await self.db.create(TABLES["aim_sections"], row)
+
+        for row in existing:
+            order_index = int(row.get("order_index", 0))
+            if order_index in seen_orders:
+                continue
+            if await self._section_has_artifacts(row["id"]):
+                continue
+            await self.db.delete(TABLES["aim_sections"], row["id"])
+
+    async def _section_has_artifacts(self, section_id: str) -> bool:
+        outputs = await self.db.query(
+            TABLES["aim_section_outputs"],
+            filters=[("section_id", "==", section_id)],
+            limit=1,
+        )
+        if outputs:
+            return True
+        tasks = await self.db.query(
+            TABLES["aim_tasks"],
+            filters=[("section_id", "==", section_id)],
+            limit=1,
+        )
+        return bool(tasks)
 
     async def get_analysis(self, assignment_id: str) -> Optional[dict[str, Any]]:
         rows = await self.db.query(

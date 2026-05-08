@@ -31,8 +31,8 @@ class AIMParserAgent(BaseAgent):
 
     async def run(self, context: dict[str, Any]) -> AgentResult:
         start = time.monotonic_ns()
-        brief_text: str = context.get("brief_text") or ""
-        rubric_text: str = context.get("rubric_text") or ""
+        brief_text: str = context.get("brief_text") or context.get("brief") or ""
+        rubric_text: str = context.get("rubric_text") or context.get("rubric") or ""
         if not brief_text.strip():
             raise ValueError("aim_parser: brief_text is required")
 

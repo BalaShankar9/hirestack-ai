@@ -165,10 +165,23 @@ async def test_fix_section_route_proxies_to_chain(fake_db_and_client, monkeypatc
 
     async def _fake_fix(section, parsed, draft):
         return {
-            "weighted_score": 91.5,
-            "passed_gate": True,
-            "ranked_issues": [{"severity": "low", "issue": "tone", "suggested_fix": "warmer"}],
-            "revised_draft": "Better draft.",
+            "weak_arguments": [
+                {
+                    "quote": "Weak claim.",
+                    "why_weak": "It is unsupported.",
+                    "how_to_strengthen": "Add evidence and counterpoint.",
+                },
+            ],
+            "missing_analysis": ["Paragraph 2 describes but does not evaluate."],
+            "structural_issues": ["No micro-conclusion in the final paragraph."],
+            "rewrite_suggestions": [
+                {
+                    "before": "This matters a lot.",
+                    "after": "This matters because the rubric prioritises explicit evaluation.",
+                    "reason": "Replaces vague emphasis with a rubric-linked claim.",
+                },
+            ],
+            "confidence": 0.91,
         }
 
     monkeypatch.setattr("app.services.aim.section_service.fix_section", _fake_fix)
@@ -176,9 +189,9 @@ async def test_fix_section_route_proxies_to_chain(fake_db_and_client, monkeypatc
     r = client.post(f"/api/aim/sections/{section_id}/fix", json={"draft": "raw text"})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["weighted_score"] == 91.5
-    assert body["passed_gate"] is True
-    assert body["ranked_issues"][0]["severity"] == "low"
+    assert body["weak_arguments"][0]["quote"] == "Weak claim."
+    assert body["rewrite_suggestions"][0]["after"].startswith("This matters because")
+    assert body["confidence"] == 0.91
 
 
 def test_fix_section_route_404_on_unknown_section(fake_db_and_client):
@@ -358,6 +371,13 @@ async def test_generate_stream_emits_real_writer_reviewer_events(
     stages_seen = [e["data"].get("stage") for e in agent_statuses]
     assert "writer" in stages_seen
     assert "reviewer" in stages_seen
+    assert all("sequence" in e["data"] for e in agent_statuses)
+
+    attempts = [e for e in payload_events if e["event"] == "attempt"]
+    assert len(attempts) == 1
+    assert attempts[0]["data"]["content"] == "draft"
+    assert attempts[0]["data"]["weighted_score"] == 92.0
+    assert attempts[0]["data"]["sequence"] > 0
 
     # Every event payload carries a schema_version
     for e in payload_events:
@@ -368,6 +388,7 @@ async def test_generate_stream_emits_real_writer_reviewer_events(
     assert types[-1] == "complete"
     assert payload_events[-1]["data"]["passed_gate"] is True
     assert payload_events[-1]["data"]["stop_reason"] == "passed"
+    assert payload_events[-1]["data"]["sequence"] > attempts[0]["data"]["sequence"]
 
 
 @pytest.mark.asyncio
@@ -399,6 +420,7 @@ async def test_generate_stream_emits_error_on_failure(fake_db_and_client, monkey
     assert len(error_events) == 1
     assert "boom" in error_events[0]["data"]["message"]
     assert error_events[0]["data"]["schema_version"]
+    assert error_events[0]["data"]["sequence"] > 0
 
 
 def test_generate_stream_404_on_unknown_section(fake_db_and_client):

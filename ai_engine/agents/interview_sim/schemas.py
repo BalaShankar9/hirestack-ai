@@ -8,7 +8,7 @@ scored against STAR structure + role-signal coverage.
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -64,6 +64,9 @@ class InterviewSession(BaseModel):
     turns: List[InterviewTurn] = Field(default_factory=list)
     cursor: int = 0  # next question index to ask
     finalized: bool = False
+    planning_latency_ms: int = 0
+    phase_latencies: Dict[str, int] = Field(default_factory=dict)
+    phase_statuses: Dict[str, str] = Field(default_factory=dict)
 
 
 class SessionReport(BaseModel):

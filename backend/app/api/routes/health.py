@@ -140,7 +140,7 @@ async def health_check():
 
     model_health: Dict[str, Any] = {}
     try:
-        from ai_engine.model_router import get_model_health
+        from ai_engine.api import get_model_health
 
         model_health = get_model_health()
     except Exception:

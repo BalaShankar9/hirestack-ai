@@ -5,12 +5,14 @@ import asyncio
 import json
 import os
 from typing import Any, AsyncIterator
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_current_user
+from app.core.database import TABLES
 from app.services.aim.event_sink import AIMDatabaseSink
 from app.services.aim.quota import AIMQuotaService
 from app.services.aim.section_service import AIMSectionService
@@ -84,6 +86,20 @@ async def generate_section_stream(
     db_sink = AIMDatabaseSink(section_id=section_id, user_id=current_user["id"])
     user_id = current_user["id"]
     section_title = sec.get("title") or ""
+    try:
+        from app.core.database import get_db
+
+        db = get_db()
+        existing = await db.query(
+            TABLES["aim_section_events"],
+            filters=[("section_id", "==", section_id), ("user_id", "==", user_id)],
+            order_by="sequence",
+            order_direction="DESCENDING",
+            limit=1,
+        )
+        next_sequence = int(existing[0]["sequence"]) if existing else 0
+    except Exception:  # noqa: BLE001 - stream should still run without history lookup
+        next_sequence = 0
 
     async def adapter(
         event_type: str,
@@ -108,6 +124,13 @@ async def generate_section_stream(
         ))
 
     async def _emit_both(evt: PipelineEvent) -> None:
+        nonlocal next_sequence
+        next_sequence += 1
+        payload = dict(evt.data or {})
+        payload.setdefault("event_id", str(uuid4()))
+        payload.setdefault("sequence", next_sequence)
+        payload.setdefault("section_id", section_id)
+        evt.data = payload
         # SSE first (live UX never blocked by DB latency); persistence is
         # best-effort and never raises into this path.
         await sink.emit(evt)
@@ -227,7 +250,8 @@ async def list_section_events(
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail="`since` must be >= 0")
     capped_limit = max(1, min(int(limit), 2000))
-    from app.core.database import TABLES, get_db
+    from app.core.database import get_db
+
     db = get_db()
     rows = await db.query(
         TABLES["aim_section_events"],

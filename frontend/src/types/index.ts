@@ -578,8 +578,7 @@ export interface JobAlert {
   id: string;
   keywords: string[];
   location?: string;
-  min_salary?: number;
-  max_salary?: number;
+  salary_min?: number;
   is_active: boolean;
   created_at: string;
 }
@@ -595,6 +594,8 @@ export interface JobMatch {
   source_url?: string;
   match_score?: number;
   match_reasons?: string[];
+  missing_skills?: string[];
+  recommendation?: "apply" | "consider" | "skip" | string;
   description?: string;
   source?: string;
   status: string;

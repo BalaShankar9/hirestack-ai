@@ -15,6 +15,7 @@ export default function AssignmentDetailPage() {
   const [docs, setDocs] = useState<any[]>([]);
   const [analysis, setAnalysis] = useState<any | null>(null);
   const [sections, setSections] = useState<any[]>([]);
+  const [sources, setSources] = useState<any[]>([]);
   const [evaluations, setEvaluations] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
@@ -33,14 +34,16 @@ export default function AssignmentDetailPage() {
 
   async function refresh() {
     try {
-      const [a, d, secs] = await Promise.all([
+      const [a, d, secs, sourceRows] = await Promise.all([
         api.aim.getAssignment(id),
         api.aim.listDocuments(id),
         api.aim.listSections(id).catch(() => []),
+        api.aim.listSources(id).catch(() => []),
       ]);
       setAssignment(a);
       setDocs(d);
       setSections(secs);
+      setSources(sourceRows);
       try {
         setAnalysis(await api.aim.getAnalysis(id));
       } catch {
@@ -195,6 +198,15 @@ export default function AssignmentDetailPage() {
               </span>
             )}
           </Link>
+          <Link
+            href={`/assignments/${id}/sources`}
+            className="rounded border px-3 py-1 text-sm hover:bg-gray-50"
+          >
+            Sources
+            <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700">
+              {sources.length}
+            </span>
+          </Link>
         </div>
         <textarea
           rows={6}
@@ -216,8 +228,34 @@ export default function AssignmentDetailPage() {
       </section>
 
       <section className="rounded-xl border bg-white p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">2 · Sources</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              {sources.length} source{sources.length === 1 ? "" : "s"} attached to this assignment.
+            </p>
+          </div>
+          <Link
+            href={`/assignments/${id}/sources`}
+            className="rounded bg-black px-3 py-1 text-sm font-semibold text-white hover:bg-gray-800"
+          >
+            Open source library
+          </Link>
+        </div>
+        {sources.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            {sources.slice(0, 6).map((source) => (
+              <span key={source.id} className="rounded-full border bg-gray-50 px-2 py-1 text-gray-700">
+                {source.title || source.source_type}
+              </span>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border bg-white p-5">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">2 · Plan (Parser + Recon)</h2>
+          <h2 className="text-lg font-semibold">3 · Plan (Parser + Recon)</h2>
           <button
             onClick={runAnalyze}
             disabled={busy || docs.filter((d) => d.type === "brief").length === 0}
@@ -254,7 +292,7 @@ export default function AssignmentDetailPage() {
       </section>
 
       <section className="rounded-xl border bg-white p-5">
-        <h2 className="mb-3 text-lg font-semibold">3 · Sections</h2>
+        <h2 className="mb-3 text-lg font-semibold">4 · Sections</h2>
         {sections.length === 0 ? (
           <p className="text-sm text-gray-500">
             Run analysis to materialize sections from the recon plan.
@@ -282,7 +320,7 @@ export default function AssignmentDetailPage() {
 
       <section className="rounded-xl border bg-white p-5">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">4 · Grade prediction</h2>
+          <h2 className="text-lg font-semibold">5 · Grade prediction</h2>
           <button
             onClick={runPredict}
             disabled={busy || sections.length === 0}

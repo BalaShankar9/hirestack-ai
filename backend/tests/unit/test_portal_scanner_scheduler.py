@@ -25,11 +25,29 @@ from app.services.portal_scanner_worker import FetchResult
 
 
 class _FakeDB:
-    def __init__(self, rows: list[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        rows: list[dict[str, Any]] | None = None,
+        scan_history_rows: list[dict[str, Any]] | None = None,
+    ) -> None:
         self.rows: dict[str, dict[str, Any]] = {}
         for r in rows or []:
             self.rows[r["id"]] = dict(r)
+        self.scan_history_rows: dict[str, dict[str, Any]] = {}
+        for r in scan_history_rows or []:
+            self.scan_history_rows[r["id"]] = dict(r)
         self.update_calls: list[tuple[str, str, dict[str, Any]]] = []
+        self.create_calls: list[tuple[str, dict[str, Any]]] = []
+        self._history_counter = len(self.scan_history_rows)
+
+    async def create(self, table: str, data: dict[str, Any], doc_id=None) -> str:
+        assert table == TABLES["job_scan_history"]
+        self._history_counter += 1
+        new_id = doc_id or f"history-{self._history_counter}"
+        payload = {**data, "id": new_id}
+        self.scan_history_rows[new_id] = payload
+        self.create_calls.append((table, payload))
+        return new_id
 
     async def query(
         self,
@@ -40,8 +58,12 @@ class _FakeDB:
         limit: int | None = None,
         offset: int | None = None,
     ) -> List[Mapping[str, Any]]:
-        assert table == TABLES["tracked_companies"]
-        out = list(self.rows.values())
+        if table == TABLES["tracked_companies"]:
+            out = list(self.rows.values())
+        elif table == TABLES["job_scan_history"]:
+            out = list(self.scan_history_rows.values())
+        else:  # pragma: no cover - unsupported table in these tests
+            raise AssertionError(f"unexpected table {table!r}")
         for field, op, value in filters or []:
             if op == "==":
                 out = [r for r in out if r.get(field) == value]
@@ -50,12 +72,39 @@ class _FakeDB:
         return out
 
     async def update(self, table: str, doc_id: str, data: dict[str, Any]) -> bool:
-        assert table == TABLES["tracked_companies"]
         self.update_calls.append((table, doc_id, dict(data)))
-        if doc_id not in self.rows:
-            return False
-        self.rows[doc_id].update(data)
-        return True
+        if table == TABLES["tracked_companies"]:
+            if doc_id not in self.rows:
+                return False
+            self.rows[doc_id].update(data)
+            return True
+        if table == TABLES["job_scan_history"]:
+            if doc_id not in self.scan_history_rows:
+                return False
+            self.scan_history_rows[doc_id].update(data)
+            return True
+        raise AssertionError(f"unexpected table {table!r}")
+
+
+def _history_row(
+    *,
+    id: str = "history-1",
+    url_canonical: str = "https://boards.greenhouse.io/acme/jobs/1",
+    company_slug: str = "acme",
+    role_title: str = "Senior Engineer",
+    first_seen: str = "2026-05-01T00:00:00+00:00",
+    last_seen: str = "2026-05-01T00:00:00+00:00",
+    times_seen: int = 1,
+) -> dict[str, Any]:
+    return {
+        "id": id,
+        "url_canonical": url_canonical,
+        "company_slug": company_slug,
+        "role_title": role_title,
+        "first_seen": first_seen,
+        "last_seen": last_seen,
+        "times_seen": times_seen,
+    }
 
 
 def _row(
@@ -173,6 +222,10 @@ class TestHappyPath:
         assert result.marked_scanned_count == 1
         # mark_scanned bumped the row's last_scanned_at.
         assert db.rows["r1"]["last_scanned_at"] == _TICK_NOW.isoformat()
+        assert len(db.scan_history_rows) == 1
+        history = next(iter(db.scan_history_rows.values()))
+        assert history["role_title"] == "Senior Engineer"
+        assert history["times_seen"] == 1
 
     @pytest.mark.asyncio
     async def test_multiple_companies_all_marked(self):
@@ -241,6 +294,29 @@ class TestFailureMarksScannedToo:
         assert result.new_postings_count == 1
         assert result.failure_count == 1
         assert result.marked_scanned_count == 2
+
+
+class TestExistingHistory:
+    @pytest.mark.asyncio
+    async def test_repeat_posting_increments_history_without_counting_new(self):
+        payload = _gh_payload("Senior Engineer")
+        posting_url = payload["jobs"][0]["absolute_url"]
+        db = _FakeDB(
+            [_row(id="r1", company_slug="acme")],
+            scan_history_rows=[_history_row(times_seen=2, url_canonical=posting_url)],
+        )
+        url = "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true"
+        fetcher = _make_fetcher(payload_by_url={url: payload})
+
+        result = await run_user_scan_tick(
+            "u1", db=db, fetcher=fetcher, now=_TICK_NOW
+        )
+
+        assert result.scanned_count == 1
+        assert result.new_postings_count == 0
+        history = db.scan_history_rows["history-1"]
+        assert history["times_seen"] == 3
+        assert history["last_seen"] == _TICK_NOW.isoformat()
 
 
 class TestOrdering:

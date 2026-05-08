@@ -128,13 +128,20 @@ async def test_generate_section_emits_writer_reviewer_pair_per_attempt_and_compl
 
     # Exactly one writer+reviewer pair (since first attempt passed)
     writer_evts = [e for e in emitter.events if e.get("agent") == "writer"]
-    reviewer_evts = [e for e in emitter.events if e.get("agent") == "reviewer"]
+    reviewer_evts = [
+        e for e in emitter.events
+        if e.get("agent") == "reviewer" and e["event_type"] == "agent_status"
+    ]
     assert len(writer_evts) == 2  # running + completed
     assert len(reviewer_evts) == 2  # running + completed
     # passed_gate surfaced in reviewer completed event data
     completed = next(e for e in reviewer_evts if e["status"] == "completed")
     assert completed["data"]["passed_gate"] is True
     assert completed["data"]["weighted_score"] == 90.0
+    attempts = emitter.by_type("attempt")
+    assert len(attempts) == 1
+    assert attempts[0]["data"]["content"] == "draft body"
+    assert attempts[0]["data"]["weighted_score"] == 90.0
 
 
 @pytest.mark.asyncio
@@ -162,6 +169,10 @@ async def test_generate_section_emits_retry_event_when_attempt_below_gate():
 
     assert result.stop_reason == "passed"
     assert len(result.history) == 2
+    attempts = emitter.by_type("attempt")
+    assert len(attempts) == 2
+    assert attempts[0]["data"]["passed_gate"] is False
+    assert attempts[1]["data"]["passed_gate"] is True
     retries = emitter.by_type("retry")
     assert len(retries) == 1
     assert retries[0]["status"] == "retrying"
@@ -204,7 +215,13 @@ async def test_predict_grade_emits_running_then_completed_with_grade_data():
 async def test_fix_section_emits_running_then_completed_with_fix_count():
     from ai_engine.chains import aim_pipeline
 
-    fix_payload = {"fixes": [{"id": "f1"}, {"id": "f2"}, {"id": "f3"}]}
+    fix_payload = {
+        "weak_arguments": [],
+        "missing_analysis": [],
+        "structural_issues": [],
+        "rewrite_suggestions": [{"before": "a", "after": "b", "reason": "c"}] * 3,
+        "confidence": 0.9,
+    }
     with patch.object(aim_pipeline.AIMFixAgent, "run",
                       new=AsyncMock(return_value=_agent_result(fix_payload))):
         emitter = CollectingEmitter()

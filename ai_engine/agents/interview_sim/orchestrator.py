@@ -16,10 +16,10 @@ from __future__ import annotations
 import base64
 import logging
 import time
-import uuid
 from typing import Any, List, Optional
 
 from ai_engine.agents.interview_sim.question_planner import QuestionPlanner
+from ai_engine.agents.orchestration import TimedWorkflow
 from ai_engine.agents.interview_sim.schemas import (
     InterviewQuestion,
     InterviewSession,
@@ -62,21 +62,35 @@ class InterviewSimulator:
     ) -> InterviewSession:
         if not role or not role.strip():
             raise ValueError("role must be a non-empty string")
-        questions = await self.planner.plan(
-            role=role, jd=jd, resume=resume, question_count=question_count,
+        workflow = TimedWorkflow("interview_session")
+
+        questions = await workflow.run_phase(
+            "question_planning",
+            lambda: self.planner.plan(
+                role=role,
+                jd=jd,
+                resume=resume,
+                question_count=question_count,
+            ),
         )
         if with_audio:
-            tts = self._get_tts()
-            for q in questions:
-                audio = await tts.synthesize(q.text)
-                if audio:
-                    q.audio_b64 = base64.b64encode(audio).decode("ascii")
+            async def _render_audio() -> None:
+                tts = self._get_tts()
+                for q in questions:
+                    audio = await tts.synthesize(q.text)
+                    if audio:
+                        q.audio_b64 = base64.b64encode(audio).decode("ascii")
+
+            await workflow.run_phase("tts_synthesize", _render_audio)
         session = InterviewSession(
-            session_id=str(uuid.uuid4()),
+            session_id=workflow.workflow_id,
             role=role,
             audience_hint=audience_hint,
             questions=questions,
             cursor=0,
+            planning_latency_ms=workflow.phase_latencies.get("question_planning", 0),
+            phase_latencies=workflow.phase_latencies,
+            phase_statuses=workflow.phase_statuses,
         )
         return session
 

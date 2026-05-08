@@ -18,12 +18,13 @@ What's here
   Sets ``last_scanned_at`` on every row in ``ids``.  Returns the
   number of rows updated.  Used by the scheduler after each scan
   run completes so the next iteration picks the next stalest batch.
+* ``persist_scan_postings(db, postings, *, scanned_at)`` → int
+    Upserts the worker's normalized postings into ``job_scan_history``.
+    New canonicals are inserted with ``times_seen = 1``; existing rows
+    get ``last_seen`` bumped and ``times_seen`` incremented.
 
 What's NOT here (intentionally deferred)
 ----------------------------------------
-* Persisting ``new_postings`` to ``job_scan_history`` — that table's
-  schema lives in an unstaged WIP migration.  We'll add the
-  postings-persist helper when that schema lands cleanly on main.
 * Cron / scheduler glue — composes load_enabled_for_user + run_scan
   + mark_scanned and lives one layer up; depends on a deployment
   story (Railway worker? FastAPI background task? cron-only?) that
@@ -45,10 +46,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Iterable, List, Mapping, Protocol, Sequence
+from typing import Any, Iterable, List, Mapping, Optional, Protocol, Sequence
 
 from app.core.database import TABLES
-from app.services.portal_scanner import PROVIDERS, TrackedCompany
+from app.services.portal_scanner import JobPosting, PROVIDERS, TrackedCompany
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,13 @@ class WatchlistEntry:
 
 
 class _RepoDB(Protocol):
+    async def create(
+        self,
+        table: str,
+        data: dict[str, Any],
+        doc_id: Optional[str] = ...,
+    ) -> str: ...
+
     async def query(
         self,
         table: str,
@@ -255,6 +263,78 @@ async def mark_scanned(
     return updated
 
 
+async def persist_scan_postings(
+    db: _RepoDB,
+    postings: Sequence[JobPosting],
+    *,
+    scanned_at: datetime,
+) -> int:
+    """Persist one scan tick's postings into ``job_scan_history``.
+
+    ``run_scan`` already removes duplicate canonicals within a batch,
+    but we defensively dedupe again here because this helper is the
+    persistence boundary.  The returned count is the number of rows
+    that were *new to scan history* on this tick.
+    """
+    table = TABLES["job_scan_history"]
+    scanned_at_iso = _to_iso(scanned_at)
+
+    unique_postings: list[JobPosting] = []
+    seen_canonicals: set[str] = set()
+    for posting in postings:
+        canonical = posting.url_canonical.strip()
+        if not canonical or canonical in seen_canonicals:
+            continue
+        seen_canonicals.add(canonical)
+        unique_postings.append(posting)
+
+    if not unique_postings:
+        return 0
+
+    existing_rows = await db.query(
+        table,
+        filters=[(
+            "url_canonical",
+            "in",
+            [posting.url_canonical for posting in unique_postings],
+        )],
+        order_by=None,
+    )
+    existing_by_canonical = {
+        str(row.get("url_canonical")): row
+        for row in existing_rows
+        if row.get("url_canonical")
+    }
+
+    inserted = 0
+    for posting in unique_postings:
+        existing = existing_by_canonical.get(posting.url_canonical)
+        if existing:
+            update = {
+                "last_seen": scanned_at_iso,
+                "times_seen": int(existing.get("times_seen", 1)) + 1,
+            }
+            if not existing.get("role_title") and posting.title.strip():
+                update["role_title"] = posting.title.strip()
+            await db.update(table, str(existing["id"]), update)
+            continue
+
+        await db.create(
+            table,
+            {
+                "url_canonical": posting.url_canonical,
+                "company_slug": posting.company_slug,
+                "role_title": posting.title.strip(),
+                "first_seen": scanned_at_iso,
+                "last_seen": scanned_at_iso,
+                "times_seen": 1,
+            },
+        )
+        inserted += 1
+
+    return inserted
+
+
 def _to_iso(ts: datetime) -> str:
     """Render a datetime as an ISO-8601 string Supabase accepts.
 
@@ -272,4 +352,5 @@ __all__ = [
     "load_enabled_for_user",
     "load_watchlist_for_user",
     "mark_scanned",
+    "persist_scan_postings",
 ]

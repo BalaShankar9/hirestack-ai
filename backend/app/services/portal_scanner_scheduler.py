@@ -15,10 +15,6 @@ infrastructure dictates without touching the orchestration logic.
 
 What's NOT here
 ---------------
-* Persisting ``new_postings`` to scan history — the schema for that
-  is unstaged WIP (see B1.next.repo for context).  When it lands
-  we'll add an ``insert_new_postings`` helper to repo and call it
-  here right after ``run_scan`` returns.
 * Multi-user batching / fairness queueing — caller picks one user.
 * Notification emission (email digest of new postings) — that's a
   consumer downstream of the scan-history table, not part of the
@@ -37,6 +33,7 @@ from app.services.tracked_companies_repo import (
     _RepoDB,
     load_watchlist_for_user,
     mark_scanned,
+    persist_scan_postings,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,9 +54,10 @@ class TickResult:
         dropped any companies (e.g. unknown future provider that
         sneaks past repo's filter).
     new_postings_count:
-        How many *new* postings the worker returned (after dedup
-        against ``seen_url_canonicals`` if/when wired in).  Zero
-        is a valid healthy result — ATSes don't post every minute.
+        How many postings were newly inserted into ``job_scan_history``
+        on this tick. Zero is a valid healthy result — ATSes don't post
+        every minute, and repeat sightings only bump ``times_seen`` /
+        ``last_seen`` on existing rows.
     failure_count:
         From ``ScanRun.failures`` — companies whose scan ultimately
         failed after retries.  A high failure_count without
@@ -94,9 +92,9 @@ async def run_user_scan_tick(
         The user whose watchlist to scan.  RLS in production restricts
         DB rows to this user; in tests the fake DB filters in Python.
     db:
-        DB handle satisfying ``_RepoDB`` (query + update).  In
-        production this is the SupabaseDB singleton; tests inject a
-        fake.
+        DB handle satisfying ``_RepoDB`` (query + create + update).
+        In production this is the SupabaseDB singleton; tests inject
+        a fake.
     fetcher:
         Production callers pass ``portal_scanner_http.make_httpx_fetcher()``;
         tests pass an in-memory async fn that returns canned
@@ -145,6 +143,11 @@ async def run_user_scan_tick(
     scan_run: ScanRun = await run_scan(companies, fetcher=fetcher)
 
     scanned_at = now or datetime.now(timezone.utc)
+    inserted = await persist_scan_postings(
+        db,
+        scan_run.new_postings,
+        scanned_at=scanned_at,
+    )
     marked = await mark_scanned(
         db,
         (e.id for e in entries),
@@ -154,7 +157,7 @@ async def run_user_scan_tick(
     return TickResult(
         scanned_count=len(entries),
         plans_attempted=scan_run.plans_attempted,
-        new_postings_count=len(scan_run.new_postings),
+        new_postings_count=inserted,
         failure_count=len(scan_run.failures),
         marked_scanned_count=marked,
     )

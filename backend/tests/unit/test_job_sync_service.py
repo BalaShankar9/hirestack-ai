@@ -21,6 +21,7 @@ def service():
     db.get = AsyncMock(return_value={"id": "row-1"})
     db.query = AsyncMock(return_value=[])
     db.update = AsyncMock(return_value=True)
+    db.delete = AsyncMock(return_value=True)
     svc = JobSyncService(db=db)
     svc.ai_client = MagicMock()
     svc.ai_client.complete_json = AsyncMock(
@@ -76,6 +77,29 @@ class TestCreateAlert:
         assert record["is_active"] is True
 
 
+class TestDeleteAlert:
+    @pytest.mark.asyncio
+    async def test_returns_false_when_alert_not_found(self, service):
+        service.db.get = AsyncMock(return_value=None)
+        out = await service.delete_alert("a1", "u1")
+        assert out is False
+        service.db.delete.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_user_does_not_own_alert(self, service):
+        service.db.get = AsyncMock(return_value={"id": "a1", "user_id": "OTHER"})
+        out = await service.delete_alert("a1", "u1")
+        assert out is False
+        service.db.delete.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_deletes_alert_for_owner(self, service):
+        service.db.get = AsyncMock(return_value={"id": "a1", "user_id": "u1"})
+        out = await service.delete_alert("a1", "u1")
+        assert out is True
+        service.db.delete.assert_awaited_once()
+
+
 # ── score_match record shape ──────────────────────────────────────
 
 
@@ -104,6 +128,8 @@ class TestScoreMatchRecord:
         assert record["source"] == "linkedin"
         assert record["match_score"] == 72
         assert record["match_reasons"] == ["Python overlap", "Senior level"]
+        assert record["missing_skills"] == ["Rust"]
+        assert record["recommendation"] == "apply"
         # Pinned: status always begins as "new".
         assert record["status"] == "new"
 
@@ -125,7 +151,25 @@ class TestScoreMatchRecord:
         record = service.db.create.await_args.args[1]
         assert record["match_score"] == 0
         assert record["match_reasons"] == []
+        assert record["missing_skills"] == []
+        assert record["recommendation"] == "consider"
         assert record["status"] == "new"
+
+    @pytest.mark.asyncio
+    async def test_non_list_and_invalid_recommendation_are_sanitized(self, service):
+        service.ai_client.complete_json = AsyncMock(
+            return_value={
+                "match_score": 65,
+                "match_reasons": "python",
+                "missing_skills": [" Rust ", None, 3, ""],
+                "recommendation": "maybe",
+            }
+        )
+        await service.score_match(user_id="u", job_title="X")
+        record = service.db.create.await_args.args[1]
+        assert record["match_reasons"] == []
+        assert record["missing_skills"] == ["Rust"]
+        assert record["recommendation"] == "consider"
 
     @pytest.mark.asyncio
     async def test_default_source_is_manual(self, service):

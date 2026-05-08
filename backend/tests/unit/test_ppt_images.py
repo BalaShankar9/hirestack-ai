@@ -20,6 +20,10 @@ import pytest
 pytestmark = pytest.mark.asyncio
 
 from ai_engine.agents.ppt.image_fetcher import ImageFetcher  # noqa: E402
+from ai_engine.agents.ppt.ai_image_generator import (  # noqa: E402
+    AIImageGenerator,
+    GenerationResult,
+)
 from ai_engine.agents.ppt.schemas import ImageSpec  # noqa: E402
 
 
@@ -154,3 +158,28 @@ async def test_orchestrator_default_image_resolver_wired():
     from ai_engine.agents.ppt import PPTOrchestrator
     orch = PPTOrchestrator()
     assert orch.composer.image_resolver is not None
+
+
+async def test_ai_image_generator_stability_fallback_caches_image_bytes():
+    class StabilityOnlyGenerator(AIImageGenerator):
+        def __init__(self):
+            super().__init__(openai_key=None, stability_key="stability-test-key")
+            self.calls = 0
+
+        async def _generate_stability(self, prompt: str, size: str) -> GenerationResult:
+            self.calls += 1
+            return GenerationResult(
+                image_bytes=FAKE_PNG,
+                prompt_used=prompt,
+                model="stable-diffusion-xl",
+                generation_time_ms=5,
+            )
+
+    generator = StabilityOnlyGenerator()
+
+    first = await generator.generate_illustration("academic poster concept", style="minimal")
+    second = await generator.generate_illustration("academic poster concept", style="minimal")
+
+    assert first == FAKE_PNG
+    assert second == FAKE_PNG
+    assert generator.calls == 1

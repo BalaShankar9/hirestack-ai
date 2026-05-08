@@ -1,0 +1,42 @@
+# m12-pr01: coverage config for ai_engine.
+#
+# Closes TD-2 (initial scope). Floor is set at the current measured
+# value. Future PRs that add tests SHOULD raise this number; the
+# CI gate prevents regressions.
+#
+# Local: .venv/bin/python -m pytest ai_engine/tests/ --cov
+# CI:   .github/workflows/architecture.yml runs the same.
+
+[run]
+source = ai_engine
+branch = False
+# Tests, evaluation harnesses, and the standalone sidecar entrypoint
+# don't count toward coverage of the production codebase.
+omit =
+    ai_engine/tests/*
+    ai_engine/evals/test_*.py
+    ai_engine/registry/run_l2_sandbox.py
+    ai_engine/__init__.py
+    */__pycache__/*
+
+[report]
+# Lines that legitimately can't be covered by unit tests (e.g.
+# defensive ``raise`` guards, ``if TYPE_CHECKING:`` blocks).
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError
+    if TYPE_CHECKING:
+    if __name__ == .__main__.:
+    \.\.\.
+show_missing = False
+skip_covered = True
+precision = 1
+# m12-pr01: Floor is the *honest* measured value of unit coverage
+# (ai_engine/tests/ only) at the time of this PR — 7.4%. The goal
+# in PERFECTION_ROADMAP TD-2 is 70%; the gap closes one PR at a
+# time, every PR that adds an ai_engine test should bump this
+# number. Do NOT lower it without a written justification.
+fail_under = 7.0
+
+[html]
+directory = htmlcov

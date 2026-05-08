@@ -29,6 +29,10 @@ from ai_engine.agents.ppt import (  # noqa: E402
     SlideKind,
     SlideSpec,
 )
+from ai_engine.agents.orchestration import (  # noqa: E402
+    ORCHESTRATION_PROGRESS_SCHEMA_VERSION,
+    PPT_GENERATION_PHASE_ORDER,
+)
 
 
 class _StubClient:
@@ -199,6 +203,9 @@ async def test_orchestrator_end_to_end_returns_pptresult():
     assert result.size_bytes > 5_000
     assert result.slide_count == 9
     assert result.latency_ms >= 0
+    assert tuple(result.phase_latencies.keys())[0] == PPT_GENERATION_PHASE_ORDER[0]
+    assert result.phase_statuses["outline"] == "completed"
+    assert result.phase_statuses["composition"] == "completed"
     prs = Presentation(io.BytesIO(result.pptx_bytes))
     assert len(prs.slides) == 9
 
@@ -216,3 +223,30 @@ async def test_orchestrator_generate_from_deck_skips_planner():
     result = await orch.generate_from_deck(deck)
     assert stub.calls == 0  # planner was bypassed
     assert result.size_bytes > 1_000
+    assert "outline" not in result.phase_statuses
+
+
+async def test_orchestrator_progress_callback_uses_canonical_phase_names():
+    seen = []
+    payloads = []
+
+    def _capture(progress):
+        if progress.phase is not None:
+            seen.append(progress.phase)
+            payloads.append(progress.to_payload())
+
+    orch = PPTOrchestrator(
+        ai_client=_StubClient(_good_payload()),
+        progress_callback=_capture,
+    )
+
+    await orch.generate(topic="Pitch", audience="vcs", slide_count=9)
+
+    assert seen
+    assert seen[0] == PPT_GENERATION_PHASE_ORDER[0]
+    assert all(phase in PPT_GENERATION_PHASE_ORDER for phase in seen)
+    assert payloads
+    assert all(payload["pipeline_name"] == "ppt_generation" for payload in payloads)
+    assert all(payload["event_type"] == "progress" for payload in payloads)
+    assert all(payload["schema_version"] == ORCHESTRATION_PROGRESS_SCHEMA_VERSION for payload in payloads)
+    assert all(payload["phase"] == payload["stage"] for payload in payloads)

@@ -1,184 +1,127 @@
 """
 Sub-agent framework for HireStack AI.
 
-Provides lightweight specialist workers that run in parallel under a
-coordinator agent. Each SubAgent focuses on a single research or analysis
-dimension and returns a SubAgentResult.
+The package root is a compatibility surface for specialist classes and
+coordinators. Production pipeline composition lives in
+``ai_engine.agents.sub_agents.live_registry`` so the hot path is explicit
+instead of treating every exported sub-agent as equally active.
 """
 from __future__ import annotations
 
+from importlib import import_module
+
 from .base import SubAgent, SubAgentResult, SubAgentCoordinator
-# Researcher sub-agents
-from .jd_analyst import JDAnalystSubAgent
-from .company_intel_agent import CompanyIntelSubAgent
-from .profile_match_agent import ProfileMatchSubAgent
-from .market_intel_agent import MarketIntelSubAgent
-from .history_agent import HistorySubAgent
-# Drafter sub-agents
-from .section_drafter import SectionDrafterSubAgent
-from .tone_calibrator import ToneCalibratorSubAgent
-from .keyword_strategist import KeywordStrategistSubAgent
-# Critic sub-agents
-from .critic_specialists import (
-    ImpactCriticSubAgent,
-    ClarityCriticSubAgent,
-    ToneMatchCriticSubAgent,
-    CompletenessCriticSubAgent,
-)
-# FactChecker sub-agents
-from .fact_checker_specialists import (
-    ClaimExtractorSubAgent,
-    EvidenceMatcherSubAgent,
-    CrossRefCheckerSubAgent,
-)
-# Optimizer sub-agents
-from .optimizer_specialists import (
-    ATSOptimizerSubAgent,
-    ReadabilityOptimizerSubAgent,
-)
-# Intel sub-agent swarm (v2)
-from .intel import (
-    IntelCoordinator,
-    WebsiteIntelAgent,
-    GitHubIntelAgent,
-    CareersIntelAgent,
-    JDIntelAgent,
-    CompanyProfileAgent,
-    MarketPositionAgent,
-    ApplicationStrategyAgent,
-)
-# Gap Analysis sub-agent swarm (v2)
-from .gap_analysis import (
-    GapAnalysisCoordinator,
-    TechnicalSkillAnalyst,
-    ExperienceAnalyst,
-    EducationCertAnalyst,
-    SoftSkillCultureAnalyst,
-    StrengthMapper,
-    GapSynthesizer,
-)
-# Career Consultant sub-agent swarm (v2)
-from .career import (
-    CareerCoordinator,
-    SkillPrioritizer,
-    MilestoneScheduler,
-    QuickWinExtractor,
-    ProjectIdeaGenerator,
-    RoadmapSynthesizer,
-)
-# Interview Simulator sub-agent swarm (v2)
-from .interview import (
-    InterviewCoordinator,
-    QuestionFrameworkBuilder,
-    RoleContextExtractor,
-    CandidateGapProber,
-    PrepTipGenerator,
-    QuestionSynthesizer,
-)
-# Market Intelligence sub-agent swarm (v2)
-from .market_intel import (
-    MarketIntelCoordinator,
-    LocationNormalizer,
-    SkillDemandMapper,
-    ExperienceLevelClassifier,
-    TrendMapper,
-    MarketSynthesizer,
-)
-# Salary Coach sub-agent swarm (v2)
-from .salary import (
-    SalaryCoordinator,
-    MarketRangeEstimator,
-    ValueDriverAnalyzer,
-    OfferAnalyzer,
-    NegotiationFrameworkBuilder,
-    SalarySynthesizer,
-)
-# LinkedIn Advisor sub-agent swarm (v2)
-from .linkedin import (
-    LinkedInCoordinator,
-    ProfileScorer,
-    SkillGapFinder,
-    ExperienceCritic,
-    KeywordExtractor,
-    LinkedInSynthesizer,
-)
+
+_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    # Researcher
+    "JDAnalystSubAgent": (".jd_analyst", "JDAnalystSubAgent"),
+    "CompanyIntelSubAgent": (".company_intel_agent", "CompanyIntelSubAgent"),
+    "ProfileMatchSubAgent": (".profile_match_agent", "ProfileMatchSubAgent"),
+    "MarketIntelSubAgent": (".market_intel_agent", "MarketIntelSubAgent"),
+    "HistorySubAgent": (".history_agent", "HistorySubAgent"),
+    # Drafter
+    "SectionDrafterSubAgent": (".section_drafter", "SectionDrafterSubAgent"),
+    "ToneCalibratorSubAgent": (".tone_calibrator", "ToneCalibratorSubAgent"),
+    "KeywordStrategistSubAgent": (".keyword_strategist", "KeywordStrategistSubAgent"),
+    # Critic
+    "ImpactCriticSubAgent": (".critic_specialists", "ImpactCriticSubAgent"),
+    "ClarityCriticSubAgent": (".critic_specialists", "ClarityCriticSubAgent"),
+    "ToneMatchCriticSubAgent": (".critic_specialists", "ToneMatchCriticSubAgent"),
+    "CompletenessCriticSubAgent": (".critic_specialists", "CompletenessCriticSubAgent"),
+    # Fact checker
+    "ClaimExtractorSubAgent": (".fact_checker_specialists", "ClaimExtractorSubAgent"),
+    "EvidenceMatcherSubAgent": (".fact_checker_specialists", "EvidenceMatcherSubAgent"),
+    "CrossRefCheckerSubAgent": (".fact_checker_specialists", "CrossRefCheckerSubAgent"),
+    # Optimizer
+    "ATSOptimizerSubAgent": (".optimizer_specialists", "ATSOptimizerSubAgent"),
+    "ReadabilityOptimizerSubAgent": (".optimizer_specialists", "ReadabilityOptimizerSubAgent"),
+    # Explicit hot-path helpers
+    "PIPELINE_RESEARCH_SUB_AGENT_NAMES": (
+        ".live_registry",
+        "PIPELINE_RESEARCH_SUB_AGENT_NAMES",
+    ),
+    "BENCHMARK_PIPELINE_RESEARCH_SUB_AGENT_NAMES": (
+        ".live_registry",
+        "BENCHMARK_PIPELINE_RESEARCH_SUB_AGENT_NAMES",
+    ),
+    "build_default_research_sub_agents": (
+        ".live_registry",
+        "build_default_research_sub_agents",
+    ),
+    "build_benchmark_research_sub_agents": (
+        ".live_registry",
+        "build_benchmark_research_sub_agents",
+    ),
+    # Intel swarm (v2)
+    "IntelCoordinator": (".intel", "IntelCoordinator"),
+    "WebsiteIntelAgent": (".intel", "WebsiteIntelAgent"),
+    "GitHubIntelAgent": (".intel", "GitHubIntelAgent"),
+    "CareersIntelAgent": (".intel", "CareersIntelAgent"),
+    "JDIntelAgent": (".intel", "JDIntelAgent"),
+    "CompanyProfileAgent": (".intel", "CompanyProfileAgent"),
+    "MarketPositionAgent": (".intel", "MarketPositionAgent"),
+    "ApplicationStrategyAgent": (".intel", "ApplicationStrategyAgent"),
+    # Gap analysis swarm (v2)
+    "GapAnalysisCoordinator": (".gap_analysis", "GapAnalysisCoordinator"),
+    "TechnicalSkillAnalyst": (".gap_analysis", "TechnicalSkillAnalyst"),
+    "ExperienceAnalyst": (".gap_analysis", "ExperienceAnalyst"),
+    "EducationCertAnalyst": (".gap_analysis", "EducationCertAnalyst"),
+    "SoftSkillCultureAnalyst": (".gap_analysis", "SoftSkillCultureAnalyst"),
+    "StrengthMapper": (".gap_analysis", "StrengthMapper"),
+    "GapSynthesizer": (".gap_analysis", "GapSynthesizer"),
+    # Career consultant swarm (v2)
+    "CareerCoordinator": (".career", "CareerCoordinator"),
+    "SkillPrioritizer": (".career", "SkillPrioritizer"),
+    "MilestoneScheduler": (".career", "MilestoneScheduler"),
+    "QuickWinExtractor": (".career", "QuickWinExtractor"),
+    "ProjectIdeaGenerator": (".career", "ProjectIdeaGenerator"),
+    "RoadmapSynthesizer": (".career", "RoadmapSynthesizer"),
+    # Interview simulator swarm (v2)
+    "InterviewCoordinator": (".interview", "InterviewCoordinator"),
+    "QuestionFrameworkBuilder": (".interview", "QuestionFrameworkBuilder"),
+    "RoleContextExtractor": (".interview", "RoleContextExtractor"),
+    "CandidateGapProber": (".interview", "CandidateGapProber"),
+    "PrepTipGenerator": (".interview", "PrepTipGenerator"),
+    "QuestionSynthesizer": (".interview", "QuestionSynthesizer"),
+    # Market intelligence swarm (v2)
+    "MarketIntelCoordinator": (".market_intel", "MarketIntelCoordinator"),
+    "LocationNormalizer": (".market_intel", "LocationNormalizer"),
+    "SkillDemandMapper": (".market_intel", "SkillDemandMapper"),
+    "ExperienceLevelClassifier": (".market_intel", "ExperienceLevelClassifier"),
+    "TrendMapper": (".market_intel", "TrendMapper"),
+    "MarketSynthesizer": (".market_intel", "MarketSynthesizer"),
+    # Salary coach swarm (v2)
+    "SalaryCoordinator": (".salary", "SalaryCoordinator"),
+    "MarketRangeEstimator": (".salary", "MarketRangeEstimator"),
+    "ValueDriverAnalyzer": (".salary", "ValueDriverAnalyzer"),
+    "OfferAnalyzer": (".salary", "OfferAnalyzer"),
+    "NegotiationFrameworkBuilder": (".salary", "NegotiationFrameworkBuilder"),
+    "SalarySynthesizer": (".salary", "SalarySynthesizer"),
+    # LinkedIn advisor swarm (v2)
+    "LinkedInCoordinator": (".linkedin", "LinkedInCoordinator"),
+    "ProfileScorer": (".linkedin", "ProfileScorer"),
+    "SkillGapFinder": (".linkedin", "SkillGapFinder"),
+    "ExperienceCritic": (".linkedin", "ExperienceCritic"),
+    "KeywordExtractor": (".linkedin", "KeywordExtractor"),
+    "LinkedInSynthesizer": (".linkedin", "LinkedInSynthesizer"),
+}
 
 __all__ = [
     "SubAgent",
     "SubAgentResult",
     "SubAgentCoordinator",
-    # Researcher
-    "JDAnalystSubAgent",
-    "CompanyIntelSubAgent",
-    "ProfileMatchSubAgent",
-    "MarketIntelSubAgent",
-    "HistorySubAgent",
-    # Drafter
-    "SectionDrafterSubAgent",
-    "ToneCalibratorSubAgent",
-    "KeywordStrategistSubAgent",
-    # Critic
-    "ImpactCriticSubAgent",
-    "ClarityCriticSubAgent",
-    "ToneMatchCriticSubAgent",
-    "CompletenessCriticSubAgent",
-    # FactChecker
-    "ClaimExtractorSubAgent",
-    "EvidenceMatcherSubAgent",
-    "CrossRefCheckerSubAgent",
-    # Optimizer
-    "ATSOptimizerSubAgent",
-    "ReadabilityOptimizerSubAgent",
-    # Intel swarm (v2)
-    "IntelCoordinator",
-    "WebsiteIntelAgent",
-    "GitHubIntelAgent",
-    "CareersIntelAgent",
-    "JDIntelAgent",
-    "CompanyProfileAgent",
-    "MarketPositionAgent",
-    "ApplicationStrategyAgent",
-    # Gap Analysis swarm (v2)
-    "GapAnalysisCoordinator",
-    "TechnicalSkillAnalyst",
-    "ExperienceAnalyst",
-    "EducationCertAnalyst",
-    "SoftSkillCultureAnalyst",
-    "StrengthMapper",
-    "GapSynthesizer",
-    # Career Consultant swarm (v2)
-    "CareerCoordinator",
-    "SkillPrioritizer",
-    "MilestoneScheduler",
-    "QuickWinExtractor",
-    "ProjectIdeaGenerator",
-    "RoadmapSynthesizer",
-    # Interview Simulator swarm (v2)
-    "InterviewCoordinator",
-    "QuestionFrameworkBuilder",
-    "RoleContextExtractor",
-    "CandidateGapProber",
-    "PrepTipGenerator",
-    "QuestionSynthesizer",
-    # Market Intelligence swarm (v2)
-    "MarketIntelCoordinator",
-    "LocationNormalizer",
-    "SkillDemandMapper",
-    "ExperienceLevelClassifier",
-    "TrendMapper",
-    "MarketSynthesizer",
-    # Salary Coach swarm (v2)
-    "SalaryCoordinator",
-    "MarketRangeEstimator",
-    "ValueDriverAnalyzer",
-    "OfferAnalyzer",
-    "NegotiationFrameworkBuilder",
-    "SalarySynthesizer",
-    # LinkedIn Advisor swarm (v2)
-    "LinkedInCoordinator",
-    "ProfileScorer",
-    "SkillGapFinder",
-    "ExperienceCritic",
-    "KeywordExtractor",
-    "LinkedInSynthesizer",
+    *_LAZY_EXPORTS.keys(),
 ]
+
+
+def __getattr__(name: str):
+    if name not in _LAZY_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attr_name = _LAZY_EXPORTS[name]
+    value = getattr(import_module(module_name, __name__), attr_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(__all__)

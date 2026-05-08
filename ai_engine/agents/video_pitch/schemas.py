@@ -1,7 +1,7 @@
 """S17-P4 — Video pitch Pydantic v2 schemas."""
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -48,3 +48,6 @@ class VideoPitchPackage(BaseModel):
     manifest: AvatarManifest
     audio_b64: Optional[str] = None
     latency_ms: int = 0
+    workflow_id: Optional[str] = None
+    phase_latencies: Dict[str, int] = Field(default_factory=dict)
+    phase_statuses: Dict[str, str] = Field(default_factory=dict)

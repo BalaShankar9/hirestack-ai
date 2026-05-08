@@ -18,7 +18,7 @@ LIVE = os.getenv("AIM_EVAL_LIVE") == "1"
 @pytest.mark.asyncio
 async def test_parser_extracts_directive_and_word_count(case):
     agent = AIMParserAgent()
-    result = await agent.run({"brief": case["brief"], "rubric": ""})
+    result = await agent.run({"brief_text": case["brief"], "rubric_text": ""})
     parsed = result.content
 
     directive = (parsed.get("directive") or "").lower()

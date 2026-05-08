@@ -10,6 +10,7 @@ from ai_engine.agents.interview_sim import (
     detect_interview_intent,
     score_answer,
 )
+from ai_engine.agents.orchestration import INTERVIEW_SESSION_PHASE_ORDER
 from ai_engine.agents.interview_sim.schemas import (
     InterviewQuestion,
     QuestionKind,
@@ -140,6 +141,9 @@ async def test_orchestrator_full_session_flow():
     sim = InterviewSimulator(ai_client=_StubClient(_VALID_QUESTIONS_PAYLOAD))
     session = await sim.start_session(role="PM", question_count=5)
     assert len(session.questions) == 5
+    assert session.planning_latency_ms >= 0
+    assert tuple(session.phase_latencies.keys()) == INTERVIEW_SESSION_PHASE_ORDER[:1]
+    assert session.phase_statuses == {"question_planning": "completed"}
     assert sim.next_question(session) is session.questions[0]
 
     # Submit answer to first question.
@@ -162,6 +166,25 @@ async def test_orchestrator_full_session_flow():
     assert report.strengths
     assert report.gaps
     assert session.finalized is True
+
+
+class _StubTTS:
+    async def synthesize(self, text):
+        return b"m" * 256 if text else None
+
+
+@pytest.mark.asyncio
+async def test_start_session_records_tts_phase_when_audio_requested():
+    sim = InterviewSimulator(
+        ai_client=_StubClient(_VALID_QUESTIONS_PAYLOAD),
+        tts=_StubTTS(),
+    )
+
+    session = await sim.start_session(role="PM", question_count=5, with_audio=True)
+
+    assert tuple(session.phase_latencies.keys()) == INTERVIEW_SESSION_PHASE_ORDER
+    assert session.phase_statuses["tts_synthesize"] == "completed"
+    assert all(q.audio_b64 for q in session.questions)
 
 
 @pytest.mark.asyncio

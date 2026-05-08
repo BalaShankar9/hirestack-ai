@@ -7,7 +7,7 @@ import secrets
 import structlog
 
 from app.core.database import get_db, TABLES, SupabaseDB
-from ai_engine.client import get_ai_client
+from ai_engine.api import get_ai_client
 
 logger = structlog.get_logger()
 

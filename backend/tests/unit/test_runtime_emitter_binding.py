@@ -19,7 +19,7 @@ async def test_runtime_path_binds_event_emitter_and_persists_enriched_events() -
     generation_job_events that the dock listens to).
     """
     from app.api.routes.generate import jobs as jobs_module
-    from ai_engine.agent_events import emit_tool_call
+    from ai_engine.api import emit_tool_call
 
     persisted: List[Dict[str, Any]] = []
 

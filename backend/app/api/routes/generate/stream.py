@@ -134,12 +134,15 @@ async def _stream_agent_pipeline(req: "PipelineRequest", user_id: str) -> AsyncG
         events_queue: list[str] = []
 
         async def stage_callback(event: dict) -> None:
+            from ai_engine.agents.orchestration import coerce_progress_event
+
+            progress_event = coerce_progress_event(event, default_event_type="agent_status")
             events_queue.append(_agent_sse(
-                pipeline_name=event.get("pipeline_name", ""),
-                stage=event.get("stage", ""),
-                status=event.get("status", ""),
-                latency_ms=event.get("latency_ms", 0),
-                message=event.get("message", ""),
+                pipeline_name=progress_event.pipeline_name,
+                stage=progress_event.stage,
+                status=progress_event.status_value,
+                latency_ms=progress_event.latency_ms,
+                message=progress_event.message,
             ))
 
         # ── Phase 1a: Resume parse pipeline ──────────────────────────

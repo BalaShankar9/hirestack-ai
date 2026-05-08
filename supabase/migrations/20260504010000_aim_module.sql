@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS aim_section_outputs (
     version INTEGER NOT NULL DEFAULT 1,
     is_current BOOLEAN NOT NULL DEFAULT FALSE,
     passed_gate BOOLEAN NOT NULL DEFAULT FALSE,  -- score >= 85
+    gate_action VARCHAR(20) NOT NULL DEFAULT 'flag', -- show | regen | flag | override
     model_used VARCHAR(100),
     latency_ms INTEGER,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

@@ -170,7 +170,12 @@ async def test_analyze_materializes_sections_from_recon():
         raw_text="Critically evaluate Tesla's strategy in 2024.",
     )
     fake = AnalysisResult(
-        parsed={"directive": "evaluate", "rubric_breakdown": []},
+        parsed={
+            "directive": "evaluate",
+            "rubric_breakdown": [],
+            "academic_level": "pg",
+            "referencing_style": "harvard",
+        },
         recon={
             "structure": [
                 {"title": "Introduction", "purpose": "intro", "key_argument": "set scope",
@@ -193,8 +198,161 @@ async def test_analyze_materializes_sections_from_recon():
         "aim_sections", filters=[("assignment_id", "==", row["id"])]
     )
     assert len(sections) == 2
+    analysis_rows = await svc.db.query(
+        "aim_assignment_analysis", filters=[("assignment_id", "==", row["id"])]
+    )
+    assert analysis_rows[0]["expectations"]["academic_level"] == "pg"
+    assert analysis_rows[0]["expectations"]["referencing_style"] == "harvard"
     a = await svc.get("u1", row["id"])
     assert a["status"] == "ready"
+
+
+@pytest.mark.asyncio
+async def test_reanalyze_reconciles_sections_when_structure_changes():
+    from ai_engine.chains.aim_pipeline import AnalysisResult
+
+    from app.services.aim.assignment_service import AIMAssignmentService
+
+    svc = AIMAssignmentService(db=FakeDB())
+    row = await svc.create("u1", {"title": "Mutable brief"})
+    await svc.attach_document(
+        "u1", row["id"], doc_type="brief", file_name=None,
+        raw_text="Critically evaluate Tesla's strategy in 2024.",
+    )
+    first = AnalysisResult(
+        parsed={"directive": "evaluate", "rubric_breakdown": []},
+        recon={
+            "structure": [
+                {"title": "Intro", "purpose": "intro", "key_argument": "scope",
+                 "word_limit": 250, "order_index": 0},
+                {"title": "Body", "purpose": "analysis", "key_argument": "thesis",
+                 "word_limit": 900, "order_index": 1},
+                {"title": "Conclusion", "purpose": "close", "key_argument": "answer",
+                 "word_limit": 200, "order_index": 2},
+            ],
+        },
+        needs_clarification=False,
+        clarification_questions=[],
+        parser_confidence=0.95,
+        flags=[],
+    )
+    second = AnalysisResult(
+        parsed={"directive": "evaluate", "rubric_breakdown": []},
+        recon={
+            "structure": [
+                {"title": "Executive Summary", "purpose": "summary", "key_argument": "answer first",
+                 "word_limit": 200, "order_index": 0},
+                {"title": "Body", "purpose": "deeper analysis", "key_argument": "new thesis",
+                 "word_limit": 1100, "order_index": 1},
+            ],
+        },
+        needs_clarification=False,
+        clarification_questions=[],
+        parser_confidence=0.97,
+        flags=[],
+    )
+    with patch(
+        "app.services.aim.assignment_service.analyze_assignment",
+        AsyncMock(side_effect=[first, second]),
+    ):
+        await svc.analyze("u1", row["id"])
+        await svc.analyze("u1", row["id"])
+
+    sections = await svc.db.query(
+        "aim_sections",
+        filters=[("assignment_id", "==", row["id"])],
+        order_by="order_index",
+        order_direction="ASCENDING",
+    )
+    assert [s["title"] for s in sections] == ["Executive Summary", "Body"]
+    assert sections[1]["purpose"] == "deeper analysis"
+    assert sections[1]["word_limit"] == 1100
+
+
+@pytest.mark.asyncio
+async def test_section_generation_falls_back_to_assignment_metadata():
+    from ai_engine.chains.aim_pipeline import SectionAttempt, SectionGenerationResult
+
+    from app.services.aim.section_service import AIMSectionService
+
+    db = FakeDB()
+    assignment_id = await db.create(
+        "aim_assignments",
+        {
+            "user_id": "u1",
+            "title": "Fallback metadata",
+            "academic_level": "pg",
+            "referencing_style": "apa",
+        },
+        doc_id="assignment-1",
+    )
+    section_id = await db.create(
+        "aim_sections",
+        {
+            "assignment_id": assignment_id,
+            "user_id": "u1",
+            "title": "Intro",
+            "order_index": 0,
+            "word_limit": 300,
+        },
+        doc_id="section-1",
+    )
+    await db.create(
+        "aim_assignment_analysis",
+        {
+            "assignment_id": assignment_id,
+            "user_id": "u1",
+            "directive": "analyse",
+            "rubric_breakdown": [],
+            "expectations": {},
+            "recon_report": {},
+        },
+        doc_id="analysis-1",
+    )
+
+    captured: dict[str, Any] = {}
+    fake_attempt = SectionAttempt(
+        version=1,
+        content="Draft body",
+        blocks=[],
+        word_count=2,
+        reviewer={
+            "sub_scores": {
+                "directive_alignment": 90,
+                "analytical_depth": 90,
+                "academic_tone": 90,
+                "originality": 90,
+                "structure": 90,
+            },
+            "ranked_issues": [],
+        },
+        weighted_score=90.0,
+        passed_gate=True,
+        latency_ms=12,
+    )
+
+    async def _fake_generate_section(**kwargs):
+        captured.update(kwargs)
+        return SectionGenerationResult(
+            section_id=section_id,
+            final_attempt=fake_attempt,
+            history=[fake_attempt],
+            final_passed_gate=True,
+            stop_reason="passed",
+        )
+
+    svc = AIMSectionService(db=db)
+    with patch(
+        "app.services.aim.section_service.generate_section",
+        AsyncMock(side_effect=_fake_generate_section),
+    ):
+        result = await svc.generate("u1", section_id)
+
+    assert result.final_passed_gate is True
+    assert captured["parsed"]["academic_level"] == "pg"
+    assert captured["parsed"]["referencing_style"] == "apa"
+    rows = await db.query("aim_section_outputs", filters=[("section_id", "==", section_id)])
+    assert rows[0]["gate_action"] == "show"
 
 
 # ── Reviewer + filters deterministic behaviour ──────────────────

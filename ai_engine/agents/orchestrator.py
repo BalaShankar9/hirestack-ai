@@ -27,7 +27,11 @@ from uuid import uuid4
 import structlog
 
 from ai_engine.agents.base import AgentResult, BaseAgent
-from ai_engine.agents.contracts import validate_stage_output, validate_pipeline_result
+from ai_engine.agents.contracts import (
+    ContractViolation,
+    validate_stage_output,
+    validate_pipeline_result,
+)
 from ai_engine.agents.evidence import (
     EvidenceLedger,
     EvidenceSource,
@@ -42,6 +46,7 @@ from ai_engine.agents.memory import AgentMemory
 from ai_engine.agents.tool_normalizer import normalize_all_tool_results
 from ai_engine.agents.trace import AgentTracer
 from ai_engine.agents.observability import PipelineMetrics
+from ai_engine.agents.orchestration import WorkflowProgressEvent
 from ai_engine.agents.workflow_runtime import (
     WorkflowEventStore,
     WorkflowState,
@@ -749,6 +754,21 @@ class AgentPipeline:
         else:
             await self._emit("drafter", "running")
             draft = await self.drafter.run(enriched_context)
+
+        # Fail fast on invalid document artifacts before persisting or
+        # routing them into later evaluation stages.
+        drafter_issues = validate_stage_output("drafter", draft.content)
+        if drafter_issues:
+            logger.warning(
+                "drafter_contract_drift",
+                issues=drafter_issues,
+                pipeline=self.name,
+            )
+        metrics.record_contract_issues("drafter", drafter_issues)
+        metrics.record_stage_latency("drafter", draft.latency_ms)
+        if drafter_issues:
+            raise ContractViolation("drafter", "output", "; ".join(drafter_issues))
+
         if "drafter" not in resume_skip:
             tracer.record_stage("drafter", draft.latency_ms, "completed")
             await self._emit("drafter", "completed", draft.latency_ms)
@@ -761,13 +781,6 @@ class AgentPipeline:
                     "latency_ms": draft.latency_ms,
                     "metadata": draft.metadata if hasattr(draft, "metadata") else {},
                 })
-
-        # v4: validate drafter contract
-        drafter_issues = validate_stage_output("drafter", draft.content)
-        if drafter_issues:
-            logger.warning("drafter_contract_drift", issues=drafter_issues, pipeline=self.name)
-        metrics.record_contract_issues("drafter", drafter_issues)
-        metrics.record_stage_latency("drafter", draft.latency_ms)
 
         # ── Human-in-the-loop gate: after drafter ──
         if not await self._request_approval("drafter", draft, enriched_context):
@@ -1153,6 +1166,8 @@ class AgentPipeline:
                 )
             metrics.record_contract_issues(stage_name, revision_issues)
             metrics.record_stage_latency(stage_name, draft.latency_ms)
+            if revision_issues:
+                raise ContractViolation(stage_name, "output", "; ".join(revision_issues))
 
             # Re-critique the revision if we have iterations left
             if self.critic and run_critic and iterations_used < max_iter:
@@ -1350,6 +1365,29 @@ class AgentPipeline:
         else:
             validation = draft
 
+        final_content = draft.content
+        validation_report = validation.content if self.validator else None
+        if isinstance(validation_report, dict):
+            nested_content = validation_report.get("content")
+            if isinstance(nested_content, dict):
+                final_content = nested_content
+
+        # Do not mark the workflow successful until the final artifact shape is valid.
+        pipeline_issues = validate_pipeline_result(final_content)
+        if pipeline_issues:
+            logger.warning(
+                "pipeline_result_contract_drift",
+                issues=pipeline_issues,
+                pipeline=self.name,
+            )
+        metrics.record_contract_issues("pipeline_result", pipeline_issues)
+        if pipeline_issues:
+            raise ContractViolation(
+                "pipeline_result",
+                "output",
+                "; ".join(pipeline_issues),
+            )
+
         total_latency = sum(s["latency_ms"] for s in tracer.stages)
 
         if self.db:
@@ -1450,19 +1488,6 @@ class AgentPipeline:
 
             except Exception as e:
                 logger.warning("memory_writeback_failed", error=str(e))
-
-        final_content = draft.content
-        validation_report = validation.content if self.validator else None
-        if isinstance(validation_report, dict):
-            nested_content = validation_report.get("content")
-            if isinstance(nested_content, dict):
-                final_content = nested_content
-
-        # v4: validate final pipeline result
-        pipeline_issues = validate_pipeline_result(final_content)
-        if pipeline_issues:
-            logger.warning("pipeline_result_contract_drift", issues=pipeline_issues, pipeline=self.name)
-        metrics.record_contract_issues("pipeline_result", pipeline_issues)
 
         # v6: record evidence and quality stats, then emit summary
         cited_ids = {eid for c in citations for eid in c.get("evidence_ids", [])}
@@ -1611,13 +1636,15 @@ class AgentPipeline:
         """Emit SSE event via callback if registered."""
         if self.on_stage_update:
             try:
-                await self.on_stage_update({
-                    "pipeline_name": self.name,
-                    "stage": stage,
-                    "status": status,
-                    "latency_ms": latency_ms,
-                    "message": message,
-                })
+                event = WorkflowProgressEvent(
+                    pipeline_name=self.name,
+                    stage=stage,
+                    phase=stage,
+                    status=status,
+                    latency_ms=latency_ms,
+                    message=message,
+                )
+                await self.on_stage_update(event.to_payload())
             except Exception as e:
                 logger.warning("sse_emit_failed", stage=stage, error=str(e))
 

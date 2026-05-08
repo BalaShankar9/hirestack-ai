@@ -342,14 +342,14 @@ class TestModelRouterAgents:
         assert "drafting" in _DEFAULT_ROUTES
 
     def test_model_router_returns_model_for_task(self):
-        from ai_engine.model_router import resolve_model
+        from ai_engine.api import resolve_model
         model = resolve_model("research", "fallback")
         assert model  # not None or empty
         assert isinstance(model, str)
         assert model != "fallback"  # should resolve to a real model
 
     def test_model_router_different_models_for_heavy_vs_light(self):
-        from ai_engine.model_router import resolve_model
+        from ai_engine.api import resolve_model
         reasoning_model = resolve_model("reasoning", "fallback")
         extraction_model = resolve_model("extraction", "fallback")
         # Reasoning (tier-1) should use a heavier model than extraction (tier-3)

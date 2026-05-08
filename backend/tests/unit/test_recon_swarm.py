@@ -1789,6 +1789,6 @@ async def test_coordinator_emits_cache_hit_event_on_warm_cache():
 
 def test_emit_phase_helper_is_noop_without_emitter():
     """emit_phase must be safe to call when no SSE bridge is bound."""
-    from ai_engine.agent_events import emit_phase
+    from ai_engine.api import emit_phase
     # Should not raise.
     emit_phase("swarm", "running", agent="recon_swarm", message="x")

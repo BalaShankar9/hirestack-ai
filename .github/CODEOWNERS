@@ -1,6 +1,58 @@
-*                                   @BalaShankar9
-/ai_engine/                         @BalaShankar9
-/backend/app/services/aim/          @BalaShankar9
-/backend/app/api/routes/aim/        @BalaShankar9
-/db/                                @BalaShankar9
-/.github/workflows/                 @BalaShankar9
+# CODEOWNERS — bounded-context ownership. Required reviewers per area.
+# Reference: docs/architecture/WORLD_CLASS_ARCHITECTURE_BLUEPRINT.md §3.
+# Format: <pattern> <@owner1> <@owner2>
+# More specific patterns override less specific ones.
+
+# Default catch-all
+*                                                     @BalaShankar9
+
+# ── AI runtime (ai_engine) ─────────────────────────────────────
+/ai_engine/                                           @BalaShankar9
+/ai_engine/agents/                                    @BalaShankar9
+/ai_engine/prompts/                                   @BalaShankar9
+/ai_engine/evals/                                     @BalaShankar9
+/ai_engine/model_router.py                            @BalaShankar9
+/ai_engine/client.py                                  @BalaShankar9
+
+# ── Generation / pipeline runtime ──────────────────────────────
+/backend/app/services/pipeline_runtime.py             @BalaShankar9
+/backend/app/services/aim/                            @BalaShankar9
+/backend/app/api/routes/generate/                     @BalaShankar9
+/backend/app/api/routes/aim/                          @BalaShankar9
+
+# ── Temporal workflows + workers ───────────────────────────────
+/backend/app/temporal/                                @BalaShankar9
+/backend/app/worker.py                                @BalaShankar9
+/backend/app/workers/                                 @BalaShankar9
+
+# ── Core platform (auth, queue, events, idempotency, observability) ─
+/backend/app/core/auth.py                             @BalaShankar9
+/backend/app/core/security.py                         @BalaShankar9
+/backend/app/core/queue.py                            @BalaShankar9
+/backend/app/core/events.py                           @BalaShankar9
+/backend/app/core/idempotency.py                      @BalaShankar9
+/backend/app/core/observability/                      @BalaShankar9
+/backend/app/core/settings.py                         @BalaShankar9
+
+# ── Schema, migrations, RLS ────────────────────────────────────
+/database/                                            @BalaShankar9
+/supabase/migrations/                                 @BalaShankar9
+/db/                                                  @BalaShankar9
+
+# ── Cross-language event schema (high blast radius) ────────────
+/packages/events/                                     @BalaShankar9
+
+# ── Frontend SSE + auth (high blast radius) ────────────────────
+/frontend/src/lib/sse/                                @BalaShankar9
+/frontend/src/lib/auth/                               @BalaShankar9
+/frontend/src/hooks/useGenerationProgress.ts          @BalaShankar9
+/frontend/middleware.ts                               @BalaShankar9
+
+# ── Architecture, ADRs, governance (cannot be self-merged) ─────
+/docs/architecture/                                   @BalaShankar9
+/docs/adrs/                                           @BalaShankar9
+/.github/                                             @BalaShankar9
+/.github/workflows/                                   @BalaShankar9
+/.importlinter                                        @BalaShankar9
+/scripts/governance/                                  @BalaShankar9
+/config/feature_flags.yaml                            @BalaShankar9

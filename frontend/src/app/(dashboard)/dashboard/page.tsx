@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/dialog";
 import { TaskQueue } from "@/components/workspace/task-queue";
 import { AITrace } from "@/components/ui/ai-trace";
+import { CadenceToday } from "@/components/dashboard/cadence-today";
+import { ReadyToApply } from "@/components/dashboard/ready-to-apply";
 import { cn } from "@/lib/utils";
 import { useOnboarding } from "@/contexts/onboarding-context";
 import { useAchievements, type Achievement } from "@/hooks/use-achievements";
@@ -122,6 +124,7 @@ export default function DashboardPage() {
   const [tuning, setTuning] = useState<{ recommendation: string; confidence: string; reason: string; config: Record<string, any>; stats?: Record<string, any> } | null>(null);
   const [predictions, setPredictions] = useState<Record<string, { prediction: number; confidence: string }>>({});
   const [alertSummary, setAlertSummary] = useState<{ total: number; unread: number; by_severity: Record<string, number>; by_type: Record<string, number> } | null>(null);
+  const [alerts, setAlerts] = useState<Array<{ id: string; alert_type: string; title: string; action_url?: string | null }>>([]);
   const [momentum, setMomentum] = useState<{ score: number; trend: string; components: Record<string, number> } | null>(null);
 
   // Achievement system state
@@ -221,10 +224,18 @@ export default function DashboardPage() {
     api.career.alertSummary()
       .then((d: any) => d && setAlertSummary(d))
       .catch(() => {});
+    api.career.alerts(5)
+      .then((d: any) => d && setAlerts(Array.isArray(d) ? d : []))
+      .catch(() => {});
     api.career.careerMomentum()
       .then((d: any) => d && setMomentum(d))
       .catch(() => {});
   }, [userId]);
+
+  const priorityAutomationAlerts = useMemo(
+    () => alerts.filter((alert) => ["mission_inbox_ready", "auto_prep_ready", "tracked_company_discovery"].includes(alert.alert_type)).slice(0, 2),
+    [alerts],
+  );
 
   // Load interview predictions for visible apps (max 8 to avoid request storms)
   useEffect(() => {
@@ -490,6 +501,10 @@ export default function DashboardPage() {
           ))}
         </div>
       </motion.div>
+
+      <CadenceToday enabled={Boolean(userId)} />
+
+      <ReadyToApply apps={apps} />
 
       {/* ── Quick Actions ─────────────────────────────────────── */}
       <div className="grid grid-cols-4 xs:grid-cols-5 md:grid-cols-10 gap-2">
@@ -866,6 +881,29 @@ export default function DashboardPage() {
                   </div>
                 )}
               </div>
+              {priorityAutomationAlerts.length > 0 && (
+                <div className="space-y-1.5 border-t border-border/50 pt-2">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Recent automation</p>
+                  {priorityAutomationAlerts.map((alert) => (
+                    alert.action_url ? (
+                      <Link
+                        key={alert.id}
+                        href={alert.action_url}
+                        className="block rounded-lg bg-muted/30 px-2 py-1.5 text-[11px] text-foreground/90 transition hover:bg-muted/50"
+                      >
+                        {alert.title}
+                      </Link>
+                    ) : (
+                      <div
+                        key={alert.id}
+                        className="rounded-lg bg-muted/30 px-2 py-1.5 text-[11px] text-foreground/90"
+                      >
+                        {alert.title}
+                      </div>
+                    )
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

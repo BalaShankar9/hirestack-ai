@@ -2,6 +2,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 from ai_engine.agents.base import AgentResult
+from ai_engine.agents.contracts import ContractViolation
 from ai_engine.agents.orchestrator import AgentPipeline, PipelinePolicy, PipelineResult
 
 
@@ -312,3 +313,50 @@ async def test_revision_latency_is_included_in_observability_summary(mock_agents
     summary = captured["summary"]
     assert "drafter_revision_1" in summary["stage_latencies"]
     assert "critic_re_eval_1" in summary["stage_latencies"]
+
+
+@pytest.mark.asyncio
+async def test_pipeline_raises_on_invalid_drafter_contract(mock_agents):
+    mock_agents["drafter"].run = AsyncMock(
+        return_value=_mock_result({"markdown": "not-a-valid-document"})
+    )
+
+    pipeline = AgentPipeline(
+        name="cv_generation",
+        drafter=mock_agents["drafter"],
+        validator=mock_agents["validator"],
+        policy=PipelinePolicy(skip_research=True, skip_critique=True, skip_fact_check=True),
+    )
+
+    with pytest.raises(ContractViolation, match="drafter"):
+        await pipeline.execute({"user_id": "u1", "user_profile": {}, "job_title": "SWE"})
+
+    mock_agents["validator"].run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_raises_on_invalid_final_pipeline_result(mock_agents):
+    mock_agents["validator"].run = AsyncMock(
+        return_value=AgentResult(
+            content={
+                "valid": True,
+                "checks": {"schema_compliant": True, "format_valid": True},
+                "issues": [],
+                "content": {"markdown": "still-not-a-valid-document"},
+            },
+            quality_scores={},
+            flags=[],
+            latency_ms=50,
+            metadata={"agent": "validator"},
+        )
+    )
+
+    pipeline = AgentPipeline(
+        name="cv_generation",
+        drafter=mock_agents["drafter"],
+        validator=mock_agents["validator"],
+        policy=PipelinePolicy(skip_research=True, skip_critique=True, skip_fact_check=True),
+    )
+
+    with pytest.raises(ContractViolation, match="pipeline_result"):
+        await pipeline.execute({"user_id": "u1", "user_profile": {}, "job_title": "SWE"})

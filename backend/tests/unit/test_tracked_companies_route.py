@@ -36,7 +36,9 @@ class _FakeDB:
 
     def __init__(self) -> None:
         self.rows: dict[str, dict] = {}
+        self.scan_history_rows: dict[str, dict] = {}
         self._counter = 0
+        self._history_counter = 0
         self.simulate_unique_violation_on_create = False
 
     def _next_id(self) -> str:
@@ -44,6 +46,12 @@ class _FakeDB:
         return f"00000000-0000-0000-0000-{self._counter:012d}"
 
     async def create(self, table, data, doc_id=None):
+        if table == tc_route.TABLES["job_scan_history"]:
+            self._history_counter += 1
+            new_id = doc_id or f"history-{self._history_counter}"
+            stored = {**data, "id": new_id}
+            self.scan_history_rows[new_id] = stored
+            return new_id
         if self.simulate_unique_violation_on_create:
             raise Exception(
                 "duplicate key value violates unique constraint "
@@ -69,16 +77,34 @@ class _FakeDB:
         return new_id
 
     async def get(self, table, doc_id):
-        return self.rows.get(doc_id)
+        if table == tc_route.TABLES["tracked_companies"]:
+            return self.rows.get(doc_id)
+        if table == tc_route.TABLES["job_scan_history"]:
+            return self.scan_history_rows.get(doc_id)
+        return None
 
     async def update(self, table, doc_id, data):
-        if doc_id not in self.rows:
-            return False
-        self.rows[doc_id] = {**self.rows[doc_id], **data}
-        return True
+        if table == tc_route.TABLES["tracked_companies"]:
+            if doc_id not in self.rows:
+                return False
+            self.rows[doc_id] = {**self.rows[doc_id], **data}
+            return True
+        if table == tc_route.TABLES["job_scan_history"]:
+            if doc_id not in self.scan_history_rows:
+                return False
+            self.scan_history_rows[doc_id] = {
+                **self.scan_history_rows[doc_id],
+                **data,
+            }
+            return True
+        return False
 
     async def delete(self, table, doc_id):
-        return self.rows.pop(doc_id, None) is not None
+        if table == tc_route.TABLES["tracked_companies"]:
+            return self.rows.pop(doc_id, None) is not None
+        if table == tc_route.TABLES["job_scan_history"]:
+            return self.scan_history_rows.pop(doc_id, None) is not None
+        return False
 
     async def query(
         self,
@@ -89,15 +115,24 @@ class _FakeDB:
         limit=None,
         offset=None,
     ):
-        out = list(self.rows.values())
+        if table == tc_route.TABLES["tracked_companies"]:
+            out = list(self.rows.values())
+        elif table == tc_route.TABLES["job_scan_history"]:
+            out = list(self.scan_history_rows.values())
+        else:
+            out = []
         for col, op, val in filters or []:
             if op == "==":
                 out = [r for r in out if r.get(col) == val]
+            elif op == "in":
+                out = [r for r in out if r.get(col) in val]
         if order_by:
             out.sort(
                 key=lambda r: r.get(order_by, ""),
                 reverse=(order_direction == "DESCENDING"),
             )
+        if limit is not None:
+            out = out[:limit]
         return out
 
 
@@ -303,6 +338,92 @@ class TestListRoute:
         body = resp.json()
         assert body["count"] == 1
         assert body["items"][0]["company_slug"] == "stripe"
+
+
+class TestDiscoveriesRoute:
+    def test_empty_when_user_tracks_nothing(self, client_factory) -> None:
+        client = client_factory()
+        resp = client.get("/api/tracked-companies/discoveries")
+        assert resp.status_code == 200
+        assert resp.json() == {"items": [], "count": 0}
+
+    def test_lists_only_discoveries_for_tracked_slugs(self, client_factory) -> None:
+        db = _FakeDB()
+        client = client_factory(db, user=_FAKE_USER)
+        client.post(
+            "/api/tracked-companies",
+            json={
+                "provider": "greenhouse",
+                "company_slug": "stripe",
+                "display_name": "Stripe",
+            },
+        )
+        db.scan_history_rows = {
+            "history-1": {
+                "id": "history-1",
+                "url_canonical": "https://boards.greenhouse.io/stripe/jobs/1",
+                "company_slug": "stripe",
+                "role_title": "Senior Product Designer",
+                "first_seen": "2026-05-03T08:00:00+00:00",
+                "last_seen": "2026-05-03T09:00:00+00:00",
+                "times_seen": 1,
+            },
+            "history-2": {
+                "id": "history-2",
+                "url_canonical": "https://boards.greenhouse.io/github/jobs/2",
+                "company_slug": "github",
+                "role_title": "Staff Engineer",
+                "first_seen": "2026-05-03T07:00:00+00:00",
+                "last_seen": "2026-05-03T10:00:00+00:00",
+                "times_seen": 3,
+            },
+        }
+
+        resp = client.get("/api/tracked-companies/discoveries?limit=10")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["count"] == 1
+        assert body["items"][0]["display_name"] == "Stripe"
+        assert body["items"][0]["role_title"] == "Senior Product Designer"
+        assert body["items"][0]["is_repeat"] is False
+
+    def test_limit_is_applied_after_filtering(self, client_factory) -> None:
+        db = _FakeDB()
+        client = client_factory(db, user=_FAKE_USER)
+        client.post(
+            "/api/tracked-companies",
+            json={
+                "provider": "greenhouse",
+                "company_slug": "stripe",
+                "display_name": "Stripe",
+            },
+        )
+        db.scan_history_rows = {
+            "history-1": {
+                "id": "history-1",
+                "url_canonical": "https://boards.greenhouse.io/stripe/jobs/1",
+                "company_slug": "stripe",
+                "role_title": "Role One",
+                "first_seen": "2026-05-03T08:00:00+00:00",
+                "last_seen": "2026-05-03T10:00:00+00:00",
+                "times_seen": 1,
+            },
+            "history-2": {
+                "id": "history-2",
+                "url_canonical": "https://boards.greenhouse.io/stripe/jobs/2",
+                "company_slug": "stripe",
+                "role_title": "Role Two",
+                "first_seen": "2026-05-03T07:00:00+00:00",
+                "last_seen": "2026-05-03T09:00:00+00:00",
+                "times_seen": 2,
+            },
+        }
+
+        resp = client.get("/api/tracked-companies/discoveries?limit=1")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["count"] == 1
+        assert body["items"][0]["role_title"] == "Role One"
 
 
 # ── PATCH /tracked-companies/{id} ───────────────────────────────────

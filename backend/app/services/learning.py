@@ -7,7 +7,7 @@ from datetime import date
 import structlog
 
 from app.core.database import get_db, TABLES, SupabaseDB
-from ai_engine.client import get_ai_client
+from ai_engine.api import get_ai_client
 from ai_engine.chains.learning_challenge import LearningChallengeChain
 
 logger = structlog.get_logger()

@@ -165,6 +165,74 @@ async def list_tracked_companies(
     return {"items": rows, "count": len(rows)}
 
 
+@router.get("/tracked-companies/discoveries")
+@limiter.limit("30/minute")
+async def list_tracked_company_discoveries(
+    request: Request,
+    limit: int = 25,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: SupabaseDB = Depends(get_db_dep),
+) -> Dict[str, Any]:
+    """List recent scanner discoveries for the caller's tracked slugs.
+
+    ``job_scan_history`` is a global table, so the user scope here is
+    derived from the caller's currently tracked company slugs.  This
+    turns the scan-history ledger into a user-facing discovery feed
+    without duplicating postings per user.
+    """
+    tracked_rows = await db.query(
+        TABLES["tracked_companies"],
+        filters=[("user_id", "==", current_user["id"])],
+        order_by=None,
+    )
+    if not tracked_rows:
+        return {"items": [], "count": 0}
+
+    slugs = sorted(
+        {
+            str(row.get("company_slug", "")).strip()
+            for row in tracked_rows
+            if row.get("company_slug")
+        }
+    )
+    if not slugs:
+        return {"items": [], "count": 0}
+
+    display_name_by_slug = {
+        str(row["company_slug"]): row.get("display_name") or row["company_slug"]
+        for row in tracked_rows
+        if row.get("company_slug")
+    }
+    safe_limit = max(1, min(limit, 100))
+    rows = await db.query(
+        TABLES["job_scan_history"],
+        filters=[("company_slug", "in", slugs)],
+        order_by="last_seen",
+        order_direction="DESCENDING",
+        limit=safe_limit,
+    )
+
+    items = []
+    for row in rows:
+        slug = str(row.get("company_slug") or "")
+        times_seen = int(row.get("times_seen") or 1)
+        items.append(
+            {
+                "id": row.get("id"),
+                "company_slug": slug,
+                "display_name": display_name_by_slug.get(slug, slug),
+                "role_title": row.get("role_title") or "Untitled role",
+                "url": row.get("url_canonical"),
+                "first_seen": row.get("first_seen"),
+                "last_seen": row.get("last_seen"),
+                "times_seen": times_seen,
+                "is_repeat": times_seen > 1,
+            }
+        )
+
+    return {"items": items, "count": len(items)}
+
+
 @router.post("/tracked-companies", status_code=201)
 @limiter.limit("10/minute")
 async def create_tracked_company(

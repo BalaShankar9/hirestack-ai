@@ -343,7 +343,7 @@ class AIImageGenerator:
         if self.stability_key:
             result = await self._generate_stability(prompt, size)
             if result.image_bytes:
-                self._store_cache(cache_key, result.bytes)
+                self._store_cache(cache_key, result.image_bytes)
                 return result
 
         # Both failed
