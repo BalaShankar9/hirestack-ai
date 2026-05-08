@@ -10,10 +10,19 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import time
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable, Mapping, Optional
 
+from .capability import Authorizer, CapabilityInvalid
+from .sandboxes import (
+    Sandbox,
+    UnknownSandboxTier,
+    default_sandboxes,
+    is_routing_enabled,
+    select_sandbox,
+)
 from .tools import ToolRecord, ToolStore, is_enabled
 
 
@@ -27,6 +36,10 @@ class ToolNotFound(LookupError):
 
 class GrantDenied(PermissionError):
     pass
+
+
+class CapabilityRequired(GrantDenied):
+    """Tool requires a capability token but none was supplied (or invalid)."""
 
 
 class InvalidInput(ValueError):
@@ -90,6 +103,15 @@ def _validate(value: Any, schema: dict[str, Any]) -> Optional[str]:
 
 
 # ── dispatcher ──────────────────────────────────────────────────────────
+def _capability_flag_on() -> bool:
+    return os.getenv("FF_TOOL_CAPABILITY_TOKENS", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 @dataclass
 class Dispatcher:
     """Execute a tool through the full registry pipeline."""
@@ -97,6 +119,8 @@ class Dispatcher:
     store: ToolStore
     resolver: Callable[[str], Callable[..., Awaitable[Any]]]
     sink: Optional[Callable[[ToolInvocation], Awaitable[None]]] = None
+    authorizer: Optional[Authorizer] = None
+    sandboxes: Optional[Mapping[str, Sandbox]] = None
     _enabled_override: Optional[bool] = field(default=None, repr=False)
 
     async def invoke(
@@ -107,6 +131,7 @@ class Dispatcher:
         arguments: dict[str, Any],
         org_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        capability_token: Optional[str] = None,
     ) -> Any:
         enabled = self._enabled_override if self._enabled_override is not None else is_enabled()
         if not enabled:
@@ -122,6 +147,37 @@ class Dispatcher:
                                           error_message="grant_denied"))
             raise GrantDenied(f"{agent_name} not granted {tool_name}")
 
+        # Capability token check (ADR-0032).
+        # Two trigger paths:
+        #   1) per-tool kill-switch: record.requires_capability_token=True
+        #      always demands a valid token regardless of the flag
+        #   2) the global flag enables enforcement for tools that ask
+        # When neither applies, the token (if any) is ignored.
+        flag_on = _capability_flag_on()
+        if record.requires_capability_token or (flag_on and capability_token is not None):
+            if self.authorizer is None:
+                await self._record(_invocation(tool_name, agent_name, "denied", 0,
+                                              org_id=org_id, user_id=user_id,
+                                              error_message="capability_authorizer_unset"))
+                raise CapabilityRequired(f"{tool_name}: no authorizer configured")
+            if not capability_token:
+                await self._record(_invocation(tool_name, agent_name, "denied", 0,
+                                              org_id=org_id, user_id=user_id,
+                                              error_message="capability_token_missing"))
+                raise CapabilityRequired(f"{tool_name}: capability token required")
+            try:
+                await self.authorizer.verify(
+                    capability_token,
+                    tool_name=tool_name,
+                    org_id=org_id,
+                    user_id=user_id,
+                )
+            except CapabilityInvalid as exc:
+                await self._record(_invocation(tool_name, agent_name, "denied", 0,
+                                              org_id=org_id, user_id=user_id,
+                                              error_message=f"capability_{exc}"))
+                raise CapabilityRequired(f"{tool_name}: {exc}") from exc
+
         err = _validate(arguments, record.input_schema)
         if err:
             await self._record(_invocation(tool_name, agent_name, "invalid_input", 0,
@@ -131,10 +187,24 @@ class Dispatcher:
 
         input_hash = _hash(arguments)
         fn = self.resolver(record.code_ref)
+        # Sandbox routing (ADR-0033). Flag OFF → always L0 (with shadow log).
+        sandboxes = self.sandboxes if self.sandboxes is not None else default_sandboxes()
+        try:
+            sandbox = select_sandbox(record, sandboxes, routing_enabled=is_routing_enabled())
+        except UnknownSandboxTier as exc:
+            await self._record(_invocation(tool_name, agent_name, "error", 0,
+                                          org_id=org_id, user_id=user_id,
+                                          input_hash=input_hash,
+                                          error_message=str(exc)))
+            raise
+
         timeout_s = max(0.001, record.timeout_ms / 1000.0)
         started = time.monotonic()
         try:
-            output = await asyncio.wait_for(fn(**arguments), timeout=timeout_s)
+            output = await asyncio.wait_for(
+                sandbox.invoke(fn, arguments=arguments, record=record),
+                timeout=timeout_s,
+            )
         except asyncio.TimeoutError as exc:
             duration = int((time.monotonic() - started) * 1000)
             await self._record(_invocation(tool_name, agent_name, "timeout", duration,

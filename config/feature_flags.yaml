@@ -84,3 +84,17 @@ flags:
     sunset: 2026-08-31
     default: false
     purpose: Enforce strict critic-gate review on agent outputs before persistence.
+
+  ff_tool_capability_tokens:
+    owner: BalaShankar9
+    created: 2026-05-08
+    sunset: 2026-09-01
+    default: false
+    purpose: Verify HMAC capability tokens on tool dispatch (ADR-0032, P0-5 / m7-pr29). Per-tool kill-switch via ai_tools.requires_capability_token always overrides.
+
+  ff_tool_sandbox_tier_routing:
+    owner: BalaShankar9
+    created: 2026-05-08
+    sunset: 2026-09-01
+    default: false
+    purpose: Route tool dispatch through the L0/L1/L2 sandbox classifier instead of always L0 (ADR-0033, P0-5 / m7-pr29). L1 enforcement deferred to m7-pr29b.

@@ -14,6 +14,12 @@ INITIAL_TOOLS: list[dict[str, Any]] = [
                                           "limit": {"type": "integer"}}},
         "output_schema": {"type": "array"},
         "timeout_ms": 5_000,
+        # PR m7-pr29 (ADR-0033): every seeded tool starts L0. Promotion
+        # to L1+ requires explicit catalog change AND a resolver entry
+        # in ai_engine/registry/resolvers.py (AP-4 governance).
+        "sandbox_tier": "L0",
+        "egress_allowlist": [],
+        "requires_capability_token": False,
     },
     {
         "name": "extract_claims",
@@ -23,6 +29,9 @@ INITIAL_TOOLS: list[dict[str, Any]] = [
                           "properties": {"text": {"type": "string"}}},
         "output_schema": {"type": "array"},
         "timeout_ms": 10_000,
+        "sandbox_tier": "L0",
+        "egress_allowlist": [],
+        "requires_capability_token": False,
     },
 ]
 

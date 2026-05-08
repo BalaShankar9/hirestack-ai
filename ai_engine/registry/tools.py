@@ -19,6 +19,12 @@ class ToolRecord:
     output_schema: dict[str, Any] = field(default_factory=dict)
     timeout_ms: int = 15_000
     enabled: bool = True
+    # Sandbox / capability fields (PR m7-pr29, ADR-0032 + ADR-0033).
+    # Defaults match pre-m7-pr29 behaviour: every legacy tool is L0,
+    # no egress restrictions, no token required.
+    sandbox_tier: str = "L0"
+    egress_allowlist: list[str] = field(default_factory=list)
+    requires_capability_token: bool = False
 
 
 class ToolStore(Protocol):

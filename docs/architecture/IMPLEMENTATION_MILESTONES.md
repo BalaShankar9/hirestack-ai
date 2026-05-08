@@ -101,6 +101,28 @@ PRs: `m7-pr27` (split into 27a, 27b, 27c if ≥500 lines each).
 - Prometheus gauges `bootstrap_tasks_inflight`, `bootstrap_task_failures_total` — M11.
 - Mid-flight Temporal-failure-during-cancellation fallback to legacy — deferred until Temporal is at 100% rollout.
 
+#### M7-E — Capability tokens + sandbox tier classifier (`m7-pr29`) — ✅ **SHIPPED 2026-05-08**
+
+| Field | Value |
+|---|---|
+| **What changed** | Three new columns on `ai_tools`: `sandbox_tier VARCHAR(2) DEFAULT 'L0'`, `egress_allowlist JSONB DEFAULT '[]'`, `requires_capability_token BOOLEAN DEFAULT FALSE` (migration `20260508010000_ai_tools_sandbox_tier.sql`). Three new modules in `ai_engine/registry/`: `capability.py` (HMAC-signed opaque tokens with `Authorizer.mint`/`verify`, `InProcessNonceStore` LRU + `RedisNonceStore` SETNX replay protection, dual-key rotation), `sandboxes.py` (`L0InProcessSandbox` direct call, `L1HttpxAllowlistSandbox` dispatch-path-only stub that logs `tool_sandbox_l1_unenforced`, `L2GrpcSidecarSandbox` raises with tool name), `resolvers.py` (empty-by-design RESOLVERS allowlist as AP-4 governance hook). `Dispatcher` now accepts `authorizer` + `sandboxes` + `capability_token`; capability check runs after grant check, before input validation; sandbox routing wraps the tool callable. Two new flags `ff_tool_capability_tokens` and `ff_tool_sandbox_tier_routing` (both default OFF, sunset 2026-09-01). |
+| **Why now** | P0-5: tools could be invoked with no per-call attestation that the caller was authorised at the moment of execution, and there was no schema-level distinction between trusted in-process tools and tools that should hit the network. Both gaps are now closed at the column + dispatch level — though L1 enforcement is intentionally deferred (see Out-of-scope). |
+| **Risks introduced** | None at default (both flags OFF). With flag ON: a misconfigured `tool_capability_secret` rotation could reject every token (mitigated by `previous_secret` overlap key). With routing ON and any L1 tool seeded: the L1 sandbox falls through to L0 — the warning log is the safety net. |
+| **Blast radius** | `ai_engine/registry/` only. Generation pipeline does not yet pass `capability_token` (forward-compat: dispatcher accepts the kwarg, callers can wire it in m7-pr29b). |
+| **Rollback** | Set both flags OFF; no per-tool rows have `requires_capability_token=true` in seed. Migration is additive (DEFAULT values) so DB rollback unnecessary. |
+| **Observability** | New audit error_message values: `capability_authorizer_unset`, `capability_token_missing`, `capability_<reason>` (e.g. `capability_expired`, `capability_nonce_replayed`, `capability_bad_signature`). New log lines: `tool_capability_nonce_inprocess_fallback` (once per process), `tool_capability_nonce_redis_failed`, `tool_sandbox_l1_unenforced` (once per tool), `tool_sandbox_routed`, `tool_sandbox_shadow`. |
+| **Tests** | `ai_engine/tests/registry/test_capability.py` — 14 tests (round-trip, expiry, tampering, malformed, mismatches, nonce replay, secret rotation). `test_sandboxes.py` — 8 tests (L0/L1/L2 behaviour, dedup warning, flag-off shadow log, flag-on routing, unknown tier). `test_resolvers.py` — 3 tests (empty-by-design contract). `test_dispatcher.py` extended with 6 capability/sandbox integration tests. **51/51 registry tests green.** Governance: `check_feature_flags.py` and `check_architecture.py` (AP-4) both PASS. |
+| **Deploy order** | (1) ship migration, (2) deploy code, (3) flip flags per-environment after smoke. Capability secret seeded via `TOOL_CAPABILITY_SECRET` env. |
+| **ADR** | ADR-0032 + ADR-0033 (both Accepted 2026-05-08). |
+| **Success criteria** | (✅) Migration applied. (✅) Authorizer mint/verify round-trip green. (✅) Per-tool kill-switch enforced even with global flag OFF. (✅) AP-4 governance still passes. (pending — m7-pr29b) first L1 tool seeded triggers real httpx host-blocking. |
+| **Owner DRI** | @BalaShankar9 |
+
+**Out of scope (deferred — written down so they don't get lost):**
+- L1 actual httpx host-blocking enforcement — m7-pr29b (triggered by first tool with `sandbox_tier='L1'`).
+- L2 gRPC sidecar runtime — M11 (raises `SandboxNotImplemented` for now).
+- L3 Firecracker BYO marketplace — separate ADR.
+- Wiring `capability_token` through the generation pipeline call sites — m7-pr29b.
+
 **M7 exit gate:** All three success criteria met for ≥7 consecutive days.
 
 ---
@@ -112,7 +134,7 @@ PRs: `m7-pr28` (multi-provider), `m7-pr29` (capability tokens + sandbox), `m7-pr
 | PR | Closes | Brief | Depends on |
 |---|---|---|---|
 | `m7-pr28` | P1-4 | Add Anthropic provider behind `model_router`; cascade Gemini→Anthropic on 5xx/429/circuit-open; chaos test "Gemini quota exhausted" leaves SLO intact. | M7 complete (need DLQ in place before adding new failure modes) |
-| `m7-pr29` | P0-5 | Capability tokens minted per-job; tool registry verifies token before exec; classify each tool L0/L1/L2 (per blueprint §6.4). | ADR-0032, ADR-0033 |
+| `m7-pr29` ✅ | P0-5 | **SHIPPED 2026-05-08 (M7-E above).** Capability tokens minted per-job; tool registry verifies token before exec; classify each tool L0/L1/L2 (per blueprint §6.4). | ADR-0032, ADR-0033 |
 | `m7-pr30` | (foundation) | `ai_invocations` table (one row per LLM call): tenant, prompt hash, model, tokens, cost, latency, outcome, retries. Backfill from logs is **not** done (forward-only). | ADR-0034 |
 | `m7-pr31` | P1-2 | OutboxWriter rejects events not registered in `packages/events/schema/v1/`. Migrate ~25 currently-unregistered emitters in subsequent PRs over 2 weeks. | ADR-0035 |
 

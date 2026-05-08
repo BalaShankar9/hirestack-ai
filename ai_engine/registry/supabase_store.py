@@ -88,7 +88,10 @@ class SupabaseToolStore(ToolStore):
             sb = get_supabase()
             resp = (
                 sb.table("ai_tools")
-                .select("name,version,description,code_ref,input_schema,output_schema,timeout_ms,enabled")
+                .select(
+                    "name,version,description,code_ref,input_schema,output_schema,timeout_ms,enabled,"
+                    "sandbox_tier,egress_allowlist,requires_capability_token"
+                )
                 .eq("name", tool_name)
                 .eq("enabled", True)
                 .limit(1)
@@ -102,6 +105,9 @@ class SupabaseToolStore(ToolStore):
         if not rows:
             return None
         row = rows[0]
+        # PR m7-pr29: sandbox_tier / egress_allowlist / requires_capability_token
+        # default to L0 / [] / False so older rows shipped before the
+        # 20260508010000 migration still load cleanly under tests.
         return ToolRecord(
             name=row["name"],
             code_ref=row["code_ref"],
@@ -111,6 +117,9 @@ class SupabaseToolStore(ToolStore):
             output_schema=row.get("output_schema") or {},
             timeout_ms=int(row.get("timeout_ms") or 15_000),
             enabled=bool(row.get("enabled", True)),
+            sandbox_tier=str(row.get("sandbox_tier") or "L0"),
+            egress_allowlist=list(row.get("egress_allowlist") or []),
+            requires_capability_token=bool(row.get("requires_capability_token") or False),
         )
 
     def _fetch_grant_sync(self, agent_name: str, tool_name: str) -> bool:

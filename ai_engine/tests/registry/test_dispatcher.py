@@ -172,4 +172,200 @@ def test_seed_rows_are_well_formed() -> None:
     for tool in tools:
         assert tool["name"] and tool["code_ref"]
         assert isinstance(tool["input_schema"], dict)
+        # PR m7-pr29: every seeded tool must declare a sandbox_tier.
+        assert tool["sandbox_tier"] in ("L0", "L1", "L2", "L3")
+        assert isinstance(tool["egress_allowlist"], list)
+        assert isinstance(tool["requires_capability_token"], bool)
     assert all(len(g) == 2 for g in grants)
+
+
+# ── PR m7-pr29: capability tokens + sandbox routing ────────────────────
+
+from ai_engine.registry import (  # noqa: E402
+    Authorizer,
+    CapabilityRequired,
+    InProcessNonceStore,
+    L0InProcessSandbox,
+    L1HttpxAllowlistSandbox,
+)
+
+
+_TEST_SECRET = b"dispatcher-integration-test-secret"
+
+
+def _store_with_token_required(*, requires: bool) -> InMemoryToolStore:
+    rec = ToolRecord(
+        name="echo",
+        code_ref="tests.echo",
+        input_schema={"type": "object", "required": ["text"],
+                      "properties": {"text": {"type": "string"}}},
+        output_schema={"type": "object"},
+        timeout_ms=5_000,
+        requires_capability_token=requires,
+    )
+    return InMemoryToolStore(tools={"echo": rec}, grants={("agent-a", "echo")})
+
+
+def _auth() -> Authorizer:
+    return Authorizer(secret=_TEST_SECRET, nonce_store=InProcessNonceStore())
+
+
+@pytest.mark.asyncio
+async def test_dispatch_flag_off_no_token_passes_through(monkeypatch) -> None:
+    """Default config: flag OFF, per-tool flag OFF → no token needed."""
+    monkeypatch.delenv("FF_TOOL_CAPABILITY_TOKENS", raising=False)
+
+    async def fn(text: str) -> dict:
+        return {"echoed": text}
+
+    disp = Dispatcher(
+        store=_store_with_token_required(requires=False),
+        resolver=lambda _ref: fn,
+        _enabled_override=True,
+    )
+    out = await disp.invoke(tool_name="echo", agent_name="agent-a",
+                            arguments={"text": "hi"})
+    assert out == {"echoed": "hi"}
+
+
+@pytest.mark.asyncio
+async def test_dispatch_per_tool_kill_switch_demands_token_even_with_flag_off(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("FF_TOOL_CAPABILITY_TOKENS", raising=False)
+    seen: list[ToolInvocation] = []
+
+    async def sink(inv: ToolInvocation) -> None:
+        seen.append(inv)
+
+    async def fn(text: str) -> dict:
+        return {"echoed": text}
+
+    disp = Dispatcher(
+        store=_store_with_token_required(requires=True),
+        resolver=lambda _ref: fn,
+        sink=sink,
+        authorizer=_auth(),
+        _enabled_override=True,
+    )
+    with pytest.raises(CapabilityRequired):
+        await disp.invoke(tool_name="echo", agent_name="agent-a",
+                          arguments={"text": "x"})
+    assert seen[-1].status == "denied"
+    assert seen[-1].error_message == "capability_token_missing"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_per_tool_required_without_authorizer_denied(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("FF_TOOL_CAPABILITY_TOKENS", raising=False)
+    seen: list[ToolInvocation] = []
+
+    async def sink(inv: ToolInvocation) -> None:
+        seen.append(inv)
+
+    async def fn(text: str) -> dict:
+        return {"echoed": text}
+
+    disp = Dispatcher(
+        store=_store_with_token_required(requires=True),
+        resolver=lambda _ref: fn,
+        sink=sink,
+        authorizer=None,
+        _enabled_override=True,
+    )
+    with pytest.raises(CapabilityRequired):
+        await disp.invoke(tool_name="echo", agent_name="agent-a",
+                          arguments={"text": "x"})
+    assert seen[-1].error_message == "capability_authorizer_unset"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_with_valid_token_succeeds(monkeypatch) -> None:
+    monkeypatch.setenv("FF_TOOL_CAPABILITY_TOKENS", "1")
+    auth = _auth()
+    token = auth.mint(tool_name="echo", org_id="o1", user_id="u1", grant_id="g1")
+
+    async def fn(text: str) -> dict:
+        return {"echoed": text}
+
+    disp = Dispatcher(
+        store=_store_with_token_required(requires=False),
+        resolver=lambda _ref: fn,
+        authorizer=auth,
+        _enabled_override=True,
+    )
+    out = await disp.invoke(
+        tool_name="echo", agent_name="agent-a",
+        arguments={"text": "hi"},
+        org_id="o1", user_id="u1",
+        capability_token=token,
+    )
+    assert out == {"echoed": "hi"}
+
+
+@pytest.mark.asyncio
+async def test_dispatch_with_bad_token_denied(monkeypatch) -> None:
+    monkeypatch.setenv("FF_TOOL_CAPABILITY_TOKENS", "1")
+    seen: list[ToolInvocation] = []
+
+    async def sink(inv: ToolInvocation) -> None:
+        seen.append(inv)
+
+    async def fn(text: str) -> dict:
+        return {"echoed": text}
+
+    disp = Dispatcher(
+        store=_store_with_token_required(requires=False),
+        resolver=lambda _ref: fn,
+        sink=sink,
+        authorizer=_auth(),
+        _enabled_override=True,
+    )
+    with pytest.raises(CapabilityRequired):
+        await disp.invoke(
+            tool_name="echo", agent_name="agent-a",
+            arguments={"text": "x"},
+            capability_token="garbage.token",
+        )
+    assert seen[-1].status == "denied"
+    assert seen[-1].error_message and "capability_" in seen[-1].error_message
+
+
+@pytest.mark.asyncio
+async def test_dispatch_routes_through_provided_sandbox(monkeypatch) -> None:
+    """When sandboxes mapping is provided, dispatcher uses it."""
+    monkeypatch.setenv("FF_TOOL_SANDBOX_TIER_ROUTING", "1")
+
+    async def fn(text: str) -> dict:
+        return {"echoed": text}
+
+    rec = ToolRecord(
+        name="echo",
+        code_ref="tests.echo",
+        input_schema={"type": "object", "required": ["text"],
+                      "properties": {"text": {"type": "string"}}},
+        output_schema={"type": "object"},
+        timeout_ms=5_000,
+        sandbox_tier="L1",
+    )
+    store = InMemoryToolStore(tools={"echo": rec}, grants={("agent-a", "echo")})
+
+    # Reset L1 dedup so we observe the warning behaviour cleanly.
+    L1HttpxAllowlistSandbox._warned_tools.clear()
+
+    sandboxes = {
+        "L0": L0InProcessSandbox(),
+        "L1": L1HttpxAllowlistSandbox(),
+    }
+    disp = Dispatcher(
+        store=store,
+        resolver=lambda _ref: fn,
+        sandboxes=sandboxes,
+        _enabled_override=True,
+    )
+    out = await disp.invoke(tool_name="echo", agent_name="agent-a",
+                            arguments={"text": "hi"})
+    # L1 currently falls through to L0 semantics — call still succeeds.
+    assert out == {"echoed": "hi"}

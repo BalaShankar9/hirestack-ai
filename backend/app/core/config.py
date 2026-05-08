@@ -194,6 +194,36 @@ class Settings(BaseSettings):
     # follow-up wave once the consumer is steady-state.
     ff_aim_rag: bool = False
 
+    # PR m7-pr29 (ADR-0032): capability tokens for tool dispatch.
+    # Default OFF — when False the dispatcher ignores any token passed
+    # to ``invoke()`` UNLESS the per-tool ``requires_capability_token``
+    # column is True (kill-switch path always enforced). When True every
+    # tool with the per-tool flag is enforced AND any tool that ships a
+    # token gets verified. Sunset 2026-09-01 (default ON, then remove
+    # the flag once every L1+ tool is on capability tokens).
+    ff_tool_capability_tokens: bool = False
+    # Active HMAC key for capability tokens. Required when the flag is
+    # ON or any tool sets requires_capability_token=True. Empty string
+    # disables both mint and verify.
+    tool_capability_secret: str = ""
+    # Verify-only previous key for rotation overlap. When set, verify
+    # accepts tokens signed with either secret; mint always uses the
+    # active one. Drop after the rotation window closes.
+    tool_capability_secret_previous: str = ""
+    # Default mint TTL (seconds). Per-call override allowed up to
+    # ``tool_capability_max_ttl_seconds``.
+    tool_capability_default_ttl_seconds: int = 60
+    tool_capability_max_ttl_seconds: int = 300
+
+    # PR m7-pr29 (ADR-0033): sandbox tier routing. Default OFF — when
+    # False every dispatch goes through L0 regardless of
+    # ``record.sandbox_tier`` (tier is shadow-logged so we can see what
+    # would have routed). When True the dispatcher consults the tier
+    # column and picks the matching sandbox; L1 currently logs
+    # ``tool_sandbox_l1_unenforced`` and falls through to L0 (real
+    # host-blocking lands in m7-pr29b). Sunset 2026-09-01.
+    ff_tool_sandbox_tier_routing: bool = False
+
     @field_validator("supabase_http_retries")
     @classmethod
     def _clamp_retries(cls, v: int) -> int:
