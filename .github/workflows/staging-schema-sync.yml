@@ -1,0 +1,75 @@
+name: Staging schema sync
+
+# m11-pr45: Weekly sync of the prod Postgres *schema* (no data) to
+# the staging database. Runs Sunday 06:00 UTC. Manual dispatch
+# available so an operator can re-run after a hotfix migration.
+#
+# Required repo secrets:
+#   PROD_DATABASE_URL_RO  — read-only postgres URL to prod
+#   STAGING_DATABASE_URL  — read/write postgres URL to staging
+#
+# The script applies the dump inside a single transaction with
+# ON_ERROR_STOP=1, so a failure leaves staging unchanged.
+
+on:
+  schedule:
+    # Sundays 06:00 UTC. Cron is 5-field UTC.
+    - cron: "0 6 * * 0"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run only (dump but skip apply)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-schema-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync prod schema → staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - name: Install Postgres 16 client
+        run: |
+          set -euo pipefail
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y postgresql-client-16
+          pg_dump --version
+
+      - name: Sync schema
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL_RO }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          DRY_RUN: ${{ inputs.dry_run == 'true' && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${PROD_DATABASE_URL:-}" ]]; then
+            echo "::error::PROD_DATABASE_URL_RO secret is not set"
+            exit 1
+          fi
+          if [[ -z "${STAGING_DATABASE_URL:-}" ]]; then
+            echo "::error::STAGING_DATABASE_URL secret is not set"
+            exit 1
+          fi
+          ./scripts/ops/sync_staging_schema.sh
+
+      - name: Upload dump artifact (debugging)
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4
+        with:
+          name: prod-schema-dump
+          path: /tmp/hirestack-prod-schema-*.sql
+          retention-days: 7
+          if-no-files-found: ignore

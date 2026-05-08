@@ -389,6 +389,17 @@ PRs: `m11-pr37` through `m11-pr45`. Pulls in every M7/M9-deferred item plus the 
 
 ---
 
+#### m11-pr45 — staging mirror of prod data shape **(SHIPPED)**
+
+| | |
+|---|---|
+| **What landed** | Closes P1-15. New shell script `scripts/ops/sync_staging_schema.sh` does `pg_dump --schema-only --clean --if-exists --no-owner --no-privileges --no-tablespaces` from prod → applies to staging inside a `psql --single-transaction --variable=ON_ERROR_STOP=1` so partial failures roll back. New GitHub Actions workflow `.github/workflows/staging-schema-sync.yml` runs the script every Sunday 06:00 UTC against the `PROD_DATABASE_URL_RO` and `STAGING_DATABASE_URL` secrets, with manual dispatch + dry-run option. New compose file `infra/staging-mirror.compose.yml` brings up an empty Postgres 16 on `127.0.0.1:55432` for local testing of the script without pointing at real staging. New runbook `docs/runbooks/staging-schema-sync.md` documents triggers, manual run, common failure modes, and rollback. |
+| **Did NOT land** | No row-level data sync — staging holds its own seed data on purpose (PII / size / tenant-isolation). No Terraform module — the workflow itself is the IaC for this; if a future env (e.g. preview) needs the same hook we'll factor a reusable workflow. No automatic schema-diff alerting against the previous week's dump (would catch unannounced prod migrations) — deferred until the first incident motivates it. No coverage of Supabase-managed schemas beyond `public` — `SCHEMAS` env variable accepts a comma-separated list, so adding `auth`, `storage`, etc. is one secret edit away when needed. |
+| **Rollout** | Workflow is `permissions: contents: read` and runs only on `schedule` + `workflow_dispatch`; no PR-triggered runs. First scheduled execution is whatever Sunday 06:00 UTC follows the merge. Required repo secrets `PROD_DATABASE_URL_RO` (must be a **read-only** role; the script never writes to prod) and `STAGING_DATABASE_URL` must be in place before the first run — until then the workflow fails fast with a clear error message. |
+| **Files** | NEW: `scripts/ops/sync_staging_schema.sh` (executable; `set -euo pipefail`), `.github/workflows/staging-schema-sync.yml`, `infra/staging-mirror.compose.yml`, `docs/runbooks/staging-schema-sync.md`. MODIFIED: `docs/architecture/IMPLEMENTATION_MILESTONES.md` (this entry). Stage A trailing items table updated to reflect `Staging mirror of prod data shape` is now SHIPPED via m11-pr45. |
+
+---
+
 ## Stage A trailing items (M11+, no PR numbers yet)
 
 | Item | Closes | Trigger to start |
@@ -398,7 +409,7 @@ PRs: `m11-pr37` through `m11-pr45`. Pulls in every M7/M9-deferred item plus the 
 | `prometheus_client` migration for `/metrics` | TD-3 | After M8 closed |
 | Sentry redaction depth → 16 | TD-4 | Anytime; safe |
 | Feature flag sunset enforcement (CI fail past sunset) | (governance) | After `config/feature_flags.yaml` exists with ≥5 flags |
-| Staging mirror of prod data shape | P1-15 | After M10 |
+| Staging mirror of prod data shape | P1-15 | After M10 — **SHIPPED m11-pr45** |
 
 ---
 
