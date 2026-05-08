@@ -406,10 +406,12 @@ PRs: `m11-pr37` through `m11-pr45`. Pulls in every M7/M9-deferred item plus the 
 |---|---|---|
 | `mypy --strict` on `ai_engine/` | TD-1 | After M8 closed — **SHIPPED m12-pr01** (initial scope: `ai_engine.api`, `ai_engine.registry.*`; ratchet via [mypy.ini](../../mypy.ini) allowlist) |
 | Coverage gate at 70% on `ai_engine/` | TD-2 | After M8 closed — **SHIPPED m12-pr02** (initial scope mirrors mypy allowlist; actual coverage ≈93%; ratchet via `[tool.coverage.run] source` in [pyproject.toml](../../pyproject.toml)) |
-| `prometheus_client` migration for `/metrics` | TD-3 | After M8 closed |
-| Sentry redaction depth → 16 | TD-4 | Anytime; safe |
-| Feature flag sunset enforcement (CI fail past sunset) | (governance) | After `config/feature_flags.yaml` exists with ≥5 flags |
+| `prometheus_client` migration for `/metrics` | TD-3 | After M8 closed — **SHIPPED m11-pr41** (`HirestackCollector` in `backend/app/core/prometheus_collectors.py`; six-family contract preserved) |
+| Sentry redaction depth → 16 | TD-4 | Anytime; safe — **SHIPPED m11-pr40** |
+| Feature flag sunset enforcement (CI fail past sunset) | (governance) | After `config/feature_flags.yaml` exists with ≥5 flags — **SHIPPED m11-pr42** (`scripts/governance/check_feature_flags.py` fails CI past `sunset_date` unless explicit `--allow-expired-baseline`) |
 | Staging mirror of prod data shape | P1-15 | After M10 — **SHIPPED m11-pr45** |
+
+**Stage A trailing items — all SHIPPED.** No outstanding M11+ work without a milestone home. Stage B placeholders below activate only on trigger.
 
 ---
 
