@@ -294,6 +294,35 @@ PRs: `m9-pr33` through `m9-pr36`.
 
 ---
 
+### M11 — Reliability & observability uplift **(NEXT)**
+
+PRs: `m11-pr37` through `m11-pr45`. Pulls in every M7/M9-deferred item plus the Stage A trailing items whose triggers have fired (M8 closed → M10 closed).
+
+| PR | Closes | Brief |
+|---|---|---|
+| `m11-pr37` | M9 deferred — DLQ | DLQ replay tool (`scripts/ops/dlq_replay.py`) + runbook (`docs/runbooks/dlq-replay.md`). List, inspect, replay (one or batch), purge entries from `events:dlq`. Re-XADDs to `source_stream` then XDELs from DLQ. Dry-run by default. |
+| `m11-pr38` | M7/M9 deferred — counters | Prometheus counters: queue (`queue_ack_total{outcome,consumer}`, `queue_dlq_total{consumer}`, `queue_pending_redeliveries{consumer}`), generation dispatch (`generation_dispatch_fallback_total{tier}`), bootstrap (`bootstrap_tasks_inflight`, `bootstrap_task_failures_total`). Exposed via `/metrics`. |
+| `m11-pr39` | M10 carve-out debt | Refactor 7 import-linter carve-outs (sunset 2026-08-01) where feasible; document those that must remain with an extended sunset + ADR. Target: ≤ 3 carve-outs remaining. |
+| `m11-pr40` | TD-4 | Sentry redaction depth 6 → 16. Safe; just a config bump + 1 unit test extension. |
+| `m11-pr41` | TD-3 | Migrate `/metrics` to `prometheus_client` (CollectorRegistry + multiprocess mode). Drop hand-rolled text exposition. |
+| `m11-pr42` | governance | Feature flag sunset enforcement. `scripts/governance/check_feature_flags.py` already lints registry; add CI fail when `sunset_date` is past unless `--allow-expired-baseline=<flag>` is set. |
+| `m11-pr43` | M7 deferred | Generic `app.core.task_registry` module abstracting the bootstrap-task pattern; migrate JobWatchdog + scheduler bootstrap to it. |
+| `m11-pr44` | M8 deferred | L2 gRPC sandbox runtime — currently raises `SandboxNotImplemented`. Wire to a minimal in-process gRPC sandbox sidecar (Docker compose entry + handler). Keep flag-gated off by default. |
+| `m11-pr45` | P1-15 | Staging mirror of prod data shape — terraform/compose recipe; schema-only sync from prod via `pg_dump --schema-only` weekly. |
+
+**M11 exit gate:** All five queue/generation/bootstrap counters live and scraped. DLQ replay runbook executable end-to-end against a staging DLQ. Import-linter carve-out count ≤ 3 (or extended ADR for each remaining). Sentry redaction depth = 16. `/metrics` served by `prometheus_client`.
+
+#### m11-pr37 — DLQ replay tool + runbook **(SHIPPED)**
+
+| | |
+|---|---|
+| **What landed** | `scripts/ops/dlq_replay.py` (sync Redis CLI; subcommands `list` / `inspect` / `replay` / `replay-all` / `purge`; dry-run is the default contract — `--apply` is required to mutate). Handles both DLQ shapes: generic-consumer entries (decode the `event` JSON, re-XADD to `source_stream`) and queue entries (re-XADD `{job_id, user_id}`). 23 unit tests under `backend/tests/ops/test_dlq_replay.py` pin parser, filters, payload reconstruction (3 shapes), replay/purge dry-run vs apply semantics, and CLI flag surface. Runbook `docs/runbooks/dlq-replay.md` walks operators through triage → root-cause → pre-flight (queue entries need `generation_jobs` status check because re-XADD bypasses `processed_queue_events` dedup) → replay → bulk drain → purge → post-incident. |
+| **Did NOT land** | Counters (`queue_dlq_total`) referenced in the runbook ship in `m11-pr38`. No automatic replay-with-backoff (manual operator workflow only). No web UI. |
+| **Rollout** | CLI is read-only by default. Operators run from a pod/laptop with `REDIS_URL` set. No service code paths changed; safe to deploy without restart. |
+| **Files** | NEW: `scripts/ops/dlq_replay.py`, `backend/tests/ops/test_dlq_replay.py`, `docs/runbooks/dlq-replay.md`. MODIFIED: `docs/architecture/IMPLEMENTATION_MILESTONES.md` (this entry + M11 scope). |
+
+---
+
 ## Stage A trailing items (M11+, no PR numbers yet)
 
 | Item | Closes | Trigger to start |
