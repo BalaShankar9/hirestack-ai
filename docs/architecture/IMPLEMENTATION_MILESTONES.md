@@ -348,6 +348,15 @@ PRs: `m11-pr37` through `m11-pr45`. Pulls in every M7/M9-deferred item plus the 
 | **Rollout** | Pure CI tightening. Safe to land — current registry has zero expired flags. First future expiry will hard-fail CI; owner must either remove the flag or pass `--allow-expired-baseline=<name>` with a tracking issue link in the PR description. |
 | **Files** | NEW: `scripts/governance/test_check_feature_flags.py` (11 tests). MODIFIED: `scripts/governance/check_feature_flags.py` (argparse, `_display_path` helper, allowlist enforcement, governance-test-file exclude), `docs/architecture/IMPLEMENTATION_MILESTONES.md` (this entry). |
 
+#### m11-pr43 — Generic `app.core.task_registry` **(SHIPPED)**
+
+| | |
+|---|---|
+| **What landed** | New `backend/app/core/task_registry.py` extracts the ADR-0041 fire-and-forget pattern into a reusable `TaskRegistry` (spawn / adopt / drain / inflight + optional failure-hook). Two singletons exposed: `bootstrap_registry` (replaces the hand-rolled `_BOOTSTRAP_TASKS` set + done-callback in `backend/app/api/routes/generate/jobs.py::_track_bootstrap`) and `scheduler_registry` (now adopts the periodic stale-job-cleanup task and the `JobWatchdog` task started from the FastAPI lifespan in `backend/main.py`). `_BOOTSTRAP_TASKS` and `_track_bootstrap` are kept as backwards-compat aliases over the registry, so `queue_metrics.set_bootstrap_inflight`, `prometheus_metrics`, and the lifespan drain block stay byte-identical at the call-site. |
+| **Did NOT land** | Did NOT remove the `_BOOTSTRAP_TASKS` symbol or `_track_bootstrap` function (kept as aliases until callers migrate). Did NOT plumb `scheduler_registry.drain` into the lifespan shutdown — the existing per-task cancel/await blocks still own that path; introducing one drain call would change shutdown ordering and is left for a follow-up. Did NOT migrate worker-side tasks (`StreamConsumer`, `OutboxRelay`) — they own their own task lifecycle and don't need the registry abstraction. |
+| **Rollout** | Pure refactor — the bootstrap path is a 1:1 wrapper over the new registry; the scheduler-side change replaces `asyncio.create_task(...)` with `scheduler_registry.spawn(...)` / `.adopt(...)` (same task is created, just tracked centrally). Failure metrics still flow through `queue_metrics.inc_bootstrap_failure` via the registry's `failure_hook` slot. |
+| **Files** | NEW: `backend/app/core/task_registry.py`, `backend/tests/test_task_registry.py` (11 tests, including the bootstrap-alias contract test). MODIFIED: `backend/app/api/routes/generate/jobs.py` (`_track_bootstrap` now delegates to `bootstrap_registry.spawn`), `backend/main.py` (scheduler tasks now go through `scheduler_registry`), `docs/architecture/IMPLEMENTATION_MILESTONES.md` (this entry). |
+
 ---
 
 ## Stage A trailing items (M11+, no PR numbers yet)

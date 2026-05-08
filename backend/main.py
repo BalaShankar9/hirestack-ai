@@ -183,11 +183,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # (a dedicated process holding a Redis leader lock). Default remains True so
     # this PR is a pure no-op until operators flip the flag after deploying the
     # scheduler process. Rollback: set env LEGACY_INPROC_SCHEDULER=true.
+    #
+    # m11-pr43: scheduler-side fire-and-forget tasks are now adopted into
+    # ``scheduler_registry`` so lifespan shutdown can drain them through one
+    # generic helper instead of bespoke cancel/await blocks.
+    from app.core.task_registry import scheduler_registry
     _stale_cleanup_task = None
     _watchdog = None
     if settings.legacy_inproc_scheduler:
         # Start periodic stale job cleanup (every 10 minutes)
-        _stale_cleanup_task = asyncio.create_task(_periodic_stale_job_cleanup())
+        _stale_cleanup_task = scheduler_registry.spawn(
+            _periodic_stale_job_cleanup(),
+            name="scheduler-stale-job-cleanup",
+        )
 
         # Start the v4 JobWatchdog — flips stalled `running` jobs to `failed`
         # so the UI never spins forever after a worker crash.
@@ -195,7 +203,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             from app.services.job_watchdog import JobWatchdog
             from app.core.database import TABLES
             _watchdog = JobWatchdog(get_supabase(), TABLES)
-            _watchdog.start()
+            scheduler_registry.adopt(_watchdog.start())
             app.state._job_watchdog = _watchdog
         except Exception as wd_err:
             logger.warning("Failed to start JobWatchdog", error=str(wd_err)[:200])

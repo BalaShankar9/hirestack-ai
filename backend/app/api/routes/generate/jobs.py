@@ -53,30 +53,23 @@ _JOB_TOTAL_STEPS = 7
 # not GC'd mid-flight, surfaces exceptions via done-callback, and is
 # drained by the FastAPI lifespan handler on SIGTERM so a job is never
 # orphaned between request acceptance and dispatch.
-_BOOTSTRAP_TASKS: "set[asyncio.Task]" = set()
+#
+# m11-pr43: the bookkeeping moved to the generic ``app.core.task_registry``
+# module. ``_BOOTSTRAP_TASKS`` is kept as a backwards-compatible alias so
+# the FastAPI lifespan + ``queue_metrics.set_bootstrap_inflight`` keep
+# working without churn.
+from app.core.task_registry import bootstrap_registry as _bootstrap_registry
+
+_BOOTSTRAP_TASKS: "set[asyncio.Task]" = _bootstrap_registry._tasks  # type: ignore[assignment]
 
 
 def _track_bootstrap(coro, *, name: str) -> asyncio.Task:
-    """Create + register a fire-and-forget bootstrap task. See ADR-0041."""
-    task = asyncio.create_task(coro, name=name)
-    _BOOTSTRAP_TASKS.add(task)
+    """Create + register a fire-and-forget bootstrap task. See ADR-0041.
 
-    def _done(t: asyncio.Task) -> None:
-        _BOOTSTRAP_TASKS.discard(t)
-        if t.cancelled():
-            return
-        exc = t.exception()
-        if exc is not None:
-            from app.core import queue_metrics as _qm
-            _qm.inc_bootstrap_failure(name)
-            logger.warning(
-                "generation_bootstrap_task_failed",
-                task=name,
-                error=str(exc)[:300],
-            )
-
-    task.add_done_callback(_done)
-    return task
+    Thin shim over ``bootstrap_registry.spawn`` — kept as a named function
+    so call sites stay readable and the failure-hook → metrics integration
+    is exercised through the registry rather than re-implemented here."""
+    return _bootstrap_registry.spawn(coro, name=name)
 
 
 def _get_model_health_summary() -> Dict[str, Any]:
