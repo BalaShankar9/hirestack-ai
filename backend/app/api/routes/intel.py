@@ -23,7 +23,7 @@ POST /api/intel/prefetch
 
 Cache key
 ---------
-We reuse :class:`ai_engine.cache.JDAnalysisCache` with a namespaced key
+We reuse :class:`ai_engine.api.JDAnalysisCache` with a namespaced key
 so intel and JD-analysis entries don't collide:
     key = "intel_" + JDAnalysisCache.hash_jd(jd_text, job_title)
 
@@ -53,7 +53,7 @@ class PrefetchRequest(BaseModel):
 
 def _intel_cache_key(jd_text: str, job_title: str) -> str:
     """Namespaced cache key — distinct from plain JD-analysis entries."""
-    from ai_engine.cache import JDAnalysisCache  # local import: cold-start friendly
+    from ai_engine.api import JDAnalysisCache  # local import: cold-start friendly
     return "intel_" + JDAnalysisCache.hash_jd(jd_text, job_title)
 
 
@@ -67,9 +67,8 @@ async def _run_and_cache(
     pipeline will retry if the user kicks off generation before we finish.
     """
     try:
-        from ai_engine.cache import get_jd_cache
+        from ai_engine.api import AIClient, get_jd_cache
         from ai_engine.chains.company_intel import CompanyIntelChain
-        from ai_engine.api import AIClient
 
         client = AIClient()
         chain = CompanyIntelChain(client)
@@ -101,7 +100,7 @@ async def prefetch_company_intel(
     key = _intel_cache_key(body.jd_text, body.job_title)
 
     try:
-        from ai_engine.cache import get_jd_cache
+        from ai_engine.api import get_jd_cache
         if get_jd_cache().get(key) is not None:
             return {"status": "cached", "jd_hash": key}
     except Exception as exc:

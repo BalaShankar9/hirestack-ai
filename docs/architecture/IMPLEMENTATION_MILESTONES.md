@@ -366,6 +366,15 @@ PRs: `m11-pr37` through `m11-pr45`. Pulls in every M7/M9-deferred item plus the 
 | **Rollout** | Endpoint contract preserved (Bearer auth + same metric names/labels). Content-type now `text/plain; version=1.0.0; charset=utf-8` (was `version=0.0.4`) — Prometheus scrapers accept both. Safe to deploy hot. |
 | **Files** | NEW: `backend/app/core/prometheus_collectors.py`, `backend/tests/test_prometheus_collectors.py` (11 tests). MODIFIED: `backend/main.py` (`prometheus_metrics` body slimmed to delegate to `render_metrics`; ~309 lines of hand-rolled exposition deleted), `backend/requirements.txt` (add `prometheus_client>=0.20,<1.0`), `backend/tests/test_queue_metrics.py` (six-families contract test now inspects collector module + asserts on rendered bytes), `backend/tests/unit/test_resilience_w8.py` (circuit-breaker contract test now inspects collector module), `docs/architecture/IMPLEMENTATION_MILESTONES.md` (this entry). |
 
+#### m11-pr39 — import-linter carve-out reduction (intel cache through facade) **(SHIPPED)**
+
+| | |
+|---|---|
+| **What landed** | Extended `ai_engine/api.py` to re-export `JDAnalysisCache` and `get_jd_cache`, then migrated `backend/app/api/routes/intel.py` from `from ai_engine.cache import …` to `from ai_engine.api import …` at all 3 local-import sites. Pruned the matching `backend.app.api.routes.intel -> ai_engine.cache` line from C3's `ignore_imports`. C3 sunset-2026-08-01 carve-outs reduced 7 → 6. Also added a transitive `ai_engine.client -> backend.app.services.pipeline_runtime` ignore to C2 (backend layered architecture) — the lazy try/except inside `ai_engine.client` is the existing C1 carve-out, but `prometheus_collectors` (m11-pr41) now triggers it transitively via `ai_engine.api`. All 4 import-linter contracts KEPT after the change. |
+| **Did NOT land** | The remaining 5 sunset-2026-08-01 C3 carve-outs (`analytics`, `generate.stream` ×2, `pipeline_runtime` ×3) were NOT migrated. Those source files are on the do-not-touch list for this branch (mid-mission by another concurrent agent), so the carve-outs are deferred to a follow-up PR. The original spec target was ≤ 3 — current count 6 — the gap is fully attributable to the do-not-touch boundary, not to design. The ai_engine/* C1 carve-outs (4 lazy `from backend.*` try/except inside `ai_engine.client`, `model_router`, `agents/tools`, `agents/sub_agents/base`) were also NOT touched — those require constructor-injection refactors of files on the do-not-touch list. |
+| **Rollout** | Pure import-graph refactor; no runtime behaviour change. `intel.py` calls the same cache class via the facade; smoke test passes. Backwards-compat: `ai_engine.cache` still exports the same symbols, so any test or external caller still works. Safe to deploy hot. |
+| **Files** | MODIFIED: `ai_engine/api.py` (+ cache re-exports), `backend/app/api/routes/intel.py` (3 imports swapped), `.importlinter` (− 1 C3 ignore, + 1 C2 transitive ignore), `docs/architecture/IMPLEMENTATION_MILESTONES.md` (this entry). |
+
 ---
 
 ## Stage A trailing items (M11+, no PR numbers yet)

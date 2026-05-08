@@ -55,6 +55,13 @@ emit = emit_phase
 
 from ai_engine.client import AIClient, get_ai_client
 
+# --- Cache surface (m11-pr39 — replaces direct ai_engine.cache imports) ---
+#
+# Lets backend callers use the JD-analysis cache without reaching into
+# ai_engine.cache directly. Removes one import-linter carve-out.
+
+from ai_engine.cache import JDAnalysisCache, get_jd_cache
+
 __all__ = [
     # model routing
     "available_task_types",
@@ -80,4 +87,7 @@ __all__ = [
     # client
     "AIClient",
     "get_ai_client",
+    # cache (m11-pr39)
+    "JDAnalysisCache",
+    "get_jd_cache",
 ]

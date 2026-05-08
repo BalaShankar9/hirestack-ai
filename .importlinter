@@ -55,6 +55,11 @@ ignore_imports =
     backend.app.api.* -> backend.app.core.rate_limit
     backend.app.api.* -> backend.app.core.idempotency
     backend.app.api.* -> backend.app.core.observability
+    # core/prometheus_collectors imports ai_engine.api (cache + client)
+    # for /metrics scrape; ai_engine.client has a lazy try/except into
+    # backend.app.services.pipeline_runtime (C1 carve-out, sunset
+    # 2026-08-01). The transitive edge would otherwise trip C2.
+    ai_engine.client -> backend.app.services.pipeline_runtime
 
 # ── C3: ai_engine consumed only via narrow surface. ──────────────
 # Backend code MUST import ai_engine through `ai_engine.api` only.
@@ -87,7 +92,7 @@ ignore_imports =
     # Direct ai_engine.cache reads — TODO(2026-08-01, M11-pr39):
     # route through ai_engine.api facade so the cache is an
     # implementation detail of the engine.
-    backend.app.api.routes.intel -> ai_engine.cache
+    # backend.app.api.routes.intel migrated to ai_engine.api in m11-pr39.
     backend.app.services.pipeline_runtime -> ai_engine.cache
 
 # ── C4: temporal workflow code is sandboxed. ─────────────────────
