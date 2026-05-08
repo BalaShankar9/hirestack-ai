@@ -72,3 +72,9 @@ langfuse>=2.40,<3.0
 # PR m6-pr17: Temporal workflow engine.
 # Rollback = unset TEMPORAL_HOST and stop the temporal_worker Procfile process.
 temporalio>=1.7,<2.0
+
+# PR m9-pr35: events codegen toolchain (M10 exit gate).
+# Pinned exactly so generated output stays byte-identical across machines and
+# CI — the codegen drift workflow runs `git diff --exit-code` after regeneration.
+# Invoked by `python packages/events/scripts/codegen.py --write --lang python`.
+datamodel-code-generator==0.57.0

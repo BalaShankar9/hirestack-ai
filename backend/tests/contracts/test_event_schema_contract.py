@@ -125,3 +125,26 @@ def test_pydantic_envelope_matches_wire_schema_required_fields():
         f"outbox row missing required wire fields: "
         f"{schema_required - set(row.keys())}"
     )
+
+
+# ── invariant 4: generated python client matches manual envelope ──────
+# (m9-pr35 / M10 exit gate: "Generated event clients in use by at least
+# one consumer per language." This test consumes the generated module.)
+def test_generated_python_envelope_matches_manual():
+    from app.core.events.envelope import EventEnvelope as ManualEnvelope
+    from app.core.events.generated import EventEnvelope as GeneratedEnvelope
+    from app.core.events.generated import (  # noqa: F401  (import = consumer wiring)
+        AimAssignmentCreatedV1,
+        AimSourceCreatedV1,
+        GenerationCompletedV1,
+        GenerationRequestedV1,
+        MissionDraftCreatedV1,
+    )
+
+    manual_fields = set(ManualEnvelope.model_fields.keys())
+    generated_fields = set(GeneratedEnvelope.model_fields.keys())
+    assert manual_fields == generated_fields, (
+        f"generated EventEnvelope drift: "
+        f"manual-only={manual_fields - generated_fields} "
+        f"generated-only={generated_fields - manual_fields}"
+    )
