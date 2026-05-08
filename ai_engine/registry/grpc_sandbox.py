@@ -201,8 +201,13 @@ def _make_generic_handler(
         response_serializer=lambda b: b,
     )
 
-    class _Handler(grpc.GenericRpcHandler):
-        def service(self, handler_call_details):  # type: ignore[override]
+    # grpc's type stubs declare ``GenericRpcHandler`` as ``Any``, so strict
+    # mypy flags both the subclass and the override. Both ignores are
+    # narrowly scoped and tied to the upstream stub gap.
+    class _Handler(grpc.GenericRpcHandler):  # type: ignore[misc]
+        def service(
+            self, handler_call_details: Any
+        ) -> Any:  # grpc.RpcMethodHandler | None, but stubs are Any
             if handler_call_details.method == GRPC_FULL_METHOD:
                 return method_handler
             return None
@@ -292,8 +297,8 @@ async def _ensure_runtime() -> _Client:
     with _singleton_lock:
         cached_client = _singleton["client"]
         cached_target = _singleton["target"]
-    if cached_client is not None and cached_target == target_env:
-        return cached_client  # type: ignore[return-value]
+    if isinstance(cached_client, _Client) and cached_target == target_env:
+        return cached_client
 
     if target_env == "" or target_env.lower() == "inproc":
         handle = await start_inproc_server()

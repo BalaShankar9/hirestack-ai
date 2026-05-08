@@ -404,7 +404,7 @@ PRs: `m11-pr37` through `m11-pr45`. Pulls in every M7/M9-deferred item plus the 
 
 | Item | Closes | Trigger to start |
 |---|---|---|
-| `mypy --strict` on `ai_engine/` | TD-1 | After M8 closed |
+| `mypy --strict` on `ai_engine/` | TD-1 | After M8 closed — **SHIPPED m12-pr01** (initial scope: `ai_engine.api`, `ai_engine.registry.*`; ratchet via [mypy.ini](../../mypy.ini) allowlist) |
 | Coverage gate at 70% on `ai_engine/` | TD-2 | After M8 closed |
 | `prometheus_client` migration for `/metrics` | TD-3 | After M8 closed |
 | Sentry redaction depth → 16 | TD-4 | Anytime; safe |

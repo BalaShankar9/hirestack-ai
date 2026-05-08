@@ -32,7 +32,16 @@ jobs:
           python-version: "3.11"
 
       - name: Install governance deps
-        run: pip install --quiet pyyaml import-linter
+        run: pip install --quiet pyyaml import-linter mypy==1.20.2
+
+      # ── mypy strict allowlist (TD-1, m12-pr01) ─────────────────
+      # Keeps mypy lenient by default and ratchets modules into
+      # ``strict = True`` one at a time via [mypy.ini](mypy.ini).
+      # This step MUST stay green: adding a module to the allowlist
+      # is the only way to ratchet, and removing one requires a
+      # written justification in the PR body.
+      - name: mypy strict allowlist (ai_engine)
+        run: python -m mypy --explicit-package-bases ai_engine
 
       # ── Architecture anti-patterns (blueprint §17) ─────────────
       - name: Architecture anti-patterns
