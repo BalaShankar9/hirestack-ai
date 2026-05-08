@@ -41,7 +41,7 @@ These are reserved numbers. The corresponding implementation PR cannot merge unt
 | 0031 | Multi-provider AI dispatch (P1-4) | Accepted 2026-05-08 | `m7-pr28` |
 | 0032 | Capability tokens for tools (P0-5) | Accepted 2026-05-08 | `m7-pr29` |
 | 0033 | Tool sandbox tier classifier (L0/L1/L2) | Accepted 2026-05-08 | `m7-pr29` |
-| 0034 | `ai_invocations` flight recorder schema | Proposed | `m7-pr30` |
+| 0034 | `ai_invocations` flight recorder schema | Accepted 2026-05-08 | `m7-pr30` |
 | 0035 | Strict event validation at OutboxWriter (P1-2) | Proposed | `m7-pr31` |
 | 0036 | Per-stage Temporal activities (P1-1) | Proposed | `m8-pr32` |
 | 0037 | Partition rotation strategy — `pg_cron` + native function for `events_outbox` (P0-1; pg_partman deferred to Stage B) | Accepted 2026-05-08 | `m7-pr27a` ✅ |

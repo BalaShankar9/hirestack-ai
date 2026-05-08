@@ -1005,6 +1005,46 @@ class AIClient:
         except Exception:
             pass
 
+    async def _record_invocation(
+        self,
+        *,
+        prompt_text: str,
+        response_text: str,
+        model: str,
+        task_type: Optional[str],
+        t_start: float,
+        outcome: str,
+        cascade_position: int = 0,
+        error: Optional[BaseException] = None,
+        tenant_id: Optional[str] = None,
+    ) -> None:
+        """ADR-0034 / m7-pr30: best-effort flight-recorder write.
+
+        Per-attempt write into ``public.ai_invocations``. Wrapped in a
+        broad except because the cascade loop must NEVER fail because of
+        telemetry. The recorder itself also swallows write failures —
+        this is a paranoid second layer.
+        """
+        try:
+            from ai_engine.observability.ai_invocations import get_recorder
+            latency_ms = int((time.monotonic() - t_start) * 1000)
+            in_tok = self._estimate_tokens(prompt_text)
+            out_tok = self._estimate_tokens(response_text) if response_text else 0
+            await get_recorder().record(
+                model=model,
+                prompt_text=prompt_text,
+                prompt_tokens=in_tok,
+                completion_tokens=out_tok,
+                latency_ms=latency_ms,
+                outcome=outcome,
+                task_type=task_type,
+                tenant_id=tenant_id,
+                cascade_position=cascade_position,
+                error=error,
+            )
+        except Exception as exc:  # pragma: no cover — paranoid fallback
+            logger.debug("ai_invocations_record_failed_outer: %s", exc)
+
     @staticmethod
     def _truncate_input(text: str, max_tokens: Optional[int] = None) -> str:
         """Truncate input text if it exceeds the configured max input token limit."""
@@ -1095,6 +1135,7 @@ class AIClient:
         last_exc: Optional[Exception] = None
         for i, candidate_model in enumerate(models):
             breaker = _get_model_breaker(candidate_model)
+            attempt_t0 = time.monotonic()
             try:
                 async with breaker:
                     result = await self._select_provider(candidate_model).complete(
@@ -1113,17 +1154,35 @@ class AIClient:
                         schema=None, temperature=temperature, max_tokens=max_tokens,
                         response=result,
                     )
+                    await self._record_invocation(
+                        prompt_text=prompt + (system or ""), response_text=result,
+                        model=candidate_model, task_type=task_type,
+                        t_start=attempt_t0, outcome="success", cascade_position=i,
+                    )
                     return result
             except CircuitBreakerOpen:
                 # Breaker open for this model — skip to next without counting as provider failure
                 logger.info("model_breaker_open: skipping=%s", candidate_model)
+                await self._record_invocation(
+                    prompt_text=prompt + (system or ""), response_text="",
+                    model=candidate_model, task_type=task_type,
+                    t_start=attempt_t0, outcome="breaker_open", cascade_position=i,
+                )
                 if i < len(models) - 1:
                     continue
                 raise
             except Exception as exc:
                 last_exc = exc
                 record_model_failure(candidate_model)
-                if i < len(models) - 1:
+                is_failover = i < len(models) - 1
+                await self._record_invocation(
+                    prompt_text=prompt + (system or ""), response_text="",
+                    model=candidate_model, task_type=task_type,
+                    t_start=attempt_t0,
+                    outcome="cascade_failover" if is_failover else "failure",
+                    cascade_position=i, error=exc,
+                )
+                if is_failover:
                     logger.warning(
                         "model_cascade_failover: failed=%s next=%s error=%s",
                         candidate_model, models[i + 1], str(exc)[:200],
@@ -1254,6 +1313,7 @@ class AIClient:
         last_exc: Optional[Exception] = None
         for i, candidate_model in enumerate(models):
             breaker = _get_model_breaker(candidate_model)
+            attempt_t0 = time.monotonic()
             try:
                 # PR m6-pr23: trace each cascade attempt through Langfuse.
                 from ai_engine.observability import trace_llm as _trace_llm
@@ -1303,9 +1363,20 @@ class AIClient:
                         cache_hit=False,
                         success=True,
                     )
+                    await self._record_invocation(
+                        prompt_text=prompt + (system or ""),
+                        response_text=json.dumps(result) if isinstance(result, (dict, list)) else str(result),
+                        model=candidate_model, task_type=task_type,
+                        t_start=attempt_t0, outcome="success", cascade_position=i,
+                    )
                     return result
             except CircuitBreakerOpen:
                 logger.info("model_breaker_open: skipping=%s", candidate_model)
+                await self._record_invocation(
+                    prompt_text=prompt + (system or ""), response_text="",
+                    model=candidate_model, task_type=task_type,
+                    t_start=attempt_t0, outcome="breaker_open", cascade_position=i,
+                )
                 if i < len(models) - 1:
                     emit_policy_decision(
                         "model_breaker_open",
@@ -1321,7 +1392,15 @@ class AIClient:
             except Exception as exc:
                 last_exc = exc
                 record_model_failure(candidate_model)
-                if i < len(models) - 1:
+                is_failover = i < len(models) - 1
+                await self._record_invocation(
+                    prompt_text=prompt + (system or ""), response_text="",
+                    model=candidate_model, task_type=task_type,
+                    t_start=attempt_t0,
+                    outcome="cascade_failover" if is_failover else "failure",
+                    cascade_position=i, error=exc,
+                )
+                if is_failover:
                     logger.warning(
                         "model_cascade_failover_json: failed=%s next=%s error=%s",
                         candidate_model, models[i + 1], str(exc)[:200],
@@ -1407,6 +1486,7 @@ class AIClient:
         last_exc: Optional[Exception] = None
         for i, candidate_model in enumerate(models):
             breaker = _get_model_breaker(candidate_model)
+            attempt_t0 = time.monotonic()
             try:
                 async with breaker:
                     result = await self._select_provider(candidate_model).chat(
@@ -1418,16 +1498,34 @@ class AIClient:
                         model=candidate_model, task_type=task_type or "",
                     )
                     record_model_success(candidate_model)
+                    await self._record_invocation(
+                        prompt_text=all_text + (system or ""), response_text=result,
+                        model=candidate_model, task_type=task_type,
+                        t_start=attempt_t0, outcome="success", cascade_position=i,
+                    )
                     return result
             except CircuitBreakerOpen:
                 logger.info("model_breaker_open: skipping=%s", candidate_model)
+                await self._record_invocation(
+                    prompt_text=all_text + (system or ""), response_text="",
+                    model=candidate_model, task_type=task_type,
+                    t_start=attempt_t0, outcome="breaker_open", cascade_position=i,
+                )
                 if i < len(models) - 1:
                     continue
                 raise
             except Exception as exc:
                 last_exc = exc
                 record_model_failure(candidate_model)
-                if i < len(models) - 1:
+                is_failover = i < len(models) - 1
+                await self._record_invocation(
+                    prompt_text=all_text + (system or ""), response_text="",
+                    model=candidate_model, task_type=task_type,
+                    t_start=attempt_t0,
+                    outcome="cascade_failover" if is_failover else "failure",
+                    cascade_position=i, error=exc,
+                )
+                if is_failover:
                     logger.warning(
                         "model_cascade_failover_chat: failed=%s next=%s error=%s",
                         candidate_model, models[i + 1], str(exc)[:200],

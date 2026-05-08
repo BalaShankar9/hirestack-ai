@@ -236,6 +236,14 @@ class Settings(BaseSettings):
     anthropic_default_model: str = "claude-3-5-sonnet-20241022"
     anthropic_max_tokens: int = 8192
 
+    # PR m7-pr30 (ADR-0034): ``ai_invocations`` flight recorder. When ON,
+    # ``AIInvocationsRecorder`` writes one row per terminal LLM call
+    # (success OR failure) into ``public.ai_invocations``. Writes are
+    # best-effort and never raise into the LLM call path. Default OFF;
+    # ships dark and is flipped per-environment after smoke.
+    # Sunset 2026-09-01.
+    ff_ai_invocations_recorder: bool = False
+
     @field_validator("supabase_http_retries")
     @classmethod
     def _clamp_retries(cls, v: int) -> int:
