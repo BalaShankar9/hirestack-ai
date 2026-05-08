@@ -77,6 +77,10 @@ class AIMReviewerAgent(BaseAgent):
 
         # 2) LLM reviewer (use Pro escalation if context says so)
         task_type = "aim_recon" if context.get("escalate_to_pro") else "aim_reviewer"
+        # Optional RAG context (PR m6-pr19b). Behind ff_aim_rag at the
+        # caller; reviewer just injects the markdown block when present.
+        retrieved_md = (context.get("retrieved_sources_markdown") or "").strip()
+        rag_block = f"\n{retrieved_md}\n\n" if retrieved_md else ""
         prompt = (
             f"DIRECTIVE: {parsed.get('directive', 'analyse')}\n"
             f"ACADEMIC LEVEL: {parsed.get('academic_level', 'ug')}\n"
@@ -85,6 +89,7 @@ class AIMReviewerAgent(BaseAgent):
             f"RUBRIC CRITERIA: {parsed.get('rubric_breakdown', [])}\n"
             f"DISTINCTION STRATEGY: {recon.get('distinction_strategy', '')}\n\n"
             f"DETERMINISTIC FILTER HITS (already counted as critical issues): {det_issues}\n\n"
+            f"{rag_block}"
             f"SECTION CONTENT:\n{section_content}\n\n"
             "Score honestly. Be harsh."
         )
@@ -144,5 +149,6 @@ class AIMReviewerAgent(BaseAgent):
                 "weighted_score": weighted,
                 "passed_gate": verdict == "pass",
                 "in_grey_zone": GREY_ZONE[0] <= weighted < GREY_ZONE[1],
+                "rag_used": bool(retrieved_md),
             },
         )

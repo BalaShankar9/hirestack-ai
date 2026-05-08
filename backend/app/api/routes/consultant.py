@@ -126,7 +126,7 @@ async def ask_coach(
 ):
     """Ask the AI coach a question about an application."""
     from app.core.database import get_db, TABLES
-    from ai_engine.client import AIClient
+    from ai_engine.api import AIClient
     from ai_engine.chains.application_coach import ApplicationCoachChain
 
     db = get_db()

@@ -14,11 +14,13 @@ PyJWT>=2.12.0,<3.0
 # AI
 openai>=1.30,<2.0
 google-genai>=1.0,<2.0
+anthropic>=0.40,<1.0
 json-repair>=0.30,<0.50
 
 # Validation
 pydantic>=2.10,<3.0
 pydantic-settings>=2.5,<3.0
+jsonschema>=4.21,<5
 email-validator==2.1.0
 
 # File processing — pypdf 6.10.2+ closes 23 CVEs; pillow 12.2.0+ closes CVE-2026-40192.
@@ -52,8 +54,31 @@ httpx>=0.24,<1.0
 python-dateutil>=2.8,<3.0
 tenacity>=8.2,<10.0
 structlog>=24.1,<26.0
+prometheus_client>=0.20,<1.0
+# m11-pr44: L2 gRPC sandbox runtime. grpcio-tools NOT pinned — we
+# hand-roll the wire format so no .proto compile step is needed.
+grpcio>=1.60,<2.0
 aiofiles>=23.2,<26.0
 markdown>=3.8.1,<4.0
 slowapi>=0.1.9,<0.2
 nh3>=0.2,<0.4
 selectolax>=0.3,<0.4
+
+# PR m4-pr12: observability (optional, lazy-imported).
+# Rollback = unset OTEL_EXPORTER_OTLP_ENDPOINT and LANGFUSE_PUBLIC_KEY.
+opentelemetry-api>=1.25,<2.0
+opentelemetry-sdk>=1.25,<2.0
+opentelemetry-exporter-otlp-proto-http>=1.25,<2.0
+opentelemetry-instrumentation-fastapi>=0.46b0,<1.0
+opentelemetry-instrumentation-httpx>=0.46b0,<1.0
+langfuse>=2.40,<3.0
+
+# PR m6-pr17: Temporal workflow engine.
+# Rollback = unset TEMPORAL_HOST and stop the temporal_worker Procfile process.
+temporalio>=1.7,<2.0
+
+# PR m9-pr35: events codegen toolchain (M10 exit gate).
+# Pinned exactly so generated output stays byte-identical across machines and
+# CI — the codegen drift workflow runs `git diff --exit-code` after regeneration.
+# Invoked by `python packages/events/scripts/codegen.py --write --lang python`.
+datamodel-code-generator==0.57.0

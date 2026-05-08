@@ -39,6 +39,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.safe_fetch import UnsafeURLError, safe_follow_get
 from app.core.security import limiter
 from app.services.posting_legitimacy import evaluate_posting_legitimacy
 from app.services.url_canonicalizer import canonicalize_url
@@ -158,18 +159,25 @@ async def fetch_posting(url: str) -> Tuple[int, str, str]:
 
     Returns (status_code, final_url, body_html). Never raises;
     on timeout/network error returns (0, url, "").
+
+    Uses :func:`app.core.safe_fetch.safe_follow_get`, which re-validates
+    every redirect hop against the SSRF gate. Without that, a public
+    URL could 30x to ``http://169.254.169.254/`` and we would happily
+    fetch cloud-instance metadata back to an anonymous caller.
     """
     headers = {"User-Agent": _USER_AGENT, "Accept": "text/html,application/xhtml+xml"}
     try:
-        async with httpx.AsyncClient(
+        result = await safe_follow_get(
+            url,
             timeout=_FETCH_TIMEOUT_S,
-            follow_redirects=True,
+            max_bytes=_MAX_BODY_BYTES,
             max_redirects=3,
             headers=headers,
-        ) as client:
-            resp = await client.get(url)
-            body = resp.text[:_MAX_BODY_BYTES]
-            return resp.status_code, str(resp.url), body
+        )
+        return result.status_code, result.final_url, result.body
+    except UnsafeURLError as exc:
+        logger.warning("ghost_check_blocked url=%s reason=%s", url[:200], str(exc)[:200])
+        return 0, url, ""
     except httpx.HTTPError as exc:
         logger.warning("ghost_check_fetch_failed url=%s err=%s", url[:200], str(exc)[:200])
         return 0, url, ""

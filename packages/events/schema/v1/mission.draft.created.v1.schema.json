@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hirestack.ai/events/v1/mission.draft.created.v1.schema.json",
+  "title": "MissionDraftCreatedV1",
+  "description": "Emitted when a new mission draft is created (by user or by an agent).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_type", "event_version", "payload"],
+  "properties": {
+    "event_type": { "const": "mission.draft.created" },
+    "event_version": { "const": 1 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mission_id", "draft_id", "author"],
+      "properties": {
+        "mission_id": { "type": "string", "format": "uuid" },
+        "draft_id":   { "type": "string", "format": "uuid" },
+        "author":     { "type": "string", "enum": ["user", "agent"] },
+        "title":      { "type": ["string", "null"] }
+      }
+    }
+  }
+}

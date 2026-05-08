@@ -4,11 +4,11 @@ Main entry point for the backend API
 """
 import asyncio
 import json
-import sys
-from pathlib import Path
 
-# Add parent directory to path for ai_engine imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# PR m4-pr11: ai_engine is now an installed editable package (see
+# backend/requirements.txt → `-e ../ai_engine`). The legacy
+# `sys.path.insert` hack used to live here; deleting it forces all
+# downstream imports to go through the proper package surface.
 
 import structlog
 from contextlib import asynccontextmanager
@@ -138,7 +138,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Hydrate cost optimizer quality observations from DB
     try:
-        from ai_engine.model_router import hydrate_quality_observations
+        from ai_engine.api import hydrate_quality_observations
         loaded = hydrate_quality_observations()
         if loaded:
             logger.info("Quality observations hydrated", count=loaded)
@@ -178,20 +178,40 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     except Exception:
         pass
 
-    # Start periodic stale job cleanup (every 10 minutes)
-    _stale_cleanup_task = asyncio.create_task(_periodic_stale_job_cleanup())
-
-    # Start the v4 JobWatchdog — flips stalled `running` jobs to `failed`
-    # so the UI never spins forever after a worker crash.
+    # Scheduler tasks: run in-process only when the legacy flag is on.
+    # When `legacy_inproc_scheduler=False`, these are owned by `app.scheduler.main`
+    # (a dedicated process holding a Redis leader lock). Default remains True so
+    # this PR is a pure no-op until operators flip the flag after deploying the
+    # scheduler process. Rollback: set env LEGACY_INPROC_SCHEDULER=true.
+    #
+    # m11-pr43: scheduler-side fire-and-forget tasks are now adopted into
+    # ``scheduler_registry`` so lifespan shutdown can drain them through one
+    # generic helper instead of bespoke cancel/await blocks.
+    from app.core.task_registry import scheduler_registry
+    _stale_cleanup_task = None
     _watchdog = None
-    try:
-        from app.services.job_watchdog import JobWatchdog
-        from app.core.database import TABLES
-        _watchdog = JobWatchdog(get_supabase(), TABLES)
-        _watchdog.start()
-        app.state._job_watchdog = _watchdog
-    except Exception as wd_err:
-        logger.warning("Failed to start JobWatchdog", error=str(wd_err)[:200])
+    if settings.legacy_inproc_scheduler:
+        # Start periodic stale job cleanup (every 10 minutes)
+        _stale_cleanup_task = scheduler_registry.spawn(
+            _periodic_stale_job_cleanup(),
+            name="scheduler-stale-job-cleanup",
+        )
+
+        # Start the v4 JobWatchdog — flips stalled `running` jobs to `failed`
+        # so the UI never spins forever after a worker crash.
+        try:
+            from app.services.job_watchdog import JobWatchdog
+            from app.core.database import TABLES
+            _watchdog = JobWatchdog(get_supabase(), TABLES)
+            scheduler_registry.adopt(_watchdog.start())
+            app.state._job_watchdog = _watchdog
+        except Exception as wd_err:
+            logger.warning("Failed to start JobWatchdog", error=str(wd_err)[:200])
+    else:
+        logger.info(
+            "In-process scheduler disabled (legacy_inproc_scheduler=False); "
+            "expecting dedicated `app.scheduler.main` process to hold leader lock"
+        )
 
     # Register SIGTERM handler for graceful shutdown (Railway sends SIGTERM)
     import signal
@@ -231,11 +251,39 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     except Exception as e:
         logger.warning("Generation task drain failed", error=str(e))
 
-    _stale_cleanup_task.cancel()
+    # ADR-0041 (P0-4): drain in-flight bootstrap dispatch coroutines.
+    # These are short-lived (Temporal handoff / Redis enqueue / fallback
+    # decision); we give them a bounded grace period to finish so a job
+    # accepted right before SIGTERM is never orphaned in `queued`.
     try:
-        await _stale_cleanup_task
-    except asyncio.CancelledError:
-        pass
+        from app.api.routes.generate import _BOOTSTRAP_TASKS
+        if _BOOTSTRAP_TASKS:
+            logger.info(
+                "Draining bootstrap dispatch tasks",
+                count=len(_BOOTSTRAP_TASKS),
+            )
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*list(_BOOTSTRAP_TASKS), return_exceptions=True),
+                    timeout=5.0,
+                )
+                logger.info("Bootstrap dispatch tasks drained")
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Bootstrap dispatch drain timed out; cancelling",
+                    remaining=len(_BOOTSTRAP_TASKS),
+                )
+                for t in list(_BOOTSTRAP_TASKS):
+                    t.cancel()
+    except Exception as e:
+        logger.warning("Bootstrap task drain failed", error=str(e))
+
+    if _stale_cleanup_task is not None:
+        _stale_cleanup_task.cancel()
+        try:
+            await _stale_cleanup_task
+        except asyncio.CancelledError:
+            pass
     # Stop the v4 JobWatchdog
     if _watchdog is not None:
         try:
@@ -322,6 +370,20 @@ app.add_middleware(MaxBodySizeMiddleware)
 # Global request timeout — safety net for unexpectedly slow requests (120 s)
 app.add_middleware(TimeoutMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+
+# PR m1-pr3: Idempotency-Key dedupe for POST/PATCH/DELETE.
+# Disabled by default; enable per-env via IDEMPOTENCY_ENABLED=true once the
+# `idempotency_keys` table migration has been applied.
+if settings.idempotency_enabled:
+    from app.core.idempotency import IdempotencyMiddleware  # noqa: E402
+    app.add_middleware(IdempotencyMiddleware)
+    logger.info("Idempotency middleware enabled")
+
+# PR m4-pr12: optional OpenTelemetry (OTLP HTTP) instrumentation.
+# No-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set; rollback = unset that env.
+from app.core.telemetry import setup_telemetry  # noqa: E402
+
+setup_telemetry(app)
 
 
 # Exception handlers
@@ -428,242 +490,20 @@ async def prometheus_metrics(request: Request):
     Grafana Cloud, and Railway metrics.
 
     S11-F1: gated by `settings.metrics_auth_token` Bearer in production.
+    m11-pr41: exposition is now generated by ``prometheus_client``.
+    The endpoint stays here for the auth gate; metric assembly lives in
+    ``app.core.prometheus_collectors.HirestackCollector``.
     """
     auth_fail = _check_metrics_auth(request)
     if auth_fail is not None:
         return auth_fail
-    lines: list[str] = []
-
-    # Pipeline run metrics
-    try:
-        from app.core.metrics import MetricsCollector
-        stats = MetricsCollector.get().get_stats()
-
-        active = stats.get("active_jobs", 0)
-        lines.append("# HELP hirestack_active_jobs Number of in-flight generation jobs")
-        lines.append("# TYPE hirestack_active_jobs gauge")
-        lines.append(f"hirestack_active_jobs {active}")
-
-        failovers = stats.get("model_failovers_total", 0)
-        lines.append("# HELP hirestack_model_failovers_total Cumulative model cascade failovers")
-        lines.append("# TYPE hirestack_model_failovers_total counter")
-        lines.append(f"hirestack_model_failovers_total {failovers}")
-
-        for pipeline_name, pstats in stats.get("pipelines", {}).items():
-            safe_name = pipeline_name.replace("-", "_").replace(" ", "_")
-            count = pstats.get("count", 0)
-            success_rate = pstats.get("success_rate", 0)
-            p50 = pstats.get("duration_p50_ms", 0)
-            p95 = pstats.get("duration_p95_ms", 0)
-
-            lines.append(f'hirestack_pipeline_runs_total{{pipeline="{safe_name}"}} {count}')
-            lines.append(f'hirestack_pipeline_success_rate{{pipeline="{safe_name}"}} {success_rate}')
-            lines.append(f'hirestack_pipeline_duration_p50_ms{{pipeline="{safe_name}"}} {p50}')
-            lines.append(f'hirestack_pipeline_duration_p95_ms{{pipeline="{safe_name}"}} {p95}')
-
-        for error_class, ecount in stats.get("error_counts", {}).items():
-            safe_class = error_class.replace('"', '\\"')
-            lines.append(f'hirestack_errors_total{{error_class="{safe_class}"}} {ecount}')
-    except Exception:
-        pass
-
-    # Circuit breaker states
-    try:
-        from app.core.circuit_breaker import _breakers
-        lines.append("# HELP hirestack_circuit_breaker_state Circuit breaker state (0=closed, 1=half_open, 2=open)")
-        lines.append("# TYPE hirestack_circuit_breaker_state gauge")
-        state_map = {"closed": 0, "half_open": 1, "open": 2}
-        for name, breaker in _breakers.items():
-            state_val = state_map.get(breaker.state.value, -1)
-            safe_name = name.replace("-", "_").replace(" ", "_")
-            lines.append(f'hirestack_circuit_breaker_state{{breaker="{safe_name}"}} {state_val}')
-            lines.append(f'hirestack_circuit_breaker_failures{{breaker="{safe_name}"}} {breaker.failure_count}')
-    except Exception:
-        pass
-
-    # Redis / queue depth
-    try:
-        from app.core.queue import queue_depth
-        depth = queue_depth()
-        lines.append("# HELP hirestack_queue_depth Pending jobs in Redis Streams queue")
-        lines.append("# TYPE hirestack_queue_depth gauge")
-        lines.append(f"hirestack_queue_depth {max(0, depth)}")
-    except Exception:
-        pass
-
-    # AI cache hit rates (response cache, JD analysis cache, pipeline cache)
-    try:
-        from ai_engine.cache import get_all_cache_stats
-        cache_stats = get_all_cache_stats()
-        lines.append("# HELP hirestack_ai_cache_hits_total Cumulative cache hits per layer")
-        lines.append("# TYPE hirestack_ai_cache_hits_total counter")
-        lines.append("# HELP hirestack_ai_cache_misses_total Cumulative cache misses per layer")
-        lines.append("# TYPE hirestack_ai_cache_misses_total counter")
-        lines.append("# HELP hirestack_ai_cache_hit_rate Hit rate percentage per cache layer")
-        lines.append("# TYPE hirestack_ai_cache_hit_rate gauge")
-        lines.append("# HELP hirestack_ai_cache_size Entries currently held per cache layer")
-        lines.append("# TYPE hirestack_ai_cache_size gauge")
-        for layer_name, layer_stats in (cache_stats or {}).items():
-            if not isinstance(layer_stats, dict):
-                continue
-            safe = layer_name.replace("-", "_")
-            lines.append(
-                f'hirestack_ai_cache_hits_total{{layer="{safe}"}} '
-                f'{int(layer_stats.get("hits", 0))}'
-            )
-            lines.append(
-                f'hirestack_ai_cache_misses_total{{layer="{safe}"}} '
-                f'{int(layer_stats.get("misses", 0))}'
-            )
-            lines.append(
-                f'hirestack_ai_cache_hit_rate{{layer="{safe}"}} '
-                f'{float(layer_stats.get("hit_rate_pct", 0))}'
-            )
-            lines.append(
-                f'hirestack_ai_cache_size{{layer="{safe}"}} '
-                f'{int(layer_stats.get("size", 0))}'
-            )
-    except Exception:
-        pass
-
-    # Per-phase latency percentiles from the in-process rolling window
-    try:
-        from app.core.metrics import MetricsCollector
-        stage_stats = MetricsCollector.get().get_stage_stats()
-        if stage_stats:
-            lines.append("# HELP hirestack_phase_duration_p50_ms Median phase duration (ms)")
-            lines.append("# TYPE hirestack_phase_duration_p50_ms gauge")
-            lines.append("# HELP hirestack_phase_duration_p95_ms 95th-pct phase duration (ms)")
-            lines.append("# TYPE hirestack_phase_duration_p95_ms gauge")
-            lines.append("# HELP hirestack_phase_success_rate Phase success rate (0-1)")
-            lines.append("# TYPE hirestack_phase_success_rate gauge")
-            for phase_name, ps in stage_stats.items():
-                safe = phase_name.replace("-", "_").replace(" ", "_")
-                lines.append(
-                    f'hirestack_phase_duration_p50_ms{{phase="{safe}"}} '
-                    f'{int(ps.get("p50_ms", 0))}'
-                )
-                lines.append(
-                    f'hirestack_phase_duration_p95_ms{{phase="{safe}"}} '
-                    f'{int(ps.get("p95_ms", 0))}'
-                )
-                lines.append(
-                    f'hirestack_phase_success_rate{{phase="{safe}"}} '
-                    f'{float(ps.get("success_rate", 0))}'
-                )
-    except Exception:
-        pass
-
-    # Per-doc deterministic quality scores (W2 Intelligence & quality)
-    try:
-        from app.core.metrics import MetricsCollector
-        dq_stats = MetricsCollector.get().get_doc_quality_stats()
-        if dq_stats:
-            lines.append("# HELP hirestack_doc_quality_mean Mean doc quality (0-100)")
-            lines.append("# TYPE hirestack_doc_quality_mean gauge")
-            lines.append("# HELP hirestack_doc_quality_p50 Median doc quality (0-100)")
-            lines.append("# TYPE hirestack_doc_quality_p50 gauge")
-            lines.append("# HELP hirestack_doc_quality_p95 95th-pct doc quality (0-100)")
-            lines.append("# TYPE hirestack_doc_quality_p95 gauge")
-            lines.append("# HELP hirestack_doc_quality_min Min doc quality (0-100)")
-            lines.append("# TYPE hirestack_doc_quality_min gauge")
-            for doc_type, qs in dq_stats.items():
-                safe = doc_type.replace("-", "_").replace(" ", "_")
-                lines.append(
-                    f'hirestack_doc_quality_mean{{doc_type="{safe}"}} '
-                    f'{float(qs.get("mean", 0))}'
-                )
-                lines.append(
-                    f'hirestack_doc_quality_p50{{doc_type="{safe}"}} '
-                    f'{int(qs.get("p50", 0))}'
-                )
-                lines.append(
-                    f'hirestack_doc_quality_p95{{doc_type="{safe}"}} '
-                    f'{int(qs.get("p95", 0))}'
-                )
-                lines.append(
-                    f'hirestack_doc_quality_min{{doc_type="{safe}"}} '
-                    f'{int(qs.get("min", 0))}'
-                )
-    except Exception:
-        pass
-
-    # ── W3 Observability: LLM call/token counters per model+task_type ──
-    try:
-        from app.core.metrics import MetricsCollector
-        llm_stats = MetricsCollector.get().get_llm_call_stats()
-        if llm_stats:
-            lines.append("# HELP hirestack_llm_calls_total LLM calls per model and task type")
-            lines.append("# TYPE hirestack_llm_calls_total counter")
-            lines.append("# HELP hirestack_llm_tokens_in_total LLM input tokens per model and task type")
-            lines.append("# TYPE hirestack_llm_tokens_in_total counter")
-            lines.append("# HELP hirestack_llm_tokens_out_total LLM output tokens per model and task type")
-            lines.append("# TYPE hirestack_llm_tokens_out_total counter")
-            for _key, ls in llm_stats.items():
-                m = (ls.get("model") or "unknown").replace("-", "_").replace(".", "_").replace("/", "_")
-                t = (ls.get("task_type") or "unknown").replace("-", "_").replace(" ", "_")
-                lines.append(
-                    f'hirestack_llm_calls_total{{model="{m}",task_type="{t}"}} {int(ls.get("calls", 0))}'
-                )
-                lines.append(
-                    f'hirestack_llm_tokens_in_total{{model="{m}",task_type="{t}"}} {int(ls.get("tokens_in", 0))}'
-                )
-                lines.append(
-                    f'hirestack_llm_tokens_out_total{{model="{m}",task_type="{t}"}} {int(ls.get("tokens_out", 0))}'
-                )
-    except Exception:
-        pass
-
-    # ── W3 Observability: daily cost (USD cents) from _DailyUsageTracker ──
-    try:
-        from ai_engine.client import _daily_tracker  # type: ignore
-        s = _daily_tracker.stats
-        lines.append("# HELP hirestack_ai_daily_cost_cents Estimated AI cost today (USD cents)")
-        lines.append("# TYPE hirestack_ai_daily_cost_cents gauge")
-        lines.append(f'hirestack_ai_daily_cost_cents {int(round(float(s.get("total_cost_usd", 0)) * 100))}')
-        lines.append("# HELP hirestack_ai_daily_calls_total Total AI calls today")
-        lines.append("# TYPE hirestack_ai_daily_calls_total gauge")
-        lines.append(f'hirestack_ai_daily_calls_total {int(s.get("total_calls", 0))}')
-        lines.append("# HELP hirestack_ai_daily_tokens_total Total AI tokens today")
-        lines.append("# TYPE hirestack_ai_daily_tokens_total gauge")
-        lines.append(f'hirestack_ai_daily_tokens_total {int(s.get("total_tokens", 0))}')
-        lines.append("# HELP hirestack_ai_daily_cache_hits_total Total cache hits today")
-        lines.append("# TYPE hirestack_ai_daily_cache_hits_total gauge")
-        lines.append(f'hirestack_ai_daily_cache_hits_total {int(s.get("cache_hits", 0))}')
-    except Exception:
-        pass
-
-    # ── W8: circuit-breaker state per provider ─────────────────────
-    # Encoded as numeric so Prometheus alerting can fire on != 0:
-    #   0 = closed (healthy), 1 = half_open (probing), 2 = open (failing fast)
-    try:
-        from app.core.circuit_breaker import _breakers, CircuitState
-        _state_code = {
-            CircuitState.CLOSED: 0,
-            CircuitState.HALF_OPEN: 1,
-            CircuitState.OPEN: 2,
-        }
-        if _breakers:
-            lines.append("# HELP hirestack_circuit_breaker_state Circuit breaker state (0=closed,1=half_open,2=open)")
-            lines.append("# TYPE hirestack_circuit_breaker_state gauge")
-            lines.append("# HELP hirestack_circuit_breaker_failures Failure count per breaker")
-            lines.append("# TYPE hirestack_circuit_breaker_failures gauge")
-            for _name, _br in _breakers.items():
-                _safe = _name.replace("-", "_").replace(".", "_").replace("/", "_")
-                lines.append(
-                    f'hirestack_circuit_breaker_state{{name="{_safe}"}} {_state_code.get(_br.state, 0)}'
-                )
-                lines.append(
-                    f'hirestack_circuit_breaker_failures{{name="{_safe}"}} {int(_br.failure_count)}'
-                )
-    except Exception:
-        pass
 
     from starlette.responses import Response
-    return Response(
-        content="\n".join(lines) + "\n",
-        media_type="text/plain; version=0.0.4; charset=utf-8",
-    )
+    from app.core.prometheus_collectors import render_metrics
+
+    body, content_type = render_metrics()
+    return Response(content=body, media_type=content_type)
+
 
 
 # ── W8: split liveness from readiness ─────────────────────────────────
@@ -708,6 +548,9 @@ async def collect_frontend_errors(request: Request, batch: _FEErrorBatch) -> Non
 
 # Include API routes
 app.include_router(api_router, prefix="/api")
+# PR m4-pr13: dual-mount under /api/v1 for the new typed SDK. Legacy /api stays
+# live for one release for rollback safety; remove after PR-13 + 1 release.
+app.include_router(api_router, prefix="/api/v1")
 
 
 if __name__ == "__main__":

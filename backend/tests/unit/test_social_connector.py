@@ -260,12 +260,13 @@ class TestConnectWebsiteSsrf:
     async def test_blocked_ipv4(self, ip):
         conn = SocialConnector()
         # getaddrinfo returns a list of (family, type, proto, canonname, sockaddr).
-        # SocialConnector reads sockaddr[0] and feeds it to ip_address().
+        # safe_fetch's assert_safe_url calls socket.getaddrinfo and raises
+        # UnsafeURLError on private IPs; _connect_website wraps it.
         with patch(
             "socket.getaddrinfo",
             return_value=[(2, 1, 6, "", (ip, 443))],
         ):
-            with pytest.raises(ValueError, match="private/internal"):
+            with pytest.raises(ValueError, match="SSRF guard"):
                 await conn._connect_website("https://evil.example.com")
 
     @pytest.mark.asyncio
@@ -283,7 +284,7 @@ class TestConnectWebsiteSsrf:
             "socket.getaddrinfo",
             return_value=[(10, 1, 6, "", (ip, 443, 0, 0))],
         ):
-            with pytest.raises(ValueError, match="private/internal"):
+            with pytest.raises(ValueError, match="SSRF guard"):
                 await conn._connect_website("https://evil.example.com")
 
     @pytest.mark.asyncio
@@ -295,14 +296,17 @@ class TestConnectWebsiteSsrf:
             "socket.getaddrinfo",
             side_effect=_socket.gaierror("nope"),
         ):
-            with pytest.raises(ValueError, match="Could not resolve hostname"):
+            # safe_fetch maps DNS failure to UnsafeURLError("dns_failed: ...")
+            # which _connect_website wraps in ValueError("URL blocked by SSRF guard: ...").
+            with pytest.raises(ValueError, match="SSRF guard"):
                 await conn._connect_website("https://no-such-host.invalid")
 
     @pytest.mark.asyncio
     async def test_invalid_url_no_hostname_raises(self):
         conn = SocialConnector()
-        with pytest.raises(ValueError, match="Invalid URL"):
-            # urlparse("https://").hostname is None → guard fires.
+        # urlparse("https://").hostname is None — safe_fetch raises
+        # UnsafeURLError, wrapped to "URL blocked by SSRF guard".
+        with pytest.raises(ValueError, match="SSRF guard"):
             await conn._connect_website("https://")
 
     @pytest.mark.asyncio
@@ -316,7 +320,7 @@ class TestConnectWebsiteSsrf:
             "socket.getaddrinfo",
             return_value=[(2, 1, 6, "", ("10.0.0.1", 443))],
         ):
-            with pytest.raises(ValueError, match="private/internal"):
+            with pytest.raises(ValueError, match="SSRF guard"):
                 # Note: NO scheme; implementation must prepend it
                 # before urlparse, otherwise this would fail with
                 # "Invalid URL".

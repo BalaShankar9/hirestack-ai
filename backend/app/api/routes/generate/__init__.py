@@ -62,6 +62,7 @@ from .jobs import (  # noqa: E402, F401
     _finalize_orphaned_job,
     _mark_application_generation_finished,
     _ACTIVE_GENERATION_TASKS,
+    _BOOTSTRAP_TASKS,
     _CAMEL_TO_SNAKE,
     _SNAKE_TO_CAMEL,
     _IDENTITY_KEYS,

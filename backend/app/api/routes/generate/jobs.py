@@ -48,11 +48,34 @@ router = APIRouter()
 _ACTIVE_GENERATION_TASKS: Dict[str, asyncio.Task] = {}
 _JOB_TOTAL_STEPS = 7
 
+# ADR-0041 (P0-4): managed registry for short-lived bootstrap coroutines
+# fired by `_start_generation_job*`. Holds strong references so they are
+# not GC'd mid-flight, surfaces exceptions via done-callback, and is
+# drained by the FastAPI lifespan handler on SIGTERM so a job is never
+# orphaned between request acceptance and dispatch.
+#
+# m11-pr43: the bookkeeping moved to the generic ``app.core.task_registry``
+# module. ``_BOOTSTRAP_TASKS`` is kept as a backwards-compatible alias so
+# the FastAPI lifespan + ``queue_metrics.set_bootstrap_inflight`` keep
+# working without churn.
+from app.core.task_registry import bootstrap_registry as _bootstrap_registry
+
+_BOOTSTRAP_TASKS: "set[asyncio.Task]" = _bootstrap_registry._tasks  # type: ignore[assignment]
+
+
+def _track_bootstrap(coro, *, name: str) -> asyncio.Task:
+    """Create + register a fire-and-forget bootstrap task. See ADR-0041.
+
+    Thin shim over ``bootstrap_registry.spawn`` — kept as a named function
+    so call sites stay readable and the failure-hook → metrics integration
+    is exercised through the registry rather than re-implemented here."""
+    return _bootstrap_registry.spawn(coro, name=name)
+
 
 def _get_model_health_summary() -> Dict[str, Any]:
     """Best-effort model health for job status responses."""
     try:
-        from ai_engine.model_router import get_model_health
+        from ai_engine.api import get_model_health
         return get_model_health()
     except Exception:
         return {}
@@ -1116,7 +1139,7 @@ async def _run_generation_job_inner(job_id: str, user_id: str) -> None:
         requested_modules,
     )
 
-    from ai_engine.client import AIClient
+    from ai_engine.api import AIClient
     from ai_engine.chains.company_intel import CompanyIntelChain
     from ai_engine.chains.role_profiler import RoleProfilerChain
     from ai_engine.chains.benchmark_builder import BenchmarkBuilderChain
@@ -1323,7 +1346,7 @@ async def _run_generation_job_inner_runtime(job_id: str, user_id: str) -> None:
     # runtime path emits only PipelineEvent rows (progress / detail) and
     # all tool_call / tool_result / cache_hit / evidence_added /
     # policy_decision events fired inside chains go to /dev/null.
-    from ai_engine.agent_events import set_event_emitter, reset_event_emitter
+    from ai_engine.api import set_event_emitter, reset_event_emitter
 
     _runtime_event_seq = {"n": 0}
 
@@ -1463,33 +1486,170 @@ def _start_generation_job(job_id: str, user_id: str) -> None:
     if job_id in _ACTIVE_GENERATION_TASKS:
         return
 
-    # Try to enqueue to Redis Streams for the dedicated worker process.
-    # Falls back to in-process asyncio.create_task when Redis is unavailable.
+    # PR m6-pr18 strangler: when ff_temporal_generation is on AND
+    # Temporal is configured, dispatch the workflow instead of the
+    # legacy Redis/in-process path. Any failure (config missing,
+    # client error) falls through to the legacy path so a Temporal
+    # outage cannot wedge the generation pipeline.
+    try:
+        from app.core.config import settings as _settings
+
+        if getattr(_settings, "ff_temporal_generation", False):
+            from app.temporal.config import load_settings as _load_temporal
+
+            _temporal_cfg = _load_temporal()
+            if _temporal_cfg.enabled:
+                async def _try_temporal() -> None:
+                    try:
+                        from app.temporal.dispatch import (
+                            dispatch_generation_workflow,
+                        )
+
+                        await dispatch_generation_workflow(
+                            job_id=job_id,
+                            user_id=user_id,
+                            application_id="",
+                            requested_modules=[],
+                            settings=_temporal_cfg,
+                        )
+                        logger.info(
+                            "generation_job_temporal_dispatched", job_id=job_id
+                        )
+                    except Exception as t_err:  # pragma: no cover - defensive
+                        from app.core import queue_metrics as _qm
+                        _qm.inc_dispatch_fallback("temporal_failed")
+                        logger.warning(
+                            "generation_job_temporal_failed_falling_back",
+                            job_id=job_id,
+                            error=str(t_err)[:200],
+                        )
+                        _start_generation_job_legacy(job_id, user_id)
+
+                _track_bootstrap(_try_temporal(), name=f"gen-bootstrap-temporal:{job_id}")
+                return
+    except Exception:  # pragma: no cover - defensive
+        # If anything in the strangler path fails (import, config), fall
+        # through to legacy. Logged via the legacy path's own telemetry.
+        pass
+
+    _start_generation_job_legacy(job_id, user_id)
+
+
+def _start_generation_job_legacy(job_id: str, user_id: str) -> None:
+    if job_id in _ACTIVE_GENERATION_TASKS:
+        return
+
+    # Tier-2: enqueue to Redis Streams for the dedicated worker process.
+    # ADR-0038 (P0-2): when Redis is unavailable we DO NOT silently run
+    # the pipeline in the web process. We honour ff_inprocess_fallback:
+    #   * flag OFF (production default) → mark the job failed with a
+    #     retryable message so the client retries cleanly and the
+    #     failure is durable.
+    #   * flag ON (dev / single-process deploys) → bounded in-process
+    #     execution via _start_generation_job_inprocess.
     try:
         from app.core.queue import enqueue_generation_job
 
-        # enqueue_generation_job is async — schedule it and let the coroutine
-        # decide whether Redis accepted the job.
         async def _try_enqueue() -> None:
             enqueued = await enqueue_generation_job(job_id, user_id)
             if enqueued:
                 logger.info("generation_job_enqueued", job_id=job_id)
                 return
-            # Redis unavailable — fall back to in-process
-            _start_generation_job_inprocess(job_id, user_id)
+            await _handle_redis_unavailable(job_id, user_id)
 
-        asyncio.create_task(_try_enqueue())
+        _track_bootstrap(_try_enqueue(), name=f"gen-bootstrap-enqueue:{job_id}")
+    except Exception as exc:
+        # Import failure or other unexpected error — treat as Redis unavailable.
+        logger.warning(
+            "generation_job_enqueue_setup_failed",
+            job_id=job_id,
+            error=str(exc)[:200],
+        )
+        # Schedule the async handler since we're in a sync function.
+        _track_bootstrap(
+            _handle_redis_unavailable(job_id, user_id),
+            name=f"gen-bootstrap-redis-unavailable:{job_id}",
+        )
+
+
+async def _handle_redis_unavailable(job_id: str, user_id: str) -> None:
+    """ADR-0038: branch on ff_inprocess_fallback when Redis is down."""
+    try:
+        from app.core.config import settings as _settings
+        flag_on = bool(getattr(_settings, "ff_inprocess_fallback", False))
     except Exception:
-        # Import or other failure — fall back
-        _start_generation_job_inprocess(job_id, user_id)
+        flag_on = False
+
+    if not flag_on:
+        from app.core import queue_metrics as _qm
+        _qm.inc_dispatch_fallback("redis_unavailable_dropped")
+        logger.error(
+            "generation_dispatch_failed_redis_unavailable",
+            job_id=job_id,
+            reason="redis_unavailable_and_inprocess_fallback_disabled",
+        )
+        await _finalize_orphaned_job(
+            job_id,
+            status="failed",
+            error_message=(
+                "Generation queue is temporarily unavailable. "
+                "Please retry in a moment."
+            ),
+        )
+        return
+
+    # Flag ON — dev/single-process path. Still bounded.
+    from app.core import queue_metrics as _qm
+    _qm.inc_dispatch_fallback("inprocess_fallback")
+    _start_generation_job_inprocess(job_id, user_id)
 
 
 def _start_generation_job_inprocess(job_id: str, user_id: str) -> None:
-    """Execute the generation job in the web process (fallback when no worker)."""
+    """Execute the generation job in the web process.
+
+    ADR-0038: callable only when ``ff_inprocess_fallback`` is on (the
+    upstream gate lives in :func:`_handle_redis_unavailable`). The
+    function is idempotent and enforces an explicit concurrency cap
+    via ``settings.inprocess_max_concurrent``. Over-cap requests are
+    failed fast — never silently queued.
+    """
     if job_id in _ACTIVE_GENERATION_TASKS:
         return
 
-    logger.info("generation_job_inprocess_fallback", job_id=job_id)
+    try:
+        from app.core.config import settings as _settings
+        cap = int(getattr(_settings, "inprocess_max_concurrent", 4))
+    except Exception:
+        cap = 4
+    cap = max(1, cap)
+
+    if len(_ACTIVE_GENERATION_TASKS) >= cap:
+        logger.error(
+            "generation_inprocess_saturated",
+            job_id=job_id,
+            active=len(_ACTIVE_GENERATION_TASKS),
+            cap=cap,
+        )
+        # Schedule a finalisation since this is a sync function.
+        _track_bootstrap(
+            _finalize_orphaned_job(
+                job_id,
+                status="failed",
+                error_message=(
+                    "Generation workers are saturated. "
+                    "Please retry in a moment."
+                ),
+            ),
+            name=f"gen-bootstrap-saturation-finalize:{job_id}",
+        )
+        return
+
+    logger.info(
+        "generation_job_inprocess_fallback",
+        job_id=job_id,
+        active=len(_ACTIVE_GENERATION_TASKS),
+        cap=cap,
+    )
 
     # Always use PipelineRuntime-backed execution
     task = asyncio.create_task(_run_generation_job_via_runtime(job_id, user_id))

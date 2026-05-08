@@ -1,0 +1,74 @@
+name: Codegen drift
+
+# Verifies that generated event clients (Python / TypeScript / Kotlin)
+# match the JSON Schemas in `packages/events/schema/v1/`.
+#
+# How it works:
+#   1. Re-run `python packages/events/scripts/codegen.py --write --all`.
+#   2. `git diff --exit-code` on the three output dirs and the schemas.
+#   3. If anything changed, the PR drifted — fail with a descriptive
+#      message pointing at `make codegen-events`.
+#
+# Reference: docs/architecture/IMPLEMENTATION_MILESTONES.md (M10 exit gate).
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/events/**"
+      - "backend/app/core/events/generated/**"
+      - "frontend/src/types/events/**"
+      - "mobile/lib/events/**"
+      - "packages/events/scripts/codegen.py"
+      - ".github/workflows/codegen.yml"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  codegen-drift:
+    name: Events codegen drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: "20"
+
+      - name: Install python codegen deps
+        run: pip install --quiet "datamodel-code-generator==0.57.0"
+
+      # No `npm install` needed for the JS toolchain — codegen.py invokes
+      # them via `npx --yes <pkg>@<ver>`. Pin via that mechanism keeps the
+      # workflow self-contained.
+
+      - name: Validate schemas
+        run: python packages/events/scripts/codegen.py --check
+
+      - name: Regenerate all language clients
+        run: python packages/events/scripts/codegen.py --write --all
+
+      - name: Detect drift
+        run: |
+          if ! git diff --exit-code -- \
+              backend/app/core/events/generated \
+              frontend/src/types/events \
+              mobile/lib/events; then
+            echo "::error::Generated event clients drifted from schemas. Run 'make codegen-events' locally and commit the result."
+            git --no-pager diff --stat -- \
+              backend/app/core/events/generated \
+              frontend/src/types/events \
+              mobile/lib/events
+            exit 1
+          fi

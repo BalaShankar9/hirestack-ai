@@ -17,7 +17,9 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:debug": "playwright test --debug",
-    "analyze": "ANALYZE=true npm run build"
+    "analyze": "ANALYZE=true npm run build",
+    "gen:sdk": "bash ../tools/codegen/openapi.sh",
+    "gen:events": "python3 ../packages/events/scripts/codegen.py --write --lang typescript"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.0.5",
@@ -87,6 +89,9 @@
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
     "vite": "^5.4.14",
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.9",
+    "openapi-typescript": "^7.4.0",
+    "openapi-fetch": "^0.13.0",
+    "json-schema-to-typescript": "^15.0.4"
   }
 }

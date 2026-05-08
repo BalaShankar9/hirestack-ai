@@ -1,0 +1,38 @@
+# m11-pr45: Local "staging-like" Postgres for testing migrations.
+#
+# Brings up an empty Postgres 16 you can apply the prod-schema dump
+# to. Use case: developer wants to test a migration locally without
+# pointing at the real staging DB.
+#
+# Usage:
+#   docker compose -f infra/staging-mirror.compose.yml up -d
+#   export STAGING_DATABASE_URL=postgres://hirestack:devpw@localhost:55432/hirestack_staging
+#   PROD_DATABASE_URL=$REAL_PROD_RO_URL ./scripts/ops/sync_staging_schema.sh
+#
+# Once finished:
+#   docker compose -f infra/staging-mirror.compose.yml down -v
+#
+# NOT for production. Bind-mounts only on the loopback interface;
+# password is intentionally trivial so an accidentally-exposed
+# instance is loud-failing rather than silently leaking.
+
+services:
+  staging-mirror-db:
+    image: postgres:16-alpine
+    container_name: hirestack-staging-mirror
+    environment:
+      POSTGRES_USER: hirestack
+      POSTGRES_PASSWORD: devpw
+      POSTGRES_DB: hirestack_staging
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - staging_mirror_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hirestack -d hirestack_staging"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  staging_mirror_data:

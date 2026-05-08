@@ -121,9 +121,144 @@ class Settings(BaseSettings):
     # Job queue
     queue_require_active_consumer: bool = True
 
+    # ADR-0038 (P0-2): in-process dispatch fallback. Default OFF in
+    # production — when Redis is unavailable the job is marked failed
+    # with a retryable message instead of running on the web fleet.
+    # Set to True only for dev / single-process deploys.
+    ff_inprocess_fallback: bool = False
+    # Hard cap on concurrent in-process generation jobs when the
+    # fallback flag is on. Over-cap requests are failed fast.
+    inprocess_max_concurrent: int = 4
+
+    # ADR-0040 (P0-3): ACK Redis Stream messages only after handler
+    # returns success. Default OFF — when False the consumer keeps the
+    # legacy always-ACK-in-finally behaviour. Flip ON per-environment
+    # after the processed_queue_events migration ships. Sunset
+    # 2026-09-01.
+    ff_queue_ack_on_success: bool = False
+    # Max XPENDING deliveries before a message is routed to the shared
+    # `events:dlq` stream and ACKed off the source. Only consulted when
+    # ff_queue_ack_on_success is True.
+    queue_max_deliveries: int = 5
+
     # Worker
     worker_name: str = "worker-1"
     worker_concurrency: int = 3
+
+    # Background career monitor
+    career_monitor_background_enabled: bool = True
+    career_monitor_interval_seconds: int = 900
+    career_monitor_user_batch_size: int = 20
+
+    # PR m1-pr3: Idempotency-Key middleware. Default off for safe rollout;
+    # flip on per-environment after migration ships.
+    idempotency_enabled: bool = False
+
+    # PR m2-pr6: scheduler extraction. While True (default), the web
+    # process keeps running periodic sweeps + JobWatchdog inline — same
+    # behaviour as before the split. Flip to False once the dedicated
+    # `scheduler` process (app.scheduler.main) is deployed and verified
+    # holding the leader lock; the web process will then skip the loops
+    # and the scheduler is the sole runner. Rollback by setting
+    # LEGACY_INPROC_SCHEDULER=true in the environment.
+    legacy_inproc_scheduler: bool = True
+
+    # PR m3-pr9: outbox relay. Default off — when False, the
+    # `outbox_relay` Procfile process exits cleanly so the entry can be
+    # deployed before the flag is flipped. Flip ON once producers are
+    # wired (PR-9b) and the events_outbox table is being populated.
+    ff_outbox_relay: bool = False
+
+    # PR m3-pr10: event consumer scaffold. Default off — `event_consumer`
+    # Procfile entries exit cleanly when False. Flip ON once a real
+    # consumer (e.g. billing_usage) has its downstream side-effect wired
+    # and the producers are publishing onto the matching streams.
+    ff_event_consumer: bool = False
+
+    # PR m6-pr18: Temporal generation strangler. Default off — when
+    # False, /generate/jobs uses the legacy Redis-stream + in-process
+    # fallback path. When True AND TEMPORAL_HOST is set, the route
+    # dispatches `GenerationWorkflow` to the configured task queue. The
+    # check is belt-and-braces: missing Temporal config causes graceful
+    # fallback to legacy so a misconfigured deploy can never wedge the
+    # generation pipeline. Rollout: dev → internal orgs → 5% → 50% →
+    # 100% → 2 weeks → delete legacy path.
+    ff_temporal_generation: bool = False
+
+    # PR m6-pr19: AIM RAG over pgvector source embeddings. Default off
+    # — when False the AIM reviewer runs without retrieved-source
+    # context and the `aim_source_embed` consumer exits cleanly. When
+    # True (and ff_event_consumer is also True) new aim_sources rows
+    # are embedded asynchronously and the reviewer pulls top-k matches
+    # via the `aim_sources_match` RPC. Backfill of existing rows is a
+    # follow-up wave once the consumer is steady-state.
+    ff_aim_rag: bool = False
+
+    # PR m7-pr29 (ADR-0032): capability tokens for tool dispatch.
+    # Default OFF — when False the dispatcher ignores any token passed
+    # to ``invoke()`` UNLESS the per-tool ``requires_capability_token``
+    # column is True (kill-switch path always enforced). When True every
+    # tool with the per-tool flag is enforced AND any tool that ships a
+    # token gets verified. Sunset 2026-09-01 (default ON, then remove
+    # the flag once every L1+ tool is on capability tokens).
+    ff_tool_capability_tokens: bool = False
+    # Active HMAC key for capability tokens. Required when the flag is
+    # ON or any tool sets requires_capability_token=True. Empty string
+    # disables both mint and verify.
+    tool_capability_secret: str = ""
+    # Verify-only previous key for rotation overlap. When set, verify
+    # accepts tokens signed with either secret; mint always uses the
+    # active one. Drop after the rotation window closes.
+    tool_capability_secret_previous: str = ""
+    # Default mint TTL (seconds). Per-call override allowed up to
+    # ``tool_capability_max_ttl_seconds``.
+    tool_capability_default_ttl_seconds: int = 60
+    tool_capability_max_ttl_seconds: int = 300
+
+    # PR m7-pr29 (ADR-0033): sandbox tier routing. Default OFF — when
+    # False every dispatch goes through L0 regardless of
+    # ``record.sandbox_tier`` (tier is shadow-logged so we can see what
+    # would have routed). When True the dispatcher consults the tier
+    # column and picks the matching sandbox; L1 currently logs
+    # ``tool_sandbox_l1_unenforced`` and falls through to L0 (real
+    # host-blocking lands in m7-pr29b). Sunset 2026-09-01.
+    ff_tool_sandbox_tier_routing: bool = False
+
+    # PR m7-pr28 (ADR-0031): Anthropic as the cascade-tail provider so
+    # tier-1 generations can survive a Gemini-wide outage. Default OFF.
+    # When True, ``model_router.resolve_cascade`` exposes ``claude-*``
+    # entries and ``AIClient._select_provider`` dispatches them through
+    # ``_AnthropicProvider``. Anthropic is NEVER a primary route — it
+    # only gets traffic when every Gemini SKU in the cascade has failed.
+    # Sunset 2026-09-01.
+    ff_anthropic_provider: bool = False
+    anthropic_api_key: str = ""
+    anthropic_default_model: str = "claude-3-5-sonnet-20241022"
+    anthropic_max_tokens: int = 8192
+
+    # PR m7-pr30 (ADR-0034): ``ai_invocations`` flight recorder. When ON,
+    # ``AIInvocationsRecorder`` writes one row per terminal LLM call
+    # (success OR failure) into ``public.ai_invocations``. Writes are
+    # best-effort and never raise into the LLM call path. Default OFF;
+    # ships dark and is flipped per-environment after smoke.
+    # Sunset 2026-09-01.
+    ff_ai_invocations_recorder: bool = False
+
+    # --- Strict event-payload validation at OutboxWriter (ADR-0035, m7-pr31) ---
+    # When ON, ``OutboxWriter.append`` rejects any envelope whose payload
+    # does not conform to its JSON Schema in ``packages/events/schema/v1/``
+    # (raises ``EventValidationError`` and writes no row). When OFF (default),
+    # validation runs in shadow mode and logs ``event_validation_failed_shadow``
+    # without blocking the insert. Sunset 2026-09-01.
+    ff_strict_event_validation: bool = False
+
+    # --- Per-stage Temporal activities (ADR-0036, m8-pr32) ---
+    # When ON, ``build_production_hooks()`` returns the 7-stage plan +
+    # checkpoint-aware execute hook so a worker crash mid-pipeline resumes
+    # from the last completed stage via ``pipeline_checkpoints``. When OFF
+    # (default), the legacy single-step ``run_pipeline`` plan is used (zero
+    # behaviour change from m6-pr24). Sunset 2026-12-01.
+    ff_temporal_per_stage: bool = False
 
     @field_validator("supabase_http_retries")
     @classmethod
@@ -138,6 +273,26 @@ class Settings(BaseSettings):
     @field_validator("worker_concurrency")
     @classmethod
     def _clamp_worker_concurrency(cls, v: int) -> int:
+        return max(1, int(v))
+
+    @field_validator("inprocess_max_concurrent")
+    @classmethod
+    def _clamp_inprocess_max_concurrent(cls, v: int) -> int:
+        return max(1, int(v))
+
+    @field_validator("queue_max_deliveries")
+    @classmethod
+    def _clamp_queue_max_deliveries(cls, v: int) -> int:
+        return max(1, int(v))
+
+    @field_validator("career_monitor_interval_seconds")
+    @classmethod
+    def _clamp_career_monitor_interval(cls, v: int) -> int:
+        return max(60, int(v))
+
+    @field_validator("career_monitor_user_batch_size")
+    @classmethod
+    def _clamp_career_monitor_user_batch_size(cls, v: int) -> int:
         return max(1, int(v))
 
     @field_validator("supabase_url", "supabase_service_role_key", "supabase_anon_key")

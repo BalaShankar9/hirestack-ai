@@ -10,17 +10,17 @@ from unittest.mock import MagicMock, patch
 
 class TestModelRouter:
     def test_resolve_model_returns_route(self):
-        from ai_engine.model_router import resolve_model
+        from ai_engine.api import resolve_model
         result = resolve_model("reasoning", "fallback-model")
         assert result != "fallback-model"
 
     def test_resolve_model_returns_default_for_unknown_task(self):
-        from ai_engine.model_router import resolve_model
+        from ai_engine.api import resolve_model
         result = resolve_model("nonexistent_task_type", "fallback-model")
         assert result == "fallback-model"
 
     def test_resolve_model_returns_default_for_none(self):
-        from ai_engine.model_router import resolve_model
+        from ai_engine.api import resolve_model
         result = resolve_model(None, "fallback-model")
         assert result == "fallback-model"
 
@@ -255,3 +255,93 @@ class TestModelRoutingFallback:
                     config=MagicMock(),
                     model=None,
                 )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  PR m7-pr28 (ADR-0031): Multi-provider dispatch
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestProviderSelection:
+    """Verify ``AIClient._select_provider`` dispatches by model name prefix."""
+
+    def test_select_provider_routes_claude_to_anthropic(self):
+        from ai_engine.client import AIClient, _AnthropicProvider
+        client = AIClient()
+        provider = client._select_provider("claude-3-5-sonnet-20241022")
+        assert isinstance(provider, _AnthropicProvider)
+
+    def test_select_provider_routes_gemini_to_default(self):
+        from ai_engine.client import AIClient
+        client = AIClient()
+        provider = client._select_provider("gemini-2.5-pro")
+        assert provider is client._provider
+
+    def test_select_provider_routes_none_to_default(self):
+        from ai_engine.client import AIClient
+        client = AIClient()
+        provider = client._select_provider(None)
+        assert provider is client._provider
+
+
+class TestCascadeFlagGating:
+    """Verify cascade resolver strips claude-* when ff_anthropic_provider is OFF."""
+
+    def test_resolve_cascade_strips_claude_when_flag_off(self):
+        from ai_engine.model_router import resolve_cascade
+        with patch("ai_engine.model_router._anthropic_enabled", return_value=False):
+            cascade = resolve_cascade("reasoning", "gemini-2.5-flash")
+        assert cascade
+        assert all(not m.startswith("claude-") for m in cascade)
+
+    def test_resolve_cascade_keeps_claude_when_flag_on(self):
+        from ai_engine.model_router import resolve_cascade, _model_health
+        # Mark claude as healthy so it isn't filtered for an unrelated reason
+        with patch("ai_engine.model_router._anthropic_enabled", return_value=True), \
+             patch.object(_model_health, "is_healthy", return_value=True):
+            cascade = resolve_cascade("reasoning", "gemini-2.5-flash")
+        assert any(m.startswith("claude-") for m in cascade)
+
+
+class TestChaosGeminiToAnthropicFailover:
+    """End-to-end: every Gemini SKU exhausts quota → Anthropic completes."""
+
+    @pytest.mark.asyncio
+    async def test_chaos_gemini_quota_exhausted_anthropic_succeeds(self):
+        from unittest.mock import AsyncMock
+        from ai_engine.client import AIClient
+
+        client = AIClient()
+        # Force the cascade to a known sequence Gemini → Gemini → Anthropic
+        client._resolve_cascade = lambda task_type, model: [  # type: ignore[method-assign]
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+            "claude-3-5-sonnet-20241022",
+        ]
+
+        # Gemini provider raises quota on every attempt
+        gemini_calls = []
+
+        async def gemini_complete(**kwargs):
+            gemini_calls.append(kwargs.get("model"))
+            raise Exception("exceeded your current quota for model")
+
+        client._provider.complete = gemini_complete  # type: ignore[method-assign]
+
+        # Anthropic provider succeeds
+        from ai_engine.client import _AnthropicProvider
+        anthropic = _AnthropicProvider()
+        anthropic.complete = AsyncMock(return_value="ok-from-anthropic")  # type: ignore[method-assign]
+        client._anthropic_provider = anthropic
+
+        # Disable the cache so the call actually hits the provider
+        from ai_engine.cache import get_ai_cache
+        cache = get_ai_cache()
+        with patch.object(cache, "get", return_value=None), \
+             patch.object(cache, "put"):
+            result = await client.complete(prompt="test", task_type="reasoning")
+
+        assert result == "ok-from-anthropic"
+        # Both Gemini SKUs were tried in order before Anthropic took over
+        assert gemini_calls == ["gemini-2.5-pro", "gemini-2.5-flash"]
+        anthropic.complete.assert_awaited_once()
+        assert anthropic.complete.await_args.kwargs["model"] == "claude-3-5-sonnet-20241022"

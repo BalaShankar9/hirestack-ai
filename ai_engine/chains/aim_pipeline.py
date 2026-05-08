@@ -143,6 +143,13 @@ async def generate_section(
     max_attempts: int = 3,
     min_improvement: float = 5.0,
     emit: Optional[AIMEmitter] = None,
+    # PR m6-pr19b: optional RAG context. When `source_retriever` and
+    # `assignment_id` are both supplied (caller gates on ff_aim_rag),
+    # the reviewer prompt gains a top-k retrieved sources block. Pure
+    # additive — omit either to preserve previous behaviour.
+    source_retriever: Any = None,
+    assignment_id: str | None = None,
+    rag_top_k: int = 5,
 ) -> SectionGenerationResult:
     if not section or not section.get("title") or not section.get("word_limit"):
         raise ValueError("generate_section: section must include title and word_limit")
@@ -163,6 +170,35 @@ async def generate_section(
             break
 
     section_title = str(section.get("title") or "")
+
+    # PR m6-pr19b: pre-compute the RAG block once per section. The query
+    # is `directive + section title` — stable across writer attempts so
+    # we only embed/RPC once. Failures here are non-fatal: emit a
+    # warning event and the reviewer runs without retrieved sources.
+    retrieved_md = ""
+    if source_retriever is not None and assignment_id:
+        try:
+            from ai_engine.rag import format_sources_for_prompt
+
+            rag_query = (
+                f"{parsed.get('directive', '')} {section_title}".strip()
+                or section_title
+            )
+            retrieved = await source_retriever.search(
+                assignment_id=assignment_id,
+                query=rag_query,
+                top_k=rag_top_k,
+            )
+            retrieved_md = format_sources_for_prompt(retrieved)
+        except Exception as exc:  # pragma: no cover - defensive
+            await e(
+                "agent_status",
+                agent="reviewer",
+                status="warning",
+                message=f"RAG retrieval failed; continuing without sources ({exc!s})",
+                data={"section_id": section_id},
+            )
+            retrieved_md = ""
 
     for attempt_num in range(1, max_attempts + 1):
         # 1) Writer
@@ -208,6 +244,7 @@ async def generate_section(
             "parsed": parsed,
             "recon": recon,
             "escalate_to_pro": escalate,
+            "retrieved_sources_markdown": retrieved_md,
         })
         weighted = float(rresult.metadata.get("weighted_score", 0.0))
         passed = bool(rresult.metadata.get("passed_gate"))
@@ -232,6 +269,20 @@ async def generate_section(
                 data={"section_id": section_id, "attempt": attempt_num,
                       "weighted_score": weighted, "passed_gate": passed,
                       "verdict": (rresult.content or {}).get("verdict")})
+        await e("attempt", agent="reviewer", status="completed",
+                message=f"Attempt {attempt_num} complete",
+                progress=_attempt_progress(attempt_num, max_attempts, phase="reviewer_done"),
+                latency_ms=attempt.latency_ms,
+                data={
+                    "version": attempt.version,
+                    "content": attempt.content,
+                    "blocks": attempt.blocks,
+                    "word_count": attempt.word_count,
+                    "weighted_score": attempt.weighted_score,
+                    "passed_gate": attempt.passed_gate,
+                    "reviewer": attempt.reviewer,
+                    "latency_ms": attempt.latency_ms,
+                })
 
         if passed:
             return SectionGenerationResult(
@@ -331,7 +382,12 @@ async def fix_section(
         "parsed": parsed,
     })
     content = result.content or {}
-    fixes = content.get("fixes") or content.get("ranked_issues") or []
+    fixes = (
+        content.get("rewrite_suggestions")
+        or content.get("fixes")
+        or content.get("ranked_issues")
+        or []
+    )
     fix_count = len(fixes) if isinstance(fixes, list) else 0
     await e("agent_status", agent="fixer", status="completed",
             message=f"Identified {fix_count} fix(es)" if fix_count

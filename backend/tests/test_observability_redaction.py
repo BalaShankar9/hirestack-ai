@@ -12,6 +12,7 @@ import inspect
 import pytest
 
 from app.core.observability import (
+    MAX_SCRUB_DEPTH,
     REDACTED,
     SENSITIVE_KEYS,
     redact_event_dict,
@@ -192,3 +193,40 @@ def test_sensitive_keys_is_non_empty_tuple() -> None:
     silently disable redaction."""
     assert isinstance(SENSITIVE_KEYS, tuple)
     assert len(SENSITIVE_KEYS) >= 10
+
+
+# ── m11-pr40: depth pin (TD-4) ────────────────────────────────────────
+def test_max_scrub_depth_pinned_to_16() -> None:
+    """TD-4: MAX_SCRUB_DEPTH must be ≥ 16 so deeply-nested Sentry
+    payloads (request → context → breadcrumb → http → data → headers
+    → nested envelope → ...) get scrubbed end-to-end."""
+    assert MAX_SCRUB_DEPTH >= 16
+
+
+def test_redact_scrubs_at_depth_15() -> None:
+    """Build a 15-level nested dict with `password` at the bottom and
+    verify redaction reaches it."""
+    leaf = {"password": "p@ss"}
+    nested: dict = leaf
+    for _ in range(15):
+        nested = {"wrap": nested}
+    out = redact_event_dict(None, "info", {"root": nested})
+    cur = out["root"]
+    for _ in range(15):
+        cur = cur["wrap"]
+    assert cur["password"] == REDACTED
+
+
+def test_redact_stops_past_max_depth() -> None:
+    """At depth > MAX_SCRUB_DEPTH the scrubber bails. Pin that the cap
+    is enforced (otherwise an infinite recursive structure would loop)."""
+    leaf = {"password": "should-survive-because-too-deep"}
+    nested: dict = leaf
+    for _ in range(MAX_SCRUB_DEPTH + 5):
+        nested = {"wrap": nested}
+    out = redact_event_dict(None, "info", {"root": nested})
+    cur = out["root"]
+    for _ in range(MAX_SCRUB_DEPTH + 5):
+        cur = cur["wrap"]
+    # Beyond the depth limit the value is returned untouched.
+    assert cur["password"] == "should-survive-because-too-deep"

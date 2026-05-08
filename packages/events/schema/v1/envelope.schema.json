@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hirestack.ai/events/v1/envelope.schema.json",
+  "title": "EventEnvelope",
+  "description": "Canonical wrapper around every domain event. Mirrors backend/app/core/events/envelope.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "event_type", "event_version", "org_id", "occurred_at", "payload"],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUIDv4 generated at emit time."
+    },
+    "event_type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Dotted lower-snake-case identifier, e.g. ``generation.completed``."
+    },
+    "event_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "org_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC3339 with timezone (UTC). Naive timestamps are rejected."
+    },
+    "idempotency_key": {
+      "type": ["string", "null"],
+      "maxLength": 255
+    },
+    "payload": {
+      "type": "object"
+    }
+  }
+}

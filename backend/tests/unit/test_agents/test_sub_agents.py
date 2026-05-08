@@ -489,7 +489,7 @@ def test_create_pipeline_attaches_sub_agents():
     """Verify create_pipeline attaches sub-agents for THOROUGH depth."""
     from ai_engine.agents.pipelines import create_pipeline
     from ai_engine.chains.universal_doc_generator import UniversalDocGeneratorChain
-    from ai_engine.client import get_ai_client
+    from ai_engine.api import get_ai_client
 
     client = get_ai_client()
     chain = UniversalDocGeneratorChain(client)

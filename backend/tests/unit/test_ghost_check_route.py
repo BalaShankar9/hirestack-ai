@@ -239,14 +239,11 @@ class TestFetchOnTimeout:
     async def test_fetch_returns_zero_on_error(self, monkeypatch) -> None:
         import httpx
 
-        class _BoomClient:
-            def __init__(self, *a, **kw): ...
-            async def __aenter__(self): return self
-            async def __aexit__(self, *a): return False
-            async def get(self, url):
-                raise httpx.ConnectTimeout("boom")
+        async def _boom(*_a, **_kw):
+            raise httpx.ConnectTimeout("boom")
 
-        monkeypatch.setattr(httpx, "AsyncClient", _BoomClient)
+        # ghost_check now routes through safe_follow_get; patch there.
+        monkeypatch.setattr(gc, "safe_follow_get", _boom)
         status, final_url, body = await gc.fetch_posting("https://example.com")
         assert status == 0
         assert body == ""

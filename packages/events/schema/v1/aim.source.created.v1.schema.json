@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hirestack.ai/events/v1/aim.source.created.v1.schema.json",
+  "title": "AimSourceCreatedV1",
+  "description": "Emitted when a new source (article, transcript, doc) is added to the AIM library.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_type", "event_version", "payload"],
+  "properties": {
+    "event_type": { "const": "aim.source.created" },
+    "event_version": { "const": 1 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "kind"],
+      "properties": {
+        "source_id": { "type": "string", "format": "uuid" },
+        "kind":      { "type": "string", "enum": ["article", "video", "podcast", "doc", "other"] },
+        "title":     { "type": ["string", "null"] },
+        "url":       { "type": ["string", "null"], "format": "uri" }
+      }
+    }
+  }
+}

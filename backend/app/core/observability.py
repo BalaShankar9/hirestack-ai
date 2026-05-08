@@ -17,6 +17,14 @@ from typing import Any, Mapping, MutableMapping
 
 REDACTED = "[REDACTED]"
 
+# Maximum recursion depth for the scrubber. Bumped from 8 → 16 in
+# m11-pr40 (TD-4): real-world Sentry payloads regularly nest deeper
+# than 8 (request → context → breadcrumb → http → data → headers →
+# nested envelope → ...) and silent stop-at-depth meant some `auth_*`
+# keys survived into Sentry. 16 covers every observed payload and
+# still bounds work on cyclic structures.
+MAX_SCRUB_DEPTH = 16
+
 # Case-insensitive substring match. "authorization" matches "Authorization",
 # "x-authorization", "auth_token" via "auth", etc.
 SENSITIVE_KEYS: tuple[str, ...] = (
@@ -49,10 +57,11 @@ def _scrub(value: Any, *, _depth: int = 0) -> Any:
     """Recursively walk *value*, replacing values whose KEY is sensitive
     with ``REDACTED``.
 
-    Applies a small depth limit (8) and a small list-length limit (1000)
-    to bound work and avoid runaway recursion on cyclic structures.
+    Applies a depth limit (``MAX_SCRUB_DEPTH``) and a list-length
+    limit (1000) to bound work and avoid runaway recursion on cyclic
+    structures.
     """
-    if _depth > 8:
+    if _depth > MAX_SCRUB_DEPTH:
         return value
     if isinstance(value, Mapping):
         out: dict[Any, Any] = {}

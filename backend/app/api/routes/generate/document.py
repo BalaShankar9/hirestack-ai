@@ -30,7 +30,7 @@ async def generate_on_demand_document(
         raise HTTPException(status_code=401, detail="User ID not found")
 
     from app.core.database import get_supabase, TABLES
-    from ai_engine.client import AIClient
+    from ai_engine.api import AIClient
     from ai_engine.chains.adaptive_document import AdaptiveDocumentChain
 
     sb = get_supabase()

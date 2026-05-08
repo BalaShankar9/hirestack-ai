@@ -95,6 +95,31 @@ services:
           memory: 1G
           cpus: "1.0"
 
+  # m11-pr44: L2 sandbox sidecar. OFF by default (opt-in via the
+  # ``l2-sandbox`` profile). Backend points at this container by
+  # setting ``FF_TOOL_L2_GRPC_TARGET=tool-runner:50051`` and
+  # ``FF_TOOL_L2_GRPC_ENABLED=1``. With the profile inactive the
+  # backend's L2 sandbox uses its own in-process server (default
+  # FF_TOOL_L2_GRPC_TARGET=inproc) when the flag is on, or raises
+  # SandboxNotImplemented when the flag is off.
+  tool-runner:
+    profiles: ["l2-sandbox"]
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.backend
+    command: ["python", "-m", "ai_engine.registry.run_l2_sandbox"]
+    environment:
+      - L2_SANDBOX_HOST=0.0.0.0
+      - L2_SANDBOX_PORT=50051
+    expose:
+      - "50051"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+
 volumes:
   redis_data:
   uploads:

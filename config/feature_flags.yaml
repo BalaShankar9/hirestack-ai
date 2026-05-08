@@ -1,0 +1,121 @@
+# Feature-flag registry.
+#
+# Source of truth for every runtime feature flag. Enforced by
+# scripts/governance/check_feature_flags.py and the architecture CI workflow.
+#
+# Required fields per flag:
+#   owner    — GitHub handle, on-call DRI for the flag's behaviour
+#   created  — ISO date the flag was introduced (YYYY-MM-DD)
+#   sunset   — ISO date the flag MUST be removed by (YYYY-MM-DD)
+#   default  — true | false | "off" | "on"
+#   purpose  — one-line rationale; what does flipping it actually do
+#
+# Lifecycle rules:
+#   1. New flag => add entry in same PR that introduces the code reference.
+#   2. Sunset is mandatory; pick a date you're prepared to defend.
+#   3. Past sunset by 14 days => CI fails. Either remove the flag or extend (with reason in PR).
+#   4. Removing a flag => delete entry AND all code references in same PR.
+
+flags:
+  ff_temporal_generation:
+    owner: BalaShankar9
+    created: 2026-04-15
+    sunset: 2026-09-30
+    default: false
+    purpose: Route generation jobs through the PR-24 outer Temporal envelope.
+
+  ff_tool_registry:
+    owner: BalaShankar9
+    created: 2026-03-01
+    sunset: 2026-08-31
+    default: false
+    purpose: Use the new declarative tool registry for agent dispatch.
+
+  # Reserved (not yet introduced in code, listed so M7 PRs can find them):
+
+  ff_queue_ack_on_success:
+    owner: BalaShankar9
+    created: 2026-05-08
+    sunset: 2026-09-01
+    default: false
+    purpose: ACK Redis Stream messages only after handler returns success (P0-3 / M7-C).
+
+  ff_temporal_per_stage:
+    owner: BalaShankar9
+    created: 2026-05-08
+    sunset: 2026-12-01
+    default: false
+    purpose: Use per-stage Temporal activities instead of single-envelope generation workflow (P1-1 / M9).
+
+  ff_inprocess_fallback:
+    owner: BalaShankar9
+    created: 2026-05-08
+    sunset: 2026-08-31
+    default: false
+    purpose: Allow generation jobs to fall back to in-process execution when Redis is unavailable. Production MUST keep this OFF (ADR-0038, P0-2). Dev/single-process deploys may flip ON; in that case execution is bounded by inprocess_max_concurrent.
+
+  # ── Discovered in code at governance-machinery rollout (2026-05-08).
+  # All registered with sunset dates so the lifecycle audit catches drift.
+
+  ff_aim_rag:
+    owner: BalaShankar9
+    created: 2026-04-25
+    sunset: 2026-08-31
+    default: false
+    purpose: Enable retrieval-augmented context for AIM (Application Intelligence Module) flows.
+
+  ff_event_consumer:
+    owner: BalaShankar9
+    created: 2026-04-20
+    sunset: 2026-09-30
+    default: false
+    purpose: Enable the post-outbox event consumer pipeline (M7-C dependency).
+
+  ff_outbox_relay:
+    owner: BalaShankar9
+    created: 2026-04-20
+    sunset: 2026-09-30
+    default: false
+    purpose: Run the outbox relay worker that drains outbox_events into the durable bus.
+
+  ff_strict_critic_gate:
+    owner: BalaShankar9
+    created: 2026-04-25
+    sunset: 2026-08-31
+    default: false
+    purpose: Enforce strict critic-gate review on agent outputs before persistence.
+
+  ff_tool_capability_tokens:
+    owner: BalaShankar9
+    created: 2026-05-08
+    sunset: 2026-09-01
+    default: false
+    purpose: Verify HMAC capability tokens on tool dispatch (ADR-0032, P0-5 / m7-pr29). Per-tool kill-switch via ai_tools.requires_capability_token always overrides.
+
+  ff_tool_sandbox_tier_routing:
+    owner: BalaShankar9
+    created: 2026-05-08
+    sunset: 2026-09-01
+    default: false
+    purpose: Route tool dispatch through the L0/L1/L2 sandbox classifier instead of always L0 (ADR-0033, P0-5 / m7-pr29). L1 enforcement deferred to m7-pr29b.
+
+  ff_anthropic_provider:
+    owner: BalaShankar9
+    created: 2026-05-08
+    sunset: 2026-09-01
+    default: false
+    purpose: Allow ``model_router`` to expose ``claude-*`` cascade entries and dispatch them through ``_AnthropicProvider`` (ADR-0031, P1-4 / m7-pr28). Anthropic only ever runs as the cascade tail after every Gemini SKU has failed.
+
+  ff_ai_invocations_recorder:
+    owner: BalaShankar9
+    created: 2026-05-08
+    sunset: 2026-09-01
+    default: false
+    purpose: Enable the ``AIInvocationsRecorder`` flight recorder that writes one row per terminal LLM call (success OR failure) into ``public.ai_invocations`` (ADR-0034, m7-pr30). Best-effort writer; recorder failures never break the LLM call path. Ships OFF; flip after smoke.
+
+  ff_strict_event_validation:
+    owner: BalaShankar9
+    created: 2026-05-08
+    sunset: 2026-09-01
+    default: false
+    purpose: Promote ``OutboxWriter.append`` payload validation against ``packages/events/schema/v1/`` from shadow-log to hard reject (ADR-0035, m7-pr31). When OFF, validation failures log ``event_validation_failed_shadow`` and the insert proceeds; when ON, ``EventValidationError`` is raised and no row is written. Ships OFF; flip per-environment after the shadow-log signal goes quiet for 7 consecutive days.

@@ -8,7 +8,7 @@ import structlog
 
 from app.core.database import get_db, TABLES, SupabaseDB
 from app.services.file_parser import FileParser
-from ai_engine.client import AIClient
+from ai_engine.api import AIClient
 from ai_engine.chains.role_profiler import RoleProfilerChain
 
 logger = structlog.get_logger()

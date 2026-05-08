@@ -3,13 +3,28 @@ target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "W", "F"]
+select = ["E", "W", "F", "TID"]
 ignore = ["E501", "F841"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/__init__.py" = ["F401"]
+"ai_engine/**" = ["TID251"]
+"backend/tests/**" = ["TID251"]
+# TODO(m4-pr12+): migrate these to ai_engine.api and drop the exemption.
+# Currently dirty (uncommitted work) — coordinated cleanup deferred.
+"backend/app/api/routes/analytics.py" = ["TID251"]
+"backend/app/api/routes/generate/stream.py" = ["TID251"]
+"backend/app/services/pipeline_runtime.py" = ["TID251"]
 "ai_engine/agents/tools.py" = ["E402"]
 "ai_engine/client.py" = ["E402"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# PR m4-pr11: backend code must consume ai_engine via the narrow `ai_engine.api`
+# surface. Deep imports lock us into ai_engine internals and balloon the
+# refactor blast-radius. Tests and ai_engine itself are exempt above.
+"ai_engine.client".msg = "Import from ai_engine.api instead"
+"ai_engine.model_router".msg = "Import from ai_engine.api instead"
+"ai_engine.agent_events".msg = "Import from ai_engine.api instead"
 
 [tool.ruff.lint.isort]
 known-first-party = ["backend", "ai_engine"]

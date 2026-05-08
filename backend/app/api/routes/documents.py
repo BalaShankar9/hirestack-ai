@@ -228,7 +228,7 @@ async def _generate_document_async(
     """Generate a document asynchronously using the adaptive document chain."""
     try:
         from app.core.database import get_supabase, TABLES
-        from ai_engine.client import AIClient
+        from ai_engine.api import AIClient
         from ai_engine.chains.adaptive_document import AdaptiveDocumentChain
         from app.core.sanitize import sanitize_html
         from app.services.document_library import DocumentLibraryService

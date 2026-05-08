@@ -256,6 +256,18 @@ class _GeminiProvider:
         self, *, contents: Any, config: Any, model: Optional[str] = None,
     ):
         effective_model = model or self.model_name
+        # PR m4-pr12: wrap the entire throttled call in a Langfuse span.
+        # No-op when LANGFUSE_* env vars are unset, so this is free in CI/dev.
+        from ai_engine.observability import trace_llm
+        async with trace_llm(model=effective_model):
+            return await self._generate_content_throttled_inner(
+                contents=contents, config=config, model=model,
+            )
+
+    async def _generate_content_throttled_inner(
+        self, *, contents: Any, config: Any, model: Optional[str] = None,
+    ):
+        effective_model = model or self.model_name
         if self._throttle_lock is None:
             # Create lock inside the running loop (py3.9 asyncio primitives can be loop-bound).
             self._throttle_lock = asyncio.Lock()
@@ -522,6 +534,222 @@ class _GeminiProvider:
         return _parse_json("".join(chunks))
 
 
+# ═══════════════════════════════════════════════════════════════════════
+#  Anthropic Provider (PR m7-pr28, ADR-0031)
+#
+#  Cascade-tail provider so a Gemini-wide outage cannot brick tier-1
+#  generation. Same async surface as ``_GeminiProvider`` so the AIClient
+#  cascade loop can swap providers per candidate model with no special
+#  casing. Lazy-imports the ``anthropic`` SDK so unit tests + envs that
+#  never flip ``ff_anthropic_provider`` don't pay the import cost and
+#  don't need the package installed.
+# ═══════════════════════════════════════════════════════════════════════
+
+class _AnthropicProvider:
+    """Anthropic backend using the ``anthropic`` Python SDK.
+
+    Mirrors the public surface of ``_GeminiProvider``: ``complete``,
+    ``complete_json``, ``chat``, ``stream_completion``,
+    ``complete_json_streaming``. Each call accepts an optional ``model``
+    override so the AIClient cascade can route per-attempt.
+    """
+
+    def __init__(self) -> None:
+        self._client = None
+        self.model_name = settings.anthropic_default_model
+        self.max_tokens = settings.anthropic_max_tokens
+
+    def _get_client(self):
+        if self._client is None:
+            api_key = (settings.anthropic_api_key or "").strip()
+            if not api_key:
+                raise ValueError(
+                    "Anthropic API key is not configured. "
+                    "Set ANTHROPIC_API_KEY in your backend/.env file."
+                )
+            from anthropic import Anthropic  # lazy import
+            self._client = Anthropic(api_key=api_key)
+        return self._client
+
+    @staticmethod
+    def _extract_text(response: Any) -> str:
+        """Pull the first text block out of an anthropic Message response."""
+        content = getattr(response, "content", None) or []
+        parts: List[str] = []
+        for block in content:
+            text = getattr(block, "text", None)
+            if isinstance(text, str):
+                parts.append(text)
+        return "".join(parts)
+
+    async def _create_message(
+        self, *, model: str, system: Optional[str], messages: List[Dict[str, str]],
+        max_tokens: int, temperature: float,
+    ) -> Any:
+        """Run the SDK call in a worker thread under the per-model breaker
+        and a Langfuse span (no-op when LANGFUSE_* envs are unset).
+        """
+        from ai_engine.observability import trace_llm
+        breaker = _get_model_breaker(model)
+        kwargs: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        if system:
+            kwargs["system"] = system
+        async with trace_llm(model=model):
+            async with breaker:
+                client = self._get_client()
+                return await asyncio.to_thread(
+                    client.messages.create, **kwargs,
+                )
+
+    @retry(**_RETRY_KWARGS)
+    async def complete(
+        self, prompt: str, system: Optional[str] = None,
+        max_tokens: Optional[int] = None, temperature: float = 0.7,
+        response_format: str = "text", model: Optional[str] = None,
+    ) -> str:
+        effective_model = model or self.model_name
+        max_out = max(int(max_tokens or self.max_tokens), 64)
+        # ``response_format`` is informational here — Anthropic returns text;
+        # JSON callers go through ``complete_json`` which adds the
+        # "respond with JSON only" system instruction.
+        response = await self._create_message(
+            model=effective_model,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_out,
+            temperature=temperature,
+        )
+        return self._extract_text(response)
+
+    @retry(**_RETRY_KWARGS)
+    async def complete_json(
+        self, prompt: str, system: Optional[str] = None,
+        max_tokens: Optional[int] = None, temperature: float = 0.3,
+        schema: Optional[Dict[str, Any]] = None, model: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        effective_model = model or self.model_name
+        max_out = max(int(max_tokens or self.max_tokens), 64)
+        system_prompt = (system or "You are a helpful AI assistant.")
+        system_prompt += (
+            "\n\nIMPORTANT: Respond ONLY with valid JSON. "
+            "No markdown, no explanations, just pure JSON."
+        )
+        # ``schema`` is intentionally NOT forwarded — Anthropic exposes
+        # tool-use for structured output but the cascade contract is
+        # "best-effort JSON text"; the shared ``_parse_json`` post-
+        # processor handles fenced/markdown wrappers identically to the
+        # Gemini path.
+        response = await self._create_message(
+            model=effective_model,
+            system=system_prompt,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_out,
+            temperature=temperature,
+        )
+        return _parse_json(self._extract_text(response))
+
+    async def chat(
+        self, messages: List[Dict[str, str]], system: Optional[str] = None,
+        max_tokens: Optional[int] = None, temperature: float = 0.7,
+        model: Optional[str] = None,
+    ) -> str:
+        effective_model = model or self.model_name
+        max_out = max(int(max_tokens or self.max_tokens), 64)
+        # Anthropic accepts the same {"role": "user"|"assistant", "content": ...}
+        # shape we already use; no conversion needed.
+        response = await self._create_message(
+            model=effective_model,
+            system=system,
+            messages=list(messages),
+            max_tokens=max_out,
+            temperature=temperature,
+        )
+        return self._extract_text(response)
+
+    async def stream_completion(
+        self, prompt: str, system: Optional[str] = None,
+        max_tokens: Optional[int] = None, temperature: float = 0.7,
+        response_format: str = "text", model: Optional[str] = None,
+    ):
+        """Async generator yielding text deltas from the Anthropic stream.
+
+        Bridges the SDK's blocking ``messages.stream`` iterator into asyncio
+        the same way the Gemini path does — produce in a worker thread,
+        consume from an asyncio.Queue.
+        """
+        effective_model = model or self.model_name
+        max_out = max(int(max_tokens or self.max_tokens), 64)
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=64)
+        _SENTINEL: Any = object()
+
+        def _produce() -> None:
+            try:
+                client = self._get_client()
+                kwargs: Dict[str, Any] = {
+                    "model": effective_model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": max_out,
+                    "temperature": temperature,
+                }
+                if system:
+                    kwargs["system"] = system
+                with client.messages.stream(**kwargs) as stream:
+                    for chunk in stream.text_stream:
+                        if chunk:
+                            asyncio.run_coroutine_threadsafe(
+                                queue.put(chunk), loop,
+                            ).result()
+            except Exception as exc:  # noqa: BLE001 — re-raised on consumer side
+                asyncio.run_coroutine_threadsafe(queue.put(exc), loop).result()
+            finally:
+                asyncio.run_coroutine_threadsafe(queue.put(_SENTINEL), loop).result()
+
+        producer = asyncio.create_task(asyncio.to_thread(_produce))
+        try:
+            while True:
+                item = await queue.get()
+                if item is _SENTINEL:
+                    break
+                if isinstance(item, BaseException):
+                    raise item
+                yield item
+        finally:
+            await producer
+
+    async def complete_json_streaming(
+        self, prompt: str, system: Optional[str] = None,
+        max_tokens: Optional[int] = None, temperature: float = 0.3,
+        schema: Optional[Dict[str, Any]] = None, model: Optional[str] = None,
+        token_sink: Optional[TokenSink] = None,
+    ) -> Dict[str, Any]:
+        system_prompt = (system or "You are a helpful AI assistant.")
+        system_prompt += (
+            "\n\nIMPORTANT: Respond ONLY with valid JSON. "
+            "No markdown, no explanations, just pure JSON."
+        )
+        chunks: List[str] = []
+        async for chunk in self.stream_completion(
+            prompt=prompt, system=system_prompt,
+            max_tokens=max_tokens, temperature=temperature,
+            response_format="json", model=model,
+        ):
+            chunks.append(chunk)
+            if token_sink is not None:
+                try:
+                    await token_sink(chunk)
+                except Exception as sink_err:  # noqa: BLE001
+                    logger.warning(
+                        "token_sink_emit_failed_anthropic: %s", str(sink_err)[:200],
+                    )
+        return _parse_json("".join(chunks))
+
+
 def _is_auth_or_permission_error(exc: BaseException) -> bool:
     """Return True if the error is an auth/permission issue (key invalid, leaked, etc.)."""
     err_str = str(exc).lower()
@@ -672,6 +900,29 @@ class AIClient:
         self._prompt_tokens = 0
         self._completion_tokens = 0
         self._call_count = 0
+        # PR m7-pr28 (ADR-0031): Anthropic is constructed lazily on first
+        # claude-* dispatch so callers that never flip the flag don't pay
+        # the import cost or need ANTHROPIC_API_KEY set.
+        self._anthropic_provider: Optional["_AnthropicProvider"] = None
+
+    def _select_provider(self, model_name: Optional[str]):
+        """Dispatch a candidate model to the right provider by name prefix.
+
+        - ``claude-*`` → ``_AnthropicProvider`` (ADR-0031, PR m7-pr28)
+        - everything else → the default ``_GeminiProvider``
+
+        Returns ``self._provider`` (Gemini) for ``None`` so callers that
+        omit a model still get the historical default.
+        """
+        if model_name and model_name.startswith("claude-"):
+            if self._anthropic_provider is None:
+                self._anthropic_provider = _AnthropicProvider()
+                logger.info(
+                    "provider_selected: model=%s provider=anthropic",
+                    model_name,
+                )
+            return self._anthropic_provider
+        return self._provider
 
     @property
     def token_usage(self) -> Dict[str, int]:
@@ -753,6 +1004,46 @@ class AIClient:
             )
         except Exception:
             pass
+
+    async def _record_invocation(
+        self,
+        *,
+        prompt_text: str,
+        response_text: str,
+        model: str,
+        task_type: Optional[str],
+        t_start: float,
+        outcome: str,
+        cascade_position: int = 0,
+        error: Optional[BaseException] = None,
+        tenant_id: Optional[str] = None,
+    ) -> None:
+        """ADR-0034 / m7-pr30: best-effort flight-recorder write.
+
+        Per-attempt write into ``public.ai_invocations``. Wrapped in a
+        broad except because the cascade loop must NEVER fail because of
+        telemetry. The recorder itself also swallows write failures —
+        this is a paranoid second layer.
+        """
+        try:
+            from ai_engine.observability.ai_invocations import get_recorder
+            latency_ms = int((time.monotonic() - t_start) * 1000)
+            in_tok = self._estimate_tokens(prompt_text)
+            out_tok = self._estimate_tokens(response_text) if response_text else 0
+            await get_recorder().record(
+                model=model,
+                prompt_text=prompt_text,
+                prompt_tokens=in_tok,
+                completion_tokens=out_tok,
+                latency_ms=latency_ms,
+                outcome=outcome,
+                task_type=task_type,
+                tenant_id=tenant_id,
+                cascade_position=cascade_position,
+                error=error,
+            )
+        except Exception as exc:  # pragma: no cover — paranoid fallback
+            logger.debug("ai_invocations_record_failed_outer: %s", exc)
 
     @staticmethod
     def _truncate_input(text: str, max_tokens: Optional[int] = None) -> str:
@@ -844,9 +1135,10 @@ class AIClient:
         last_exc: Optional[Exception] = None
         for i, candidate_model in enumerate(models):
             breaker = _get_model_breaker(candidate_model)
+            attempt_t0 = time.monotonic()
             try:
                 async with breaker:
-                    result = await self._provider.complete(
+                    result = await self._select_provider(candidate_model).complete(
                         prompt=prompt, system=system, max_tokens=max_tokens,
                         temperature=temperature, response_format=response_format,
                         model=candidate_model,
@@ -862,17 +1154,35 @@ class AIClient:
                         schema=None, temperature=temperature, max_tokens=max_tokens,
                         response=result,
                     )
+                    await self._record_invocation(
+                        prompt_text=prompt + (system or ""), response_text=result,
+                        model=candidate_model, task_type=task_type,
+                        t_start=attempt_t0, outcome="success", cascade_position=i,
+                    )
                     return result
             except CircuitBreakerOpen:
                 # Breaker open for this model — skip to next without counting as provider failure
                 logger.info("model_breaker_open: skipping=%s", candidate_model)
+                await self._record_invocation(
+                    prompt_text=prompt + (system or ""), response_text="",
+                    model=candidate_model, task_type=task_type,
+                    t_start=attempt_t0, outcome="breaker_open", cascade_position=i,
+                )
                 if i < len(models) - 1:
                     continue
                 raise
             except Exception as exc:
                 last_exc = exc
                 record_model_failure(candidate_model)
-                if i < len(models) - 1:
+                is_failover = i < len(models) - 1
+                await self._record_invocation(
+                    prompt_text=prompt + (system or ""), response_text="",
+                    model=candidate_model, task_type=task_type,
+                    t_start=attempt_t0,
+                    outcome="cascade_failover" if is_failover else "failure",
+                    cascade_position=i, error=exc,
+                )
+                if is_failover:
                     logger.warning(
                         "model_cascade_failover: failed=%s next=%s error=%s",
                         candidate_model, models[i + 1], str(exc)[:200],
@@ -942,8 +1252,20 @@ class AIClient:
             stream_model = self._resolve_model(task_type, model) or self.model
             stream_breaker = _get_model_breaker(stream_model)
             try:
-                async with stream_breaker:
-                    streamed = await self._provider.complete_json_streaming(
+                # PR m6-pr23: trace the streaming path through Langfuse.
+                from ai_engine.observability import trace_llm as _trace_llm
+                async with stream_breaker, _trace_llm(
+                    model=stream_model,
+                    name=tool_label,
+                    metadata={
+                        "task_type": task_type,
+                        "temperature": temperature,
+                        "streamed": True,
+                        "max_tokens": max_tokens,
+                    },
+                    input={"system": system or "", "prompt": prompt[:4000]},
+                ) as _lf_span:
+                    streamed = await self._select_provider(stream_model).complete_json_streaming(
                         prompt=prompt, system=system, max_tokens=max_tokens,
                         temperature=temperature, schema=schema, model=stream_model,
                         token_sink=sink,
@@ -958,6 +1280,13 @@ class AIClient:
                         schema=schema, temperature=temperature, max_tokens=max_tokens,
                         response=streamed,
                     )
+                    if _lf_span is not None:
+                        try:
+                            _lf_span.update(output={
+                                "keys": list(streamed.keys()) if isinstance(streamed, dict) else None,
+                            })
+                        except Exception:
+                            pass
                     emit_tool_result(
                         tool_label,
                         {"model": stream_model, "streamed": True,
@@ -984,9 +1313,23 @@ class AIClient:
         last_exc: Optional[Exception] = None
         for i, candidate_model in enumerate(models):
             breaker = _get_model_breaker(candidate_model)
+            attempt_t0 = time.monotonic()
             try:
-                async with breaker:
-                    result = await self._provider.complete_json(
+                # PR m6-pr23: trace each cascade attempt through Langfuse.
+                from ai_engine.observability import trace_llm as _trace_llm
+                async with breaker, _trace_llm(
+                    model=candidate_model,
+                    name=tool_label,
+                    metadata={
+                        "task_type": task_type,
+                        "temperature": temperature,
+                        "attempt": i + 1,
+                        "max_attempts": len(models),
+                        "max_tokens": max_tokens,
+                    },
+                    input={"system": system or "", "prompt": prompt[:4000]},
+                ) as _lf_span:
+                    result = await self._select_provider(candidate_model).complete_json(
                         prompt=prompt, system=system, max_tokens=max_tokens,
                         temperature=temperature, schema=schema, model=candidate_model,
                     )
@@ -1003,6 +1346,13 @@ class AIClient:
                         schema=schema, temperature=temperature, max_tokens=max_tokens,
                         response=result,
                     )
+                    if _lf_span is not None:
+                        try:
+                            _lf_span.update(output={
+                                "keys": list(result.keys()) if isinstance(result, dict) else None,
+                            })
+                        except Exception:
+                            pass
                     emit_tool_result(
                         tool_label,
                         {
@@ -1013,9 +1363,20 @@ class AIClient:
                         cache_hit=False,
                         success=True,
                     )
+                    await self._record_invocation(
+                        prompt_text=prompt + (system or ""),
+                        response_text=json.dumps(result) if isinstance(result, (dict, list)) else str(result),
+                        model=candidate_model, task_type=task_type,
+                        t_start=attempt_t0, outcome="success", cascade_position=i,
+                    )
                     return result
             except CircuitBreakerOpen:
                 logger.info("model_breaker_open: skipping=%s", candidate_model)
+                await self._record_invocation(
+                    prompt_text=prompt + (system or ""), response_text="",
+                    model=candidate_model, task_type=task_type,
+                    t_start=attempt_t0, outcome="breaker_open", cascade_position=i,
+                )
                 if i < len(models) - 1:
                     emit_policy_decision(
                         "model_breaker_open",
@@ -1031,7 +1392,15 @@ class AIClient:
             except Exception as exc:
                 last_exc = exc
                 record_model_failure(candidate_model)
-                if i < len(models) - 1:
+                is_failover = i < len(models) - 1
+                await self._record_invocation(
+                    prompt_text=prompt + (system or ""), response_text="",
+                    model=candidate_model, task_type=task_type,
+                    t_start=attempt_t0,
+                    outcome="cascade_failover" if is_failover else "failure",
+                    cascade_position=i, error=exc,
+                )
+                if is_failover:
                     logger.warning(
                         "model_cascade_failover_json: failed=%s next=%s error=%s",
                         candidate_model, models[i + 1], str(exc)[:200],
@@ -1084,7 +1453,7 @@ class AIClient:
 
         accumulated: list[str] = []
         try:
-            async for chunk in self._provider.stream_completion(
+            async for chunk in self._select_provider(candidate_model).stream_completion(
                 prompt=prompt, system=system, max_tokens=max_tokens,
                 temperature=temperature, response_format=response_format,
                 model=candidate_model,
@@ -1117,9 +1486,10 @@ class AIClient:
         last_exc: Optional[Exception] = None
         for i, candidate_model in enumerate(models):
             breaker = _get_model_breaker(candidate_model)
+            attempt_t0 = time.monotonic()
             try:
                 async with breaker:
-                    result = await self._provider.chat(
+                    result = await self._select_provider(candidate_model).chat(
                         messages=messages, system=system, max_tokens=max_tokens,
                         temperature=temperature, model=candidate_model,
                     )
@@ -1128,16 +1498,34 @@ class AIClient:
                         model=candidate_model, task_type=task_type or "",
                     )
                     record_model_success(candidate_model)
+                    await self._record_invocation(
+                        prompt_text=all_text + (system or ""), response_text=result,
+                        model=candidate_model, task_type=task_type,
+                        t_start=attempt_t0, outcome="success", cascade_position=i,
+                    )
                     return result
             except CircuitBreakerOpen:
                 logger.info("model_breaker_open: skipping=%s", candidate_model)
+                await self._record_invocation(
+                    prompt_text=all_text + (system or ""), response_text="",
+                    model=candidate_model, task_type=task_type,
+                    t_start=attempt_t0, outcome="breaker_open", cascade_position=i,
+                )
                 if i < len(models) - 1:
                     continue
                 raise
             except Exception as exc:
                 last_exc = exc
                 record_model_failure(candidate_model)
-                if i < len(models) - 1:
+                is_failover = i < len(models) - 1
+                await self._record_invocation(
+                    prompt_text=all_text + (system or ""), response_text="",
+                    model=candidate_model, task_type=task_type,
+                    t_start=attempt_t0,
+                    outcome="cascade_failover" if is_failover else "failure",
+                    cascade_position=i, error=exc,
+                )
+                if is_failover:
                     logger.warning(
                         "model_cascade_failover_chat: failed=%s next=%s error=%s",
                         candidate_model, models[i + 1], str(exc)[:200],

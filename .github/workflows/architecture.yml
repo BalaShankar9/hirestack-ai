@@ -1,0 +1,107 @@
+name: Architecture
+
+# Architectural enforcement gates. Runs on every PR.
+# Reference: docs/architecture/WORLD_CLASS_ARCHITECTURE_BLUEPRINT.md
+#            docs/architecture/ENGINEERING_GUARDRAILS.md
+#
+# Rollout note: as of m9-pr36 (M10), import-linter runs as a REQUIRED
+# gate. All 4 bounded-context contracts pass with documented carve-outs.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  governance:
+    name: Governance gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.11"
+
+      - name: Install governance deps
+        run: pip install --quiet pyyaml import-linter mypy==1.20.2
+
+      # ── mypy strict allowlist (TD-1, m12-pr01) ─────────────────
+      # Keeps mypy lenient by default and ratchets modules into
+      # ``strict = True`` one at a time via [mypy.ini](mypy.ini).
+      # This step MUST stay green: adding a module to the allowlist
+      # is the only way to ratchet, and removing one requires a
+      # written justification in the PR body.
+      - name: mypy strict allowlist (ai_engine)
+        run: python -m mypy --explicit-package-bases ai_engine
+
+      # ── Architecture anti-patterns (blueprint §17) ─────────────
+      - name: Architecture anti-patterns
+        run: python scripts/governance/check_architecture.py
+
+      # ── TODO/FIXME expiration ──────────────────────────────────
+      # BASELINE MODE until 2026-05-22: 27 legacy un-dated TODOs survive in
+      # the tree (frontend firestore ops, dashboard pages, db migrations,
+      # backend jobs route). They are tracked under M11-pr39 in
+      # docs/architecture/IMPLEMENTATION_MILESTONES.md. After M11-pr39 lands,
+      # remove `continue-on-error` here.
+      - name: TODO expiration audit
+        continue-on-error: true
+        run: python scripts/governance/check_todo_expiry.py
+
+      # ── Feature flag lifecycle ─────────────────────────────────
+      - name: Feature-flag registry
+        run: python scripts/governance/check_feature_flags.py
+
+      # ── Migration safety ───────────────────────────────────────
+      # BASELINE MODE until 2026-05-22: legacy combined dump scripts in
+      # database/ predate the SAFETY override syntax. Tracked under M11-pr39.
+      - name: Migration safety
+        continue-on-error: true
+        run: python scripts/governance/check_migration_safety.py
+
+      # ── Bounded-context import contracts ───────────────────────
+      # REQUIRED gate (m9-pr36, M10). All 4 contracts (C1-C4) pass with
+      # the carve-outs in `.importlinter` mirroring the AP-12 / TID251
+      # allowlists. Sunset-dated TODOs in those carve-outs are tracked
+      # under M11-pr39.
+      - name: import-linter (bounded-context contracts)
+        run: lint-imports --config .importlinter
+
+      # ── PR-template integrity ──────────────────────────────────
+      # Fails if .github/PULL_REQUEST_TEMPLATE.md is missing the
+      # `## Architecture Impact (REQUIRED — do not delete)` section.
+      - name: PR template integrity
+        run: |
+          F=.github/PULL_REQUEST_TEMPLATE.md
+          if [ ! -f "$F" ]; then
+            echo "::error::$F missing"
+            exit 1
+          fi
+          if ! grep -q "Architecture Impact (REQUIRED" "$F"; then
+            echo "::error::PR template lost the Architecture Impact section"
+            exit 1
+          fi
+
+      # ── Architecture docs sanity ───────────────────────────────
+      # The blueprint must continue to exist and be linked from README + CONTRIBUTING.
+      - name: Architecture docs sanity
+        run: |
+          set -e
+          test -f docs/architecture/WORLD_CLASS_ARCHITECTURE_BLUEPRINT.md
+          test -f docs/architecture/ENGINEERING_GUARDRAILS.md
+          test -f docs/architecture/SCALING_PHASES.md
+          test -f docs/architecture/PRODUCTION_READINESS_CHECKLIST.md
+          test -f docs/architecture/IMPLEMENTATION_MILESTONES.md
+          test -f docs/architecture/ADR_TEMPLATE.md
+          test -f docs/adrs/README.md
+          grep -q "WORLD_CLASS_ARCHITECTURE_BLUEPRINT.md" README.md
+          grep -q "Architecture Impact" CONTRIBUTING.md

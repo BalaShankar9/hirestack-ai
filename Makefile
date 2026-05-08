@@ -1,4 +1,4 @@
-.PHONY: help setup dev dev-backend dev-frontend test test-backend test-frontend lint lint-backend lint-frontend format build docker-up docker-down docker-logs
+.PHONY: help setup dev dev-backend dev-frontend test test-backend test-frontend lint lint-backend lint-frontend format build docker-up docker-down docker-logs codegen-events codegen-events-check codegen-events-clean
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -61,3 +61,15 @@ docker-logs: ## Tail Docker logs
 # ── Database ─────────────────────────────────────────────
 db-migrate: ## Run pending Supabase migrations
 	python scripts/run_migrations.py
+
+# ── Codegen (m9-pr35 / M10) ──────────────────────────────
+codegen-events: ## Regenerate Python/TypeScript/Kotlin event clients from JSON Schemas
+	python packages/events/scripts/codegen.py --write --all
+
+codegen-events-check: ## Validate event JSON Schemas only (no writes)
+	python packages/events/scripts/codegen.py --check
+
+codegen-events-clean: ## Remove all generated event-client files (next codegen-events will rebuild)
+	rm -rf backend/app/core/events/generated/* \
+	       frontend/src/types/events/* \
+	       mobile/lib/events/*

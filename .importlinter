@@ -1,0 +1,117 @@
+# import-linter contracts — bounded-context boundaries.
+# Enforced by `.github/workflows/architecture.yml` via `lint-imports`.
+# Reference: docs/architecture/WORLD_CLASS_ARCHITECTURE_BLUEPRINT.md §3, §17 AP-12.
+#
+# Rule of thumb: any new contract addition requires an ADR.
+# Existing carve-outs are documented per-contract with owner + sunset.
+
+[importlinter]
+root_packages =
+    ai_engine
+    backend
+include_external_packages = true
+
+# ── C1: ai_engine is a leaf domain. ──────────────────────────────
+# It MUST NOT import from backend.* — that would couple the AI runtime
+# to the web layer and prevent extraction.
+#
+# Carve-outs (sunset 2026-08-01, M11-pr39): four files that lazy-import
+# backend.* inside try/except ImportError to avoid hard module-load coupling.
+# Mirror of the allowlist in scripts/governance/check_architecture.py
+# (AP-12) and pyproject.toml [tool.ruff] TID251.
+[importlinter:contract:ai-engine-is-leaf]
+name = ai_engine must not import backend
+type = forbidden
+source_modules =
+    ai_engine
+forbidden_modules =
+    backend
+# Some lazy imports live inside try/except ImportError; grimp may not
+# detect them as graph edges, so we set unmatched alerting to `warn`
+# rather than `error`. The full allowlist is enforced at file-grep level
+# by scripts/governance/check_architecture.py (AP-12).
+unmatched_ignore_imports_alerting = warn
+ignore_imports =
+    ai_engine.client -> backend.app.services.pipeline_runtime
+    ai_engine.model_router -> backend.app.core.database
+    ai_engine.agents.tools -> backend.app.core.database
+    ai_engine.agents.sub_agents.base -> backend.app.services.pipeline_runtime
+
+# ── C2: backend layering. ────────────────────────────────────────
+# api → services → core. Reverse direction is forbidden.
+# (core/ is the lowest layer: settings, auth, logging, queue, events.)
+[importlinter:contract:backend-layered]
+name = backend layered architecture
+type = layers
+layers =
+    backend.app.api
+    backend.app.services
+    backend.app.core
+unmatched_ignore_imports_alerting = warn
+ignore_imports =
+    # api/routes/* legitimately read settings from core; whitelist that path
+    backend.app.api.* -> backend.app.core.settings
+    backend.app.api.* -> backend.app.core.security
+    backend.app.api.* -> backend.app.core.rate_limit
+    backend.app.api.* -> backend.app.core.idempotency
+    backend.app.api.* -> backend.app.core.observability
+    # core/prometheus_collectors imports ai_engine.api (cache + client)
+    # for /metrics scrape; ai_engine.client has a lazy try/except into
+    # backend.app.services.pipeline_runtime (C1 carve-out, sunset
+    # 2026-08-01). The transitive edge would otherwise trip C2.
+    ai_engine.client -> backend.app.services.pipeline_runtime
+
+# ── C3: ai_engine consumed only via narrow surface. ──────────────
+# Backend code MUST import ai_engine through `ai_engine.api` only.
+# This mirrors the ruff banned-api rule in pyproject.toml and adds module-graph teeth.
+[importlinter:contract:ai-engine-narrow-surface]
+name = backend must use ai_engine.api surface
+type = forbidden
+# Only block DIRECT imports — `ai_engine.api` legitimately re-exports
+# from ai_engine.client/model_router internally (that's the whole point
+# of the facade). We want to fail when a backend module imports those
+# internals DIRECTLY, not when it imports them transitively via api.
+allow_indirect_imports = true
+source_modules =
+    backend.app.api
+    backend.app.services
+forbidden_modules =
+    ai_engine.client
+    ai_engine.model_router
+    ai_engine.agent_events
+    ai_engine.cache
+    ai_engine.application_brief
+unmatched_ignore_imports_alerting = warn
+ignore_imports =
+    # Carve-outs identical to pyproject.toml [tool.ruff] (TODO 2026-08-01: drop with m4-pr12+).
+    backend.app.api.routes.analytics -> ai_engine.client
+    backend.app.api.routes.generate.stream -> ai_engine.client
+    backend.app.api.routes.generate.stream -> ai_engine.agent_events
+    backend.app.services.pipeline_runtime -> ai_engine.client
+    backend.app.services.pipeline_runtime -> ai_engine.model_router
+    # Direct ai_engine.cache reads — TODO(2026-08-01, M11-pr39):
+    # route through ai_engine.api facade so the cache is an
+    # implementation detail of the engine.
+    # backend.app.api.routes.intel migrated to ai_engine.api in m11-pr39.
+    backend.app.services.pipeline_runtime -> ai_engine.cache
+
+# ── C4: temporal workflow code is sandboxed. ─────────────────────
+# Workflow modules MUST NOT call non-deterministic stdlib (datetime.now,
+# uuid4, random) — but import-linter can only enforce *imports*. We check
+# for direct module imports here and rely on `check_architecture.py` for
+# call-site detection.
+[importlinter:contract:temporal-workflow-purity]
+name = temporal workflow modules must not import I/O libs at module load
+type = forbidden
+source_modules =
+    backend.app.temporal.workflows
+forbidden_modules =
+    requests
+    httpx
+    psycopg2
+    redis
+
+# ── C5: events package has no service deps. ──────────────────────
+# packages/events/ is the cross-language schema package; it must depend on
+# nothing from this repo to keep it portable + codegen-able.
+# (Enforced when packages/events grows into a python-installable.)

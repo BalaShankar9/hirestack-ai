@@ -1,2 +1,8 @@
 web: cd /app/backend && PYTHONPATH=/app python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
 worker: cd /app/backend && PYTHONPATH=/app python -m app.worker
+scheduler: cd /app/backend && PYTHONPATH=/app python -m app.scheduler.main
+outbox_relay: cd /app/backend && PYTHONPATH=/app python -m app.workers.outbox_relay
+billing_usage_consumer: cd /app/backend && PYTHONPATH=/app python -m app.workers.consumers.billing_usage
+temporal_worker: cd /app/backend && PYTHONPATH=/app python -m app.temporal.worker
+generation_status_consumer: cd /app/backend && PYTHONPATH=/app python -m app.workers.consumers.generation_status
+aim_source_embed_consumer: cd /app/backend && PYTHONPATH=/app python -m app.workers.consumers.aim_source_embed

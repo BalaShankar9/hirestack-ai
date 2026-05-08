@@ -25,7 +25,6 @@ import pytest
 
 MIGRATION_GLOBS = (
     "supabase/migrations/*.sql",
-    "database/migrations/*.sql",
 )
 
 # Tables that DELIBERATELY use ON DELETE SET NULL on their application_id
@@ -60,8 +59,9 @@ KNOWN_BARE_USER_FKS: set[tuple[str, str]] = set()
 def _read_all_sql() -> str:
     """Concatenate all migration SQL into a single string for FK parsing."""
     # Walk upwards until we find the workspace root (the dir that contains
-    # both supabase/migrations and database/migrations). Resilient to test
-    # being moved.
+    # supabase/migrations). Resilient to test being moved.
+    # `database/migrations/` was deleted by m9-pr33 (M10) — single root.
+
     here = Path(__file__).resolve()
     repo_root = None
     for ancestor in here.parents:

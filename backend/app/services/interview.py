@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 import structlog
 
 from app.core.database import get_firestore_db, COLLECTIONS, FirestoreDB
-from ai_engine.client import AIClient
+from ai_engine.api import AIClient
 from ai_engine.chains.interview_simulator import InterviewSimulatorChain
 
 logger = structlog.get_logger()
