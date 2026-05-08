@@ -1514,33 +1514,109 @@ def _start_generation_job_legacy(job_id: str, user_id: str) -> None:
     if job_id in _ACTIVE_GENERATION_TASKS:
         return
 
-    # Try to enqueue to Redis Streams for the dedicated worker process.
-    # Falls back to in-process asyncio.create_task when Redis is unavailable.
+    # Tier-2: enqueue to Redis Streams for the dedicated worker process.
+    # ADR-0038 (P0-2): when Redis is unavailable we DO NOT silently run
+    # the pipeline in the web process. We honour ff_inprocess_fallback:
+    #   * flag OFF (production default) → mark the job failed with a
+    #     retryable message so the client retries cleanly and the
+    #     failure is durable.
+    #   * flag ON (dev / single-process deploys) → bounded in-process
+    #     execution via _start_generation_job_inprocess.
     try:
         from app.core.queue import enqueue_generation_job
 
-        # enqueue_generation_job is async — schedule it and let the coroutine
-        # decide whether Redis accepted the job.
         async def _try_enqueue() -> None:
             enqueued = await enqueue_generation_job(job_id, user_id)
             if enqueued:
                 logger.info("generation_job_enqueued", job_id=job_id)
                 return
-            # Redis unavailable — fall back to in-process
-            _start_generation_job_inprocess(job_id, user_id)
+            await _handle_redis_unavailable(job_id, user_id)
 
         asyncio.create_task(_try_enqueue())
+    except Exception as exc:
+        # Import failure or other unexpected error — treat as Redis unavailable.
+        logger.warning(
+            "generation_job_enqueue_setup_failed",
+            job_id=job_id,
+            error=str(exc)[:200],
+        )
+        # Schedule the async handler since we're in a sync function.
+        asyncio.create_task(_handle_redis_unavailable(job_id, user_id))
+
+
+async def _handle_redis_unavailable(job_id: str, user_id: str) -> None:
+    """ADR-0038: branch on ff_inprocess_fallback when Redis is down."""
+    try:
+        from app.core.config import settings as _settings
+        flag_on = bool(getattr(_settings, "ff_inprocess_fallback", False))
     except Exception:
-        # Import or other failure — fall back
-        _start_generation_job_inprocess(job_id, user_id)
+        flag_on = False
+
+    if not flag_on:
+        logger.error(
+            "generation_dispatch_failed_redis_unavailable",
+            job_id=job_id,
+            reason="redis_unavailable_and_inprocess_fallback_disabled",
+        )
+        await _finalize_orphaned_job(
+            job_id,
+            status="failed",
+            error_message=(
+                "Generation queue is temporarily unavailable. "
+                "Please retry in a moment."
+            ),
+        )
+        return
+
+    # Flag ON — dev/single-process path. Still bounded.
+    _start_generation_job_inprocess(job_id, user_id)
 
 
 def _start_generation_job_inprocess(job_id: str, user_id: str) -> None:
-    """Execute the generation job in the web process (fallback when no worker)."""
+    """Execute the generation job in the web process.
+
+    ADR-0038: callable only when ``ff_inprocess_fallback`` is on (the
+    upstream gate lives in :func:`_handle_redis_unavailable`). The
+    function is idempotent and enforces an explicit concurrency cap
+    via ``settings.inprocess_max_concurrent``. Over-cap requests are
+    failed fast — never silently queued.
+    """
     if job_id in _ACTIVE_GENERATION_TASKS:
         return
 
-    logger.info("generation_job_inprocess_fallback", job_id=job_id)
+    try:
+        from app.core.config import settings as _settings
+        cap = int(getattr(_settings, "inprocess_max_concurrent", 4))
+    except Exception:
+        cap = 4
+    cap = max(1, cap)
+
+    if len(_ACTIVE_GENERATION_TASKS) >= cap:
+        logger.error(
+            "generation_inprocess_saturated",
+            job_id=job_id,
+            active=len(_ACTIVE_GENERATION_TASKS),
+            cap=cap,
+        )
+        # Schedule a finalisation since this is a sync function.
+        asyncio.create_task(
+            _finalize_orphaned_job(
+                job_id,
+                status="failed",
+                error_message=(
+                    "Generation workers are saturated. "
+                    "Please retry in a moment."
+                ),
+            )
+        )
+        return
+
+    logger.info(
+        "generation_job_inprocess_fallback",
+        job_id=job_id,
+        active=len(_ACTIVE_GENERATION_TASKS),
+        cap=cap,
+    )
 
     # Always use PipelineRuntime-backed execution
     task = asyncio.create_task(_run_generation_job_via_runtime(job_id, user_id))

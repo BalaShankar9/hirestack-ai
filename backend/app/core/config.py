@@ -121,6 +121,15 @@ class Settings(BaseSettings):
     # Job queue
     queue_require_active_consumer: bool = True
 
+    # ADR-0038 (P0-2): in-process dispatch fallback. Default OFF in
+    # production — when Redis is unavailable the job is marked failed
+    # with a retryable message instead of running on the web fleet.
+    # Set to True only for dev / single-process deploys.
+    ff_inprocess_fallback: bool = False
+    # Hard cap on concurrent in-process generation jobs when the
+    # fallback flag is on. Over-cap requests are failed fast.
+    inprocess_max_concurrent: int = 4
+
     # Worker
     worker_name: str = "worker-1"
     worker_concurrency: int = 3
@@ -187,6 +196,11 @@ class Settings(BaseSettings):
     @field_validator("worker_concurrency")
     @classmethod
     def _clamp_worker_concurrency(cls, v: int) -> int:
+        return max(1, int(v))
+
+    @field_validator("inprocess_max_concurrent")
+    @classmethod
+    def _clamp_inprocess_max_concurrent(cls, v: int) -> int:
         return max(1, int(v))
 
     @field_validator("career_monitor_interval_seconds")

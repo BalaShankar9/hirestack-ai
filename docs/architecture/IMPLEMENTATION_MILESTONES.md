@@ -34,21 +34,26 @@ PRs: `m7-pr27` (split into 27a, 27b, 27c if ≥500 lines each).
 | **Success criteria** | (✅ migration-time) Zero partition-related INSERT errors. (pending — 30d post-deploy) `partition_rotation_audit` shows daily rows with no error_message. Manual chaos drill: `SELECT cron.unschedule(...)` then 36h later confirm alert fires (deferred to M7-D). |
 | **Owner DRI** | @BalaShankar9 |
 
-#### M7-B — Eliminate in-process fallback (`m7-pr27b`)
+#### M7-B — Eliminate in-process fallback (`m7-pr27b`) — ✅ **SHIPPED 2026-05-08**
 
 | Field | Value |
 |---|---|
-| **What changes** | Remove `_start_generation_job_inprocess` path entirely. Dispatch becomes `Temporal → Redis Streams → 503 Retry-After`. Add canary alert on 503 rate from this endpoint. |
-| **Why now** | P0-2: unbounded `asyncio.create_task` in web pod = OOM under sustained queue outage; silently loses jobs on pod restart. Real survivability beats fake availability. |
-| **Risks introduced** | A simultaneous Temporal + Redis outage now returns 503 (was: silent acceptance). Customers see real failure during a real outage — by design. |
+| **What changes** | Collapse the three-tier dispatch ladder to two tiers in production. Tier-3 (in-process) is gated behind `ff_inprocess_fallback` (default OFF) and **bounded** by `inprocess_max_concurrent` (default 4). When the flag is OFF and Redis is unavailable, the job is finalised as `failed` with a retryable message — durable, observable, and immediate. When the flag is ON (dev / single-process deploys) over-cap requests fail fast instead of queueing forever. |
+| **Why this design (vs. blueprint "delete tier-3 entirely")** | The in-process path is still the only viable execution surface for `make dev` / single-process deploys where there is no Redis worker process. We keep the path, gate it, bound it, and **sunset it on 2026-08-31** (enforced by `check_feature_flags.py`). Full justification in ADR-0038 §"Considered alternatives". |
+| **Why now** | P0-2: unbounded `asyncio.create_task` in web pod = OOM under sustained queue outage; silently loses jobs on pod restart. Real survivability beats fake availability. **Closed.** |
+| **Risks introduced** | A simultaneous Temporal + Redis outage now finalises generation jobs as failed with a retryable message (was: silent acceptance). Customers see real failure during a real outage — by design. |
 | **Blast radius** | Generation endpoint only, only when *both* Temporal and Redis are down. |
-| **Rollback** | Revert PR. No data state to repair (no in-process tasks were ever durable, so removing them removes nothing reliable). |
-| **Observability** | New metric `dispatch_outcome_total{outcome=temporal\|redis\|rejected}`; alert if `rejected` > 0.5% over 5 min. Sentry tag `dispatch.fallback_path`. |
-| **Tests** | (1) Inject Temporal-down → assert Redis path; (2) inject both down → assert 503 + Retry-After header; (3) load test 1k req/s with both healthy → no rejections. |
-| **Deploy order** | Land alerting first, observe baseline 24h, then ship the removal. |
-| **ADR** | ADR-0038. |
-| **Success criteria** | Web pod RSS stable under sustained Redis outage (load test reproduces). Zero `_start_generation_job_inprocess` references in repo. |
-| **Owner DRI** | _(assign)_ |
+| **Rollback** | Set `ff_inprocess_fallback=true` to re-enable the dev path; the fallback is still bounded. Sunset 2026-08-31. |
+| **Observability** | Existing log lines: `generation_dispatch_failed_redis_unavailable` (flag-off path), `generation_inprocess_saturated` (over-cap), `generation_job_inprocess_fallback` (flag-on accept). Prometheus counter `generation_dispatch_fallback_total{tier=...}` deferred to M11 observability uplift (recorded as out-of-scope in ADR-0038). |
+| **Tests** | `backend/tests/unit/test_inprocess_fallback_gate.py` — 4 unit tests covering flag-off-Redis-down, flag-on-Redis-down, saturated semaphore, under-cap. |
+| **Deploy order** | Single PR. New defaults are production-safe (flag off). Set `FF_INPROCESS_FALLBACK=true` only on dev / single-process environments before merging. |
+| **ADR** | ADR-0038 (Accepted 2026-05-08). |
+| **Success criteria** | (✅) `_start_generation_job_inprocess` is unreachable in production absent the flag. (✅) Capacity cap enforced via test. (pending — 14d post-deploy) zero `generation_inprocess_saturated` events from prod (web pods). |
+| **Owner DRI** | @BalaShankar9 |
+
+**Out of scope (deferred — written down so they don't get lost):**
+- Wiring `_try_temporal()` and `_try_enqueue()` bootstrap coroutines into a managed task registry for graceful shutdown. Tracked as `m7-pr27d` (orphan task hygiene).
+- Prometheus counter `generation_dispatch_fallback_total{tier=...}` — M11.
 
 #### M7-C — ACK-on-success queue semantics + DLQ (`m7-pr27c`)
 
