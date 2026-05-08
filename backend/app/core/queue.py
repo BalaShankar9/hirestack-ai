@@ -208,7 +208,19 @@ class QueueConsumer:
             logger.warning("queue.reclaim_error", extra={"error": str(exc)[:200]})
 
     async def _dispatch(self, r: Any, msg_id: str, data: Dict[str, str]) -> None:
-        """Dispatch a single message to the handler, ACK on success."""
+        """Dispatch a single message to the handler.
+
+        Two paths, gated by ``ff_queue_ack_on_success`` (ADR-0040):
+
+        - Flag OFF (legacy): always ACK in ``finally``. Handler is the
+          sole arbiter of failure visibility (via DB row updates).
+        - Flag ON: ACK only on handler success. Failures stay pending
+          and are retried via ``_reclaim_pending``. After
+          ``queue_max_deliveries`` total deliveries the message is
+          XADDed to ``events:dlq`` and ACKed off the source. A
+          ``processed_queue_events`` row guards against re-execution
+          on at-least-once redelivery.
+        """
         job_id = data.get("job_id", "")
         user_id = data.get("user_id", "")
         if not job_id or not user_id:
@@ -216,25 +228,188 @@ class QueueConsumer:
             await asyncio.to_thread(r.xack, STREAM_KEY, GROUP_NAME, msg_id)
             return
 
-        async def _run() -> None:
+        from app.core.config import settings as _settings
+        ack_on_success = bool(getattr(_settings, "ff_queue_ack_on_success", False))
+
+        if not ack_on_success:
+            # ── Legacy path — bit-for-bit identical to pre-ADR-0040 ──
+            async def _run_legacy() -> None:
+                async with self._sem:
+                    try:
+                        await self.handler(job_id, user_id)
+                    except Exception as exc:
+                        logger.error(
+                            "queue.job_handler_error",
+                            extra={"job_id": job_id, "error": str(exc)[:300]},
+                        )
+                    finally:
+                        try:
+                            await asyncio.to_thread(r.xack, STREAM_KEY, GROUP_NAME, msg_id)
+                        except Exception:
+                            pass
+
+            asyncio.create_task(_run_legacy())
+            return
+
+        # ── ACK-on-success path (ADR-0040) ──
+        max_deliveries = max(1, int(getattr(_settings, "queue_max_deliveries", 5)))
+        delivery_count = await self._delivery_count(r, msg_id)
+
+        if delivery_count > max_deliveries:
+            await self._dead_letter(
+                r, msg_id, job_id, user_id,
+                reason=f"max_deliveries_exceeded ({delivery_count}>{max_deliveries})",
+            )
+            return
+
+        async def _run_ack_on_success() -> None:
             async with self._sem:
                 try:
                     await self.handler(job_id, user_id)
                 except Exception as exc:
-                    logger.error(
+                    # Do NOT ACK — message stays in PEL, reclaim will retry.
+                    logger.warning(
                         "queue.job_handler_error",
-                        extra={"job_id": job_id, "error": str(exc)[:300]},
+                        extra={
+                            "job_id": job_id,
+                            "msg_id": msg_id,
+                            "delivery": delivery_count,
+                            "error": str(exc)[:300],
+                        },
                     )
-                finally:
-                    # Always ACK — the handler is responsible for marking the
-                    # DB job as failed on error; we don't want infinite retries
-                    # of a permanently failing job.
-                    try:
-                        await asyncio.to_thread(r.xack, STREAM_KEY, GROUP_NAME, msg_id)
-                    except Exception:
-                        pass
+                    if delivery_count >= max_deliveries:
+                        # This was the last allowed attempt — DLQ now
+                        # rather than waiting for the next reclaim pass
+                        # to notice and DLQ then.
+                        try:
+                            await self._dead_letter(
+                                r, msg_id, job_id, user_id, reason=str(exc)[:500]
+                            )
+                        except Exception:
+                            logger.exception("queue.dlq_failed_on_handler_error")
+                    return
 
-        asyncio.create_task(_run())
+                # Success → record dedup row, then ACK. Duplicate row
+                # means a previous delivery already processed this
+                # msg_id (handler ran but ACK round-trip failed) —
+                # treat as success.
+                try:
+                    inserted = await asyncio.to_thread(
+                        self._record_processed, msg_id
+                    )
+                    if not inserted:
+                        logger.info(
+                            "queue.duplicate_delivery_skipped",
+                            extra={"job_id": job_id, "msg_id": msg_id},
+                        )
+                except Exception:
+                    # Dedup table down → still ACK (handler succeeded).
+                    # Worst case: a redelivery re-runs the handler and the
+                    # job's own state guards prevent duplicate side-effects.
+                    logger.exception("queue.dedup_record_failed")
+
+                try:
+                    await asyncio.to_thread(r.xack, STREAM_KEY, GROUP_NAME, msg_id)
+                except Exception:
+                    logger.exception("queue.ack_failed_after_success")
+
+        asyncio.create_task(_run_ack_on_success())
+
+    async def _delivery_count(self, r: Any, msg_id: str) -> int:
+        """Return the delivery count for this msg_id from XPENDING.
+
+        Returns 1 if XPENDING reports nothing (first delivery, message
+        not yet in the PEL view) — safe default that lets the handler
+        proceed.
+        """
+        try:
+            entries = await asyncio.to_thread(
+                r.xpending_range,
+                STREAM_KEY,
+                GROUP_NAME,
+                min=msg_id,
+                max=msg_id,
+                count=1,
+            )
+        except Exception:
+            logger.warning("queue.xpending_range_failed", extra={"msg_id": msg_id})
+            return 1
+
+        if not entries:
+            return 1
+        entry = entries[0]
+        # redis-py returns either {"times_delivered": N, ...} or a tuple
+        # depending on version. Be defensive.
+        if isinstance(entry, dict):
+            return int(entry.get("times_delivered", 1))
+        try:
+            return int(entry[3])
+        except Exception:
+            return 1
+
+    def _record_processed(self, msg_id: str) -> bool:
+        """Insert (consumer, msg_id) into ``processed_queue_events``.
+
+        Returns True if a new row was inserted, False if the row already
+        existed (duplicate delivery). Synchronous — call via
+        ``asyncio.to_thread``.
+        """
+        try:
+            from app.core.database import get_db
+            db = get_db()
+        except Exception:
+            logger.exception("queue.record_processed_no_db")
+            return True  # fail-open: don't block the ACK
+
+        try:
+            db.client.table("processed_queue_events").insert(
+                {"consumer": GROUP_NAME, "msg_id": msg_id}
+            ).execute()
+            return True
+        except Exception as exc:
+            err = str(exc).lower()
+            if "duplicate key" in err or ("unique" in err and "violat" in err):
+                return False
+            raise
+
+    async def _dead_letter(
+        self,
+        r: Any,
+        msg_id: str,
+        job_id: str,
+        user_id: str,
+        *,
+        reason: str,
+    ) -> None:
+        """Push the message to the shared DLQ stream and ACK off source."""
+        logger.error(
+            "queue.dead_lettering",
+            extra={
+                "consumer": GROUP_NAME,
+                "msg_id": msg_id,
+                "job_id": job_id,
+                "reason": reason,
+            },
+        )
+        try:
+            await asyncio.to_thread(
+                r.xadd,
+                "events:dlq",
+                {
+                    "consumer": GROUP_NAME,
+                    "source_stream": STREAM_KEY,
+                    "source_msg_id": msg_id,
+                    "job_id": job_id,
+                    "user_id": user_id,
+                    "reason": reason,
+                },
+            )
+        except Exception:
+            logger.exception("queue.dlq_xadd_failed")
+        try:
+            await asyncio.to_thread(r.xack, STREAM_KEY, GROUP_NAME, msg_id)
+        except Exception:
+            logger.exception("queue.dlq_ack_failed")
 
     def stop(self) -> None:
         self._running = False

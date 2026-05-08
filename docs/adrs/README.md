@@ -47,7 +47,7 @@ These are reserved numbers. The corresponding implementation PR cannot merge unt
 | 0037 | Partition rotation strategy — `pg_cron` + native function for `events_outbox` (P0-1; pg_partman deferred to Stage B) | Accepted 2026-05-08 | `m7-pr27a` ✅ |
 | 0038 | Eliminate in-process job fallback (P0-2) | Accepted 2026-05-08 | `m7-pr27b` ✅ |
 | 0039 | Forbid native `EventSource`; mandate `@microsoft/fetch-event-source` (P0-7) | Proposed | `m7-pr27` |
-| 0040 | ACK-on-success queue semantics + DLQ (P0-3) | Proposed | `m7-pr27` |
+| 0040 | ACK-on-success queue semantics + DLQ (P0-3) | Accepted 2026-05-08 | m7-pr27c ✅ |
 
 ## Authoring rules
 

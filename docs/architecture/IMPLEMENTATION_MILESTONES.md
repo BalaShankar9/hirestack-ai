@@ -55,21 +55,28 @@ PRs: `m7-pr27` (split into 27a, 27b, 27c if ≥500 lines each).
 - Wiring `_try_temporal()` and `_try_enqueue()` bootstrap coroutines into a managed task registry for graceful shutdown. Tracked as `m7-pr27d` (orphan task hygiene).
 - Prometheus counter `generation_dispatch_fallback_total{tier=...}` — M11.
 
-#### M7-C — ACK-on-success queue semantics + DLQ (`m7-pr27c`)
+#### M7-C — ACK-on-success queue semantics + DLQ (`m7-pr27c`) — ✅ **SHIPPED 2026-05-08**
 
 | Field | Value |
 |---|---|
-| **What changes** | Refactor `backend/app/core/queue.py::_dispatch` to ACK only after handler returns success. Failed handlers route to `events:dlq:<event_type>` after `max_attempts`. Add `processed_events` table for consumer-side idempotency. |
-| **Why now** | P0-3: current always-ACK-in-finally swallows handler exceptions silently — events vanish. |
-| **Risks introduced** | A buggy handler now blocks its consumer group instead of skipping. Mitigated by `max_attempts=5` and DLQ. |
-| **Blast radius** | Per-event-type. A poison message stalls only one consumer group, not the platform. |
-| **Rollback** | Flag `ff_queue_ack_on_success` (default off → on at deploy). Off = legacy always-ACK behaviour. Sunset 2026-09-01. |
-| **Observability** | Metrics: `queue_ack{outcome}`, `dlq_depth{event_type}`, `consumer_lag_seconds{group}`. Alerts: DLQ depth > 0 for any type → page; lag > 30s → ticket. |
-| **Tests** | Handler raises → message remains pending → retried → after 5 attempts moves to DLQ. Idempotency: same event delivered twice → handler invoked once. |
-| **Deploy order** | Flag default off in PR. Flip to on per-event-type in subsequent ops PRs over 1 week, monitoring DLQ. |
-| **ADR** | ADR-0040. |
-| **Success criteria** | Zero observed silent event loss over 30 days. DLQ replay tool documented and exercised. |
-| **Owner DRI** | _(assign)_ |
+| **What changed** | Refactored `backend/app/core/queue.py::_dispatch` to ACK only after handler returns success, gated behind `ff_queue_ack_on_success` (default OFF, sunset 2026-09-01). Flag-on path: read delivery count via `XPENDING`, DLQ to `events:dlq` after `queue_max_deliveries` (default 5), insert into new `processed_queue_events` table on success for consumer-side idempotency. Flag-off path is bit-for-bit identical to pre-ADR-0040 behaviour. |
+| **Why this design (vs. blueprint "delete legacy path")** | The events bus (`backend/app/core/events/consumer.py`) already implements this exact pattern — we mirror it verbatim rather than invent a second protocol. The flag exists so each environment can flip and observe `events:dlq` + `processed_queue_events` row count before legacy is deleted at sunset. |
+| **Why now** | P0-3: current always-ACK-in-finally swallows handler exceptions; failures only surface if the handler's defensive DB write itself succeeds. **Closed.** |
+| **Risks introduced** | (a) A pathologically slow handler (>5 min) could be reclaimed and run twice before completing once; the second run's dedup row is missing because the first hasn't returned yet. Job-state guards in `_run_generation_job_via_runtime` prevent duplicate user-visible side-effects (worst case: wasted compute). (b) DLQ depth becomes a new monitoring surface (matches events bus). |
+| **Blast radius** | Generation queue consumer only. A poison message stalls only its own msg_id slot; sibling reads continue. |
+| **Rollback** | Set `FF_QUEUE_ACK_ON_SUCCESS=false`. Legacy behaviour returns immediately. |
+| **Observability** | Existing log lines: `queue.dead_lettering`, `queue.duplicate_delivery_skipped`, `queue.job_handler_error` (now WARN with `delivery` field). DLQ inspection via `XRANGE events:dlq`. Prometheus counters `queue_ack_total{outcome,consumer}`, `queue_dlq_total{consumer}`, `queue_pending_redeliveries{consumer}` deferred to M11. |
+| **Tests** | `backend/tests/unit/test_queue_ack_on_success.py` — 7 unit tests covering legacy contract, success path, retry path, DLQ at-max, DLQ over-max, duplicate-dedup tolerance, malformed message. |
+| **Deploy order** | Migration (`20260508_processed_queue_events.sql`) + code in same PR. Flip flag per-environment after smoke drill (synthetic 5-attempt poison message → DLQ appears). |
+| **ADR** | ADR-0040 (Accepted 2026-05-08). |
+| **Success criteria** | (✅) Flag-off behaviour preserved (test). (✅) Flag-on retries on transient handler error (test). (✅) DLQ on max-attempts (test). (pending — 30d post flag-flip) zero observed silent event loss. |
+| **Owner DRI** | @BalaShankar9 |
+
+**Out of scope (deferred — written down so they don't get lost):**
+- DLQ replay tool / runbook — M11.
+- Prometheus counters for queue ACK / DLQ / redeliveries — M11.
+- Pruning sweeper for `processed_queue_events` (and sibling `consumed_events`) — M7-D.
+- Per-event-type DLQ stream routing (currently single shared `events:dlq` with `consumer` discriminator).
 
 **M7 dependencies:** none. M7-A, B, C may ship in parallel branches but **must merge in order A→B→C** because B's 503 logic relies on C's metrics for canary decisioning.
 

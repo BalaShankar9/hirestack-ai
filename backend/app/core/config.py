@@ -130,6 +130,17 @@ class Settings(BaseSettings):
     # fallback flag is on. Over-cap requests are failed fast.
     inprocess_max_concurrent: int = 4
 
+    # ADR-0040 (P0-3): ACK Redis Stream messages only after handler
+    # returns success. Default OFF — when False the consumer keeps the
+    # legacy always-ACK-in-finally behaviour. Flip ON per-environment
+    # after the processed_queue_events migration ships. Sunset
+    # 2026-09-01.
+    ff_queue_ack_on_success: bool = False
+    # Max XPENDING deliveries before a message is routed to the shared
+    # `events:dlq` stream and ACKed off the source. Only consulted when
+    # ff_queue_ack_on_success is True.
+    queue_max_deliveries: int = 5
+
     # Worker
     worker_name: str = "worker-1"
     worker_concurrency: int = 3
@@ -201,6 +212,11 @@ class Settings(BaseSettings):
     @field_validator("inprocess_max_concurrent")
     @classmethod
     def _clamp_inprocess_max_concurrent(cls, v: int) -> int:
+        return max(1, int(v))
+
+    @field_validator("queue_max_deliveries")
+    @classmethod
+    def _clamp_queue_max_deliveries(cls, v: int) -> int:
         return max(1, int(v))
 
     @field_validator("career_monitor_interval_seconds")
