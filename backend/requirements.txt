@@ -55,6 +55,9 @@ python-dateutil>=2.8,<3.0
 tenacity>=8.2,<10.0
 structlog>=24.1,<26.0
 prometheus_client>=0.20,<1.0
+# m11-pr44: L2 gRPC sandbox runtime. grpcio-tools NOT pinned — we
+# hand-roll the wire format so no .proto compile step is needed.
+grpcio>=1.60,<2.0
 aiofiles>=23.2,<26.0
 markdown>=3.8.1,<4.0
 slowapi>=0.1.9,<0.2

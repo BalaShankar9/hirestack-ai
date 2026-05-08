@@ -108,7 +108,18 @@ class L1HttpxAllowlistSandbox:
 
 
 class L2GrpcSidecarSandbox:
-    """Stub. Raises with the tool name so premature L2 assignment is loud."""
+    """L2 tier — routes through the gRPC sandbox runtime (m11-pr44).
+
+    With ``FF_TOOL_L2_GRPC_ENABLED`` OFF (default), preserves the
+    m7-pr29 contract: raises :class:`SandboxNotImplemented` with the
+    tool name in the message so premature L2 assignment is loud.
+
+    With the flag ON, lazily imports the runtime (avoids dragging
+    grpc.aio into module load for L0/L1-only deployments) and
+    delegates to it. The runtime starts an in-process gRPC server on
+    first use; flip ``FF_TOOL_L2_GRPC_TARGET=host:port`` to point at
+    an external ``tool-runner`` sidecar.
+    """
 
     async def invoke(
         self,
@@ -117,9 +128,12 @@ class L2GrpcSidecarSandbox:
         arguments: dict[str, Any],
         record: ToolRecord,
     ) -> Any:
-        raise SandboxNotImplemented(
-            f"L2 tool-runner sidecar not yet implemented (tool={record.name}); "
-            "tracked in M11."
+        # Lazy import — keeps grpc out of the module-load graph for
+        # deployments that never enable L2.
+        from .grpc_sandbox import L2GrpcSandboxRuntime
+
+        return await L2GrpcSandboxRuntime().invoke(
+            fn, arguments=arguments, record=record
         )
 
 
