@@ -256,6 +256,26 @@ PRs: `m9-pr33` through `m9-pr36`.
 
 ---
 
+#### M10 — `m9-pr34` SHIPPED notes
+
+| Field | Detail |
+|---|---|
+| **What landed** | Single canonical FastAPI entrypoint pinned and enforced. Reality differs from the original plan: `backend/main.py` (NOT `backend/app/main.py`) is the canonical 773-line entry with Sentry/structlog/lifespan/Redis/JobWatchdog/scheduler. `backend/app/main.py` does not exist. The invariant is enforced by the pre-existing `backend/tests/test_entrypoint_consistency.py` (9 tests, all green): pins `backend/main.py` as canonical; asserts no config references the broken `app.main:app`; validates `Procfile`, `railway.toml`, `backend/Dockerfile` (cwd=backend, `main:app`), `infra/Dockerfile.backend` (cwd=repo root, `backend.main:app`), and `Makefile` all resolve to a real FastAPI app. |
+| **Did NOT land** | Shim file at the non-canonical path (none needed — the alternative path was never created in the first place). |
+| **Rollout** | No code change. Documentation-only confirmation that the invariant exists and is regression-pinned. |
+| **Files** | `docs/architecture/IMPLEMENTATION_MILESTONES.md` (this SHIPPED block). |
+
+#### M10 — `m9-pr36` SHIPPED notes
+
+| Field | Detail |
+|---|---|
+| **What landed** | `import-linter` is now a REQUIRED CI gate (no longer `continue-on-error`). All 4 bounded-context contracts pass: (C1) `ai_engine` is leaf (no `backend.*` imports), (C2) `backend` layered architecture (`api → services → core`), (C3) `backend` consumes `ai_engine` only via `ai_engine.api` facade for direct imports, (C4) Temporal workflow modules cannot module-load I/O libs (`requests`, `httpx`, `psycopg2`, `redis`). Carve-outs documented inline in `.importlinter` mirror the AP-12 / TID251 allowlists in `scripts/governance/check_architecture.py` and `pyproject.toml`. Top-level `include_external_packages = true` so C4 can resolve external forbidden modules. C3 uses `allow_indirect_imports = true` so transitive chains via the legitimate `ai_engine.api` facade are not flagged. All ignore_imports use `unmatched_ignore_imports_alerting = warn` (preventive guards may not match in current graph). |
+| **Did NOT land** | Refactor of the 7 documented carve-outs (sunset 2026-08-01, tracked under M11-pr39). Created `backend/app/core/__init__.py` (was missing — required for grimp to register the layer in C2). |
+| **Rollout** | Now-required check runs on every PR via `.github/workflows/architecture.yml`. Local: `lint-imports --config .importlinter --no-cache`. |
+| **Files** | `.importlinter` (extended: top-level `include_external_packages = true`; C1 carve-outs + warn alerting; C2 cleanup of dead `auth` ignore + warn alerting; C3 `allow_indirect_imports = true` + warn alerting + 2 new sunset-dated `ai_engine.cache` carve-outs), `backend/app/core/__init__.py` (NEW — namespace doc), `.github/workflows/architecture.yml` (removed `continue-on-error: true` + updated header rollout note), this file (m9-pr34 + m9-pr36 SHIPPED blocks). |
+
+---
+
 ## Stage A trailing items (M11+, no PR numbers yet)
 
 | Item | Closes | Trigger to start |
