@@ -32,7 +32,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install governance deps
-        run: pip install --quiet pyyaml import-linter mypy==1.20.2
+        run: pip install --quiet pyyaml import-linter mypy==1.20.2 pytest pytest-cov pytest-asyncio pytest-timeout
 
       # ── mypy strict allowlist (TD-1, m12-pr01) ─────────────────
       # Keeps mypy lenient by default and ratchets modules into
@@ -42,6 +42,20 @@ jobs:
       # written justification in the PR body.
       - name: mypy strict allowlist (ai_engine)
         run: python -m mypy --explicit-package-bases ai_engine
+
+      # ── Coverage gate (TD-2, m12-pr02) ─────────────────────────
+      # Mirrors the mypy ratchet: the ``[tool.coverage.run] source``
+      # list in pyproject.toml is the allowlist of modules that must
+      # stay ≥70% covered. Widening that list is the only ratchet.
+      # Current floor: 70% (actual ≈93% on registry + api).
+      - name: Coverage gate (ai_engine allowlist ≥70%)
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          pip install --quiet -r backend/requirements.txt
+          python -m pytest ai_engine/tests \
+            --cov --cov-config=pyproject.toml \
+            --cov-report=term --cov-fail-under=70 -q
 
       # ── Architecture anti-patterns (blueprint §17) ─────────────
       - name: Architecture anti-patterns

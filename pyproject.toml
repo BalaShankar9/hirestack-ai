@@ -32,3 +32,36 @@ known-first-party = ["backend", "ai_engine"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["backend/tests"]
+
+# ── Coverage gate (m12-pr02, TD-2) ──────────────────────────────────────
+# Same ratchet pattern as the mypy strict allowlist (TD-1, m12-pr01):
+# scope coverage to the modules that already meet the 70% bar; widen
+# `source` one PR at a time. CI invokes this via the architecture
+# workflow with `--cov-fail-under=70`.
+#
+# Local:
+#   .venv/bin/python -m pytest ai_engine/tests \
+#       --cov-config=pyproject.toml --cov-fail-under=70
+[tool.coverage.run]
+branch = false
+source = [
+    "ai_engine.api",
+    "ai_engine.registry",
+]
+omit = [
+    # __main__ entrypoint sidecar; exercised via container, not unit tests.
+    "ai_engine/registry/run_l2_sandbox.py",
+    "ai_engine/tests/*",
+]
+
+[tool.coverage.report]
+# Fail-under is set on the CLI (--cov-fail-under=70) so dev runs without
+# the flag still print the report without exiting non-zero.
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
