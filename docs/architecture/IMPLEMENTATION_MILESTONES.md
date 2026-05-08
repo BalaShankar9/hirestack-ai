@@ -357,6 +357,15 @@ PRs: `m11-pr37` through `m11-pr45`. Pulls in every M7/M9-deferred item plus the 
 | **Rollout** | Pure refactor — the bootstrap path is a 1:1 wrapper over the new registry; the scheduler-side change replaces `asyncio.create_task(...)` with `scheduler_registry.spawn(...)` / `.adopt(...)` (same task is created, just tracked centrally). Failure metrics still flow through `queue_metrics.inc_bootstrap_failure` via the registry's `failure_hook` slot. |
 | **Files** | NEW: `backend/app/core/task_registry.py`, `backend/tests/test_task_registry.py` (11 tests, including the bootstrap-alias contract test). MODIFIED: `backend/app/api/routes/generate/jobs.py` (`_track_bootstrap` now delegates to `bootstrap_registry.spawn`), `backend/main.py` (scheduler tasks now go through `scheduler_registry`), `docs/architecture/IMPLEMENTATION_MILESTONES.md` (this entry). |
 
+#### m11-pr41 — `/metrics` migrated to `prometheus_client` **(SHIPPED)**
+
+| | |
+|---|---|
+| **What landed** | New `backend/app/core/prometheus_collectors.py` introduces `HirestackCollector`, a `prometheus_client` `Collector` that yields `GaugeMetricFamily` / `CounterMetricFamily` instances on every scrape by reading the existing snapshot sources: `MetricsCollector`, `queue_metrics`, `circuit_breaker._breakers`, `queue.queue_depth`, `cache.get_all_cache_stats`, `_daily_tracker`. `render_metrics()` builds a fresh `CollectorRegistry` per scrape and serialises via `generate_latest()`. The `/metrics` route in `backend/main.py` is now a 6-line auth-check + render — the old ~300-line hand-rolled `lines.append(...)` block is deleted. All metric NAMES, label NAMES, and label VALUES from the previous exposition are preserved 1:1 (the m11-pr38 six-family contract is pinned by `test_metrics_endpoint_exposes_all_six_families`, which now also asserts the names appear in the rendered bytes). `prometheus_client>=0.20,<1.0` added to `backend/requirements.txt`. |
+| **Did NOT land** | Did NOT enable `PROMETHEUS_MULTIPROC_DIR` aggregation — Railway runs a single uvicorn worker today; multiprocess mode is a documented one-flip if/when we add gunicorn workers. Did NOT add histogram families (still counters/gauges only — same shape as before). Did NOT touch the `/livez` route or auth gate. |
+| **Rollout** | Endpoint contract preserved (Bearer auth + same metric names/labels). Content-type now `text/plain; version=1.0.0; charset=utf-8` (was `version=0.0.4`) — Prometheus scrapers accept both. Safe to deploy hot. |
+| **Files** | NEW: `backend/app/core/prometheus_collectors.py`, `backend/tests/test_prometheus_collectors.py` (11 tests). MODIFIED: `backend/main.py` (`prometheus_metrics` body slimmed to delegate to `render_metrics`; ~309 lines of hand-rolled exposition deleted), `backend/requirements.txt` (add `prometheus_client>=0.20,<1.0`), `backend/tests/test_queue_metrics.py` (six-families contract test now inspects collector module + asserts on rendered bytes), `backend/tests/unit/test_resilience_w8.py` (circuit-breaker contract test now inspects collector module), `docs/architecture/IMPLEMENTATION_MILESTONES.md` (this entry). |
+
 ---
 
 ## Stage A trailing items (M11+, no PR numbers yet)
