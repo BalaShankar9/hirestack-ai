@@ -981,7 +981,7 @@ Every fix has a tracking ID. Status updated in PRs. Closing the last entry in th
 | P0-1 | Partition rotation: `pg_partman` + `PartitionMaintenanceWorkflow` | W1 | platform | **SHIPPED** — m7-pr27a (`supabase/migrations/20260508120000_outbox_partition_rotation.sql`) |
 | P0-2 | Eliminate in-process generation fallback; fail-fast 503 | W2 | platform | **SHIPPED** — m7-pr27b |
 | P0-3 | Queue ACK on success only; DLQ + idempotent handlers | W3 | platform | **SHIPPED** — m7-pr27c |
-| P0-4 | Per-org daily $ cap + cascade-failure breaker | W8 | platform | TODO |
+| P0-4 | Per-org daily $ cap + cascade-failure breaker | W8 | platform | SHIPPED (m12-pr08) — `ai_engine.cost_breaker` reads `ORG_DAILY_COST_CAP_USD` (+ per-tenant overrides), pulls today's spend via `CostAttributionService.get_org_cost_today_cents`, raises `OrgDailyCostCapExceeded` at the entry of every cascade method, emits `cost.cap.tripped` event, fail-open on telemetry errors |
 | P0-5 | Tool registry: `jsonschema` + capability tokens + sandbox tiers | W5 | ai-team + security | **SHIPPED** — m7-pr29 |
 | P0-6 | Idempotency middleware ON in production | W9 | platform | **SHIPPED** — `backend/main.py` middleware stack |
 | P0-7 | SSE `Last-Event-ID` resumption end-to-end | W7 | frontend + platform | **SHIPPED** (m12-pr05) — backend exposes `GET /pipeline/agentic-stream/{session_id}/replay?after_sequence=N` backed by `AgenticEventEmitter.get_events_after()`; `agentic_stream.py` returns `X-Session-ID` header so clients can resume; in-memory store is single-process — durable cross-pod replay still requires Redis/DB-backed session registry (tracked separately) |
