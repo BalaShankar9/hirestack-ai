@@ -503,6 +503,32 @@ class AgenticEventEmitter:
         if len(self._event_store) > max_store:
             self._event_store = self._event_store[-max_store:]
 
+    # ── Replay accessor (P0-7) ──────────────────────────────────
+
+    def get_events_after(self, sequence: int) -> List[Dict[str, Any]]:
+        """Return persisted events whose ``sequence`` is strictly greater than the given value.
+
+        Used by the SSE resume endpoint to replay events the client missed
+        between disconnect and reconnect. Requires
+        ``StreamingConfig.enable_event_persistence=True`` (the default for
+        production / quality configs); returns ``[]`` otherwise because
+        ``_event_store`` will never have been populated.
+
+        The returned list is a shallow copy so callers may iterate without
+        worrying about concurrent mutation by the live emit path.
+        """
+        return [e for e in self._event_store if e.get("sequence", -1) > sequence]
+
+    @property
+    def session_id(self) -> str:
+        """Public accessor for the session id (read-only)."""
+        return self._session_id
+
+    @property
+    def current_sequence(self) -> int:
+        """Public accessor for the next-to-be-assigned sequence number."""
+        return self._sequence
+
     def _parse_event(self, json_str: str) -> Dict[str, Any]:
         """Parse queued JSON string back to dict."""
         import json as _json
