@@ -1037,6 +1037,16 @@ class AIClient:
                 cost_cents = int(round(estimate_call_cost(model, in_tok, out_tok) * 100))
             except Exception:
                 cost_cents = 0
+            # P0-4 / m12-pr08: auto-attach tenant from the current context
+            # when callers don't pass one explicitly. This is what wires
+            # cost attribution + cap enforcement together at the same
+            # contextvar boundary set by ``cost_breaker.tenant_scope``.
+            if tenant_id is None:
+                try:
+                    from ai_engine.cost_breaker import get_tenant_id
+                    tenant_id = get_tenant_id()
+                except Exception:
+                    tenant_id = None
             await get_recorder().record(
                 model=model,
                 prompt_text=prompt_text,
@@ -1083,6 +1093,20 @@ class AIClient:
                 "Requests are paused until the next calendar day."
             )
 
+    async def _enforce_cost_cap(self) -> None:
+        """P0-4 / m12-pr08: refuse the call when the org is over its daily $ cap.
+
+        Raises :class:`ai_engine.cost_breaker.OrgDailyCostCapExceeded` when
+        the tenant bound to the current context has spent past its
+        configured cap. No-op when no tenant is bound or no cap is set.
+        Fails open on cost-service errors.
+        """
+        try:
+            from ai_engine.cost_breaker import enforce_org_daily_cost_cap
+        except Exception:  # pragma: no cover — defensive import guard
+            return
+        await enforce_org_daily_cost_cap()
+
     def _resolve_model(self, task_type: Optional[str], model: Optional[str]) -> Optional[str]:
         """Resolve model name from task_type or explicit model param."""
         if model:
@@ -1121,6 +1145,7 @@ class AIClient:
                        task_type: Optional[str] = None,
                        model: Optional[str] = None) -> str:
         self._check_budget()
+        await self._enforce_cost_cap()
         prompt = _sanitize_prompt_input(prompt)
         prompt = self._truncate_input(prompt)
 
@@ -1212,6 +1237,7 @@ class AIClient:
                             task_type: Optional[str] = None,
                             model: Optional[str] = None) -> Dict[str, Any]:
         self._check_budget()
+        await self._enforce_cost_cap()
         prompt = _sanitize_prompt_input(prompt)
         prompt = self._truncate_input(prompt)
 
@@ -1455,6 +1481,7 @@ class AIClient:
           * Budget check + prompt sanitisation + truncation still applied.
         """
         self._check_budget()
+        await self._enforce_cost_cap()
         prompt = _sanitize_prompt_input(prompt)
         prompt = self._truncate_input(prompt)
         candidate_model = self._resolve_model(task_type, model) or self.model
@@ -1482,6 +1509,7 @@ class AIClient:
                    task_type: Optional[str] = None,
                    model: Optional[str] = None) -> str:
         self._check_budget()
+        await self._enforce_cost_cap()
         # Sanitize user-role messages only (system messages are trusted)
         messages = [
             {**m, "content": _sanitize_prompt_input(m.get("content", ""))} if m.get("role") == "user" else m
