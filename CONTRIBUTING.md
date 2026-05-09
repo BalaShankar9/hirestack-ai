@@ -179,3 +179,67 @@ docs: documentation only
 3. **AI calls** — All AI calls go through `ai_engine/agents/orchestrator.py` with circuit breaker
 4. **Async jobs** — Long-running generation pushed to Redis Streams queue, polled via Firestore or SSE
 5. **Observability** — Every request gets an `X-Request-ID`; all logs are structured JSON
+
+---
+
+## Context system maintenance
+
+The `/context/` folder is the Living Engineering Brain — 18 markdown files
+(plus README) that synthesize each concern of the system, cross-referencing
+canonical sources rather than duplicating them. See
+[context/README.md](context/README.md) for the index.
+
+### When to update which file
+
+Whenever you ship a change, update the matching `/context/*.md` file(s) in
+the SAME PR. Use this map:
+
+| Change type | Update these files |
+|---|---|
+| New backend route | `API_CONTEXT.md` + `BACKEND_CONTEXT.md` + `AUTH_SECURITY_CONTEXT.md` (rate limit, scopes) |
+| New frontend route or major component | `FRONTEND_CONTEXT.md` |
+| New table or migration | `DATABASE_CONTEXT.md` (+ `AUTH_SECURITY_CONTEXT.md` if RLS pattern changes) |
+| New chain or agent | `AI_CONTEXT.md` (+ `BUSINESS_LOGIC_CONTEXT.md` if user-visible) |
+| New tool in `ai_engine/tools/` | `AI_CONTEXT.md` + `AUTH_SECURITY_CONTEXT.md` (sandbox tier, capability scope) |
+| New service / Procfile entry | `DEVOPS_INFRA_CONTEXT.md` |
+| New CI workflow or required gate | `TESTING_CONTEXT.md` (+ ADR if promoted to required) |
+| New SLO or perf budget change | `PERFORMANCE_CONTEXT.md` |
+| New TD item, or a TD ships | `TECH_DEBT.md` |
+| P0 or P1 status change | `RELEASE_READINESS.md` |
+| New W (watch-list) item, Sev incident, or risk shift | `KNOWN_ISSUES.md` |
+| Stage transition or capacity trigger | `SCALABILITY_ROADMAP.md` |
+| Any PR that ships | `CHANGELOG_INTELLIGENCE.md` (append milestone row) |
+| Repo structure change | `FILE_TREE.md` |
+| Mission, audience, or scope change | `PROJECT_OVERVIEW.md` + `BUSINESS_LOGIC_CONTEXT.md` |
+| Architectural decision | `ARCHITECTURE.md` + a new ADR |
+
+When you bump a `/context/*.md` file's content, also bump its
+`last_synced:` front-matter date.
+
+### Freshness checker (advisory)
+
+Run locally:
+
+```bash
+python scripts/governance/check_context_freshness.py
+# or
+make check-context
+```
+
+This script reads each context file's `watch_paths` and warns if any
+commits have touched those paths since the file's `last_synced` date. It
+exits 0 in all cases (advisory; not a required gate).
+
+Promotion to a required CI gate is tracked as `KNOWN_ISSUES.md` W14 —
+gated on noise rate dropping below 30% over a month of advisory runs.
+
+### What "good /context maintenance" looks like
+
+- [ ] Touched a watched path → bumped the matching `/context/*.md` file's
+      `last_synced` and updated content.
+- [ ] Added a public surface (route, event, chain, table) → it's
+      reflected in the right context file.
+- [ ] PR description references which `/context/*.md` files changed (or
+      explicitly states "no context impact").
+- [ ] Did NOT duplicate content already in blueprint, ADR, or runbook —
+      cross-reference instead.
