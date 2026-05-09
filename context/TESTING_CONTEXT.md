@@ -227,7 +227,7 @@ rejected (no silent drops).
 
 Planned (open):
 
-- `tests/temporal/test_resume.py` — explicit Temporal-side resume test.
+- (none in this stack)
 
 Shipped (m12-pr15):
 
@@ -253,6 +253,19 @@ Shipped (m12-pr17):
   non-negative, error_message capped at 500 chars, input_hash deterministic
   and order-independent, org_id/user_id propagate, sink failure never
   masks tool result or its exception type.
+
+Shipped (m12-pr18):
+
+- `tests/temporal/test_resume.py` — workflow-level resume + checkpoint
+  best-effort contract (companion to test_per_stage_resume.py): every
+  `workflow.execute_activity` declares retry_policy AND start_to_close_timeout,
+  CRITIC_MAX_ATTEMPTS=3, `CriticGaveUp` is non_retryable=True, workflow
+  module imports nothing time/random/io non-deterministic, `@workflow.defn`
+  decoration with name="GenerationWorkflow", `_truncate_summary` swaps
+  oversized payloads for sentinel (no partial preservation), 4 KiB summary
+  cap, store outages return None on read and swallow on write, `mark_failed`
+  preserves `completed_at`, error_class truncated to 200 chars, table name
+  pinned to `pipeline_checkpoints`, named logger contract.
 
 ---
 
