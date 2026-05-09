@@ -38,6 +38,15 @@ build/
 # Generated assets
 frontend/public/pdf.worker.mjs
 
+# Memory system: generated artefacts only (curated notes ARE committed)
+memory/vector_indexes/*
+memory/agent_logs/*
+memory/context_snapshots/*
+memory/graph/graph.json
+!memory/vector_indexes/README.md
+!memory/agent_logs/README.md
+!memory/context_snapshots/README.md
+
 # Logs
 *.log
 npm-debug.log*
