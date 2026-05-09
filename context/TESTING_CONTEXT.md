@@ -244,6 +244,16 @@ Shipped (m12-pr16):
   column schema pin, cron command shape, runbook 36h alert window,
   ADR-0037 Accepted status, SAFETY header.
 
+Shipped (m12-pr17):
+
+- `tests/ai/test_action_gate.py` — Dispatcher.invoke ("action gate" per
+  blueprint §6.2) cross-cutting contract: closed status enum, exactly-one
+  audit row per invoke across 6 branches, resolver never runs on deny
+  (grant / invalid input / capability missing / unknown tool), duration_ms
+  non-negative, error_message capped at 500 chars, input_hash deterministic
+  and order-independent, org_id/user_id propagate, sink failure never
+  masks tool result or its exception type.
+
 ---
 
 ## Eval gate mechanics
