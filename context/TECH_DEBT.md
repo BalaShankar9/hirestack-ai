@@ -1,6 +1,6 @@
 ---
 title: Tech Debt Ledger
-last_synced: 2026-05-08
+last_synced: 2026-05-09
 watch_paths:
   - backend/app/api/routes/generate
   - backend/main.py
@@ -28,11 +28,12 @@ update_when:
 ## TL;DR — 10 lines
 
 1. **Total tracked items:** 10. **Shipped:** 2 (TD-2, TD-7).
-   **Open:** 8.
+   **Partial:** 1 (TD-4 — lockfile generated + CI gate, cutover deferred).
+   **Open:** 7.
 2. **Highest priority open:** TD-1 (split `routes/generate/jobs.py` —
    1500+ lines). Blocks reviewability.
-3. **Risk-adjacent:** TD-4 (unpinned `requirements.txt` — supply chain
-   reproducibility risk).
+3. **Risk-adjacent:** TD-4 (lockfile — PARTIAL m12-pr14, cutover
+   pending; reproducibility risk reduced but not eliminated).
 4. **Stage B blockers:** TD-9 (per-region observability), TD-10 (dual-
    namespace lazy imports).
 5. **Quality next:** TD-3 (replace hand-rolled `/metrics` with Prometheus
@@ -102,7 +103,7 @@ Output is byte-compatible with current Grafana dashboards.
 
 ---
 
-## TD-4 — Lockfile for `requirements.txt` (OPEN, **risk-adjacent**)
+## TD-4 — Lockfile for `requirements.txt` (PARTIAL — m12-pr14)
 
 **Symptom:** `requirements.txt` and `backend/requirements.txt` use `>=`
 ranges. Two builds five minutes apart can resolve to different versions.
@@ -112,14 +113,24 @@ ranges. Two builds five minutes apart can resolve to different versions.
 - Supply chain: a new transitive dep with a CVE can land silently.
 - Reproducibility: bisecting a regression past a deploy is harder.
 
-**Plan:**
+**Shipped (m12-pr14):**
 
-- Adopt `uv pip compile` (or `pip-tools`) to produce `requirements.lock`
-  and `backend/requirements.lock`.
-- CI uses the lockfile; humans edit the source and re-compile.
-- Renovate (or Dependabot) opens lockfile-bump PRs weekly.
+- `backend/requirements.lock` (444 lines) generated via `uv pip compile`,
+  pinned to Python 3.11.
+- `make lock` (regenerate) and `make lock-check` (verify fresh).
+- Required CI gate `lockfile-fresh` in `.github/workflows/ci.yml`
+  re-compiles and `diff --exit-code`s on PR.
+- CONTRIBUTING.md “Adding a Python dependency” section.
 
-**Target:** scheduled. Likely first PR after m12-pr13.
+**Remaining (follow-up PR):**
+
+- Cutover: switch Dockerfiles + Railway + CI install steps to
+  `pip install -r backend/requirements.lock`. Currently both files coexist;
+  installs still use `requirements.txt`. Risk-managed deferral.
+- Renovate (or Dependabot) lockfile-bump PRs weekly.
+- Resolve pre-existing `email-validator==2.1.0` yanked-package warning.
+
+**Target cutover:** post m12-pr14, before Stage A close.
 
 ---
 

@@ -1,4 +1,4 @@
-.PHONY: help setup dev dev-backend dev-frontend test test-backend test-frontend lint lint-backend lint-frontend format build docker-up docker-down docker-logs codegen-events codegen-events-check codegen-events-clean check-context
+.PHONY: help setup dev dev-backend dev-frontend test test-backend test-frontend lint lint-backend lint-frontend format build docker-up docker-down docker-logs codegen-events codegen-events-check codegen-events-clean check-context lock lock-check
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -77,3 +77,14 @@ codegen-events-clean: ## Remove all generated event-client files (next codegen-e
 # ── Context governance ─────────────────────
 check-context: ## Advisory check for /context/ freshness (always exits 0)
 	python scripts/governance/check_context_freshness.py
+# ── Dependency lockfile (TD-4) ────────────────
+lock: ## Regenerate backend/requirements.lock from backend/requirements.txt
+	uv pip compile backend/requirements.txt --python-version 3.11 --output-file backend/requirements.lock
+
+lock-check: ## Verify backend/requirements.lock is up to date (CI gate)
+	@uv pip compile backend/requirements.txt --python-version 3.11 --output-file /tmp/requirements.lock.check --quiet
+	@grep -v '^#' backend/requirements.lock > /tmp/lock.committed
+	@grep -v '^#' /tmp/requirements.lock.check > /tmp/lock.regenerated
+	@diff -u /tmp/lock.committed /tmp/lock.regenerated \
+	  && echo "lockfile is fresh" \
+	  || (echo ""; echo "lockfile is stale -- run 'make lock' and commit the diff"; exit 1)
