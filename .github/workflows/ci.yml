@@ -165,3 +165,39 @@ jobs:
       - name: npm audit (frontend, prod deps only)
         working-directory: frontend
         run: npm audit --omit=dev --audit-level=high
+
+  # ── Lockfile freshness (TD-4, m12-pr14) ───────────────
+  # Required gate. Re-runs `uv pip compile` and fails if the committed
+  # backend/requirements.lock differs from regenerated output. Humans
+  # edit backend/requirements.txt and run `make lock`; the lock is the
+  # build-reproducibility floor.
+  #
+  # Note: the lockfile is NOT yet wired into Dockerfiles or Railway
+  # (additive shape). Cutover is a separate PR.
+  lockfile-fresh:
+    name: Lockfile freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: pip install -q uv
+
+      - name: Verify backend/requirements.lock is up to date
+        run: |
+          uv pip compile backend/requirements.txt \
+            --python-version 3.11 \
+            --output-file /tmp/requirements.lock.check \
+            --quiet
+          grep -v '^#' backend/requirements.lock > /tmp/lock.committed
+          grep -v '^#' /tmp/requirements.lock.check > /tmp/lock.regenerated
+          if ! diff -u /tmp/lock.committed /tmp/lock.regenerated; then
+            echo ""
+            echo "::error::backend/requirements.lock is stale."
+            echo "Run 'make lock' locally and commit the diff."
+            exit 1
+          fi
+          echo "lockfile is fresh"

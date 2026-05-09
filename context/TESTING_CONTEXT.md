@@ -1,6 +1,6 @@
 ---
 title: Testing Context
-last_synced: 2026-05-08
+last_synced: 2026-05-09
 watch_paths:
   - backend/tests
   - ai_engine/tests
@@ -157,6 +157,7 @@ Test data:
 | **Backend tests** | `backend-tests.yml` | 251 tests pass |
 | **Frontend tests** | `frontend-tests.yml` | vitest + tsc + lint green |
 | **E2E** | `e2e.yml` | Playwright smoke green (PR touching frontend) |
+| **Lockfile freshness** | `ci.yml` (`lockfile-fresh` job) | `backend/requirements.lock` matches re-compiled output (TD-4, m12-pr14) |
 
 Promoting a gate from informational to required = ADR.
 

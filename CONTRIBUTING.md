@@ -126,6 +126,37 @@ cd backend && pytest tests/ -v --ignore=tests/e2e
 
 ---
 
+## Adding a Python dependency
+
+Backend dependencies live in `backend/requirements.txt` (the source of
+truth for human edits). The `lockfile-fresh` CI gate enforces that
+`backend/requirements.lock` is the exact `uv pip compile` output of
+`backend/requirements.txt` against Python 3.11.
+
+```bash
+# 1. Add or bump the dep in backend/requirements.txt
+$EDITOR backend/requirements.txt
+
+# 2. Regenerate the lockfile (requires `uv` — `brew install uv` or
+#    `pip install uv`)
+make lock
+
+# 3. Verify locally before pushing
+make lock-check          # exits 0 when lock matches
+
+# 4. Commit BOTH files together
+git add backend/requirements.txt backend/requirements.lock
+```
+
+If CI fails with "lockfile is stale," you bumped `requirements.txt`
+without re-running `make lock`. Run it and amend.
+
+> **Note (TD-4 cutover pending).** The lockfile is generated and gated
+> in CI but is NOT yet the install source for Dockerfiles or Railway —
+> those still use `requirements.txt`. The cutover is a separate PR.
+
+---
+
 ## Submitting a PR
 
 ### Checklist
