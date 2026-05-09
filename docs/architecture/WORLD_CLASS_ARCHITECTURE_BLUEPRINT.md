@@ -984,7 +984,7 @@ Every fix has a tracking ID. Status updated in PRs. Closing the last entry in th
 | P0-4 | Per-org daily $ cap + cascade-failure breaker | W8 | platform | TODO |
 | P0-5 | Tool registry: `jsonschema` + capability tokens + sandbox tiers | W5 | ai-team + security | **SHIPPED** — m7-pr29 |
 | P0-6 | Idempotency middleware ON in production | W9 | platform | **SHIPPED** — `backend/main.py` middleware stack |
-| P0-7 | SSE `Last-Event-ID` resumption end-to-end | W7 | frontend + platform | **PARTIAL** — `last_sequence` query param plumbed (`backend/app/api/routes/generate/agentic_stream.py`); real replay-from-outbox pending |
+| P0-7 | SSE `Last-Event-ID` resumption end-to-end | W7 | frontend + platform | **SHIPPED** (m12-pr05) — backend exposes `GET /pipeline/agentic-stream/{session_id}/replay?after_sequence=N` backed by `AgenticEventEmitter.get_events_after()`; `agentic_stream.py` returns `X-Session-ID` header so clients can resume; in-memory store is single-process — durable cross-pod replay still requires Redis/DB-backed session registry (tracked separately) |
 
 ### P1 — SLO-impacting / data-loss class (must ship within Stage A)
 

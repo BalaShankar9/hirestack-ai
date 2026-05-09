@@ -19,7 +19,7 @@ import time
 from typing import Any, AsyncGenerator, Dict, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -84,7 +84,6 @@ def format_sse_event(data: Dict[str, Any]) -> str:
 async def agentic_stream(
     request: Request,
     req: AgenticStreamRequest,
-    last_sequence: Optional[int] = Query(None, description="Resume from sequence number"),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
@@ -97,7 +96,10 @@ async def agentic_stream(
       • checkpoint_reached: Interactive pause points
       • swarm_coordination: Multi-agent visualization
 
-    Supports automatic reconnect with last_sequence parameter.
+    For reconnect/resume after a disconnect, clients should call
+    ``GET /pipeline/agentic-stream/{session_id}/replay?after_sequence=N``
+    using the ``X-Session-ID`` value from the original response and the
+    last ``sequence`` they observed (P0-7).
     """
     user_id = current_user.get("id", str(uuid4()))
     session_id = str(uuid4())
@@ -123,7 +125,7 @@ async def agentic_stream(
         )
 
     return StreamingResponse(
-        _stream_pipeline(session_id, user_id, req, config, last_sequence),
+        _stream_pipeline(session_id, user_id, req, config),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -134,31 +136,83 @@ async def agentic_stream(
     )
 
 
+# ── SSE Resume Endpoint (P0-7) ─────────────────────────────────────
+
+
+@router.get("/pipeline/agentic-stream/{session_id}/replay")
+@limiter.limit("30/minute")
+async def agentic_stream_replay(
+    request: Request,
+    session_id: str,
+    after_sequence: int = Query(
+        -1,
+        ge=-1,
+        description="Replay all persisted events with sequence > this value. -1 replays everything.",
+    ),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Replay persisted events from a live or recently-completed session.
+
+    Closes P0-7. Yields a ``stream_reconnected`` event followed by every
+    persisted event whose sequence is strictly greater than
+    ``after_sequence``. Returns 404 if the session has been evicted from
+    the in-memory store (and 403 if it does not belong to the caller).
+
+    This is a read-only replay — it does not subscribe to new events. The
+    client decides whether to reopen a fresh POST after the replay drains.
+    """
+    session = _active_sessions.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session_not_found_or_expired")
+
+    user_id = current_user.get("id")
+    if user_id is not None and session.get("user_id") not in (None, user_id):
+        raise HTTPException(status_code=403, detail="session_owned_by_different_user")
+
+    emitter: AgenticEventEmitter = session["emitter"]
+    missed = emitter.get_events_after(after_sequence)
+
+    async def _replay() -> AsyncGenerator[str, None]:
+        # Lead with a typed reconnect marker so clients can reset their UI.
+        yield format_sse_event(
+            {
+                "event_type": EventType.STREAM_RECONNECTED.value,
+                "session_id": session_id,
+                "payload": {
+                    "after_sequence": after_sequence,
+                    "events_to_replay": len(missed),
+                    "current_sequence": emitter.current_sequence,
+                },
+            }
+        )
+        for event in missed:
+            yield format_sse_event(event)
+
+    return StreamingResponse(
+        _replay(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "X-Session-ID": session_id,
+            "X-Replay-Count": str(len(missed)),
+        },
+    )
+
+
 async def _stream_pipeline(
     session_id: str,
     user_id: str,
     req: AgenticStreamRequest,
     config: StreamingConfig,
-    last_sequence: Optional[int],
 ) -> AsyncGenerator[str, None]:
     """Core streaming generator."""
 
     # Initialize sink and emitter
     sink = SSEEventSink()
     emitter = AgenticEventEmitter(sink=sink, config=config, session_id=session_id)
-
-    # Handle reconnect (replay missed events if any)
-    if last_sequence is not None and session_id in _active_sessions:
-        await emitter.emit(
-            event_type=EventType.STREAM_RECONNECTED,
-            payload={
-                "last_client_sequence": last_sequence,
-                "events_to_replay": 0,  # Would calculate from persistence
-            },
-            agent=AgentContext(id="system", name="system", type="system"),
-            stage=StageContext(name="system"),
-            priority=StreamPriority.CRITICAL,
-        )
 
     await emitter.start()
     _active_sessions[session_id] = {
