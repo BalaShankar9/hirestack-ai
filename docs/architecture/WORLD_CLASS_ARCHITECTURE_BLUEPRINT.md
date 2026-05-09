@@ -1041,7 +1041,7 @@ Items that are not P0/P1 but must be tracked. Reviewed quarterly.
 | TD-4 | `requirements.txt` unpinned ranges | Reproducibility | Add `requirements.lock` (pip-compile) |
 | TD-5 | Python 3.11 in CI vs 3.13 local | Dev/CI drift | Pin one and document |
 | TD-6 | Multiple root-level `*_PLAN.md` | No canonical doc → drift | Archive to `docs/_archive/` (this PR) |
-| TD-7 | `_billing_logger` swallows org-fetch errors | Fail-open on Supabase outage | Make fail-closed in prod |
+| TD-7 | `_billing_logger` swallows org-fetch errors | Fail-open on Supabase outage | SHIPPED (m12-pr11) — `check_billing_limit` now consults `_billing_fail_closed_enabled()`: defaults to fail-closed (503) in `ENVIRONMENT=production`, fail-open elsewhere; `BILLING_FAIL_CLOSED=1`/`0` overrides in either direction so ops can flip without redeploy |
 | TD-8 | No mutation testing | Critical paths under-tested | Stage A end |
 | TD-9 | No per-region observability sharding | One Sentry org = noise | Stage C |
 | TD-10 | Dual-namespace lazy imports in `ai_engine/client.py` | Smell of unsettled package layout | Resolved by P1-6 |
