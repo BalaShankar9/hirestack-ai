@@ -149,6 +149,7 @@ notes and the PRs themselves.
 | m12-pr17 | Action-gate contract (`tests/ai/test_action_gate.py`, 21 tests) | `m12-pr17-test-action-gate-shipped.md` | TESTING_CONTEXT | PR #35 |
 | m12-pr18 | Temporal resume contract (`tests/temporal/test_resume.py`, 19 tests) | `m12-pr18-test-temporal-resume-shipped.md` | TESTING_CONTEXT | PR #36 |
 | m12-pr19 | TD-1 first cut: extract `_module_state.py` from `routes/generate/jobs.py` (2496 → 2358 LOC) | `m12-pr19-td1-split-jobs-shipped.md` | (none) | (this PR) |
+| m12-pr20 | AI memory system foundation: `scripts/memory/` toolchain (~1100 LOC) + `/memory/` tree (14 subdirs) + 10 design docs + AGENTS.md + Copilot wiring + 14 tests | `m12-pr20-memory-system-shipped.md` | (none — meta-context layer) | (this PR) |
 
 (Memory notes for m12-pr01..pr12 referenced in the PR ledger / repo
 memory; this file's intent is the index, not the transcripts.)
