@@ -1027,9 +1027,16 @@ class AIClient:
         """
         try:
             from ai_engine.observability.ai_invocations import get_recorder
+            from ai_engine.model_router import estimate_call_cost
             latency_ms = int((time.monotonic() - t_start) * 1000)
             in_tok = self._estimate_tokens(prompt_text)
             out_tok = self._estimate_tokens(response_text) if response_text else 0
+            # P1-8 / m12-pr07: write per-call cost in cents into the
+            # flight recorder so org_cost_hourly MV can roll up by tenant.
+            try:
+                cost_cents = int(round(estimate_call_cost(model, in_tok, out_tok) * 100))
+            except Exception:
+                cost_cents = 0
             await get_recorder().record(
                 model=model,
                 prompt_text=prompt_text,
@@ -1040,6 +1047,7 @@ class AIClient:
                 task_type=task_type,
                 tenant_id=tenant_id,
                 cascade_position=cascade_position,
+                cost_cents=cost_cents,
                 error=error,
             )
         except Exception as exc:  # pragma: no cover — paranoid fallback

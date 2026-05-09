@@ -115,6 +115,7 @@ class AIInvocationsRecorder:
         tenant_id: Optional[str] = None,
         retry_count: int = 0,
         cascade_position: int = 0,
+        cost_cents: int = 0,
         error: Optional[BaseException] = None,
     ) -> None:
         """Write one flight-recorder row. Never raises.
@@ -151,6 +152,7 @@ class AIInvocationsRecorder:
             "outcome": outcome,
             "retry_count": int(max(0, retry_count or 0)),
             "cascade_position": int(max(0, cascade_position or 0)),
+            "cost_cents": int(max(0, cost_cents or 0)),
             "flag_anthropic_enabled": _anthropic_flag_enabled(),
         }
         if error is not None:

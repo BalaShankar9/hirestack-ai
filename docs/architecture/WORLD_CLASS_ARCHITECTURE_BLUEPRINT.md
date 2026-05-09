@@ -997,7 +997,7 @@ Every fix has a tracking ID. Status updated in PRs. Closing the last entry in th
 | P1-5 | Single migration root (consolidate `database/` into `supabase/`) | W10 | data-team | **SHIPPED** — `database/` removed |
 | P1-6 | Single `main.py` entrypoint | W11 | platform | **SHIPPED** — only `backend/main.py` remains |
 | P1-7 | Real codegen (Python/TS/Kotlin) from `packages/events/schema/v1/` | — | platform | **SHIPPED** — `packages/events/scripts/codegen.py` + `Makefile` targets |
-| P1-8 | Per-customer cost attribution table + materialized view | — | platform | TODO |
+| P1-8 | Per-customer cost attribution table + materialized view | — | platform | SHIPPED (m12-pr07) — `ai_invocations.cost_cents` + `org_cost_hourly` MV refreshed every 60s via pg_cron + `CostAttributionService` read API |
 | P1-9 | Centralized feature-flag service with audit | — | platform | **PARTIAL** — `config/feature_flags.yaml` + sunset-CI live; audit table pending |
 | P1-10 | Coverage gate + xdist in CI; promote `deps-audit` to required | — | devex | **SHIPPED** — coverage gate (m12-pr02), xdist + `deps-audit` required (m12-pr04) |
 | P1-11 | Triage 9 baseline test failures (fix or `xfail` with linked issues) | W14 | all | SHIPPED (m12-pr06) — 7 stale tests pointing at moved/renamed code; 4090/4090 green |
