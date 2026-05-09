@@ -1,4 +1,4 @@
-.PHONY: help setup dev dev-backend dev-frontend test test-backend test-frontend lint lint-backend lint-frontend format build docker-up docker-down docker-logs codegen-events codegen-events-check codegen-events-clean
+.PHONY: help setup dev dev-backend dev-frontend test test-backend test-frontend lint lint-backend lint-frontend format build docker-up docker-down docker-logs codegen-events codegen-events-check codegen-events-clean check-context
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -73,3 +73,7 @@ codegen-events-clean: ## Remove all generated event-client files (next codegen-e
 	rm -rf backend/app/core/events/generated/* \
 	       frontend/src/types/events/* \
 	       mobile/lib/events/*
+
+# ── Context governance ─────────────────────
+check-context: ## Advisory check for /context/ freshness (always exits 0)
+	python scripts/governance/check_context_freshness.py
