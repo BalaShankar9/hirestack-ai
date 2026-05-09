@@ -143,7 +143,8 @@ notes and the PRs themselves.
 | m12-pr11 | Secret-scan gate | (per ledger) | AUTH_SECURITY_CONTEXT, TESTING_CONTEXT | — |
 | m12-pr12 | Provider failover test stable | (per ledger) | AI_CONTEXT, TESTING_CONTEXT | — |
 | m12-pr13 | `/context` Living Engineering Brain (19 files) | `m12-pr13-context-docs-shipped.md` | (introduces all 18) | PR #31 |
-| m12-pr14 | Requirements lockfile (TD-4 partial) | `m12-pr14-requirements-lockfile-shipped.md` | TECH_DEBT, TESTING_CONTEXT | (this PR) |
+| m12-pr14 | Requirements lockfile (TD-4 partial) | `m12-pr14-requirements-lockfile-shipped.md` | TECH_DEBT, TESTING_CONTEXT | PR #32 |
+| m12-pr15 | DLQ contract pin (`tests/queue/test_dlq.py`, 8 tests) | `m12-pr15-test-dlq-shipped.md` | TESTING_CONTEXT | (this PR) |
 
 (Memory notes for m12-pr01..pr12 referenced in the PR ledger / repo
 memory; this file's intent is the index, not the transcripts.)
