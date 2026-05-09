@@ -228,8 +228,14 @@ rejected (no silent drops).
 Planned (open):
 
 - `tests/temporal/test_resume.py` — explicit Temporal-side resume test.
-- `tests/queue/test_dlq.py` — DLQ enrollment + replay (TD-related).
 - `tests/db/test_partition_health.py` — partition rotation.
+
+Shipped (m12-pr15):
+
+- `tests/queue/test_dlq.py` — DLQ contract pin: 5-field schema, xadd-
+  before-ack ordering, reason truncation (500 chars), metric increment,
+  inline `delivery_attempt > max_deliveries` branch, bytes-field decode,
+  round-trip with `scripts/ops/dlq_replay.py::_build_replay_payload`.
 
 ---
 
