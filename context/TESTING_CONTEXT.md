@@ -228,7 +228,6 @@ rejected (no silent drops).
 Planned (open):
 
 - `tests/temporal/test_resume.py` — explicit Temporal-side resume test.
-- `tests/db/test_partition_health.py` — partition rotation.
 
 Shipped (m12-pr15):
 
@@ -236,6 +235,14 @@ Shipped (m12-pr15):
   before-ack ordering, reason truncation (500 chars), metric increment,
   inline `delivery_attempt > max_deliveries` branch, bytes-field decode,
   round-trip with `scripts/ops/dlq_replay.py::_build_replay_payload`.
+
+Shipped (m12-pr16):
+
+- `tests/db/test_partition_health.py` — partition rotation health: pure
+  time-math (year roll, format, day-of-month invariance), bootstrap/cron
+  months_ahead contract, bounds (0..24), exception-path audit row, audit
+  column schema pin, cron command shape, runbook 36h alert window,
+  ADR-0037 Accepted status, SAFETY header.
 
 ---
 
