@@ -138,13 +138,13 @@ jobs:
           fi
 
   # ── Dependency vulnerability scan ─────────────────────
-  # Advisory: surfaces known CVEs but does NOT fail the build, so a
-  # zero-day disclosure can't block a hotfix. Promote to required once
-  # the baseline is clean and we have a patch SLA in place.
+  # Required gate (P1-10, m12-pr04). HIGH severity CVEs fail the build.
+  # If a hotfix is genuinely blocked by a noisy advisory, the escape hatch
+  # is to add the CVE id to a documented exclusion list — never to flip
+  # this back to advisory mode silently.
   deps-audit:
     name: Dependency CVE scan
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
@@ -154,7 +154,7 @@ jobs:
       - name: pip-audit (backend)
         run: |
           pip install -q pip-audit
-          pip-audit -r backend/requirements.txt --strict || true
+          pip-audit -r backend/requirements.txt --strict
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
@@ -164,4 +164,4 @@ jobs:
 
       - name: npm audit (frontend, prod deps only)
         working-directory: frontend
-        run: npm audit --omit=dev --audit-level=high || true
+        run: npm audit --omit=dev --audit-level=high

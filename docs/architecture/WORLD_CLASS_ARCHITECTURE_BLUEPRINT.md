@@ -971,37 +971,40 @@ The following are **forbidden in production code** as of v1.0.0. CI will be conf
 
 Every fix has a tracking ID. Status updated in PRs. Closing the last entry in this section is the **gate to declare "Stage A complete."**
 
+> **Status legend** — SHIPPED = merged on the m6→m12 branch chain (not yet on `main`).
+> Status reconciled in m12-pr04 against actual code. See repo memory for per-PR notes.
+
 ### P0 — Production-outage class (must ship within next milestone)
 
 | ID | Title | Refs | Owner | Status |
 |---|---|---|---|---|
-| P0-1 | Partition rotation: `pg_partman` + `PartitionMaintenanceWorkflow` | W1 | platform | TODO |
-| P0-2 | Eliminate in-process generation fallback; fail-fast 503 | W2 | platform | TODO |
-| P0-3 | Queue ACK on success only; DLQ + idempotent handlers | W3 | platform | TODO |
+| P0-1 | Partition rotation: `pg_partman` + `PartitionMaintenanceWorkflow` | W1 | platform | **SHIPPED** — m7-pr27a (`supabase/migrations/20260508120000_outbox_partition_rotation.sql`) |
+| P0-2 | Eliminate in-process generation fallback; fail-fast 503 | W2 | platform | **SHIPPED** — m7-pr27b |
+| P0-3 | Queue ACK on success only; DLQ + idempotent handlers | W3 | platform | **SHIPPED** — m7-pr27c |
 | P0-4 | Per-org daily $ cap + cascade-failure breaker | W8 | platform | TODO |
-| P0-5 | Tool registry: `jsonschema` + capability tokens + sandbox tiers | W5 | ai-team + security | TODO |
-| P0-6 | Idempotency middleware ON in production | W9 | platform | TODO |
-| P0-7 | SSE `Last-Event-ID` resumption end-to-end | W7 | frontend + platform | TODO |
+| P0-5 | Tool registry: `jsonschema` + capability tokens + sandbox tiers | W5 | ai-team + security | **SHIPPED** — m7-pr29 |
+| P0-6 | Idempotency middleware ON in production | W9 | platform | **SHIPPED** — `backend/main.py` middleware stack |
+| P0-7 | SSE `Last-Event-ID` resumption end-to-end | W7 | frontend + platform | **PARTIAL** — `last_sequence` query param plumbed (`backend/app/api/routes/generate/agentic_stream.py`); real replay-from-outbox pending |
 
 ### P1 — SLO-impacting / data-loss class (must ship within Stage A)
 
 | ID | Title | Refs | Owner | Status |
 |---|---|---|---|---|
-| P1-1 | Phase-2 Temporal: per-stage activities + idempotent persist | W6 | platform | TODO |
-| P1-2 | Strict event-payload validation at `OutboxWriter.append` | W12 | platform | TODO |
-| P1-3 | Add ~25 missing canonical event types + schemas | W12 | all | TODO |
-| P1-4 | Second LLM provider (Anthropic Claude) integrated behind `model_router` | W4 | ai-team | TODO |
-| P1-5 | Single migration root (consolidate `database/` into `supabase/`) | W10 | data-team | TODO |
-| P1-6 | Single `main.py` entrypoint | W11 | platform | TODO |
-| P1-7 | Real codegen (Python/TS/Kotlin) from `packages/events/schema/v1/` | — | platform | TODO |
+| P1-1 | Phase-2 Temporal: per-stage activities + idempotent persist | W6 | platform | **SHIPPED** — m8-pr32 (`backend/app/temporal/activities/__init__.py`) |
+| P1-2 | Strict event-payload validation at `OutboxWriter.append` | W12 | platform | **SHIPPED** — m7-pr31 |
+| P1-3 | Add ~25 missing canonical event types + schemas | W12 | all | **SHIPPED** — m6-pr26 |
+| P1-4 | Second LLM provider (Anthropic Claude) integrated behind `model_router` | W4 | ai-team | **SHIPPED** — m7-pr28 |
+| P1-5 | Single migration root (consolidate `database/` into `supabase/`) | W10 | data-team | **SHIPPED** — `database/` removed |
+| P1-6 | Single `main.py` entrypoint | W11 | platform | **SHIPPED** — only `backend/main.py` remains |
+| P1-7 | Real codegen (Python/TS/Kotlin) from `packages/events/schema/v1/` | — | platform | **SHIPPED** — `packages/events/scripts/codegen.py` + `Makefile` targets |
 | P1-8 | Per-customer cost attribution table + materialized view | — | platform | TODO |
-| P1-9 | Centralized feature-flag service with audit | — | platform | TODO |
-| P1-10 | Coverage gate + xdist in CI; promote `deps-audit` to required | — | devex | TODO |
-| P1-11 | Triage 9 baseline test failures (fix or `xfail` with linked issues) | W14 | all | TODO |
+| P1-9 | Centralized feature-flag service with audit | — | platform | **PARTIAL** — `config/feature_flags.yaml` + sunset-CI live; audit table pending |
+| P1-10 | Coverage gate + xdist in CI; promote `deps-audit` to required | — | devex | **SHIPPED** — coverage gate (m12-pr02), xdist + `deps-audit` required (m12-pr04) |
+| P1-11 | Triage 9 baseline test failures (fix or `xfail` with linked issues) | W14 | all | TODO — needs fresh triage on m12-pr03 base |
 | P1-12 | Adversarial prompt-injection defense (pre-classifier + structural separation) | W15 | ai-team + security | TODO |
-| P1-13 | Realtime gateway extraction (when SSE > 1000 concurrent) | — | platform | TODO |
-| P1-14 | `import-linter` contracts wired in CI | — | architecture-wg | TODO |
-| P1-15 | Staging environment that mirrors production (per-PR previews + shared staging) | W13 | devex | TODO |
+| P1-13 | Realtime gateway extraction (when SSE > 1000 concurrent) | — | platform | DEFERRED — gates on SSE > 1000 concurrent |
+| P1-14 | `import-linter` contracts wired in CI | — | architecture-wg | **SHIPPED** — `.github/workflows/architecture.yml` |
+| P1-15 | Staging environment that mirrors production (per-PR previews + shared staging) | W13 | devex | **SHIPPED** — m11-pr45 (`infra/staging-mirror.compose.yml`) |
 
 ---
 

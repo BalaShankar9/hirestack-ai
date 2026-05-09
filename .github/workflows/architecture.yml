@@ -32,7 +32,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install governance deps
-        run: pip install --quiet pyyaml import-linter mypy==1.20.2 pytest pytest-cov pytest-asyncio pytest-timeout
+        run: pip install --quiet pyyaml import-linter mypy==1.20.2 pytest pytest-cov pytest-asyncio pytest-timeout pytest-xdist
 
       # ── mypy strict allowlist (TD-1, m12-pr01) ─────────────────
       # Keeps mypy lenient by default and ratchets modules into
@@ -53,7 +53,10 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           pip install --quiet -r backend/requirements.txt
+          # -n auto: pytest-xdist parallelism (P1-10, m12-pr04). Falls back
+          # to serial automatically if xdist is unavailable in a worker env.
           python -m pytest ai_engine/tests \
+            -n auto \
             --cov --cov-config=pyproject.toml \
             --cov-report=term --cov-fail-under=70 -q
 
