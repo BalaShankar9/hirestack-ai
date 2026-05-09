@@ -1036,7 +1036,7 @@ Items that are not P0/P1 but must be tracked. Reviewed quarterly.
 | ID | Item | Why it matters | Trigger to fix |
 |---|---|---|---|
 | TD-1 | `generate/jobs.py` is 1500+ lines | Merge conflicts at scale | Next major change in that file |
-| TD-2 | Sentry redaction depth bound = 8 | Deep AI objects can leak at depth 9+ | Increase to 16 or convert to iterative |
+| TD-2 | Sentry redaction depth bound = 8 | Deep AI objects can leak at depth 9+ | SHIPPED — `MAX_SCRUB_DEPTH = 16` in `backend/app/core/observability.py`; covered by `tests/test_observability_redaction.py::test_redact_scrubs_at_depth_15` |
 | TD-3 | Hand-rolled `/metrics` text format | Two metric paths to maintain | Stage A end |
 | TD-4 | `requirements.txt` unpinned ranges | Reproducibility | Add `requirements.lock` (pip-compile) |
 | TD-5 | Python 3.11 in CI vs 3.13 local | Dev/CI drift | Pin one and document |
@@ -1063,7 +1063,7 @@ These scenarios are **categorically unacceptable**. Each has a tested guarantee 
 | Hardcoded secret reaches main | CI secret scanner | `.github/workflows/ci.yml` |
 | Schema drift between producers and consumers | Contract test on every PR | `backend/tests/contracts/test_event_schema_contract.py` |
 | Migration with rename/drop in one step ships | Migration safety linter | future CI gate |
-| Single Gemini outage takes down platform | Multi-provider model_router (P1-4) | future `tests/ai/test_provider_failover.py` |
+| Single Gemini outage takes down platform | Multi-provider model_router (P1-4) | `backend/tests/ai/test_provider_failover.py` (m12-pr12) |
 
 ---
 
