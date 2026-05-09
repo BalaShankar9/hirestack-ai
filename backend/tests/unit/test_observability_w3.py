@@ -49,7 +49,9 @@ def test_metrics_collector_default_keys_when_unknown():
 
 
 def test_metrics_endpoint_exposes_llm_and_cost_gauges():
-    import backend.main as backend_main  # type: ignore
+    # m12-pr06: metrics moved from backend/main.py into the dedicated
+    # prometheus_collectors module. Source-of-truth is the collectors file.
+    import backend.app.core.prometheus_collectors as backend_main  # type: ignore
     src = inspect.getsource(backend_main)
     for marker in (
         "hirestack_llm_calls_total",

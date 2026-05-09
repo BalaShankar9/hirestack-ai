@@ -126,9 +126,14 @@ async def test_generate_section_emits_writer_reviewer_pair_per_attempt_and_compl
     assert result.stop_reason == "passed"
     assert result.final_passed_gate is True
 
-    # Exactly one writer+reviewer pair (since first attempt passed)
-    writer_evts = [e for e in emitter.events if e.get("agent") == "writer"]
-    reviewer_evts = [e for e in emitter.events if e.get("agent") == "reviewer"]
+    # Exactly one writer+reviewer pair (since first attempt passed).
+    # Filter to lifecycle (agent_status) events only — the pipeline also
+    # emits an `attempt` event tagged agent=reviewer carrying the per-attempt
+    # payload (m12-pr06: was previously counted as a 3rd reviewer event).
+    writer_evts = [e for e in emitter.events
+                   if e.get("agent") == "writer" and e["event_type"] == "agent_status"]
+    reviewer_evts = [e for e in emitter.events
+                     if e.get("agent") == "reviewer" and e["event_type"] == "agent_status"]
     assert len(writer_evts) == 2  # running + completed
     assert len(reviewer_evts) == 2  # running + completed
     # passed_gate surfaced in reviewer completed event data
