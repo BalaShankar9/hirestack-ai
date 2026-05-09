@@ -108,6 +108,27 @@ import structlog as _structlog  # noqa: E402
 _billing_logger = _structlog.get_logger()
 
 
+def _billing_fail_closed_enabled() -> bool:
+    """Whether billing enforcement should fail-closed on backing-store errors.
+
+    Default policy:
+      * ``ENVIRONMENT=production`` → fail-closed (return True).
+      * Otherwise → fail-open (legacy behaviour).
+      * ``BILLING_FAIL_CLOSED`` env var (``1``/``true``/``yes``/``on`` or
+        ``0``/``false``/``no``/``off``) overrides the default in either
+        direction so ops can flip without a redeploy and tests can pin
+        the mode.
+
+    Read at call time (not module import) so monkeypatched env vars in
+    tests are honoured.
+    """
+    import os
+    raw = os.getenv("BILLING_FAIL_CLOSED")
+    if raw is not None:
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    return os.getenv("ENVIRONMENT", "development").strip().lower() == "production"
+
+
 async def check_usage_guard(current_user: Dict[str, Any]) -> None:
     """Backstop per-user/per-platform cap that runs BEFORE billing.
 
@@ -145,6 +166,17 @@ async def check_billing_limit(feature: str, current_user: Dict[str, Any]) -> Non
     """Check billing limit for a feature. Raises 402 if over limit.
 
     If the user has no org (testing/free solo mode), the check is skipped.
+
+    **Fail-closed behaviour (TD-7 / m12-pr11):** when the org-fetch path
+    raises (e.g. Supabase outage), we historically swallowed the error
+    and treated the user as "no org", which silently disabled billing
+    enforcement for every authenticated request. That is fail-open and
+    unacceptable in production. We now consult
+    :func:`_billing_fail_closed_enabled` — when true (default in
+    ``ENVIRONMENT=production``, opt-in everywhere else via
+    ``BILLING_FAIL_CLOSED=1``) we raise 503 instead of skipping the
+    check. Local dev / CI keep the legacy permissive behaviour so tests
+    that don't seed an org still pass.
     """
     from app.services.org import OrgService
     from app.services.billing import BillingService
@@ -152,7 +184,19 @@ async def check_billing_limit(feature: str, current_user: Dict[str, Any]) -> Non
     org_service = OrgService()
     try:
         orgs = await org_service.get_user_orgs(current_user["id"])
-    except Exception:
+    except Exception as exc:
+        _billing_logger.error(
+            "billing_org_fetch_failed",
+            user_id=current_user.get("id"),
+            feature=feature,
+            error=str(exc)[:200],
+            fail_closed=_billing_fail_closed_enabled(),
+        )
+        if _billing_fail_closed_enabled():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Billing service is temporarily unavailable. Please try again.",
+            )
         orgs = []
 
     if not orgs:
