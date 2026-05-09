@@ -147,7 +147,8 @@ notes and the PRs themselves.
 | m12-pr15 | DLQ contract pin (`tests/queue/test_dlq.py`, 8 tests) | `m12-pr15-test-dlq-shipped.md` | TESTING_CONTEXT | PR #33 |
 | m12-pr16 | Partition rotation health (`tests/db/test_partition_health.py`, 15 tests) | `m12-pr16-test-partition-health-shipped.md` | TESTING_CONTEXT | PR #34 |
 | m12-pr17 | Action-gate contract (`tests/ai/test_action_gate.py`, 21 tests) | `m12-pr17-test-action-gate-shipped.md` | TESTING_CONTEXT | PR #35 |
-| m12-pr18 | Temporal resume contract (`tests/temporal/test_resume.py`, 19 tests) | `m12-pr18-test-temporal-resume-shipped.md` | TESTING_CONTEXT | (this PR) |
+| m12-pr18 | Temporal resume contract (`tests/temporal/test_resume.py`, 19 tests) | `m12-pr18-test-temporal-resume-shipped.md` | TESTING_CONTEXT | PR #36 |
+| m12-pr19 | TD-1 first cut: extract `_module_state.py` from `routes/generate/jobs.py` (2496 → 2358 LOC) | `m12-pr19-td1-split-jobs-shipped.md` | (none) | (this PR) |
 
 (Memory notes for m12-pr01..pr12 referenced in the PR ledger / repo
 memory; this file's intent is the index, not the transcripts.)
