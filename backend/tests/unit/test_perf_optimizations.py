@@ -118,7 +118,8 @@ def test_recon_block_does_not_await_intel_inline():
 
 def test_metrics_endpoint_exposes_cache_and_phase_gauges():
     """The /metrics route source must expose cache + per-phase metrics."""
-    import backend.main as backend_main  # type: ignore[import-not-found]
+    # m12-pr06: metrics moved from backend/main.py into prometheus_collectors.
+    import backend.app.core.prometheus_collectors as backend_main  # type: ignore[import-not-found]
     src = inspect.getsource(backend_main)
     # Cache hit-rate
     assert "hirestack_ai_cache_hits_total" in src

@@ -134,7 +134,8 @@ def test_metrics_collector_record_doc_quality_clamps_invalid():
 # ── /metrics anchor: gauge presence ───────────────────────────────────
 
 def test_metrics_endpoint_exposes_doc_quality_gauges():
-    import backend.main as backend_main  # type: ignore
+    # m12-pr06: metrics moved from backend/main.py into prometheus_collectors.
+    import backend.app.core.prometheus_collectors as backend_main  # type: ignore
     src = inspect.getsource(backend_main)
     for marker in (
         "hirestack_doc_quality_mean",

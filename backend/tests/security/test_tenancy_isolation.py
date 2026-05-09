@@ -149,7 +149,9 @@ async def test_unauthenticated_resource_routes_return_401(client_a):
     try:
         transport = ASGITransport(app=_app)
         async with AsyncClient(transport=transport, base_url="http://test") as anon:
-            r = await anon.get(f"/api/missions/{FOREIGN_RESOURCE_ID}")
+            # m12-pr06: /api/missions was removed; use a stable resource
+            # route that still requires get_current_user.
+            r = await anon.get(f"/api/jobs/{FOREIGN_RESOURCE_ID}")
         assert r.status_code in (401, 403), (
             f"unauthenticated request should be rejected, got {r.status_code}"
         )

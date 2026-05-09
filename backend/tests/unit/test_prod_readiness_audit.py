@@ -17,7 +17,9 @@ def test_gemini_provider_invokes_circuit_breaker() -> None:
     so a fully-down provider fast-fails instead of cascading.
     """
     from ai_engine import client as ai_client
-    src = inspect.getsource(ai_client._GeminiProvider._generate_content_throttled)
+    # m12-pr06: the outer _generate_content_throttled is a thin Langfuse-tracing
+    # wrapper; the real SDK chokepoint (and breaker gate) lives in _inner.
+    src = inspect.getsource(ai_client._GeminiProvider._generate_content_throttled_inner)
     assert "_get_model_breaker" in src, "breaker must be invoked, not just imported"
     assert "async with _breaker" in src or "async with breaker" in src.lower(), \
         "breaker must gate the SDK call via async-with"
@@ -42,8 +44,11 @@ def test_webhook_idempotency_table_registered() -> None:
 
 def test_webhook_idempotency_migration_exists() -> None:
     from pathlib import Path
+    # m12-pr06: migrations live under supabase/migrations with a 14-digit
+    # timestamp prefix (Supabase convention), not the originally-planned
+    # database/migrations/20260420_*.sql path.
     repo_root = Path(__file__).resolve().parents[3]
-    mig = repo_root / "database" / "migrations" / "20260420_stripe_webhook_idempotency.sql"
+    mig = repo_root / "supabase" / "migrations" / "20260420000000_stripe_webhook_idempotency.sql"
     assert mig.exists(), f"missing migration: {mig}"
     sql = mig.read_text()
     assert "processed_webhook_events" in sql
